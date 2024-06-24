@@ -1,5 +1,5 @@
 [package]
-name = "lore_lib"
+name = "lore_peek"
 version = "0.1.0"
 edition = "2021"
 
