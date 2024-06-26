@@ -5,8 +5,6 @@ use std::{env, fs};
 
 fn main() {
     let args: Vec<_> = env::args().collect();
-    let amd_gfx_feed: String;
-    let path: String;
     let mut lore_session: LoreSession = LoreSession::new();
     let lore_response: LoreResponse;
     let processed_patches_ids: Vec<String>;
@@ -15,11 +13,7 @@ fn main() {
         panic!("Need 1 arg");
     }
 
-    path = String::from(&args[1]);
-
-    amd_gfx_feed = fs::read_to_string(&path).unwrap();
-
-    lore_response = from_str(&amd_gfx_feed).unwrap();
+    lore_response = from_str(&fs::read_to_string(&String::from(&args[1])).unwrap()).unwrap();
     processed_patches_ids = lore_session.process_patches(lore_response);
     lore_session.update_representative_patches(processed_patches_ids);
 
