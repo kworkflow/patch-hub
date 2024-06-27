@@ -1,20 +1,20 @@
 use lore_peek::lore_session::LoreSession;
-use lore_peek::lore_response::LoreResponse;
+use lore_peek::patch::PatchFeed;
 use serde_xml_rs::from_str;
 use std::{env, fs};
 
 fn main() {
     let args: Vec<_> = env::args().collect();
     let mut lore_session: LoreSession = LoreSession::new();
-    let lore_response: LoreResponse;
+    let patch_feed: PatchFeed;
     let processed_patches_ids: Vec<String>;
 
     if args.len() != 2 {
         panic!("Need 1 arg");
     }
 
-    lore_response = from_str(&fs::read_to_string(&String::from(&args[1])).unwrap()).unwrap();
-    processed_patches_ids = lore_session.process_patches(lore_response);
+    patch_feed = from_str(&fs::read_to_string(&String::from(&args[1])).unwrap()).unwrap();
+    processed_patches_ids = lore_session.process_patches(patch_feed);
     lore_session.update_representative_patches(processed_patches_ids);
 
     let representative_patches_ids: &Vec<String> = lore_session.get_representative_patches_ids();

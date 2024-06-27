@@ -1,5 +1,4 @@
-use crate::lore_response::LoreResponse;
-use crate::patch::{Patch, PatchRegex};
+use crate::patch::{Patch, PatchFeed, PatchRegex};
 use std::collections::HashMap;
 
 
@@ -26,10 +25,10 @@ impl LoreSession {
         self.processed_patches_map.get(message_id)
     }
 
-    pub fn process_patches(self: &mut Self, lore_response: LoreResponse) -> Vec<String> {
+    pub fn process_patches(self: &mut Self, patch_feed: PatchFeed) -> Vec<String> {
         let mut processed_patches_ids: Vec<String> = Vec::new();
 
-        for mut patch in lore_response.get_patches() {
+        for mut patch in patch_feed.get_patches() {
             patch.update_patch_metadata(&self.patch_regex);
 
             if !self.processed_patches_map.contains_key(&patch.get_message_id().href) {

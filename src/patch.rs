@@ -2,6 +2,18 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PatchFeed {
+    #[serde(rename = "entry")]
+    patches: Vec<Patch>,
+}
+
+impl PatchFeed {
+    pub fn get_patches(self: Self) -> Vec<Patch> {
+        self.patches
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Patch {
     r#title: String,
     #[serde(default = "default_version")]
