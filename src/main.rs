@@ -24,7 +24,7 @@ fn main() {
 
     lore_api_response = match reqwest::blocking::get(lore_api_request) {
         Ok(response) => response,
-        Err(_) => panic!("Something weird happened!"),
+        Err(error) =>  panic!("{error:?}"),
     };
 
     match lore_api_response.status().as_u16() {
