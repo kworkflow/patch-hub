@@ -139,7 +139,7 @@ pub struct PatchRegex {
 
 impl PatchRegex {
     pub fn new() -> PatchRegex {
-        let re_patch_tag = Regex::new(r"\[[^\]]*[[Rr][Ff][Cc]|[Pp][Aa][Tt][Cc][Hh]][^\[]*\]").unwrap();
+        let re_patch_tag = Regex::new(r"(?i)\[[^\]]*(PATCH|RFC)[^\[]*\]").unwrap();
         let re_patch_version = Regex::new(r"[v|V] *(\d+)").unwrap();
         let re_patch_series = Regex::new(r"(\d+) */ *(\d+)").unwrap();
 
