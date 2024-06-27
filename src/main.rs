@@ -1,43 +1,28 @@
 use lore_peek::lore_session::LoreSession;
+use lore_peek::lore_api_client::{FailedFeedResquest, LoreAPIClient};
 use lore_peek::patch::PatchFeed;
-use reqwest::blocking::Response;
 use serde_xml_rs::from_str;
-use std::env;
-
-const LORE_DOMAIN: &str = r"https://lore.kernel.org/";
+use std::{env, u32};
 
 fn main() {
     let args: Vec<_> = env::args().collect();
     let mut lore_session: LoreSession = LoreSession::new();
     let patch_feed: PatchFeed;
     let processed_patches_ids: Vec<String>;
-    let mut lore_api_request: String = String::from(LORE_DOMAIN);
-    let lore_api_response: Response;
-    let lore_api_response_body: String;
 
-    if args.len() != 2 {
-        panic!("Need 1 arg");
+    if args.len() != 3 {
+        panic!("Error: Wrong number\nUsage: cargo run <target_list> <min_index>");
     }
 
-    lore_api_request.push_str(&String::from(&args[1]));
-    lore_api_request.push_str(r"/?x=A&q=((s:patch+OR+s:rfc)+AND+NOT+s:re:)&o=0");
+    match LoreAPIClient::request_patch_feed(&String::from(&args[1]), args[2].parse::<u32>().unwrap()) {
+        Ok(feed_response_body) => patch_feed = from_str(&feed_response_body).unwrap(),
+        Err(failed_feed_request) => match failed_feed_request {
+            FailedFeedResquest::UnknowError(error) => panic!("{error:#?}"),
+            FailedFeedResquest::StatusNotOk(status_code) => panic!("Lore request returned status code {status_code}"),
+            FailedFeedResquest::EndOfFeed => panic!("End of feed"),
+        },
+    }
 
-    lore_api_response = match reqwest::blocking::get(lore_api_request) {
-        Ok(response) => response,
-        Err(error) =>  panic!("{error:?}"),
-    };
-
-    match lore_api_response.status().as_u16() {
-        200 => (),
-        _ => panic!("HTTP request didn't return 200 OK"),
-    };
-
-    lore_api_response_body = lore_api_response.text().unwrap();
-    if lore_api_response_body.eq(r"</feed>") {
-        panic!("No more patches")
-    };
-
-    patch_feed = from_str(&lore_api_response_body).unwrap();
     processed_patches_ids = lore_session.process_patches(patch_feed);
     lore_session.update_representative_patches(processed_patches_ids);
 
