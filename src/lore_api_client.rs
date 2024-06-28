@@ -4,8 +4,8 @@ use reqwest::Error;
 const LORE_DOMAIN: &str = r"https://lore.kernel.org/";
 const BASE_QUERY_FOR_FEED_REQUEST: &str = r"/?x=A&q=((s:patch+OR+s:rfc)+AND+NOT+s:re:)&o=";
 
-pub enum FailedFeedResquest {
-    UnknowError(Error),
+pub enum FailedFeedRequest {
+    UnknownError(Error),
     StatusNotOk(Response),
     EndOfFeed,
 }
@@ -13,7 +13,7 @@ pub enum FailedFeedResquest {
 pub struct LoreAPIClient {}
 
 impl LoreAPIClient {
-    pub fn request_patch_feed(target_list: &String, min_index: u32) -> Result<String, FailedFeedResquest> {
+    pub fn request_patch_feed(target_list: &String, min_index: u32) -> Result<String, FailedFeedRequest> {
         let mut feed_request: String = String::from(LORE_DOMAIN);
         let feed_response: Response;
         let feed_response_body: String;
@@ -24,17 +24,17 @@ impl LoreAPIClient {
 
         match reqwest::blocking::get(feed_request) {
             Ok(response) => feed_response = response,
-            Err(error) =>  return Err(FailedFeedResquest::UnknowError(error)),
+            Err(error) =>  return Err(FailedFeedRequest::UnknownError(error)),
         };
 
         match feed_response.status().as_u16() {
             200 => (),
-            _ => return Err(FailedFeedResquest::StatusNotOk(feed_response)),
+            _ => return Err(FailedFeedRequest::StatusNotOk(feed_response)),
         };
 
         feed_response_body = feed_response.text().unwrap();
         if feed_response_body.eq(r"</feed>") {
-            return Err(FailedFeedResquest::EndOfFeed);
+            return Err(FailedFeedRequest::EndOfFeed);
         };
 
         Ok(feed_response_body)

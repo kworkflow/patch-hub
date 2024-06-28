@@ -1,5 +1,5 @@
 use crate::patch::{Patch, PatchFeed, PatchRegex};
-use crate::lore_api_client::{FailedFeedResquest, LoreAPIClient};
+use crate::lore_api_client::{FailedFeedRequest, LoreAPIClient};
 use std::collections::HashMap;
 use serde_xml_rs::from_str;
 
@@ -32,7 +32,7 @@ impl LoreSession {
         self.processed_patches_map.get(message_id)
     }
 
-    pub fn process_n_representative_patches(self: &mut Self,n: u32) -> Result<(), FailedFeedResquest> {
+    pub fn process_n_representative_patches(self: &mut Self,n: u32) -> Result<(), FailedFeedRequest> {
         let mut patch_feed: PatchFeed;
         let mut processed_patches_ids: Vec<String>;
 

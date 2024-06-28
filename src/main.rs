@@ -1,5 +1,5 @@
 use lore_peek::lore_session::LoreSession;
-use lore_peek::lore_api_client::FailedFeedResquest;
+use lore_peek::lore_api_client::FailedFeedRequest;
 use std::env;
 
 fn main() {
@@ -18,9 +18,9 @@ fn main() {
     lore_session = LoreSession::new(target_list);
     if let Err(failed_feed_request) = lore_session.process_n_representative_patches(n) {
         match failed_feed_request {
-            FailedFeedResquest::UnknowError(error) => panic!("[UnknownError] Failed to request feed\n{error:#?}"),
-            FailedFeedResquest::StatusNotOk(feed_response) => panic!("[StatusNotOk] Request returned with non-OK status\n{feed_response:#?}"),
-            FailedFeedResquest::EndOfFeed => panic!("End of feed"),
+            FailedFeedRequest::UnknownError(error) => panic!("[UnknownError] Failed to request feed\n{error:#?}"),
+            FailedFeedRequest::StatusNotOk(feed_response) => panic!("[StatusNotOk] Request returned with non-OK status\n{feed_response:#?}"),
+            FailedFeedRequest::EndOfFeed => panic!("End of feed"),
         }
     };
 
