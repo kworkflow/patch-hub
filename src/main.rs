@@ -1,4 +1,5 @@
 use lore_peek::lore_session::LoreSession;
+use lore_peek::lore_api_client::FailedFeedResquest;
 use std::env;
 
 fn main() {
@@ -15,7 +16,13 @@ fn main() {
     n = args[2].parse::<u32>().unwrap();
 
     lore_session = LoreSession::new(target_list);
-    lore_session.process_n_representative_patches(n);
+    if let Err(failed_feed_request) = lore_session.process_n_representative_patches(n) {
+        match failed_feed_request {
+            FailedFeedResquest::UnknowError(error) => panic!("[UnknownError] Failed to request feed\n{error:#?}"),
+            FailedFeedResquest::StatusNotOk(feed_response) => panic!("[StatusNotOk] Request returned with non-OK status\n{feed_response:#?}"),
+            FailedFeedResquest::EndOfFeed => panic!("End of feed"),
+        }
+    };
 
     let representative_patches_ids: &Vec<String> = lore_session.get_representative_patches_ids();
     println!("Number of representative patches processed: {}", representative_patches_ids.len());

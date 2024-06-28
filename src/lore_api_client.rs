@@ -6,7 +6,7 @@ const BASE_QUERY_FOR_FEED_REQUEST: &str = r"/?x=A&q=((s:patch+OR+s:rfc)+AND+NOT+
 
 pub enum FailedFeedResquest {
     UnknowError(Error),
-    StatusNotOk(u16),
+    StatusNotOk(Response),
     EndOfFeed,
 }
 
@@ -29,7 +29,7 @@ impl LoreAPIClient {
 
         match feed_response.status().as_u16() {
             200 => (),
-            status_code => return Err(FailedFeedResquest::StatusNotOk(status_code)),
+            _ => return Err(FailedFeedResquest::StatusNotOk(feed_response)),
         };
 
         feed_response_body = feed_response.text().unwrap();

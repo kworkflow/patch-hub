@@ -32,18 +32,14 @@ impl LoreSession {
         self.processed_patches_map.get(message_id)
     }
 
-    pub fn process_n_representative_patches(self: &mut Self,n: u32) {
+    pub fn process_n_representative_patches(self: &mut Self,n: u32) -> Result<(), FailedFeedResquest> {
         let mut patch_feed: PatchFeed;
         let mut processed_patches_ids: Vec<String>;
 
         while self.representative_patches_ids.len() < usize::try_from(n).unwrap() {
             match LoreAPIClient::request_patch_feed(&self.target_list, self.min_index) {
                 Ok(feed_response_body) => patch_feed = from_str(&feed_response_body).unwrap(),
-                Err(failed_feed_request) => match failed_feed_request {
-                    FailedFeedResquest::UnknowError(error) => panic!("{error:#?}"),
-                    FailedFeedResquest::StatusNotOk(status_code) => panic!("Lore request returned status code {status_code}"),
-                    FailedFeedResquest::EndOfFeed => break,
-                },
+                Err(failed_feed_request) => return Err(failed_feed_request),
             }
 
             processed_patches_ids = self.process_patches(patch_feed);
@@ -51,6 +47,8 @@ impl LoreSession {
 
             self.min_index = self.min_index + LORE_PAGE_SIZE;
         }
+
+        Ok(())
     }
 
     fn process_patches(self: &mut Self, patch_feed: PatchFeed) -> Vec<String> {
