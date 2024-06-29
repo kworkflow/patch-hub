@@ -43,11 +43,15 @@ fn main_loop(target_list: String, page_size: u32) {
             match failed_feed_request {
                 FailedFeedRequest::UnknownError(error) => panic!("[FailedFeedRequest::UnknownError]\n*\tFailed to request feed\n*\t{error:#?}"),
                 FailedFeedRequest::StatusNotOk(feed_response) => panic!("[FailedFeedRequest::StatusNotOk]\n*\tRequest returned with non-OK status\n*\t{feed_response:#?}"),
-                FailedFeedRequest::EndOfFeed => panic!("[FailedFeedRequest::EndOfFeed]\n*\tReached end of feed"),
+                FailedFeedRequest::EndOfFeed => (),
             }
         };
 
-        print_patch_feed_page(&lore_session, &target_list, page_size, page_number);
+        if let Err(_) = print_patch_feed_page(&lore_session, &target_list, page_size, page_number) {
+            println!("Reached end of {target_list} patch feed!");
+            page_number -= 1;
+            continue;
+        }
 
         match collect_user_command() {
             'N' | 'n' => page_number += 1,
@@ -58,12 +62,16 @@ fn main_loop(target_list: String, page_size: u32) {
     }
 }
 
-fn print_patch_feed_page(lore_session: &LoreSession, target_list: &String, page_size: u32, page_number: u32) {
+fn print_patch_feed_page(lore_session: &LoreSession, target_list: &String, page_size: u32, page_number: u32) -> Result<(), ()> {
     let patch_feed_page: Vec<&Patch>;
     let mut index: u32;
 
+    match lore_session.get_patch_feed_page(page_size, page_number) {
+        Some(result) => patch_feed_page = result,
+        None => return Err(()),
+    };
+
     println!("======================= {target_list} pg. {page_number} =======================");
-    patch_feed_page = lore_session.get_patch_feed_page(page_size, page_number);
     index = page_size * (page_number - 1);
     for patch in patch_feed_page {
         println!(
@@ -74,6 +82,8 @@ fn print_patch_feed_page(lore_session: &LoreSession, target_list: &String, page_
         index += 1;
     }
     println!("======================= {target_list} pg. {page_number} =======================\n");
+
+    Ok(())
 }
 
 fn collect_user_command() -> char {
@@ -83,7 +93,7 @@ fn collect_user_command() -> char {
     loop {
         input.clear();
 
-        print!("Enter a command [ (n)ext | (p)revious | (q)uit]: ");
+        print!("Enter a command [(n)ext | (p)revious | (q)uit]: ");
         io::stdout().flush().unwrap();
         io::stdin().read_line(&mut input).unwrap();
         if input.len() == 2 {

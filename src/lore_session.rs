@@ -94,10 +94,21 @@ impl LoreSession {
         }
     }
 
-    pub fn get_patch_feed_page(self: &Self, page_size: u32, page_number: u32) -> Vec<&Patch> {
+    pub fn get_patch_feed_page(self: &Self, page_size: u32, page_number: u32) -> Option<Vec<&Patch>> {
         let mut patch_feed_page: Vec<&Patch> = Vec::new();
+        let representative_patches_ids_max_index: u32 = (self.representative_patches_ids.len() - 1).try_into().unwrap();
+        let lower_end: u32 = page_size * (page_number - 1);
+        let mut upper_end: u32 = page_size * page_number;
 
-        for i in (page_size * (page_number - 1))..(page_size * page_number) {
+        if representative_patches_ids_max_index <= lower_end {
+            return None;
+        }
+
+        if representative_patches_ids_max_index < upper_end - 1 {
+            upper_end = representative_patches_ids_max_index + 1;
+        }
+
+        for i in lower_end..upper_end {
             patch_feed_page.push(
                 self.processed_patches_map.get(
                     &self.representative_patches_ids[usize::try_from(i).unwrap()]
@@ -106,6 +117,6 @@ impl LoreSession {
             )
         }
 
-        patch_feed_page
+        Some(patch_feed_page)
     }
 }
