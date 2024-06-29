@@ -35,10 +35,6 @@ fn parse_args() -> (String, u32) {
 fn main_loop(target_list: String, page_size: u32) {
     let mut lore_session: LoreSession;
     let mut page_number: u32 = 1;
-    let mut patch_feed_page: Vec<&Patch>;
-    let mut index: u32;
-    let mut command_code: char;
-    let mut input: String = String::new();
 
     lore_session = LoreSession::new(target_list.clone());
 
@@ -51,45 +47,59 @@ fn main_loop(target_list: String, page_size: u32) {
             }
         };
 
-        println!("======================= {target_list} pg. {page_number} =======================");
-        patch_feed_page = lore_session.get_patch_feed_page(page_size, page_number);
-        index = page_size * (page_number - 1);
-        for patch in patch_feed_page {
-            println!(
-                "{:03}. V{} | #{:02} | {} | {}",
-                index, patch.get_version(), patch.get_total_in_series(), patch.get_title(), patch.get_author().name
-            );
+        print_patch_feed_page(&lore_session, &target_list, page_size, page_number);
 
-            index += 1;
-        }
-        println!("======================= {target_list} pg. {page_number} =======================\n");
-
-        loop {
-            input.clear();
-
-            print!("Enter a command [ (n)ext | (p)revious | (q)uit]: ");
-            io::stdout().flush().unwrap();
-            io::stdin().read_line(&mut input).unwrap();
-            if input.len() == 2 {
-                if let Some(char) = input.trim().chars().next() {
-                    match char {
-                        'N' | 'n' | 'P' | 'p' | 'Q' | 'q' => {
-                            command_code = char;
-                            break;
-                        },
-                        _ => (),
-                    }
-                }
-            };
-
-            println!("Invalid input!");
-        }
-
-        match command_code {
+        match collect_user_command() {
             'N' | 'n' => page_number += 1,
             'P' | 'p' => if page_number != 1 { page_number -= 1 },
             'Q' | 'q' => exit(0),
             _ => panic!("[errno::EINVAL]\n*\tInvalid command. It shouldn't get to here...")
         }
     }
+}
+
+fn print_patch_feed_page(lore_session: &LoreSession, target_list: &String, page_size: u32, page_number: u32) {
+    let patch_feed_page: Vec<&Patch>;
+    let mut index: u32;
+
+    println!("======================= {target_list} pg. {page_number} =======================");
+    patch_feed_page = lore_session.get_patch_feed_page(page_size, page_number);
+    index = page_size * (page_number - 1);
+    for patch in patch_feed_page {
+        println!(
+            "{:03}. V{} | #{:02} | {} | {}",
+            index, patch.get_version(), patch.get_total_in_series(), patch.get_title(), patch.get_author().name
+        );
+
+        index += 1;
+    }
+    println!("======================= {target_list} pg. {page_number} =======================\n");
+}
+
+fn collect_user_command() -> char {
+    let mut input: String = String::new();
+    let command_code: char;
+
+    loop {
+        input.clear();
+
+        print!("Enter a command [ (n)ext | (p)revious | (q)uit]: ");
+        io::stdout().flush().unwrap();
+        io::stdin().read_line(&mut input).unwrap();
+        if input.len() == 2 {
+            if let Some(char) = input.trim().chars().next() {
+                match char {
+                    'N' | 'n' | 'P' | 'p' | 'Q' | 'q' => {
+                        command_code = char;
+                        break;
+                    },
+                    _ => (),
+                }
+            }
+        };
+
+        println!("Invalid input!");
+    }
+
+    command_code
 }
