@@ -45,7 +45,7 @@ impl LoreSession {
             processed_patches_ids = self.process_patches(patch_feed);
             self.update_representative_patches(processed_patches_ids);
 
-            self.min_index = self.min_index + LORE_PAGE_SIZE;
+            self.min_index += LORE_PAGE_SIZE;
         }
 
         Ok(())
