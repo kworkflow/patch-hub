@@ -9,7 +9,7 @@ fn main() {
     let mut lore_session: LoreSession;
 
     if args.len() != 3 {
-        panic!("Error: Wrong number\nUsage: cargo run <target_list> <n>");
+        panic!("[errno::EINVAL]\n*\tWrong number of arguments\n*\tUsage: cargo run <target_list> <page_size> <page_number>");
     }
 
     target_list = String::from(&args[1]);
@@ -18,9 +18,9 @@ fn main() {
     lore_session = LoreSession::new(target_list);
     if let Err(failed_feed_request) = lore_session.process_n_representative_patches(n) {
         match failed_feed_request {
-            FailedFeedRequest::UnknownError(error) => panic!("[UnknownError] Failed to request feed\n{error:#?}"),
-            FailedFeedRequest::StatusNotOk(feed_response) => panic!("[StatusNotOk] Request returned with non-OK status\n{feed_response:#?}"),
-            FailedFeedRequest::EndOfFeed => panic!("End of feed"),
+            FailedFeedRequest::UnknownError(error) => panic!("[FailedFeedRequest::UnknownError]\n*\tFailed to request feed\n*\t{error:#?}"),
+            FailedFeedRequest::StatusNotOk(feed_response) => panic!("[FailedFeedRequest::StatusNotOk]\n*\tRequest returned with non-OK status\n*\t{feed_response:#?}"),
+            FailedFeedRequest::EndOfFeed => panic!("[FailedFeedRequest::EndOfFeed]\n*\tReached end of feed"),
         }
     };
 
