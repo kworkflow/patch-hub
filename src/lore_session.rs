@@ -93,4 +93,19 @@ impl LoreSession {
             self.representative_patches_ids.push(patch.get_message_id().href.clone());
         }
     }
+
+    pub fn get_patch_feed_page(self: &Self, page_size: u32, page_number: u32) -> Vec<&Patch> {
+        let mut patch_feed_page: Vec<&Patch> = Vec::new();
+
+        for i in (page_size * (page_number - 1))..(page_size * page_number) {
+            patch_feed_page.push(
+                self.processed_patches_map.get(
+                    &self.representative_patches_ids[usize::try_from(i).unwrap()]
+                ).
+                unwrap()
+            )
+        }
+
+        patch_feed_page
+    }
 }
