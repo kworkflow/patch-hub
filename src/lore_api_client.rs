@@ -1,8 +1,8 @@
 use reqwest::blocking::Response;
 use reqwest::Error;
 
-const LORE_DOMAIN: &str = r"https://lore.kernel.org/";
-const BASE_QUERY_FOR_FEED_REQUEST: &str = r"/?x=A&q=((s:patch+OR+s:rfc)+AND+NOT+s:re:)&o=";
+const LORE_DOMAIN: &str = r"https://lore.kernel.org";
+const BASE_QUERY_FOR_FEED_REQUEST: &str = r"?x=A&q=((s:patch+OR+s:rfc)+AND+NOT+s:re:)";
 
 pub enum FailedFeedRequest {
     UnknownError(Error),
@@ -14,13 +14,11 @@ pub struct LoreAPIClient {}
 
 impl LoreAPIClient {
     pub fn request_patch_feed(target_list: &String, min_index: u32) -> Result<String, FailedFeedRequest> {
-        let mut feed_request: String = String::from(LORE_DOMAIN);
+        let feed_request: String;
         let feed_response: Response;
         let feed_response_body: String;
         
-        feed_request.push_str(target_list);
-        feed_request.push_str(BASE_QUERY_FOR_FEED_REQUEST);
-        feed_request.push_str(&min_index.to_string());
+        feed_request = format!("{LORE_DOMAIN}/{target_list}/{BASE_QUERY_FOR_FEED_REQUEST}&o={min_index}");
 
         match reqwest::blocking::get(feed_request) {
             Ok(response) => feed_response = response,
