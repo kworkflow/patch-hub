@@ -1,6 +1,9 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PatchFeed {
     #[serde(rename = "entry")]
@@ -13,7 +16,7 @@ impl PatchFeed {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Patch {
     r#title: String,
     #[serde(default = "default_version")]
@@ -30,13 +33,13 @@ pub struct Patch {
     updated: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Author {
     pub name: String,
     pub email: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct MessageID {
     pub href: String,
 }
@@ -46,6 +49,20 @@ fn default_number_in_series() -> u32 { 1 }
 fn default_total_in_series() -> u32 { 1 }
 
 impl Patch {
+    pub fn new(title: String, author: Author, message_id: MessageID,
+        in_reply_to: Option<MessageID>, updated: String) -> Patch {
+        Patch {
+            title: title,
+            author: author,
+            version: 1,
+            number_in_series: 1,
+            total_in_series: 1,
+            message_id: message_id,
+            in_reply_to: in_reply_to,
+            updated: updated,
+        }
+    }
+
     pub fn get_title(self: &Self) -> &str {
         &self.title
     }
