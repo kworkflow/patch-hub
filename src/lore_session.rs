@@ -3,6 +3,9 @@ use crate::lore_api_client::{FailedFeedRequest, LoreAPIClient};
 use std::collections::HashMap;
 use serde_xml_rs::from_str;
 
+#[cfg(test)]
+mod tests;
+
 const LORE_PAGE_SIZE: u32 = 200;
 
 pub struct LoreSession {
