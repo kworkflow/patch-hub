@@ -1,6 +1,6 @@
 use lore_peek::lore_session::LoreSession;
 use lore_peek::patch::Patch;
-use lore_peek::lore_api_client::FailedFeedRequest;
+use lore_peek::lore_api_client::{BlockingLoreAPIClient, FailedFeedRequest};
 use std::env;
 use std::io::{self, Write};
 use std::process::exit;
@@ -35,11 +35,12 @@ fn parse_args() -> (String, u32) {
 fn main_loop(target_list: String, page_size: u32) {
     let mut lore_session: LoreSession;
     let mut page_number: u32 = 1;
+    let lore_api_client: BlockingLoreAPIClient = BlockingLoreAPIClient::new();
 
     lore_session = LoreSession::new(target_list.clone());
 
     loop {
-        if let Err(failed_feed_request) = lore_session.process_n_representative_patches(page_size * page_number) {
+        if let Err(failed_feed_request) = lore_session.process_n_representative_patches(&lore_api_client, page_size * page_number) {
             match failed_feed_request {
                 FailedFeedRequest::UnknownError(error) => panic!("[FailedFeedRequest::UnknownError]\n*\tFailed to request feed\n*\t{error:#?}"),
                 FailedFeedRequest::StatusNotOk(feed_response) => panic!("[FailedFeedRequest::StatusNotOk]\n*\tRequest returned with non-OK status\n*\t{feed_response:#?}"),
