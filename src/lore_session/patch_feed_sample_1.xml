@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<feed
+	xmlns="http://www.w3.org/2005/Atom"
+	xmlns:thr="http://purl.org/syndication/thread/1.0">
+	<entry>
+		<author>
+			<name>John Johnson</name>
+			<email>john@johnson.com</email>
+		</author>
+		<title>[RFC/PATCH 2/2] some/subsystem: Do something else</title>
+		<updated>2024-06-24T19:15:48Z</updated>
+		<link
+			href="http://lore.kernel.org/some-subsystem/1234.567-3-john@johnson.com/" />
+		<thr:in-reply-to
+			href="http://lore.kernel.org/some-subsystem/1234.567-1-john@johnson.com/" />
+		<content>
+		</content>
+	</entry>
+	<entry>
+		<author>
+			<name>John Johnson</name>
+			<email>john@johnson.com</email>
+		</author>
+		<title>[RFC/PATCH 1/2] some/subsystem: Do something</title>
+		<updated>2024-06-24T19:15:48Z</updated>
+		<link
+			href="http://lore.kernel.org/some-subsystem/1234.567-2-john@johnson.com/" />
+		<thr:in-reply-to
+			href="http://lore.kernel.org/some-subsystem/1234.567-1-john@johnson.com/" />
+		<content>
+		</content>
+	</entry>
+	<entry>
+		<author>
+			<name>John Johnson</name>
+			<email>john@johnson.com</email>
+		</author>
+		<title>[RFC/PATCH 0/2] some/subsystem: Do this and that</title>
+		<updated>2024-06-24T19:15:48Z</updated>
+		<link
+			href="http://lore.kernel.org/some-subsystem/1234.567-1-john@johnson.com/" />
+		<content>
+		</content>
+	</entry>
+</feed>
