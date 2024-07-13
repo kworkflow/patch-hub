@@ -1,116 +1,89 @@
-use lore_peek::lore_session::LoreSession;
-use lore_peek::patch::Patch;
-use lore_peek::lore_api_client::{BlockingLoreAPIClient, FailedFeedRequest};
-use std::env;
-use std::io::{self, Write};
-use std::process::exit;
+use app::{
+    App, CurrentScreen
+};
+use ratatui::{
+    backend::Backend,
+    crossterm::event::{
+        self, Event, KeyCode, KeyEventKind
+    },
+    Terminal
+};
+use ui::draw_ui;
 
-fn main() {
-    let target_list: String;
-    let page_size: u32;
+mod app;
+mod ui;
+mod utils;
 
-    (target_list, page_size) = parse_args();
-    main_loop(target_list, page_size);
-}
-
-fn parse_args() -> (String, u32) {
-    let args: Vec<_> = env::args().collect();
-    let target_list: String;
-    let page_size: u32;
-
-    if args.len() != 3 {
-        panic!("[errno::EINVAL]\n*\tWrong number of arguments\n*\tUsage: cargo run <target_list> <page_size>");
-    }
-
-    target_list = String::from(&args[1]);
-    page_size = args[2].parse::<u32>().unwrap();
-
-    if page_size == 0 {
-        panic!("[errno::EINVAL]\n*\tpage_size should be non-zero positives")
-    }
-
-    (target_list, page_size)
-}
-
-fn main_loop(target_list: String, page_size: u32) {
-    let mut lore_session: LoreSession;
-    let mut page_number: u32 = 1;
-    let lore_api_client: BlockingLoreAPIClient = BlockingLoreAPIClient::new();
-
-    lore_session = LoreSession::new(target_list.clone());
-
-    loop {
-        if let Err(failed_feed_request) = lore_session.process_n_representative_patches(&lore_api_client, page_size * page_number) {
-            match failed_feed_request {
-                FailedFeedRequest::UnknownError(error) => panic!("[FailedFeedRequest::UnknownError]\n*\tFailed to request feed\n*\t{error:#?}"),
-                FailedFeedRequest::StatusNotOk(feed_response) => panic!("[FailedFeedRequest::StatusNotOk]\n*\tRequest returned with non-OK status\n*\t{feed_response:#?}"),
-                FailedFeedRequest::EndOfFeed => (),
-            }
-        };
-
-        if let Err(_) = print_patch_feed_page(&lore_session, &target_list, page_size, page_number) {
-            println!("Reached end of {target_list} patch feed!");
-            page_number -= 1;
-            continue;
-        }
-
-        match collect_user_command() {
-            'N' | 'n' => page_number += 1,
-            'P' | 'p' => if page_number != 1 { page_number -= 1 },
-            'Q' | 'q' => exit(0),
-            _ => panic!("[errno::EINVAL]\n*\tInvalid command. It shouldn't get to here...")
-        }
-    }
-}
-
-fn print_patch_feed_page(lore_session: &LoreSession, target_list: &String, page_size: u32, page_number: u32) -> Result<(), ()> {
-    let patch_feed_page: Vec<&Patch>;
-    let mut index: u32;
-
-    match lore_session.get_patch_feed_page(page_size, page_number) {
-        Some(result) => patch_feed_page = result,
-        None => return Err(()),
-    };
-
-    println!("======================= {target_list} pg. {page_number} =======================");
-    index = page_size * (page_number - 1);
-    for patch in patch_feed_page {
-        println!(
-            "{:03}. V{} | #{:02} | {} | {}",
-            index, patch.get_version(), patch.get_total_in_series(), patch.get_title(), patch.get_author().name
-        );
-
-        index += 1;
-    }
-    println!("======================= {target_list} pg. {page_number} =======================\n");
-
+fn main() -> color_eyre::Result<()> {
+    utils::install_hooks()?;
+    let mut terminal = utils::init()?;
+    let mut app = App::new();
+    run_app(&mut terminal, &mut app)?;
+    utils::restore()?;
     Ok(())
 }
 
-fn collect_user_command() -> char {
-    let mut input: String = String::new();
-    let command_code: char;
-
+fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre::Result<()> {
     loop {
-        input.clear();
+        terminal.draw(|f| draw_ui(f, &app))?;
 
-        print!("Enter a command [(n)ext | (p)revious | (q)uit]: ");
-        io::stdout().flush().unwrap();
-        io::stdin().read_line(&mut input).unwrap();
-        if input.len() == 2 {
-            if let Some(char) = input.trim().chars().next() {
-                match char {
-                    'N' | 'n' | 'P' | 'p' | 'Q' | 'q' => {
-                        command_code = char;
-                        break;
+        if event::poll(std::time::Duration::from_millis(16))? {
+            if let Event::Key(key) = event::read()? {
+                if key.kind == event::KeyEventKind::Release {
+                    // Skip events that are not KeyEventKind::Press
+                    continue;
+                }
+                match app.current_screen {
+                    CurrentScreen::MailingListSelection if key.kind == KeyEventKind::Press => {
+                        match key.code {
+                            KeyCode::Enter => {
+                                if let Some(_) = &app.latest_patchsets_state {
+                                    app.reset_latest_patchsets_state();
+                                }
+                                app.init_latest_patchsets_state();
+                                app.latest_patchsets_state.as_mut().unwrap().fetch_current_page()?;
+                                app.set_current_screen(CurrentScreen::LatestPatchsets);
+                            }
+                            KeyCode::Backspace => {
+                                if !app.target_list.is_empty() {
+                                    app.target_list.pop();
+                                }
+                            }
+                            KeyCode::Esc => {
+                                return Ok(());
+                            }
+                            KeyCode::Char(value) => {
+                                app.target_list.push(value);
+                            }
+                            _ => {}
+                        }
                     },
-                    _ => (),
+                    CurrentScreen::LatestPatchsets if key.kind == KeyEventKind::Press => {
+                        match key.code {
+                            KeyCode::Esc => {
+                                app.reset_latest_patchsets_state();
+                                app.target_list.clear();
+                                app.set_current_screen(CurrentScreen::MailingListSelection);
+                            },
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                app.latest_patchsets_state.as_mut().unwrap().select_below_patchset();
+                            },
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                app.latest_patchsets_state.as_mut().unwrap().select_above_patchset();
+                            },
+                            KeyCode::Char('l') | KeyCode::Right => {
+                                app.latest_patchsets_state.as_mut().unwrap().increment_page();
+                                app.latest_patchsets_state.as_mut().unwrap().fetch_current_page()?;
+                            },
+                            KeyCode::Char('h') | KeyCode::Left => {
+                                app.latest_patchsets_state.as_mut().unwrap().decrement_page();
+                            },
+                            _ => {}
+                        }
+                    },
+                    _ => {}
                 }
             }
-        };
-
-        println!("Invalid input!");
+        }
     }
-
-    command_code
 }
