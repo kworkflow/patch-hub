@@ -7,7 +7,7 @@ use ratatui::{
         Color, Modifier, Style
     },
     text::{Line, Span, Text}, widgets::{
-        Block, Borders, List, ListItem, Paragraph
+        Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph
     },
     Frame
 };
@@ -53,31 +53,28 @@ fn render_title(f: &mut Frame, chunk: Rect) {
 }
 
 fn render_list(f: &mut Frame, app: &App, chunk: Rect) {
+    let page_number = app.latest_patchsets_state.as_ref().unwrap().get_page_number();
+    let patchset_index = app.latest_patchsets_state.as_ref().unwrap().get_patchset_index();
     let mut list_items = Vec::<ListItem>::new();
+
     let patch_feed_page: Vec<&Patch> = app.latest_patchsets_state
         .as_ref()
         .unwrap()
         .get_current_patch_feed_page()
         .unwrap();
     
-    let mut index: u32 = (app.latest_patchsets_state.as_ref().unwrap().get_page_number() - 1) * PAGE_SIZE;
+    let mut index: u32 = (page_number - 1) * PAGE_SIZE;
     for patch in patch_feed_page {
         let patch_title = format!("{:width$}", patch.get_title(), width = 70);
         let patch_title = format!("{:.width$}", patch_title, width = 70);
         let patch_author = format!("{:width$}", patch.get_author().name, width = 30);
         let patch_author = format!("{:.width$}", patch_author, width = 30);
-        let style: Style;
-        if app.latest_patchsets_state.as_ref().unwrap().get_patchset_index() == index {
-            style = Style::default().fg(Color::Red).add_modifier(Modifier::BOLD);
-        } else {
-            style = Style::default().fg(Color::Yellow);
-        }
         list_items.push(ListItem::new(Line::from(Span::styled(
             format!(
                 "{:03}. V{:02} | #{:02} | {} | {}",
                 index, patch.get_version(), patch.get_total_in_series(), patch_title, patch_author
             ),
-            style,
+            Style::default().fg(Color::Yellow),
         )).centered()));
         index += 1;
     }
@@ -87,9 +84,22 @@ fn render_list(f: &mut Frame, app: &App, chunk: Rect) {
         .border_type(ratatui::widgets::BorderType::Double)
         .style(Style::default());
     
-    let list = List::new(list_items).block(list_block);
+    let list = List::new(list_items).block(list_block)
+        .highlight_style(
+            Style::default()
+                .add_modifier(Modifier::BOLD)
+                .add_modifier(Modifier::REVERSED)
+                .fg(Color::Cyan),
+        )
+        .highlight_symbol(">")
+        .highlight_spacing(HighlightSpacing::Always);
 
-    f.render_widget(list, chunk);
+    let mut list_state = ListState::default();
+    list_state.select(Some((
+        patchset_index - (page_number - 1) * PAGE_SIZE
+    ).try_into().unwrap()));
+
+    f.render_stateful_widget(list, chunk, &mut list_state);
 }
 
 fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
