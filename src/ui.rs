@@ -111,16 +111,16 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
                 if app.target_list.is_empty() {
                     Span::styled("type the target list", Style::default().fg(Color::DarkGray))
                 } else {
-                    Span::styled(&app.target_list, Style::default().fg(Color::LightGreen))
+                    Span::styled(&app.target_list, Style::default().fg(Color::LightCyan))
                 }
             ]
         },
         CurrentScreen::LatestPatchsets => {
             mode_footer_text = vec![
-                Span::styled("Latest Patchsets from ", Style::default().fg(Color::Green)),
                 Span::styled(
-                    format!("{} (page {})", &app.target_list, &app.latest_patchsets_state.as_ref().unwrap().get_page_number()
-                ), Style::default().fg(Color::Cyan))
+                    format!("Latest Patchsets from {} (page {})", &app.target_list, &app.latest_patchsets_state.as_ref().unwrap().get_page_number()),
+                    Style::default().fg(Color::Green)
+                )
             ]
         },
     }
