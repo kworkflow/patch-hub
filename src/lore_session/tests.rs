@@ -81,3 +81,83 @@ fn should_process_multiple_representative_patches() {
         "Wrong representative patch message ID at index 2"
     );
 }
+
+#[test]
+fn test_split_patchset_invalid_cases() {
+    let ret: Result<Vec<String>, String> = split_patchset("invalid/path");
+    assert_eq!(Err(format!("invalid/path: Path doesn't exist")), ret);
+
+    let ret: Result<Vec<String>, String> = split_patchset("src/lore_session/res_split_patchset/not_a_file");
+    assert_eq!(Err(format!("src/lore_session/res_split_patchset/not_a_file: Not a file")), ret);
+}
+
+#[test]
+fn should_split_patchset_without_cover_letter() {
+    let ret: Result<Vec<String>, String> = split_patchset(
+        "src/lore_session/res_split_patchset/patchset_sample_without_cover_letter.mbx"
+    );
+
+    if let Err(_) = ret {
+        panic!("Should return a `Vec<String>` type");
+    }
+    
+    let patches = ret.unwrap();
+
+    assert_eq!(
+        3, patches.len(),
+        "Wrong number of patches"
+    );
+
+    assert_eq!(
+        fs::read_to_string("src/lore_session/res_split_patchset/expected_patch_1.mbx").unwrap(), patches[0],
+        "Wrong patch number 1"
+    );
+
+    assert_eq!(
+        fs::read_to_string("src/lore_session/res_split_patchset/expected_patch_2.mbx").unwrap(), patches[1],
+        "Wrong patch number 2"
+    );
+
+    assert_eq!(
+        fs::read_to_string("src/lore_session/res_split_patchset/expected_patch_3.mbx").unwrap(), patches[2],
+        "Wrong patch number 3"
+    );
+}
+
+#[test]
+fn should_split_patchset_complete() {
+    let ret: Result<Vec<String>, String> = split_patchset(
+        "src/lore_session/res_split_patchset/patchset_sample_complete.mbx"
+    );
+
+    if let Err(_) = ret {
+        panic!("Should return a `Vec<String>` type");
+    }
+    
+    let patches = ret.unwrap();
+
+    assert_eq!(
+        4, patches.len(),
+        "Wrong number of patches"
+    );
+
+    assert_eq!(
+        fs::read_to_string("src/lore_session/res_split_patchset/expected_cover_letter.cover").unwrap(), patches[0],
+        "Wrong cover letter"
+    );
+
+    assert_eq!(
+        fs::read_to_string("src/lore_session/res_split_patchset/expected_patch_1.mbx").unwrap(), patches[1],
+        "Wrong patch number 1"
+    );
+
+    assert_eq!(
+        fs::read_to_string("src/lore_session/res_split_patchset/expected_patch_2.mbx").unwrap(), patches[2],
+        "Wrong patch number 2"
+    );
+
+    assert_eq!(
+        fs::read_to_string("src/lore_session/res_split_patchset/expected_patch_3.mbx").unwrap(), patches[3],
+        "Wrong patch number 3"
+    );
+}

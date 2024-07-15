@@ -1,6 +1,11 @@
 use crate::patch::{Patch, PatchFeed, PatchRegex};
 use crate::lore_api_client::{PatchFeedRequest, FailedFeedRequest};
 use std::collections::HashMap;
+use std::mem::swap;
+use std::{fs, io};
+use std::io::{BufRead, BufReader};
+use std::path::Path;
+use std::process::{Command, Stdio};
 use serde_xml_rs::from_str;
 
 #[cfg(test)]
@@ -121,5 +126,101 @@ impl LoreSession {
         }
 
         Some(patch_feed_page)
+    }
+}
+
+pub fn download_patchset(output_dir: &str, patch: &Patch) -> io::Result<String> {
+    let message_id: &str = &patch.get_message_id().href;
+    let mbox_name: String = extract_mbox_name_from_message_id(message_id);
+
+    Command::new("b4")
+        .arg("--quiet")
+        .arg("am")
+        .arg("--use-version")
+        .arg(format!("{}", patch.get_version()))
+        .arg(message_id)
+        .arg("--outdir")
+        .arg(output_dir)
+        .arg("--mbox-name")
+        .arg(&mbox_name)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()?;
+
+    Ok(format!("{output_dir}/{mbox_name}"))
+}
+
+fn extract_mbox_name_from_message_id(message_id: &str) -> String {
+    let mut mbox_name: String = message_id
+        .replace(r#"http://lore.kernel.org/"#, "")
+        .replace(r#"https://lore.kernel.org/"#, "")
+        .replace('/', ".");
+
+    if !mbox_name.ends_with('.') {
+        mbox_name.push('.');
+    }
+    mbox_name.push_str("mbx");
+
+    mbox_name
+}
+
+pub fn split_patchset(patchset_path_str: &str) -> Result<Vec<String>, String> {
+    let mut patches: Vec<String> = Vec::new();
+    let patchset_path: &Path = Path::new(patchset_path_str);
+    let cover_letter_path_str: String = patchset_path_str.replace(".mbx", ".cover");
+    let cover_letter_path: &Path = Path::new(&cover_letter_path_str);
+
+    if !patchset_path.exists() {
+        return Err(format!("{}: Path doesn't exist", patchset_path.display()))
+    } else if !patchset_path.is_file() {
+        return Err(format!("{}: Not a file", patchset_path.display()))
+    }
+
+    if cover_letter_path.exists() && cover_letter_path.is_file() {
+        extract_patches(cover_letter_path, &mut patches);
+    }
+
+    extract_patches(patchset_path, &mut patches);
+
+    Ok(patches)
+}
+
+fn extract_patches(mbox_path: &Path, patches: &mut Vec<String>) {
+    let mbox_reader: BufReader<fs::File>;
+    let mut current_patch: String = String::new();
+    let mut is_reading_patch: bool = false;
+    let mut is_last_line: bool = false;
+
+    mbox_reader = io::BufReader::new(
+        fs::File::open(mbox_path).unwrap()
+    );
+
+    for line in mbox_reader.lines() {
+        let line = line.unwrap();
+
+        if line.starts_with("Subject: ") {
+            is_reading_patch = true;
+        } else if is_reading_patch && line.trim_end().eq("--") {
+            is_last_line = true;
+        } else if is_last_line {
+            current_patch.push_str(&line);
+            current_patch.push('\n');
+
+            let mut patch_to_add = String::new();
+            swap(&mut patch_to_add, &mut current_patch);
+            patches.push(patch_to_add);
+
+            is_reading_patch = false;
+            is_last_line = false;
+        }
+
+        if is_reading_patch {
+            current_patch.push_str(&line);
+            current_patch.push('\n');
+        }
+    }
+
+    if !current_patch.is_empty() {
+        patches.push(current_patch);
     }
 }

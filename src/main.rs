@@ -78,10 +78,35 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
                             KeyCode::Char('h') | KeyCode::Left => {
                                 app.latest_patchsets_state.as_mut().unwrap().decrement_page();
                             },
+                            KeyCode::Enter => {
+                                app.init_patchset_details_and_actions_state()?;
+                                app.set_current_screen(CurrentScreen::PatchsetDetails);
+                            },
                             _ => {}
                         }
                     },
-                    _ => {}
+                    CurrentScreen::PatchsetDetails if key.kind == KeyEventKind::Press => {
+                        match key.code {
+                            KeyCode::Esc => {
+                                app.reset_patchset_details_and_actions_state();
+                                app.set_current_screen(CurrentScreen::LatestPatchsets);
+                            },
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                app.patchset_details_and_actions_state.as_mut().unwrap().preview_scroll_down();
+                            },
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                app.patchset_details_and_actions_state.as_mut().unwrap().preview_scroll_up();
+                            },
+                            KeyCode::Char('n') => {
+                                app.patchset_details_and_actions_state.as_mut().unwrap().preview_next_patch();
+                            },
+                            KeyCode::Char('p') => {
+                                app.patchset_details_and_actions_state.as_mut().unwrap().preview_previous_patch();
+                            },
+                            _ => {}
+                        }
+                    },
+                    _ => {},
                 }
             }
         }

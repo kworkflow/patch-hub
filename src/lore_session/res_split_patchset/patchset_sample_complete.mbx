@@ -1,0 +1,89 @@
+From git@z Thu Jan  1 00:00:00 1970
+Subject: [PATCH 1/3] file: Do foo
+From: Foo Bar <foo@bar.foo.bar>
+Date: Tue, 16 Jul 2024 16:51:00 +0000
+Message-Id: <1234.567-1-foo@bar.foo.bar>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Patch 1 description
+
+Signed-off-by: Foo Bar <foo@bar.foo.bar>
+---
+ file.rs | 2 +-
+ 1 file changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/file.rs b/file.rs
+index abcdef..fedcba 100644
+--- a/file.rs
++++ b/file.rs
+@@ -57,6 +57,6 @@ CONTEXT;
+context
+ 
+-deletion
++addition
+
+context
+-- 
+2.34.1
+
+From git@z Thu Jan  1 00:00:00 1970
+Subject: [PATCH 2/3] file: Do bar
+From: Foo Bar <foo@bar.foo.bar>
+Date: Tue, 16 Jul 2024 16:52:00 +0000
+Message-Id: <1234.567-2-foo@bar.foo.bar>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Patch 2 description
+
+Signed-off-by: Foo Bar <foo@bar.foo.bar>
+---
+ file.rs | 2 +-
+ 1 file changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/file.rs b/file.rs
+index fedcba..123456 100644
+--- a/file.rs
++++ b/file.rs
+@@ -57,6 +57,6 @@ CONTEXT;
+context
+ 
+-addition
++deletion
+
+context
+-- 
+2.34.1
+
+From git@z Thu Jan  1 00:00:00 1970
+Subject: [PATCH 3/3] file: Do foo bar
+From: Foo Bar <foo@bar.foo.bar>
+Date: Tue, 16 Jul 2024 16:53:00 +0000
+Message-Id: <1234.567-3-foo@bar.foo.bar>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Patch 3 description
+
+Signed-off-by: Foo Bar <foo@bar.foo.bar>
+---
+ file.rs | 2 +-
+ 1 file changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/file.rs b/file.rs
+index 123456..654321 100644
+--- a/file.rs
++++ b/file.rs
+@@ -57,6 +57,6 @@ CONTEXT;
+context
+ 
+-redeletion
++readdition
+
+context
+-- 
+2.34.1

@@ -7,7 +7,7 @@ use ratatui::{
         Color, Modifier, Style
     },
     text::{Line, Span, Text}, widgets::{
-        Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph
+        Block, Borders, HighlightSpacing, List, ListItem, ListState, Padding, Paragraph, Wrap
     },
     Frame
 };
@@ -26,10 +26,17 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
 
     render_title(f, chunks[0]);
 
-    if let CurrentScreen::LatestPatchsets = app.current_screen {
-        render_list(f, app, chunks[1]);
-    } else {
-        f.render_widget(Block::default().borders(Borders::ALL).border_type(ratatui::widgets::BorderType::Double), chunks[1])
+    match app.current_screen {
+        CurrentScreen::MailingListSelection => {
+            f.render_widget(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(ratatui::widgets::BorderType::Double),
+                chunks[1]
+            )
+        },
+        CurrentScreen::LatestPatchsets => render_list(f, app, chunks[1]),
+        CurrentScreen::PatchsetDetails => render_patchset_details_and_actions(f, app, chunks[1]),
     }
 
     render_navi_bar(f, app, chunks[2]);
@@ -102,6 +109,94 @@ fn render_list(f: &mut Frame, app: &App, chunk: Rect) {
     f.render_stateful_widget(list, chunk, &mut list_state);
 }
 
+fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(30),
+            Constraint::Percentage(70),
+        ])
+        .split(chunk);
+
+    let details_and_actions_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(50),
+            Constraint::Percentage(50),
+        ])
+        .split(chunks[0]);
+
+    let patchset_details = &app.patchset_details_and_actions_state.as_ref().unwrap().representative_patch;
+    let patchset_details = vec![
+        Line::from(
+            vec![
+                Span::styled(r#"  Title: "#, Style::default().fg(Color::Cyan)),
+                Span::styled(format!("{}", patchset_details.get_title()), Style::default().fg(Color::White)),
+            ]
+        ),
+        Line::from(
+            vec![
+                Span::styled("Author: ", Style::default().fg(Color::Cyan)),
+                Span::styled(format!("{}", patchset_details.get_author().name), Style::default().fg(Color::White)),
+            ]
+        ),
+        Line::from(
+            vec![
+                Span::styled("Version: ", Style::default().fg(Color::Cyan)),
+                Span::styled(format!("{}", patchset_details.get_version()), Style::default().fg(Color::White)),
+            ]
+        ),
+        Line::from(
+            vec![
+                Span::styled("Patch count: ", Style::default().fg(Color::Cyan)),
+                Span::styled(format!("{}", patchset_details.get_total_in_series()), Style::default().fg(Color::White)),
+            ]
+        ),
+        Line::from(
+            vec![
+                Span::styled("Last updated: ", Style::default().fg(Color::Cyan)),
+                Span::styled(format!("{}", patchset_details.get_updated()), Style::default().fg(Color::White)),
+            ]
+        ),
+    ];
+
+    let patchset_details = Paragraph::new(patchset_details)
+        .block(
+            Block::default()
+            .borders(Borders::ALL).border_type(ratatui::widgets::BorderType::Double)
+            .title(Line::styled(" Details ", Style::default().fg(Color::Green)).left_aligned())
+            .padding(Padding::vertical(1))
+        )
+        .left_aligned()
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(patchset_details, details_and_actions_chunks[0]);
+    f.render_widget(Block::default().borders(Borders::ALL).border_type(ratatui::widgets::BorderType::Double).title(
+        Line::styled(" Actions ", Style::default().fg(Color::Green)).left_aligned()).padding(Padding::vertical(1)
+    ), details_and_actions_chunks[1]);
+
+    let preview_index = app.patchset_details_and_actions_state
+        .as_ref().unwrap().preview_index;
+    let preview_offset = app.patchset_details_and_actions_state
+        .as_ref().unwrap().preview_scroll_offset;
+    let patch_preview = app.patchset_details_and_actions_state
+        .as_ref()
+        .unwrap()
+        .patches[preview_index as usize]
+        .replace('\t', "        ");
+    let patch_preview = Paragraph::new(Text::from(format!("{patch_preview}")))
+        .block(
+            Block::default()
+            .borders(Borders::ALL).border_type(ratatui::widgets::BorderType::Double)
+            .title(Line::styled(" Preview ", Style::default().fg(Color::Green)).left_aligned())
+            .padding(Padding::vertical(1))
+        )
+        .left_aligned()
+        .scroll((preview_offset as u16, 0));
+
+    f.render_widget(patch_preview, chunks[1]);
+}
+
 fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
     let mode_footer_text: Vec<Span>;
     match app.current_screen {
@@ -123,6 +218,11 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
                 )
             ]
         },
+        CurrentScreen::PatchsetDetails => {
+            mode_footer_text = vec![
+                Span::styled("Patchset Details and Actions", Style::default().fg(Color::Green)),
+            ]
+        },
     }
     let mode_footer = Paragraph::new(Line::from(mode_footer_text))
         .block(Block::default().borders(Borders::ALL)).centered();
@@ -134,7 +234,11 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
                 Style::default().fg(Color::Red),
             ),
             CurrentScreen::LatestPatchsets => Span::styled(
-                "(ESC) to return | ( j / 🡇 ) down | ( k / 🡅 ) up | ( h / 🡄 ) previous page | ( l / 🡆 ) next page",
+                "(ESC) to return | (ENTER) to select | ( j / 🡇 ) down | ( k / 🡅 ) up | ( h / 🡄 ) previous page | ( l / 🡆 ) next page",
+                Style::default().fg(Color::Red),
+            ),
+            CurrentScreen::PatchsetDetails => Span::styled(
+                "(ESC) to return | ( j / 🡇 ) down | ( k / 🡅 ) up | (n) to next patch | (p) to previous patch",
                 Style::default().fg(Color::Red),
             ),
         }
