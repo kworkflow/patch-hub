@@ -212,6 +212,12 @@ fn extract_patches(mbox_path: &Path, patches: &mut Vec<String>) {
 
             is_reading_patch = false;
             is_last_line = false;
+        } else if is_reading_patch && line.trim_end().eq("From git@z Thu Jan  1 00:00:00 1970") {
+            let mut patch_to_add = String::new();
+            swap(&mut patch_to_add, &mut current_patch);
+            patches.push(patch_to_add);
+
+            is_reading_patch = false;
         }
 
         if is_reading_patch {
