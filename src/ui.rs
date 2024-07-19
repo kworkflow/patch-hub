@@ -12,7 +12,7 @@ use ratatui::{
     Frame
 };
 
-use crate::app::{App, CurrentScreen, PAGE_SIZE};
+use crate::app::{App, BookmarkedPatchsetsState, CurrentScreen, PatchsetAction, PAGE_SIZE};
 
 pub fn draw_ui(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
@@ -35,6 +35,7 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
                 chunks[1]
             )
         },
+        CurrentScreen::BookmarkedPatchsets => render_bookmarked_patchsets(f, &app.bookmarked_patchsets_state, chunks[1]),
         CurrentScreen::LatestPatchsets => render_list(f, app, chunks[1]),
         CurrentScreen::PatchsetDetails => render_patchset_details_and_actions(f, app, chunks[1]),
     }
@@ -57,6 +58,47 @@ fn render_title(f: &mut Frame, chunk: Rect) {
         .block(title_block);
 
     f.render_widget(title, chunk);
+}
+
+fn render_bookmarked_patchsets(f: &mut Frame, bookmarked_patchsets_state: &BookmarkedPatchsetsState, chunk: Rect) {
+    let patchset_index = bookmarked_patchsets_state.patchset_index;
+    let mut index: u32 = 0;
+    let mut list_items = Vec::<ListItem>::new();
+
+    for patch in &bookmarked_patchsets_state.bookmarked_patchsets {
+        let patch_title = format!("{:width$}", patch.get_title(), width = 70);
+        let patch_title = format!("{:.width$}", patch_title, width = 70);
+        let patch_author = format!("{:width$}", patch.get_author().name, width = 30);
+        let patch_author = format!("{:.width$}", patch_author, width = 30);
+        list_items.push(ListItem::new(Line::from(Span::styled(
+            format!(
+                "{:03}. V{:02} | #{:02} | {} | {}",
+                index, patch.get_version(), patch.get_total_in_series(), patch_title, patch_author
+            ),
+            Style::default().fg(Color::Yellow),
+        )).centered()));
+        index += 1;
+    }
+
+    let list_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Double)
+        .style(Style::default());
+    
+    let list = List::new(list_items).block(list_block)
+        .highlight_style(
+            Style::default()
+                .add_modifier(Modifier::BOLD)
+                .add_modifier(Modifier::REVERSED)
+                .fg(Color::Cyan),
+        )
+        .highlight_symbol(">")
+        .highlight_spacing(HighlightSpacing::Always);
+
+    let mut list_state = ListState::default();
+    list_state.select(Some(patchset_index as usize));
+
+    f.render_stateful_widget(list, chunk, &mut list_state);
 }
 
 fn render_list(f: &mut Frame, app: &App, chunk: Rect) {
@@ -171,9 +213,31 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
         .wrap(Wrap { trim: true });
 
     f.render_widget(patchset_details, details_and_actions_chunks[0]);
-    f.render_widget(Block::default().borders(Borders::ALL).border_type(ratatui::widgets::BorderType::Double).title(
-        Line::styled(" Actions ", Style::default().fg(Color::Green)).left_aligned()).padding(Padding::vertical(1)
-    ), details_and_actions_chunks[1]);
+
+    let patchset_actions = &app.patchset_details_and_actions_state.as_ref().unwrap().patchset_actions;
+    let patchset_actions = vec![
+        Line::from(
+            vec![
+                if *patchset_actions.get(&PatchsetAction::Bookmark).unwrap() {
+                    Span::styled("[x] ", Style::default().fg(Color::Green))
+                } else {
+                    Span::styled("[ ] ", Style::default().fg(Color::Cyan))
+                },
+                Span::styled("b", Style::default().fg(Color::Cyan).add_modifier(Modifier::UNDERLINED).add_modifier(Modifier::BOLD)),
+                Span::styled("ookmark", Style::default().fg(Color::Cyan)),
+            ]
+        )
+    ];
+    let patchset_actions = Paragraph::new(patchset_actions)
+        .block(
+            Block::default()
+            .borders(Borders::ALL).border_type(ratatui::widgets::BorderType::Double)
+            .title(Line::styled(" Actions ", Style::default().fg(Color::Green)).left_aligned())
+            .padding(Padding::vertical(1))
+        )
+        .centered();
+
+    f.render_widget(patchset_actions, details_and_actions_chunks[1]);
 
     let preview_index = app.patchset_details_and_actions_state
         .as_ref().unwrap().preview_index;
@@ -210,6 +274,11 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
                 }
             ]
         },
+        CurrentScreen::BookmarkedPatchsets => {
+            mode_footer_text = vec![
+                Span::styled("Bookmarked Patchsets", Style::default().fg(Color::Green)),
+            ]
+        },
         CurrentScreen::LatestPatchsets => {
             mode_footer_text = vec![
                 Span::styled(
@@ -230,7 +299,11 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
     let current_keys_hint = {
         match app.current_screen {
             CurrentScreen::MailingListSelection => Span::styled(
-                "(ESC) to quit | (ENTER) to confirm",
+                "(ESC) to quit | (ENTER) to confirm | (TAB) to bookmarked patchsets",
+                Style::default().fg(Color::Red),
+            ),
+            CurrentScreen::BookmarkedPatchsets => Span::styled(
+                "(ESC) to return | (ENTER) to select | ( j / 🡇 ) down | ( k / 🡅 ) up",
                 Style::default().fg(Color::Red),
             ),
             CurrentScreen::LatestPatchsets => Span::styled(
@@ -238,7 +311,7 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
                 Style::default().fg(Color::Red),
             ),
             CurrentScreen::PatchsetDetails => Span::styled(
-                "(ESC) to return | ( j / 🡇 ) down | ( k / 🡅 ) up | (n) to next patch | (p) to previous patch",
+                "(ESC) to return | (ENTER) run actions | ( j / 🡇 ) down | ( k / 🡅 ) up | (n) next patch | (p) previous patch",
                 Style::default().fg(Color::Red),
             ),
         }

@@ -44,12 +44,18 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
                                 app.latest_patchsets_state.as_mut().unwrap().fetch_current_page()?;
                                 app.set_current_screen(CurrentScreen::LatestPatchsets);
                             }
+                            KeyCode::Tab => {
+                                if !app.bookmarked_patchsets_state.bookmarked_patchsets.is_empty() {
+                                    app.set_current_screen(CurrentScreen::BookmarkedPatchsets);
+                                }
+                            }
                             KeyCode::Backspace => {
                                 if !app.target_list.is_empty() {
                                     app.target_list.pop();
                                 }
                             }
                             KeyCode::Esc => {
+                                app.save_bookmarked_patchsets()?;
                                 return Ok(());
                             }
                             KeyCode::Char(value) => {
@@ -79,7 +85,27 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
                                 app.latest_patchsets_state.as_mut().unwrap().decrement_page();
                             },
                             KeyCode::Enter => {
-                                app.init_patchset_details_and_actions_state()?;
+                                app.init_patchset_details_and_actions_state(CurrentScreen::LatestPatchsets)?;
+                                app.set_current_screen(CurrentScreen::PatchsetDetails);
+                            },
+                            _ => {}
+                        }
+                    },
+                    CurrentScreen::BookmarkedPatchsets if key.kind == KeyEventKind::Press => {
+                        match key.code {
+                            KeyCode::Esc => {
+                                app.target_list.clear();
+                                app.bookmarked_patchsets_state.patchset_index = 0;
+                                app.set_current_screen(CurrentScreen::MailingListSelection);
+                            },
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                app.bookmarked_patchsets_state.select_below_patchset();
+                            },
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                app.bookmarked_patchsets_state.select_above_patchset();
+                            },
+                            KeyCode::Enter => {
+                                app.init_patchset_details_and_actions_state(CurrentScreen::BookmarkedPatchsets)?;
                                 app.set_current_screen(CurrentScreen::PatchsetDetails);
                             },
                             _ => {}
@@ -88,8 +114,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
                     CurrentScreen::PatchsetDetails if key.kind == KeyEventKind::Press => {
                         match key.code {
                             KeyCode::Esc => {
+                                app.set_current_screen(
+                                    app.patchset_details_and_actions_state.as_ref().unwrap().last_screen.clone()
+                                );
                                 app.reset_patchset_details_and_actions_state();
-                                app.set_current_screen(CurrentScreen::LatestPatchsets);
                             },
                             KeyCode::Char('j') | KeyCode::Down => {
                                 app.patchset_details_and_actions_state.as_mut().unwrap().preview_scroll_down();
@@ -102,6 +130,13 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
                             },
                             KeyCode::Char('p') => {
                                 app.patchset_details_and_actions_state.as_mut().unwrap().preview_previous_patch();
+                            },
+                            KeyCode::Char('b') => {
+                                app.patchset_details_and_actions_state.as_mut().unwrap().toggle_bookmark_action();
+                            },
+                            KeyCode::Enter => {
+                                app.consolidate_patchset_actions();
+                                app.set_current_screen(CurrentScreen::PatchsetDetails);
                             },
                             _ => {}
                         }

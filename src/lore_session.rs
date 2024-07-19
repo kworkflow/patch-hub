@@ -2,7 +2,7 @@ use crate::patch::{Patch, PatchFeed, PatchRegex};
 use crate::lore_api_client::{PatchFeedRequest, FailedFeedRequest};
 use std::collections::HashMap;
 use std::mem::swap;
-use std::{fs, io};
+use std::{fs::{self, File}, io};
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -229,4 +229,20 @@ fn extract_patches(mbox_path: &Path, patches: &mut Vec<String>) {
     if !current_patch.is_empty() {
         patches.push(current_patch);
     }
+}
+
+pub fn save_bookmarked_patchsets(bookmarked_patchsets: &Vec<Patch>, filepath: &str) -> io::Result<()> {
+    let tmp_filename = format!("{}.tmp", filepath);
+    {
+        let tmp_file = File::create(&tmp_filename)?;
+        serde_json::to_writer(tmp_file, &bookmarked_patchsets)?;
+    }
+    fs::rename(tmp_filename, filepath)?;
+    Ok(())
+}
+
+pub fn load_bookmarked_patchsets(filepath: &str) -> io::Result<Vec<Patch>> {
+    let bookmarked_patchsets_file = File::open(filepath)?;
+    let bookmarked_patchesets = serde_json::from_reader(bookmarked_patchsets_file)?;
+    Ok(bookmarked_patchesets)
 }

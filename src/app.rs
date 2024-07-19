@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use color_eyre::eyre::bail;
 use lore_peek::{
     lore_session::{
@@ -11,6 +12,45 @@ use lore_peek::{
 
 pub const PAGE_SIZE: u32 = 30;
 const PATCHSETS_CACHE_DIR: &str = "/home/davidbtadokoro/Desktop/patchsets";
+const BOOKMARKED_PATCHSETS_PATH: &str = "/home/davidbtadokoro/Desktop/patchsets/bookmarked_patchsets.json";
+
+pub struct BookmarkedPatchsetsState {
+    pub bookmarked_patchsets: Vec<Patch>,
+    pub patchset_index: u32,
+}
+
+impl BookmarkedPatchsetsState {
+    pub fn select_below_patchset(self: &mut Self) {
+        if (self.patchset_index as usize) + 1 < self.bookmarked_patchsets.len() {
+            self.patchset_index += 1;
+        }
+    }
+
+    pub fn select_above_patchset(self: &mut Self) {
+        self.patchset_index = self.patchset_index.saturating_sub(1);
+    }
+
+    fn get_selected_patchset(self: &Self) -> Patch {
+        self.bookmarked_patchsets
+            .get(self.patchset_index as usize)
+            .unwrap()
+            .clone()
+    }
+
+    fn bookmark_selected_patch(self: &mut Self, patch_to_bookmark: &Patch) {
+        if !self.bookmarked_patchsets.contains(patch_to_bookmark) {
+            self.bookmarked_patchsets.push(patch_to_bookmark.clone());
+        }
+    }
+
+    fn unbookmark_selected_patch(self: &mut Self, patch_to_unbookmark: &Patch) {
+        if let Some(index) = self.bookmarked_patchsets.iter().position(
+            |r| r == patch_to_unbookmark
+        ) {
+            self.bookmarked_patchsets.remove(index);
+        }
+    }
+}
 
 pub struct LatestPatchsetsState {
     lore_session: LoreSession,
@@ -103,6 +143,13 @@ pub struct PatchsetDetailsAndActionsState {
     pub patches: Vec<String>,
     pub preview_index: u32,
     pub preview_scroll_offset: u32,
+    pub patchset_actions: HashMap<PatchsetAction, bool>,
+    pub last_screen: CurrentScreen,
+}
+
+#[derive(Hash, Eq, PartialEq)]
+pub enum PatchsetAction {
+    Bookmark,
 }
 
 impl PatchsetDetailsAndActionsState {
@@ -132,10 +179,18 @@ impl PatchsetDetailsAndActionsState {
             self.preview_scroll_offset -= 1;
         }
     }
+
+    pub fn toggle_bookmark_action(self: &mut Self) {
+        let bookmark_action = PatchsetAction::Bookmark;
+        let current_bookmark_value = *self.patchset_actions.get(&bookmark_action).unwrap();
+        self.patchset_actions.insert(bookmark_action, !current_bookmark_value);
+    }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum CurrentScreen {
     MailingListSelection,
+    BookmarkedPatchsets,
     LatestPatchsets,
     PatchsetDetails,
 }
@@ -143,17 +198,29 @@ pub enum CurrentScreen {
 pub struct App {
     pub current_screen: CurrentScreen,
     pub target_list: String,
+    pub bookmarked_patchsets_state: BookmarkedPatchsetsState,
     pub latest_patchsets_state: Option<LatestPatchsetsState>,
     pub patchset_details_and_actions_state: Option<PatchsetDetailsAndActionsState>,
 }
 
 impl App {
     pub fn new() -> App {
+        let bookmarked_patchsets: Vec<Patch>;
+
+        match lore_session::load_bookmarked_patchsets(BOOKMARKED_PATCHSETS_PATH) {
+            Ok(vec_of_patchsets) => bookmarked_patchsets = vec_of_patchsets,
+            Err(_) => bookmarked_patchsets = Vec::new(),
+        }
+
         App {
             current_screen: CurrentScreen::MailingListSelection,
             target_list: String::new(),
             latest_patchsets_state: None,
             patchset_details_and_actions_state: None,
+            bookmarked_patchsets_state: BookmarkedPatchsetsState {
+                bookmarked_patchsets,
+                patchset_index: 0,
+            },
         }
     }
 
@@ -167,10 +234,23 @@ impl App {
         self.latest_patchsets_state = None;
     }
 
-    pub fn init_patchset_details_and_actions_state(self: &mut Self) -> color_eyre::Result<()> {
-        let representative_patch = self.latest_patchsets_state
-            .as_ref().unwrap().get_selected_patchset();
+    pub fn init_patchset_details_and_actions_state(self: &mut Self, current_screen: CurrentScreen) -> color_eyre::Result<()> {
+        let representative_patch: Patch;
+        let mut is_patchset_bookmarked = true;
         let patchset_path: String;
+
+        match current_screen {
+            CurrentScreen::BookmarkedPatchsets => {
+                representative_patch = self.bookmarked_patchsets_state.get_selected_patchset();
+            },
+            CurrentScreen::LatestPatchsets => {
+                representative_patch = self.latest_patchsets_state.as_ref().unwrap().get_selected_patchset();
+                if !self.bookmarked_patchsets_state.bookmarked_patchsets.contains(&representative_patch) {
+                    is_patchset_bookmarked = false;
+                }
+            },
+            screen => bail!(format!("Invalid screen passed as argument {screen:?}"))
+        };
 
         match lore_session::download_patchset(PATCHSETS_CACHE_DIR, &representative_patch) {
             Ok(result) => patchset_path = result,
@@ -185,6 +265,10 @@ impl App {
                         patches,
                         preview_index: 0,
                         preview_scroll_offset: 0,
+                        patchset_actions: HashMap::from([
+                            (PatchsetAction::Bookmark, is_patchset_bookmarked),
+                        ]),
+                        last_screen: current_screen,
                     }
                 );
                 Ok(())
@@ -195,6 +279,29 @@ impl App {
 
     pub fn reset_patchset_details_and_actions_state(self: &mut Self) {
         self.patchset_details_and_actions_state = None;
+    }
+
+    pub fn consolidate_patchset_actions(self: &mut Self) {
+        let representative_patch = &self.patchset_details_and_actions_state
+            .as_ref()
+            .unwrap()
+            .representative_patch;
+
+        let should_bookmark_patchset = *self
+            .patchset_details_and_actions_state.as_ref().unwrap()
+            .patchset_actions.get(&PatchsetAction::Bookmark).unwrap();
+        if should_bookmark_patchset {
+            self.bookmarked_patchsets_state.bookmark_selected_patch(representative_patch);
+        } else {
+            self.bookmarked_patchsets_state.unbookmark_selected_patch(representative_patch);
+        }
+    }
+
+    pub fn save_bookmarked_patchsets(self: &Self) -> color_eyre::Result<()> {
+        lore_session::save_bookmarked_patchsets(
+            &self.bookmarked_patchsets_state.bookmarked_patchsets, BOOKMARKED_PATCHSETS_PATH
+        )?;
+        Ok(())
     }
 
     pub fn set_current_screen(self: &mut Self, new_current_screen: CurrentScreen) {
