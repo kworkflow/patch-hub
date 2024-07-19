@@ -30,7 +30,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
         if app.current_screen == CurrentScreen::MailingListSelection
             && app.mailing_list_selection_state.mailing_lists.len() == 0
         {
-            app.refresh_available_mailing_lists()?;
+            app.mailing_list_selection_state.refresh_available_mailing_lists()?;
         }
 
         if event::poll(std::time::Duration::from_millis(16))? {
@@ -52,9 +52,12 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
                                 app.set_current_screen(CurrentScreen::LatestPatchsets);
                             }
                             KeyCode::F(5) => {
-                                app.refresh_available_mailing_lists()?;
+                                app.mailing_list_selection_state.refresh_available_mailing_lists()?;
                             }
                             KeyCode::Tab => {
+                                app.mailing_list_selection_state.set_target_list_with_highlighted_list();
+                            }
+                            KeyCode::F(1) => {
                                 if !app.bookmarked_patchsets_state.bookmarked_patchsets.is_empty() {
                                     app.mailing_list_selection_state.clear_target_list();
                                     app.set_current_screen(CurrentScreen::BookmarkedPatchsets);
@@ -70,6 +73,12 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
                             KeyCode::Char(ch) => {
                                 app.mailing_list_selection_state.push_char_to_target_list(ch);
                             }
+                            KeyCode::Down => {
+                                app.mailing_list_selection_state.highlight_below_list();
+                            },
+                            KeyCode::Up => {
+                                app.mailing_list_selection_state.highlight_above_list();
+                            },
                             _ => {}
                         }
                     },

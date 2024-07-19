@@ -56,33 +56,43 @@ fn render_title(f: &mut Frame, chunk: Rect) {
 }
 
 fn render_mailing_list_selection(f: &mut Frame, app: &App, chunk: Rect) {
+    let highlighted_list_index = app.mailing_list_selection_state.highlighted_list_index;
     let mut list_items = Vec::<ListItem>::new();
 
-    for mailing_list in &app.mailing_list_selection_state.mailing_lists {
-        if mailing_list.get_name().starts_with(&app.mailing_list_selection_state.target_list) {
-            list_items.push(ListItem::new(
-                Line::from(vec![
-                Span::styled(
-                    format!("{}", mailing_list.get_name()),
-                    Style::default().fg(Color::Magenta),
-                ),
-                Span::styled(
-                    format!(" - {}", mailing_list.get_description()),
-                    Style::default().fg(Color::White),
-                ),
-            ]).centered()))
-        }
+    for mailing_list in &app.mailing_list_selection_state.possible_mailing_lists {
+        list_items.push(ListItem::new(
+            Line::from(vec![
+            Span::styled(
+                format!("{}", mailing_list.get_name()),
+                Style::default().fg(Color::Magenta),
+            ),
+            Span::styled(
+                format!(" - {}", mailing_list.get_description()),
+                Style::default().fg(Color::White),
+            ),
+        ]).centered()))
     }
 
     let list_block = Block::default()
         .borders(Borders::ALL)
         .border_type(ratatui::widgets::BorderType::Double)
         .style(Style::default());
-        // .padding(Padding::horizontal(chunk.width / 4));
 
-    let list = List::new(list_items).block(list_block);
+    let list = List::new(list_items)
+        .block(list_block)
+        .highlight_style(
+            Style::default()
+                .add_modifier(Modifier::BOLD)
+                .add_modifier(Modifier::REVERSED)
+                .fg(Color::Cyan),
+        )
+        .highlight_symbol(">")
+        .highlight_spacing(HighlightSpacing::Always);
 
-    f.render_widget(list, chunk);
+    let mut list_state = ListState::default();
+    list_state.select(Some(highlighted_list_index as usize));
+
+    f.render_stateful_widget(list, chunk, &mut list_state);
 }
 
 fn render_bookmarked_patchsets(
@@ -409,7 +419,7 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
     let current_keys_hint = {
         match app.current_screen {
             CurrentScreen::MailingListSelection => Span::styled(
-                "(ESC) to quit | (ENTER) to confirm | (TAB) to bookmarked patchsets | (F5) refresh lists",
+                "(ESC) to quit | (ENTER) to confirm | (🡇 ) down | (🡅 ) up | (F1) to bookmarked patchsets | (F5) refresh lists",
                 Style::default().fg(Color::Red),
             ),
             CurrentScreen::BookmarkedPatchsets => Span::styled(
