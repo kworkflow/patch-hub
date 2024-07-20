@@ -1,4 +1,4 @@
-use lore_peek::patch::Patch;
+use patch_hub::patch::Patch;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -41,7 +41,7 @@ fn render_title(f: &mut Frame, chunk: Rect) {
         .style(Style::default())
         .title_alignment(Alignment::Center);
 
-    let title_content: String = "Lore Peek".to_string();
+    let title_content: String = "Patch Hub".to_string();
 
     let title = Paragraph::new(Text::styled(
         title_content,

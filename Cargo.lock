@@ -592,19 +592,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
 
 [[package]]
-name = "lore-peek"
-version = "0.1.0"
-dependencies = [
- "color-eyre",
- "ratatui",
- "regex",
- "reqwest",
- "serde",
- "serde-xml-rs",
- "serde_json",
-]
-
-[[package]]
 name = "lru"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -756,6 +743,19 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+
+[[package]]
+name = "patch-hub"
+version = "0.1.0"
+dependencies = [
+ "color-eyre",
+ "ratatui",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde-xml-rs",
+ "serde_json",
+]
 
 [[package]]
 name = "percent-encoding"

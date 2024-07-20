@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use color_eyre::eyre::bail;
-use lore_peek::{
+use patch_hub::{
     lore_session::{
         self, LoreSession
     },
