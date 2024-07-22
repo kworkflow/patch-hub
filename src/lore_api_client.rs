@@ -48,3 +48,34 @@ impl PatchFeedRequest for BlockingLoreAPIClient {
         Ok(feed_response_body)
     }
 }
+
+#[derive(Debug)]
+pub enum FailedAvailableListsRequest {
+    UnknownError(Error),
+    StatusNotOk(Response),
+}
+
+pub trait AvailableListsRequest {
+    fn request_available_lists(self: &Self, min_index: u32) -> Result<String, FailedAvailableListsRequest>;
+}
+
+impl AvailableListsRequest for BlockingLoreAPIClient {
+    fn request_available_lists(self: &Self, min_index: u32) -> Result<String, FailedAvailableListsRequest> {
+        let available_lists_request: String;
+        let available_lists: Response;
+        
+        available_lists_request = format!("{LORE_DOMAIN}/?&o={min_index}");
+
+        match reqwest::blocking::get(available_lists_request) {
+            Ok(response) => available_lists = response,
+            Err(error) =>  return Err(FailedAvailableListsRequest::UnknownError(error)),
+        };
+
+        match available_lists.status().as_u16() {
+            200 => (),
+            _ => return Err(FailedAvailableListsRequest::StatusNotOk(available_lists)),
+        };
+
+        Ok(available_lists.text().unwrap())
+    }
+}

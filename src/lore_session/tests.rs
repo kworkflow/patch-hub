@@ -161,3 +161,88 @@ fn should_split_patchset_complete() {
         "Wrong patch number 3"
     );
 }
+
+#[test]
+fn should_process_available_lists() {
+    let available_lists_response = fs::read_to_string("src/lore_session/res_process_available_lists/available_lists_response-1.html").unwrap();
+    let available_lists = process_available_lists(available_lists_response);
+
+    assert_eq!(199, available_lists.len(),
+        "Should've processed 199 lists"
+    );
+
+    assert_eq!("linux-mm".to_string(), available_lists[0].get_name(),
+        "Wrong list name for index 0"
+    );
+    assert_eq!("Linux-mm Archive on lore.kernel.org".to_string(), available_lists[0].get_description(),
+        "Wrong list description for index 0"
+    );
+    assert_eq!("linux-kselftest".to_string(), available_lists[42].get_name(),
+        "Wrong list name for index 42"
+    );
+    assert_eq!("Linux Kernel Selftest development".to_string(), available_lists[42].get_description(),
+        "Wrong list description for index 42"
+    );
+    assert_eq!("distributions".to_string(), available_lists[99].get_name(),
+        "Wrong list name for index 99"
+    );
+    assert_eq!("Forum for Linux distributions to discuss problems and share PSAs".to_string(), available_lists[99].get_description(),
+        "Wrong list description for index 99"
+    );
+    assert_eq!("grub-devel".to_string(), available_lists[135].get_name(),
+        "Wrong list name for index 135"
+    );
+    assert_eq!("Grub Development Archive on lore.kernel.org".to_string(), available_lists[135].get_description(),
+        "Wrong list description for index 135"
+    );
+    assert_eq!("linux-nilfs".to_string(), available_lists[180].get_name(),
+        "Wrong list name for index 180"
+    );
+    assert_eq!("Linux NILFS development".to_string(), available_lists[180].get_description(),
+        "Wrong list description for index 180"
+    );
+    assert_eq!("linux-sparse".to_string(), available_lists[198].get_name(),
+        "Wrong list name for index 198"
+    );
+    assert_eq!("Linux SPARSE checker discussions".to_string(), available_lists[198].get_description(),
+        "Wrong list description for index 198"
+    );
+}
+
+impl AvailableListsRequest for FakeLoreAPIClient {
+    fn request_available_lists(self: &Self, min_index: u32) -> Result<String, FailedAvailableListsRequest> {
+        match min_index {
+            0 => Ok(fs::read_to_string("src/lore_session/res_process_available_lists/available_lists_response-1.html").unwrap()),
+            200 => Ok(fs::read_to_string("src/lore_session/res_process_available_lists/available_lists_response-2.html").unwrap()),
+            400 => Ok(fs::read_to_string("src/lore_session/res_process_available_lists/available_lists_response-3.html").unwrap()),
+            _ => panic!("Should not try other `min_index` other than `0`, `200`, and `400`"),
+        }
+    }
+}
+
+#[test]
+fn should_fetch_all_available_lists() {
+    let lore_api_client = FakeLoreAPIClient { src_path: "".to_string() };
+    let sorted_available_lists = fetch_available_lists(&lore_api_client).unwrap();
+
+    assert_eq!("accel-config".to_string(), sorted_available_lists[0].get_name(),
+        "Wrong list name for index 0"
+    );
+    assert_eq!("Accel-Config development".to_string(), sorted_available_lists[0].get_description(),
+        "Wrong list description for index 0"
+    );
+    assert_eq!("linux-mediatek".to_string(), sorted_available_lists[159].get_name(),
+        "Wrong list name for index 159"
+    );
+    assert_eq!("Linux-mediatek Archive on lore.kernel.org".to_string(), sorted_available_lists[159].get_description(),
+        "Wrong list description for index 159"
+    );
+    assert_eq!("yocto-toaster".to_string(), sorted_available_lists[319].get_name(),
+        "Wrong list name for index 319"
+    );
+    assert_eq!("Yocto Toaster".to_string(), sorted_available_lists[319].get_description(),
+        "Wrong list description for index 319"
+    );
+
+    assert_eq!(320, sorted_available_lists.len());
+}

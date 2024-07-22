@@ -1,11 +1,15 @@
+use crate::mailing_list::MailingList;
 use crate::patch::{Patch, PatchFeed, PatchRegex};
-use crate::lore_api_client::{PatchFeedRequest, FailedFeedRequest};
+use crate::lore_api_client::{
+    AvailableListsRequest, FailedAvailableListsRequest, FailedFeedRequest, PatchFeedRequest
+};
 use std::collections::HashMap;
 use std::mem::swap;
 use std::{fs::{self, File}, io};
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Command, Stdio};
+use regex::Regex;
 use serde_xml_rs::from_str;
 
 #[cfg(test)]
@@ -245,4 +249,83 @@ pub fn load_bookmarked_patchsets(filepath: &str) -> io::Result<Vec<Patch>> {
     let bookmarked_patchsets_file = File::open(filepath)?;
     let bookmarked_patchesets = serde_json::from_reader(bookmarked_patchsets_file)?;
     Ok(bookmarked_patchesets)
+}
+
+pub fn fetch_available_lists<T>(lore_api_client: &T) -> Result<Vec<MailingList>, FailedAvailableListsRequest>
+where T: AvailableListsRequest {
+    let mut available_lists: Vec<MailingList> = Vec::new();
+    let mut min_index = 0;
+
+    loop {
+        let available_lists_str: String;
+        match lore_api_client.request_available_lists(min_index) {
+            Ok(value) => available_lists_str = value,
+            Err(failed_available_lists_request) => return Err(failed_available_lists_request),
+        }
+
+        let mut tmp_available_lists = process_available_lists(available_lists_str);
+
+        if tmp_available_lists.len() == 0 {
+            break;
+        }
+
+        available_lists.append(&mut tmp_available_lists);
+
+        min_index += LORE_PAGE_SIZE;
+    }
+
+    available_lists.sort();
+
+    Ok(available_lists)
+}
+
+fn process_available_lists(available_lists_str: String) -> Vec<MailingList> {
+    let re_pre_block: Regex = Regex::new(r#"(?s)<pre>(.*?)</pre>"#).unwrap();
+    let re_list_name = Regex::new(r#"(?s)<a\s*href=".*?">(.*?)</a>"#).unwrap();
+    let re_list_description = Regex::new(r#"(?s)</a>\s*(.*?)\s*\*"#).unwrap();
+    let mut list_names: Vec<&str> = Vec::new();
+    let mut list_descriptions: Vec<&str> = Vec::new();
+    let mut available_lists: Vec<MailingList> = Vec::new();
+
+    let pre_blocks: Vec<&str> = re_pre_block
+        .captures_iter(&available_lists_str)
+        .map(|cap| cap.get(1).unwrap().as_str())
+        .collect();
+
+    for capture in re_list_name.captures_iter(pre_blocks[2]) {
+        let name = capture.get(1).unwrap().as_str().trim();
+        list_names.push(name);
+    }
+
+    for capture in re_list_description.captures_iter(pre_blocks[2]) {
+        let description = capture.get(1).unwrap().as_str().trim();
+        list_descriptions.push(description);
+    }
+
+    let pairs: Vec<(&str, &str)> = list_names.into_iter().zip(list_descriptions.into_iter()).collect();
+
+    for (name, description) in pairs {
+        if name == "all" {
+            continue;
+        }
+        available_lists.push(MailingList::new(name, description));
+    }
+
+    available_lists
+}
+
+pub fn save_available_lists(available_lists: &Vec<MailingList>, filepath: &str) -> io::Result<()> {
+    let tmp_filename = format!("{}.tmp", filepath);
+    {
+        let tmp_file = File::create(&tmp_filename)?;
+        serde_json::to_writer(tmp_file, &available_lists)?;
+    }
+    fs::rename(tmp_filename, filepath)?;
+    Ok(())
+}
+
+pub fn load_available_lists(filepath: &str) -> io::Result<Vec<MailingList>> {
+    let available_lists_file = File::open(filepath)?;
+    let available_lists = serde_json::from_reader(available_lists_file)?;
+    Ok(available_lists)
 }
