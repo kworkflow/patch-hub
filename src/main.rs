@@ -27,6 +27,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
     loop {
         terminal.draw(|f| draw_ui(f, &app))?;
 
+        if app.current_screen == CurrentScreen::MailingListSelection && app.mailing_lists.len() == 0 {
+            app.refresh_available_mailing_lists()?;
+        }
+
         if event::poll(std::time::Duration::from_millis(16))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == event::KeyEventKind::Release {
@@ -43,6 +47,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
                                 app.init_latest_patchsets_state();
                                 app.latest_patchsets_state.as_mut().unwrap().fetch_current_page()?;
                                 app.set_current_screen(CurrentScreen::LatestPatchsets);
+                            }
+                            KeyCode::F(5) => {
+                                app.refresh_available_mailing_lists()?;
                             }
                             KeyCode::Tab => {
                                 if !app.bookmarked_patchsets_state.bookmarked_patchsets.is_empty() {

@@ -7,12 +7,14 @@ use lore_peek::{
     lore_api_client::{
         BlockingLoreAPIClient, FailedFeedRequest
     },
+    mailing_list::MailingList,
     patch::Patch
 };
 
 pub const PAGE_SIZE: u32 = 30;
 const PATCHSETS_CACHE_DIR: &str = "/home/davidbtadokoro/Desktop/patchsets";
 const BOOKMARKED_PATCHSETS_PATH: &str = "/home/davidbtadokoro/Desktop/patchsets/bookmarked_patchsets.json";
+const MAILING_LISTS_PATH: &str = "/home/davidbtadokoro/Desktop/patchsets/mailing_lists.json";
 
 pub struct BookmarkedPatchsetsState {
     pub bookmarked_patchsets: Vec<Patch>,
@@ -197,6 +199,7 @@ pub enum CurrentScreen {
 
 pub struct App {
     pub current_screen: CurrentScreen,
+    pub mailing_lists: Vec<MailingList>,
     pub target_list: String,
     pub bookmarked_patchsets_state: BookmarkedPatchsetsState,
     pub latest_patchsets_state: Option<LatestPatchsetsState>,
@@ -205,7 +208,13 @@ pub struct App {
 
 impl App {
     pub fn new() -> App {
+        let mailing_lists: Vec<MailingList>;
         let bookmarked_patchsets: Vec<Patch>;
+
+        match lore_session::load_available_lists(MAILING_LISTS_PATH) {
+            Ok(vec_of_mailing_lists) => mailing_lists = vec_of_mailing_lists,
+            Err(_) => mailing_lists = Vec::new(),
+        }
 
         match lore_session::load_bookmarked_patchsets(BOOKMARKED_PATCHSETS_PATH) {
             Ok(vec_of_patchsets) => bookmarked_patchsets = vec_of_patchsets,
@@ -214,6 +223,7 @@ impl App {
 
         App {
             current_screen: CurrentScreen::MailingListSelection,
+            mailing_lists,
             target_list: String::new(),
             latest_patchsets_state: None,
             patchset_details_and_actions_state: None,
@@ -222,6 +232,23 @@ impl App {
                 patchset_index: 0,
             },
         }
+    }
+
+    pub fn refresh_available_mailing_lists(self: &mut Self) -> color_eyre::Result<()> {
+        let lore_api_client = BlockingLoreAPIClient::new();
+
+        match lore_session::fetch_available_lists(&lore_api_client) {
+            Ok(available_mailing_lists) => {
+                self.mailing_lists = available_mailing_lists;
+            },
+            Err(failed_available_lists_request) => {
+                bail!(format!("{failed_available_lists_request:#?}"));
+            },
+        };
+
+        lore_session::save_available_lists(&self.mailing_lists, MAILING_LISTS_PATH)?;
+
+        Ok(())
     }
 
     pub fn init_latest_patchsets_state(self: &mut Self) {
