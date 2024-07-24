@@ -58,8 +58,8 @@ fn render_title(f: &mut Frame, chunk: Rect) {
 fn render_mailing_list_selection(f: &mut Frame, app: &App, chunk: Rect) {
     let mut list_items = Vec::<ListItem>::new();
 
-    for mailing_list in &app.mailing_lists {
-        if mailing_list.get_name().starts_with(&app.target_list) {
+    for mailing_list in &app.mailing_list_selection_state.mailing_lists {
+        if mailing_list.get_name().starts_with(&app.mailing_list_selection_state.target_list) {
             list_items.push(ListItem::new(
                 Line::from(vec![
                 Span::styled(
@@ -342,24 +342,30 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
         CurrentScreen::MailingListSelection => {
             let mut text_area = Span::default();
 
-            if app.target_list.is_empty() {
+            if app.mailing_list_selection_state.target_list.is_empty() {
                 text_area =
                     Span::styled("type the target list", Style::default().fg(Color::DarkGray))
             } else {
-                for mailing_list in &app.mailing_lists {
-                    if mailing_list.get_name().eq(&app.target_list) {
-                        text_area =
-                            Span::styled(&app.target_list, Style::default().fg(Color::Green));
+                for mailing_list in &app.mailing_list_selection_state.mailing_lists {
+                    if mailing_list.get_name().eq(&app.mailing_list_selection_state.target_list) {
+                        text_area = Span::styled(
+                            &app.mailing_list_selection_state.target_list,
+                            Style::default().fg(Color::Green)
+                        );
                         break;
-                    } else if mailing_list.get_name().starts_with(&app.target_list) {
-                        text_area =
-                            Span::styled(&app.target_list, Style::default().fg(Color::LightCyan));
+                    } else if mailing_list.get_name().starts_with(&app.mailing_list_selection_state.target_list) {
+                        text_area = Span::styled(
+                            &app.mailing_list_selection_state.target_list,
+                            Style::default().fg(Color::LightCyan)
+                        );
                     }
                 }
                 if text_area.content.is_empty() {
-                    text_area = Span::styled(&app.target_list, Style::default().fg(Color::Red));
+                    text_area = Span::styled(
+                        &app.mailing_list_selection_state.target_list,
+                        Style::default().fg(Color::Red)
+                    );
                 }
-                // Span::styled(&app.target_list, Style::default().fg(Color::LightCyan))
             }
 
             mode_footer_text = vec![
@@ -377,7 +383,10 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
             mode_footer_text = vec![Span::styled(
                 format!(
                     "Latest Patchsets from {} (page {})",
-                    &app.target_list,
+                    &app.latest_patchsets_state
+                        .as_ref()
+                        .unwrap()
+                        .get_target_list(),
                     &app.latest_patchsets_state
                         .as_ref()
                         .unwrap()

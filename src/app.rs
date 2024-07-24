@@ -57,6 +57,7 @@ impl BookmarkedPatchsetsState {
 pub struct LatestPatchsetsState {
     lore_session: LoreSession,
     lore_api_client: BlockingLoreAPIClient,
+    target_list: String,
     page_number: u32,
     patchset_index: u32,
 }
@@ -64,8 +65,9 @@ pub struct LatestPatchsetsState {
 impl LatestPatchsetsState {
     pub fn new(target_list: String) -> LatestPatchsetsState {
         LatestPatchsetsState {
-            lore_session: LoreSession::new(target_list),
+            lore_session: LoreSession::new(target_list.clone()),
             lore_api_client: BlockingLoreAPIClient::new(),
+            target_list,
             page_number: 1,
             patchset_index: 0,
         }
@@ -113,6 +115,10 @@ impl LatestPatchsetsState {
         } 
         self.page_number -= 1; 
         self.patchset_index = PAGE_SIZE * (&self.page_number - 1);
+    }
+
+    pub fn get_target_list(self: &Self) -> &str {
+        &self.target_list
     }
 
     pub fn get_page_number(self: &Self) -> u32 {
@@ -189,6 +195,27 @@ impl PatchsetDetailsAndActionsState {
     }
 }
 
+pub struct MailingListSelectionState {
+    pub mailing_lists: Vec<MailingList>,
+    pub target_list: String,
+}
+
+impl MailingListSelectionState {
+    pub fn remove_last_target_list_char(self: &mut Self) {
+        if !self.target_list.is_empty() {
+            self.target_list.pop();
+        }
+    }
+
+    pub fn push_char_to_target_list(self: &mut Self, ch: char) {
+        self.target_list.push(ch);
+    }
+
+    pub fn clear_target_list(self: &mut Self) {
+        self.target_list.clear();
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum CurrentScreen {
     MailingListSelection,
@@ -199,8 +226,7 @@ pub enum CurrentScreen {
 
 pub struct App {
     pub current_screen: CurrentScreen,
-    pub mailing_lists: Vec<MailingList>,
-    pub target_list: String,
+    pub mailing_list_selection_state: MailingListSelectionState,
     pub bookmarked_patchsets_state: BookmarkedPatchsetsState,
     pub latest_patchsets_state: Option<LatestPatchsetsState>,
     pub patchset_details_and_actions_state: Option<PatchsetDetailsAndActionsState>,
@@ -223,8 +249,10 @@ impl App {
 
         App {
             current_screen: CurrentScreen::MailingListSelection,
-            mailing_lists,
-            target_list: String::new(),
+            mailing_list_selection_state: MailingListSelectionState {
+                mailing_lists,
+                target_list: String::new(),
+            },
             latest_patchsets_state: None,
             patchset_details_and_actions_state: None,
             bookmarked_patchsets_state: BookmarkedPatchsetsState {
@@ -239,21 +267,26 @@ impl App {
 
         match lore_session::fetch_available_lists(&lore_api_client) {
             Ok(available_mailing_lists) => {
-                self.mailing_lists = available_mailing_lists;
+                self.mailing_list_selection_state.mailing_lists = available_mailing_lists;
             },
             Err(failed_available_lists_request) => {
                 bail!(format!("{failed_available_lists_request:#?}"));
             },
         };
 
-        lore_session::save_available_lists(&self.mailing_lists, MAILING_LISTS_PATH)?;
+        lore_session::save_available_lists(
+            &self.mailing_list_selection_state.mailing_lists,
+            MAILING_LISTS_PATH
+        )?;
 
         Ok(())
     }
 
     pub fn init_latest_patchsets_state(self: &mut Self) {
         if let None = self.latest_patchsets_state {
-            self.latest_patchsets_state = Some(LatestPatchsetsState::new(self.target_list.clone()));
+            self.latest_patchsets_state = Some(
+                LatestPatchsetsState::new(self.mailing_list_selection_state.target_list.clone())
+            );
         }
     }
 

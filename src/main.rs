@@ -27,7 +27,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
     loop {
         terminal.draw(|f| draw_ui(f, &app))?;
 
-        if app.current_screen == CurrentScreen::MailingListSelection && app.mailing_lists.len() == 0 {
+        if app.current_screen == CurrentScreen::MailingListSelection
+            && app.mailing_list_selection_state.mailing_lists.len() == 0
+        {
             app.refresh_available_mailing_lists()?;
         }
 
@@ -46,6 +48,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
                                 }
                                 app.init_latest_patchsets_state();
                                 app.latest_patchsets_state.as_mut().unwrap().fetch_current_page()?;
+                                app.mailing_list_selection_state.clear_target_list();
                                 app.set_current_screen(CurrentScreen::LatestPatchsets);
                             }
                             KeyCode::F(5) => {
@@ -53,20 +56,19 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
                             }
                             KeyCode::Tab => {
                                 if !app.bookmarked_patchsets_state.bookmarked_patchsets.is_empty() {
+                                    app.mailing_list_selection_state.clear_target_list();
                                     app.set_current_screen(CurrentScreen::BookmarkedPatchsets);
                                 }
                             }
                             KeyCode::Backspace => {
-                                if !app.target_list.is_empty() {
-                                    app.target_list.pop();
-                                }
+                                app.mailing_list_selection_state.remove_last_target_list_char();
                             }
                             KeyCode::Esc => {
                                 app.save_bookmarked_patchsets()?;
                                 return Ok(());
                             }
-                            KeyCode::Char(value) => {
-                                app.target_list.push(value);
+                            KeyCode::Char(ch) => {
+                                app.mailing_list_selection_state.push_char_to_target_list(ch);
                             }
                             _ => {}
                         }
@@ -75,7 +77,6 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
                         match key.code {
                             KeyCode::Esc => {
                                 app.reset_latest_patchsets_state();
-                                app.target_list.clear();
                                 app.set_current_screen(CurrentScreen::MailingListSelection);
                             },
                             KeyCode::Char('j') | KeyCode::Down => {
@@ -101,7 +102,6 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
                     CurrentScreen::BookmarkedPatchsets if key.kind == KeyEventKind::Press => {
                         match key.code {
                             KeyCode::Esc => {
-                                app.target_list.clear();
                                 app.bookmarked_patchsets_state.patchset_index = 0;
                                 app.set_current_screen(CurrentScreen::MailingListSelection);
                             },
