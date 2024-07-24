@@ -43,13 +43,12 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
                     CurrentScreen::MailingListSelection if key.kind == KeyEventKind::Press => {
                         match key.code {
                             KeyCode::Enter => {
-                                if let Some(_) = &app.latest_patchsets_state {
-                                    app.reset_latest_patchsets_state();
+                                if app.mailing_list_selection_state.has_valid_target_list() {
+                                    app.init_latest_patchsets_state();
+                                    app.latest_patchsets_state.as_mut().unwrap().fetch_current_page()?;
+                                    app.mailing_list_selection_state.clear_target_list();
+                                    app.set_current_screen(CurrentScreen::LatestPatchsets);
                                 }
-                                app.init_latest_patchsets_state();
-                                app.latest_patchsets_state.as_mut().unwrap().fetch_current_page()?;
-                                app.mailing_list_selection_state.clear_target_list();
-                                app.set_current_screen(CurrentScreen::LatestPatchsets);
                             }
                             KeyCode::F(5) => {
                                 app.mailing_list_selection_state.refresh_available_mailing_lists()?;

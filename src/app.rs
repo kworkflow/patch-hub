@@ -272,6 +272,16 @@ impl MailingListSelectionState {
     pub fn highlight_above_list(self: &mut Self) {
         self.highlighted_list_index = self.highlighted_list_index.saturating_sub(1);
     }
+
+    pub fn has_valid_target_list(self: &Self) -> bool {
+        for mailing_list in &self.possible_mailing_lists {
+            if mailing_list.get_name().eq(&self.target_list) {
+                return true;
+            }
+        }
+
+        false
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -323,11 +333,9 @@ impl App {
     }
 
     pub fn init_latest_patchsets_state(self: &mut Self) {
-        if let None = self.latest_patchsets_state {
-            self.latest_patchsets_state = Some(
-                LatestPatchsetsState::new(self.mailing_list_selection_state.target_list.clone())
-            );
-        }
+        self.latest_patchsets_state = Some(
+            LatestPatchsetsState::new(self.mailing_list_selection_state.target_list.clone())
+        );
     }
 
     pub fn reset_latest_patchsets_state(self: &mut Self) {
