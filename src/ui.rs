@@ -9,7 +9,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, BookmarkedPatchsetsState, CurrentScreen, PatchsetAction, PAGE_SIZE};
+use crate::app::{App, BookmarkedPatchsetsState, CurrentScreen, PatchsetAction};
 
 pub fn draw_ui(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
@@ -168,7 +168,7 @@ fn render_list(f: &mut Frame, app: &App, chunk: Rect) {
         .get_current_patch_feed_page()
         .unwrap();
 
-    let mut index: u32 = (page_number - 1) * PAGE_SIZE;
+    let mut index: u32 = (page_number - 1) * app.config.page_size;
     for patch in patch_feed_page {
         let patch_title = format!("{:width$}", patch.get_title(), width = 70);
         let patch_title = format!("{:.width$}", patch_title, width = 70);
@@ -209,7 +209,7 @@ fn render_list(f: &mut Frame, app: &App, chunk: Rect) {
 
     let mut list_state = ListState::default();
     list_state.select(Some(
-        (patchset_index - (page_number - 1) * PAGE_SIZE)
+        (patchset_index - (page_number - 1) * app.config.page_size)
             .try_into()
             .unwrap(),
     ));

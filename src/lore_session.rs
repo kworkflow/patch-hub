@@ -236,6 +236,10 @@ fn extract_patches(mbox_path: &Path, patches: &mut Vec<String>) {
 }
 
 pub fn save_bookmarked_patchsets(bookmarked_patchsets: &Vec<Patch>, filepath: &str) -> io::Result<()> {
+    if let Some(parent) = Path::new(filepath).parent() {
+        fs::create_dir_all(parent)?;
+    }
+
     let tmp_filename = format!("{}.tmp", filepath);
     {
         let tmp_file = File::create(&tmp_filename)?;
@@ -315,6 +319,10 @@ fn process_available_lists(available_lists_str: String) -> Vec<MailingList> {
 }
 
 pub fn save_available_lists(available_lists: &Vec<MailingList>, filepath: &str) -> io::Result<()> {
+    if let Some(parent) = Path::new(filepath).parent() {
+        fs::create_dir_all(parent)?;
+    }
+
     let tmp_filename = format!("{}.tmp", filepath);
     {
         let tmp_file = File::create(&tmp_filename)?;

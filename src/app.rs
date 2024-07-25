@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use color_eyre::eyre::bail;
+use config::Config;
 use patch_hub::{
     lore_session::{
         self, LoreSession
@@ -11,10 +12,7 @@ use patch_hub::{
     patch::Patch
 };
 
-pub const PAGE_SIZE: u32 = 30;
-const PATCHSETS_CACHE_DIR: &str = "/home/davidbtadokoro/Desktop/patchsets";
-const BOOKMARKED_PATCHSETS_PATH: &str = "/home/davidbtadokoro/Desktop/patchsets/bookmarked_patchsets.json";
-const MAILING_LISTS_PATH: &str = "/home/davidbtadokoro/Desktop/patchsets/mailing_lists.json";
+mod config;
 
 pub struct BookmarkedPatchsetsState {
     pub bookmarked_patchsets: Vec<Patch>,
@@ -60,22 +58,24 @@ pub struct LatestPatchsetsState {
     target_list: String,
     page_number: u32,
     patchset_index: u32,
+    page_size: u32,
 }
 
 impl LatestPatchsetsState {
-    pub fn new(target_list: String) -> LatestPatchsetsState {
+    pub fn new(target_list: String, page_size: u32) -> LatestPatchsetsState {
         LatestPatchsetsState {
             lore_session: LoreSession::new(target_list.clone()),
             lore_api_client: BlockingLoreAPIClient::new(),
             target_list,
             page_number: 1,
             patchset_index: 0,
+            page_size,
         }
     }
 
     pub fn fetch_current_page(self: &mut Self) -> color_eyre::Result<()> {
         if let Err(failed_feed_request) = self
-            .lore_session.process_n_representative_patches(&self.lore_api_client, PAGE_SIZE * &self.page_number) {
+            .lore_session.process_n_representative_patches(&self.lore_api_client, self.page_size * &self.page_number) {
             match failed_feed_request {
                 FailedFeedRequest::UnknownError(error) => bail!("[FailedFeedRequest::UnknownError]\n*\tFailed to request feed\n*\t{error:#?}"),
                 FailedFeedRequest::StatusNotOk(feed_response) => bail!("[FailedFeedRequest::StatusNotOk]\n*\tRequest returned with non-OK status\n*\t{feed_response:#?}"),
@@ -86,7 +86,7 @@ impl LatestPatchsetsState {
     }
 
     pub fn select_below_patchset(self: &mut Self) {
-        if self.patchset_index + 1 < PAGE_SIZE * &self.page_number {
+        if self.patchset_index + 1 < self.page_size * &self.page_number {
             self.patchset_index += 1;
         }
     }
@@ -95,18 +95,18 @@ impl LatestPatchsetsState {
         if self.patchset_index == 0 {
             return;
         }
-        if self.patchset_index - 1 >= PAGE_SIZE * (&self.page_number - 1) {
+        if self.patchset_index - 1 >= self.page_size * (&self.page_number - 1) {
             self.patchset_index -= 1;
         }
     }
 
     pub fn increment_page(self: &mut Self) {
         let patchsets_processed: u32 = self.lore_session.get_representative_patches_ids().len().try_into().unwrap();
-        if PAGE_SIZE * self.page_number > patchsets_processed {
+        if self.page_size * self.page_number > patchsets_processed {
             return;
         }
         self.page_number += 1; 
-        self.patchset_index = PAGE_SIZE * (&self.page_number - 1);
+        self.patchset_index = self.page_size * (&self.page_number - 1);
     }
 
     pub fn decrement_page(self: &mut Self) {
@@ -114,7 +114,7 @@ impl LatestPatchsetsState {
             return;
         } 
         self.page_number -= 1; 
-        self.patchset_index = PAGE_SIZE * (&self.page_number - 1);
+        self.patchset_index = self.page_size * (&self.page_number - 1);
     }
 
     pub fn get_target_list(self: &Self) -> &str {
@@ -142,7 +142,7 @@ impl LatestPatchsetsState {
     }
 
     pub fn get_current_patch_feed_page(self: &Self) -> Option<Vec<&Patch>> {
-        self.lore_session.get_patch_feed_page(PAGE_SIZE, self.page_number)
+        self.lore_session.get_patch_feed_page(self.page_size, self.page_number)
     }
 }
 
@@ -200,6 +200,7 @@ pub struct MailingListSelectionState {
     pub target_list: String,
     pub possible_mailing_lists: Vec<MailingList>,
     pub highlighted_list_index: u32,
+    pub mailing_lists_path: String,
 }
 
 impl MailingListSelectionState {
@@ -219,7 +220,7 @@ impl MailingListSelectionState {
 
         lore_session::save_available_lists(
             &self.mailing_lists,
-            MAILING_LISTS_PATH
+            &self.mailing_lists_path
         )?;
 
         Ok(())
@@ -298,19 +299,21 @@ pub struct App {
     pub bookmarked_patchsets_state: BookmarkedPatchsetsState,
     pub latest_patchsets_state: Option<LatestPatchsetsState>,
     pub patchset_details_and_actions_state: Option<PatchsetDetailsAndActionsState>,
+    pub config: Config,
 }
 
 impl App {
     pub fn new() -> App {
         let mailing_lists: Vec<MailingList>;
         let bookmarked_patchsets: Vec<Patch>;
+        let config: Config = Config::build();
 
-        match lore_session::load_available_lists(MAILING_LISTS_PATH) {
+        match lore_session::load_available_lists(&config.mailing_lists_path) {
             Ok(vec_of_mailing_lists) => mailing_lists = vec_of_mailing_lists,
             Err(_) => mailing_lists = Vec::new(),
         }
 
-        match lore_session::load_bookmarked_patchsets(BOOKMARKED_PATCHSETS_PATH) {
+        match lore_session::load_bookmarked_patchsets(&config.bookmarked_patchsets_path) {
             Ok(vec_of_patchsets) => bookmarked_patchsets = vec_of_patchsets,
             Err(_) => bookmarked_patchsets = Vec::new(),
         }
@@ -322,6 +325,7 @@ impl App {
                 target_list: String::new(),
                 possible_mailing_lists: mailing_lists,
                 highlighted_list_index: 0,
+                mailing_lists_path: config.mailing_lists_path.clone(),
             },
             latest_patchsets_state: None,
             patchset_details_and_actions_state: None,
@@ -329,12 +333,13 @@ impl App {
                 bookmarked_patchsets,
                 patchset_index: 0,
             },
+            config
         }
     }
 
     pub fn init_latest_patchsets_state(self: &mut Self) {
         self.latest_patchsets_state = Some(
-            LatestPatchsetsState::new(self.mailing_list_selection_state.target_list.clone())
+            LatestPatchsetsState::new(self.mailing_list_selection_state.target_list.clone(), self.config.page_size)
         );
     }
 
@@ -360,7 +365,7 @@ impl App {
             screen => bail!(format!("Invalid screen passed as argument {screen:?}"))
         };
 
-        match lore_session::download_patchset(PATCHSETS_CACHE_DIR, &representative_patch) {
+        match lore_session::download_patchset(&self.config.patchsets_cache_dir, &representative_patch) {
             Ok(result) => patchset_path = result,
             Err(io_error) => bail!("{io_error}"),
         }
@@ -407,7 +412,7 @@ impl App {
 
     pub fn save_bookmarked_patchsets(self: &Self) -> color_eyre::Result<()> {
         lore_session::save_bookmarked_patchsets(
-            &self.bookmarked_patchsets_state.bookmarked_patchsets, BOOKMARKED_PATCHSETS_PATH
+            &self.bookmarked_patchsets_state.bookmarked_patchsets, &self.config.bookmarked_patchsets_path
         )?;
         Ok(())
     }
