@@ -66,7 +66,6 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
                                 app.mailing_list_selection_state.remove_last_target_list_char();
                             }
                             KeyCode::Esc => {
-                                app.save_bookmarked_patchsets()?;
                                 return Ok(());
                             }
                             KeyCode::Char(ch) => {
@@ -150,7 +149,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
                                 app.patchset_details_and_actions_state.as_mut().unwrap().toggle_bookmark_action();
                             },
                             KeyCode::Enter => {
-                                app.consolidate_patchset_actions();
+                                app.consolidate_patchset_actions()?;
                                 app.set_current_screen(CurrentScreen::PatchsetDetails);
                             },
                             _ => {}

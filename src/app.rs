@@ -394,7 +394,7 @@ impl App {
         self.patchset_details_and_actions_state = None;
     }
 
-    pub fn consolidate_patchset_actions(self: &mut Self) {
+    pub fn consolidate_patchset_actions(self: &mut Self) -> color_eyre::Result<()> {
         let representative_patch = &self.patchset_details_and_actions_state
             .as_ref()
             .unwrap()
@@ -408,12 +408,11 @@ impl App {
         } else {
             self.bookmarked_patchsets_state.unbookmark_selected_patch(representative_patch);
         }
-    }
 
-    pub fn save_bookmarked_patchsets(self: &Self) -> color_eyre::Result<()> {
         lore_session::save_bookmarked_patchsets(
             &self.bookmarked_patchsets_state.bookmarked_patchsets, &self.config.bookmarked_patchsets_path
         )?;
+
         Ok(())
     }
 
