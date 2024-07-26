@@ -136,22 +136,26 @@ impl LoreSession {
 pub fn download_patchset(output_dir: &str, patch: &Patch) -> io::Result<String> {
     let message_id: &str = &patch.get_message_id().href;
     let mbox_name: String = extract_mbox_name_from_message_id(message_id);
+    let filepath: String = format!("{output_dir}/{mbox_name}");
 
-    Command::new("b4")
-        .arg("--quiet")
-        .arg("am")
-        .arg("--use-version")
-        .arg(format!("{}", patch.get_version()))
-        .arg(message_id)
-        .arg("--outdir")
-        .arg(output_dir)
-        .arg("--mbox-name")
-        .arg(&mbox_name)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()?;
+    if !Path::new(&filepath).exists() {
+        Command::new("b4")
+            .arg("--quiet")
+            .arg("am")
+            .arg("--use-version")
+            .arg(format!("{}", patch.get_version()))
+            .arg(message_id)
+            .arg("--outdir")
+            .arg(output_dir)
+            .arg("--mbox-name")
+            .arg(&mbox_name)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()?;
+    }
 
-    Ok(format!("{output_dir}/{mbox_name}"))
+
+    Ok(filepath)
 }
 
 fn extract_mbox_name_from_message_id(message_id: &str) -> String {
