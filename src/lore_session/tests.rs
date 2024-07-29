@@ -246,3 +246,15 @@ fn should_fetch_all_available_lists() {
 
     assert_eq!(320, sorted_available_lists.len());
 }
+
+#[test]
+fn should_generate_patch_reply_template() {
+    let patch_sample = fs::read_to_string("src/lore_session/res_generate_patch_reply_template/patch_sample.mbx").unwrap();
+    let expected_reply_template = fs::read_to_string("src/lore_session/res_generate_patch_reply_template/expected_reply_template.mbx").unwrap();
+
+    let reply_template = generate_patch_reply_template(&patch_sample);
+
+    assert_eq!(expected_reply_template, reply_template,
+        "Reply template wasn't correctly generated"
+    )
+}

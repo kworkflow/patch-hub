@@ -341,3 +341,33 @@ pub fn load_available_lists(filepath: &str) -> io::Result<Vec<MailingList>> {
     let available_lists = serde_json::from_reader(available_lists_file)?;
     Ok(available_lists)
 }
+
+fn generate_patch_reply_template(patch_contents: &str) -> String {
+    let mut reply_template = String::new();
+    let mut patch_lines_iterator = patch_contents.lines();
+
+    // Process the headers
+    while let Some(line) = patch_lines_iterator.next() {
+        let mut line_to_push = String::new();
+
+        if line.starts_with("Subject: ") {
+            line_to_push = line.replace("Subject: ", "Subject: Re: ") + "\n";
+        } else if line.starts_with("From: ") || line.starts_with("Date: ") || line.starts_with("Message-Id: ") {
+            continue;
+        } else if !line.trim().is_empty() {
+            line_to_push = format!("{}\n", line);
+        } else if line.trim().is_empty() && !reply_template.is_empty() {
+            reply_template.push('\n');
+            break;
+        }
+
+        reply_template.push_str(&line_to_push);
+    }
+
+    // After processing headers, just quote-reply remaining lines
+    for line in patch_lines_iterator {
+        reply_template.push_str(&format!("> {}\n", line));
+    }
+
+    reply_template
+}
