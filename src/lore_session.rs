@@ -371,3 +371,28 @@ fn generate_patch_reply_template(patch_contents: &str) -> String {
 
     reply_template
 }
+
+fn extract_git_reply_command(patch_html: &str) -> Command {
+    let mut git_reply_command = Command::new("git");
+    git_reply_command.arg("send-email");
+    // To avoid any chance of sending the reply while validating, add `--dry-run`
+    git_reply_command.arg("--dry-run");
+    git_reply_command.arg("--suppress-cc=all");
+
+    let re_full_git_command = Regex::new(
+        r#"(?s)git-send-email\(1\):(.*?)/path/to/YOUR_REPLY"#
+    ).unwrap();
+    let re_long_options = Regex::new(r"--[^\s=]+=[^\s]+").unwrap();
+
+    if let Some(capture) = re_full_git_command.captures(patch_html) {
+        if let Some(full_git_command_match) = capture.get(1) {
+            let full_git_command = full_git_command_match.as_str();
+
+            for long_option_match in re_long_options.find_iter(full_git_command) {
+                git_reply_command.arg(long_option_match.as_str());
+            }
+        }
+    }
+
+    git_reply_command
+}

@@ -258,3 +258,30 @@ fn should_generate_patch_reply_template() {
         "Reply template wasn't correctly generated"
     )
 }
+
+fn commands_eq(cmd1: &Command, cmd2: &Command) -> bool {
+    cmd1.get_program() == cmd2.get_program() &&
+    cmd1.get_args().collect::<Vec<_>>() == cmd2.get_args().collect::<Vec<_>>()
+}
+
+#[test]
+fn should_extract_git_reply_command_from_patch_html()
+{
+    let patch_html = fs::read_to_string("src/lore_session/res_extract_git_reply_command/patch_lore_sample.html").unwrap();
+    let mut expected_git_reply_command = Command::new("git");
+    expected_git_reply_command
+        .arg("send-email")
+        .arg("--dry-run") // Remove this after validating
+        .arg("--suppress-cc=all")
+        .arg("--in-reply-to=1234.567-3-john@johnson.com")
+        .arg("--to=foo@bar.com")
+        .arg("--cc=bar@foo.com")
+        .arg("--cc=foo@list.org")
+        .arg("--cc=bar@list.org");
+
+    let git_reply_command = extract_git_reply_command(&patch_html);
+
+    assert!(commands_eq(&expected_git_reply_command, &git_reply_command),
+        "Wrong git reply command\nExpected:{:?}\n  Actual:{:?}", expected_git_reply_command, git_reply_command
+    );
+}
