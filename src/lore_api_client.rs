@@ -79,3 +79,34 @@ impl AvailableListsRequest for BlockingLoreAPIClient {
         Ok(available_lists.text().unwrap())
     }
 }
+
+#[derive(Debug)]
+pub enum FailedPatchHTMLRequest {
+    UnknownError(Error),
+    StatusNotOk(Response),
+}
+
+pub trait PatchHTMLRequest {
+    fn request_patch_html(self: &Self, target_list: &str, message_id: &str) -> Result<String, FailedPatchHTMLRequest>;
+}
+
+impl PatchHTMLRequest for BlockingLoreAPIClient {
+    fn request_patch_html(self: &Self, target_list: &str, message_id: &str) -> Result<String, FailedPatchHTMLRequest> {
+        let patch_html_request: String;
+        let patch_html: Response;
+
+        patch_html_request = format!("{LORE_DOMAIN}/{target_list}/{message_id}/");
+
+        match reqwest::blocking::get(patch_html_request) {
+            Ok(response) => patch_html = response,
+            Err(error) =>  return Err(FailedPatchHTMLRequest::UnknownError(error)),
+        };
+
+        match patch_html.status().as_u16() {
+            200 => (),
+            _ => return Err(FailedPatchHTMLRequest::StatusNotOk(patch_html)),
+        };
+
+        Ok(patch_html.text().unwrap())
+    }
+}
