@@ -398,3 +398,53 @@ fn should_prepare_reply_patchset_with_reviewed_by() {
 
     fs::remove_dir_all(tmp_dir).unwrap();
 }
+
+#[test]
+fn should_get_local_git_signature() {
+    let mocked_git_repo = Command::new("mktemp")
+        .arg("--directory")
+        .output()
+        .unwrap();
+    let mocked_git_repo = Path::new(
+        std::str::from_utf8(&mocked_git_repo.stdout).unwrap().trim()
+    );
+
+    let _ =Command::new("git")
+        .arg("-C")
+        .arg(format!("{}", mocked_git_repo.display()))
+        .arg("init")
+        .output()
+        .unwrap();
+
+    let _ =Command::new("git")
+        .arg("-C")
+        .arg(format!("{}", mocked_git_repo.display()))
+        .arg("config")
+        .arg("--local")
+        .arg("user.name")
+        .arg("Foo Bar")
+        .output()
+        .unwrap();
+
+    let _ =Command::new("git")
+        .arg("-C")
+        .arg(format!("{}", mocked_git_repo.display()))
+        .arg("config")
+        .arg("--local")
+        .arg("user.email")
+        .arg("foo@bar.foo.bar")
+        .output()
+        .unwrap();
+
+    let (git_user_name, git_user_email) = get_git_signature(mocked_git_repo.to_str().unwrap());
+
+    assert_eq!("Foo Bar".to_owned(), git_user_name,
+        "Wrong `git config user.name` value"
+    );
+
+    assert_eq!("foo@bar.foo.bar".to_owned(), git_user_email,
+        "Wrong `git config user.email` value"
+    );
+
+    fs::remove_dir_all(mocked_git_repo).unwrap();
+}

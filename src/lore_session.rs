@@ -429,3 +429,27 @@ fn extract_git_reply_command(patch_html: &str) -> Command {
 
     git_reply_command
 }
+
+pub fn get_git_signature(git_repo_path: &str) -> (String, String) {
+    let mut git_user_name_command = Command::new("git");
+    if !git_repo_path.is_empty() {
+        git_user_name_command.arg("-C").arg(format!("{}", git_repo_path));
+    }
+    let git_user_name_output = git_user_name_command.arg("config")
+        .arg("user.name")
+        .output()
+        .unwrap();
+    let git_user_name = std::str::from_utf8(&git_user_name_output.stdout).unwrap().trim();
+
+    let mut git_user_email_command = Command::new("git");
+    if !git_repo_path.is_empty() {
+        git_user_email_command.arg("-C").arg(format!("{}", git_repo_path));
+    }
+    let git_user_email_output = git_user_email_command.arg("config")
+        .arg("user.email")
+        .output()
+        .unwrap();
+    let git_user_email = std::str::from_utf8(&git_user_email_output.stdout).unwrap().trim();
+
+    (git_user_name.to_owned(), git_user_email.to_owned())
+}
