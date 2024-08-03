@@ -338,6 +338,19 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
         .as_ref()
         .unwrap()
         .preview_index;
+
+    let representative_patch_message_id = &app
+        .patchset_details_and_actions_state
+        .as_ref()
+        .unwrap()
+        .representative_patch.get_message_id().href;
+    let mut preview_title = String::from(" Preview ");
+    if let Some(successful_indexes) = app.reviewed_patchsets.get(representative_patch_message_id) {
+        if successful_indexes.contains(&preview_index) {
+            preview_title = format!(" Preview [REVIEWED] ");
+        }
+    };
+
     let preview_offset = app
         .patchset_details_and_actions_state
         .as_ref()
@@ -354,7 +367,7 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(ratatui::widgets::BorderType::Double)
-                .title(Line::styled(" Preview ", Style::default().fg(Color::Green)).left_aligned())
+                .title(Line::styled(preview_title, Style::default().fg(Color::Green)).left_aligned())
                 .padding(Padding::vertical(1)),
         )
         .left_aligned()

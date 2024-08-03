@@ -453,3 +453,23 @@ pub fn get_git_signature(git_repo_path: &str) -> (String, String) {
 
     (git_user_name.to_owned(), git_user_email.to_owned())
 }
+
+pub fn save_reviewed_patchsets(reviewed_patchsets: &HashMap<String, Vec<u32>>, filepath: &str) -> io::Result<()> {
+    if let Some(parent) = Path::new(filepath).parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let tmp_filename = format!("{}.tmp", filepath);
+    {
+        let tmp_file = File::create(&tmp_filename)?;
+        serde_json::to_writer(tmp_file, &reviewed_patchsets)?;
+    }
+    fs::rename(tmp_filename, filepath)?;
+    Ok(())
+}
+
+pub fn load_reviewed_patchsets(filepath: &str) -> io::Result<HashMap<String, Vec<u32>>> {
+    let reviewed_patchsets_file = File::open(filepath)?;
+    let reviewed_patchsets = serde_json::from_reader(reviewed_patchsets_file)?;
+    Ok(reviewed_patchsets)
+}

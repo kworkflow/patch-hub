@@ -206,13 +206,14 @@ impl PatchsetDetailsAndActionsState {
         *self.patchset_actions.get(&PatchsetAction::ReplyWithReviewedBy).unwrap()
     }
 
-    pub fn reply_patchset_with_reviewed_by(self: &Self, target_list: &str) -> color_eyre::Result<()> {
+    pub fn reply_patchset_with_reviewed_by(self: &Self, target_list: &str) -> color_eyre::Result<Vec<u32>> {
         let lore_api_client = BlockingLoreAPIClient::new();
         let (git_user_name, git_user_email) = lore_session::get_git_signature("");
+        let mut successful_indexes = Vec::new();
 
         if git_user_name.is_empty() || git_user_email.is_empty() {
             println!("`git config user.name` or `git config user.email` not set\nAborting...");
-            return Ok(());
+            return Ok(successful_indexes);
         }
 
         let tmp_dir = Command::new("mktemp")
@@ -233,12 +234,15 @@ impl PatchsetDetailsAndActionsState {
             },
         };
 
-        for mut command in git_reply_commands {
+        for (index, mut command) in git_reply_commands.into_iter().enumerate() {
             let mut child = command.spawn().unwrap();
-            child.wait().unwrap();
+            let exit_status = child.wait().unwrap();
+            if exit_status.success() {
+                successful_indexes.push(index as u32);
+            }
         }
 
-        Ok(())
+        Ok(successful_indexes)
     }
 }
 
@@ -346,6 +350,7 @@ pub struct App {
     pub bookmarked_patchsets_state: BookmarkedPatchsetsState,
     pub latest_patchsets_state: Option<LatestPatchsetsState>,
     pub patchset_details_and_actions_state: Option<PatchsetDetailsAndActionsState>,
+    pub reviewed_patchsets: HashMap<String, Vec<u32>>,
     pub config: Config,
 }
 
@@ -353,6 +358,7 @@ impl App {
     pub fn new() -> App {
         let mailing_lists: Vec<MailingList>;
         let bookmarked_patchsets: Vec<Patch>;
+        let reviewed_patchsets: HashMap<String, Vec<u32>>;
         let config: Config = Config::build();
 
         match lore_session::load_available_lists(&config.mailing_lists_path) {
@@ -363,6 +369,11 @@ impl App {
         match lore_session::load_bookmarked_patchsets(&config.bookmarked_patchsets_path) {
             Ok(vec_of_patchsets) => bookmarked_patchsets = vec_of_patchsets,
             Err(_) => bookmarked_patchsets = Vec::new(),
+        }
+
+        match lore_session::load_reviewed_patchsets(&config.reviewed_patchsets_path) {
+            Ok(vec_of_patchsets) => reviewed_patchsets = vec_of_patchsets,
+            Err(_) => reviewed_patchsets = HashMap::new(),
         }
 
         App {
@@ -380,6 +391,7 @@ impl App {
                 bookmarked_patchsets,
                 patchset_index: 0,
             },
+            reviewed_patchsets,
             config
         }
     }
@@ -465,10 +477,23 @@ impl App {
             .patchset_details_and_actions_state.as_ref().unwrap()
             .patchset_actions.get(&PatchsetAction::ReplyWithReviewedBy).unwrap();
         if should_reply_with_reviewed_by {
-            self.patchset_details_and_actions_state
+            let successful_indexes = self.patchset_details_and_actions_state
                 .as_ref()
                 .unwrap()
                 .reply_patchset_with_reviewed_by("all")?;
+
+            if !successful_indexes.is_empty() {
+                self.reviewed_patchsets.insert(
+                    representative_patch.get_message_id().href.clone(),
+                    successful_indexes,
+                );
+
+                lore_session::save_reviewed_patchsets(
+                    &self.reviewed_patchsets,
+                    &self.config.reviewed_patchsets_path
+                )?;
+            }
+
             self.patchset_details_and_actions_state
                 .as_mut()
                 .unwrap()
