@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::Path, process::Command};
 use color_eyre::eyre::bail;
 use config::Config;
 use patch_hub::{
@@ -158,6 +158,7 @@ pub struct PatchsetDetailsAndActionsState {
 #[derive(Hash, Eq, PartialEq)]
 pub enum PatchsetAction {
     Bookmark,
+    ReplyWithReviewedBy,
 }
 
 impl PatchsetDetailsAndActionsState {
@@ -189,9 +190,55 @@ impl PatchsetDetailsAndActionsState {
     }
 
     pub fn toggle_bookmark_action(self: &mut Self) {
-        let bookmark_action = PatchsetAction::Bookmark;
-        let current_bookmark_value = *self.patchset_actions.get(&bookmark_action).unwrap();
-        self.patchset_actions.insert(bookmark_action, !current_bookmark_value);
+        self.toggle_action(PatchsetAction::Bookmark);
+    }
+
+    pub fn toggle_reply_with_reviewed_by_action(self: &mut Self) {
+        self.toggle_action(PatchsetAction::ReplyWithReviewedBy);
+    }
+
+    fn toggle_action(self: &mut Self, patchset_action: PatchsetAction) {
+        let current_value = *self.patchset_actions.get(&patchset_action).unwrap();
+        self.patchset_actions.insert(patchset_action, !current_value);
+    }
+
+    pub fn actions_require_user_io(self: &Self) -> bool {
+        *self.patchset_actions.get(&PatchsetAction::ReplyWithReviewedBy).unwrap()
+    }
+
+    pub fn reply_patchset_with_reviewed_by(self: &Self, target_list: &str) -> color_eyre::Result<()> {
+        let lore_api_client = BlockingLoreAPIClient::new();
+        let (git_user_name, git_user_email) = lore_session::get_git_signature("");
+
+        if git_user_name.is_empty() || git_user_email.is_empty() {
+            println!("`git config user.name` or `git config user.email` not set\nAborting...");
+            return Ok(());
+        }
+
+        let tmp_dir = Command::new("mktemp")
+            .arg("--directory")
+            .output()
+            .unwrap();
+        let tmp_dir = Path::new(
+            std::str::from_utf8(&tmp_dir.stdout).unwrap().trim()
+        );
+
+        let git_reply_commands = match lore_session::prepare_reply_patchset_with_reviewed_by(
+            &lore_api_client, tmp_dir, target_list,
+            &self.patches, &format!("{git_user_name} <{git_user_email}>")
+        ) {
+            Ok(commands_vector) => commands_vector,
+            Err(failed_patch_html_request) => {
+                bail!(format!("{failed_patch_html_request:#?}"));
+            },
+        };
+
+        for mut command in git_reply_commands {
+            let mut child = command.spawn().unwrap();
+            child.wait().unwrap();
+        }
+
+        Ok(())
     }
 }
 
@@ -380,6 +427,7 @@ impl App {
                         preview_scroll_offset: 0,
                         patchset_actions: HashMap::from([
                             (PatchsetAction::Bookmark, is_patchset_bookmarked),
+                            (PatchsetAction::ReplyWithReviewedBy, false),
                         ]),
                         last_screen: current_screen,
                     }
@@ -413,6 +461,20 @@ impl App {
             &self.bookmarked_patchsets_state.bookmarked_patchsets, &self.config.bookmarked_patchsets_path
         )?;
 
+        let should_reply_with_reviewed_by = *self
+            .patchset_details_and_actions_state.as_ref().unwrap()
+            .patchset_actions.get(&PatchsetAction::ReplyWithReviewedBy).unwrap();
+        if should_reply_with_reviewed_by {
+            self.patchset_details_and_actions_state
+                .as_ref()
+                .unwrap()
+                .reply_patchset_with_reviewed_by("all")?;
+            self.patchset_details_and_actions_state
+                .as_mut()
+                .unwrap()
+                .toggle_action(PatchsetAction::ReplyWithReviewedBy);
+        }
+        
         Ok(())
     }
 

@@ -289,21 +289,38 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
         .as_ref()
         .unwrap()
         .patchset_actions;
-    let patchset_actions = vec![Line::from(vec![
-        if *patchset_actions.get(&PatchsetAction::Bookmark).unwrap() {
-            Span::styled("[x] ", Style::default().fg(Color::Green))
-        } else {
-            Span::styled("[ ] ", Style::default().fg(Color::Cyan))
-        },
-        Span::styled(
-            "b",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::UNDERLINED)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("ookmark", Style::default().fg(Color::Cyan)),
-    ])];
+    let patchset_actions = vec![
+        Line::from(vec![
+            if *patchset_actions.get(&PatchsetAction::Bookmark).unwrap() {
+                Span::styled("[x] ", Style::default().fg(Color::Green))
+            } else {
+                Span::styled("[ ] ", Style::default().fg(Color::Cyan))
+            },
+            Span::styled(
+                "b",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::UNDERLINED)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("ookmark", Style::default().fg(Color::Cyan)),
+        ]),
+        Line::from(vec![
+            if *patchset_actions.get(&PatchsetAction::ReplyWithReviewedBy).unwrap() {
+                Span::styled("[x] ", Style::default().fg(Color::Green))
+            } else {
+                Span::styled("[ ] ", Style::default().fg(Color::Cyan))
+            },
+            Span::styled(
+                "r",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::UNDERLINED)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("eviewed-by", Style::default().fg(Color::Cyan)),
+        ]),
+    ];
     let patchset_actions = Paragraph::new(patchset_actions)
         .block(
             Block::default()

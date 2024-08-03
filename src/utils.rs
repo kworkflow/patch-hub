@@ -12,6 +12,7 @@ use ratatui::{
         execute,
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     },
+    prelude::Backend,
     Terminal,
 };
 
@@ -53,5 +54,19 @@ pub fn install_hooks() -> color_eyre::Result<()> {
         },
     ))?;
 
+    Ok(())
+}
+
+pub fn setup_user_io<B: Backend>(terminal: &mut Terminal<B>) -> color_eyre::Result<()> {
+    terminal.clear()?;
+    terminal.set_cursor(0, 0)?;
+    terminal.show_cursor()?;
+    disable_raw_mode()?;
+    Ok(())
+}
+
+pub fn teardown_user_io<B: Backend>(terminal: &mut Terminal<B>) -> color_eyre::Result<()> {
+    enable_raw_mode()?;
+    terminal.clear()?;
     Ok(())
 }
