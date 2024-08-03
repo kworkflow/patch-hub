@@ -1,0 +1,27 @@
+Subject: Re: [PATCH 3/3] file: Do foo bar
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+> Patch 3 description
+> 
+> Signed-off-by: Foo Bar <foo@bar.foo.bar>
+> ---
+>  file.rs | 2 +-
+>  1 file changed, 1 insertions(+), 1 deletions(-)
+> 
+> diff --git a/file.rs b/file.rs
+> index 123456..654321 100644
+> --- a/file.rs
+> +++ b/file.rs
+> @@ -57,6 +57,6 @@ CONTEXT;
+> context
+>  
+> -redeletion
+> +readdition
+> 
+> context
+> -- 
+> 2.34.1
+
+Reviewed-by: Bar Foo <bar@foo.bar.foo>

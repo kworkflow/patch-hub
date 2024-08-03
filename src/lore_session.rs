@@ -1,7 +1,7 @@
 use crate::mailing_list::MailingList;
 use crate::patch::{Patch, PatchFeed, PatchRegex};
 use crate::lore_api_client::{
-    AvailableListsRequest, FailedAvailableListsRequest, FailedFeedRequest, PatchFeedRequest
+    AvailableListsRequest, FailedAvailableListsRequest, FailedFeedRequest, FailedPatchHTMLRequest, PatchFeedRequest, PatchHTMLRequest
 };
 use std::collections::HashMap;
 use std::mem::swap;
@@ -340,6 +340,39 @@ pub fn load_available_lists(filepath: &str) -> io::Result<Vec<MailingList>> {
     let available_lists_file = File::open(filepath)?;
     let available_lists = serde_json::from_reader(available_lists_file)?;
     Ok(available_lists)
+}
+
+pub fn prepare_reply_patchset_with_reviewed_by<T>(
+    lore_api_client: &T, tmp_dir: &Path, target_list: &str,
+    patches: &Vec<String>, git_signature: &str
+) -> Result<Vec<Command>, FailedPatchHTMLRequest>
+where T: PatchHTMLRequest {
+    let mut git_reply_commands: Vec<Command> = Vec::new();
+    let re_message_id = Regex::new(r#"(?m)^Message-Id: <(.*?)>"#).unwrap();
+
+    for patch in patches.iter() {
+        let message_id = re_message_id
+            .captures(patch).unwrap()
+            .get(1).unwrap()
+            .as_str();
+
+        let reply_path = tmp_dir.join(format!("{message_id}-reply.mbx"));
+        let mut reply = generate_patch_reply_template(patch);
+        reply.push_str(&format!("\nReviewed-by: {git_signature}\n"));
+        fs::write(&reply_path, &reply).unwrap();
+
+        let patch_html = match lore_api_client.request_patch_html(target_list, message_id) {
+            Ok(response_payload) => response_payload,
+            Err(failed_patch_html_request) => return Err(failed_patch_html_request),
+        };
+
+        let mut git_reply_command = extract_git_reply_command(&patch_html);
+        git_reply_command.arg(format!("{}", reply_path.display()));
+
+        git_reply_commands.push(git_reply_command);
+    }
+
+    Ok(git_reply_commands)
 }
 
 fn generate_patch_reply_template(patch_contents: &str) -> String {

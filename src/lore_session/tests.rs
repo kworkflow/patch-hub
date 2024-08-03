@@ -1,3 +1,5 @@
+use io::Read;
+
 use super::*;
 use crate::patch::Author;
 use std::fs;
@@ -284,4 +286,115 @@ fn should_extract_git_reply_command_from_patch_html()
     assert!(commands_eq(&expected_git_reply_command, &git_reply_command),
         "Wrong git reply command\nExpected:{:?}\n  Actual:{:?}", expected_git_reply_command, git_reply_command
     );
+}
+
+fn files_eq(path1: &str, path2: &str) -> io::Result<bool> {
+    let mut file1 = File::open(path1)?;
+    let mut file2 = File::open(path2)?;
+
+    let mut buf1 = Vec::new();
+    let mut buf2 = Vec::new();
+
+    file1.read_to_end(&mut buf1)?;
+    file2.read_to_end(&mut buf2)?;
+
+    Ok(buf1 == buf2)
+}
+
+impl PatchHTMLRequest for FakeLoreAPIClient {
+    fn request_patch_html(self: &Self, _target_list: &str, message_id: &str) -> Result<String, FailedPatchHTMLRequest> {
+        let patch_html = "git-send-email(1): ".to_owned();
+        let patch_html = match message_id {
+            "1234.567-0-foo@bar.foo.bar" => patch_html + "git send-email --in-reply-to=1234.567-0-foo@bar.foo.bar --to=foo@bar.foo.bar /path/to/YOUR_REPLY",
+            "1234.567-1-foo@bar.foo.bar" => patch_html + "git send-email --in-reply-to=1234.567-1-foo@bar.foo.bar --to=foo@bar.foo.bar /path/to/YOUR_REPLY",
+            "1234.567-2-foo@bar.foo.bar" => patch_html + "git send-email --in-reply-to=1234.567-2-foo@bar.foo.bar --to=foo@bar.foo.bar /path/to/YOUR_REPLY",
+            "1234.567-3-foo@bar.foo.bar" => patch_html + "git send-email --in-reply-to=1234.567-3-foo@bar.foo.bar --to=foo@bar.foo.bar /path/to/YOUR_REPLY",
+            _ => panic!("Should not try other message-IDs than `1234.567-{{0,1,2,3}}`"),
+        };
+
+        Ok(patch_html.to_owned())
+    }
+}
+
+#[test]
+fn should_prepare_reply_patchset_with_reviewed_by() {
+    let tmp_dir = Command::new("mktemp")
+        .arg("--directory")
+        .output()
+        .unwrap();
+    let tmp_dir = Path::new(
+        std::str::from_utf8(&tmp_dir.stdout).unwrap().trim()
+    );
+
+    let mut expected_git_reply_command_0 = Command::new("git");
+    expected_git_reply_command_0
+        .arg("send-email")
+        .arg("--dry-run") // Remove this after validating
+        .arg("--suppress-cc=all")
+        .arg("--in-reply-to=1234.567-0-foo@bar.foo.bar")
+        .arg("--to=foo@bar.foo.bar")
+        .arg(format!("{}/1234.567-0-foo@bar.foo.bar-reply.mbx", tmp_dir.display()));
+    let mut expected_git_reply_command_1 = Command::new("git");
+    expected_git_reply_command_1
+        .arg("send-email")
+        .arg("--dry-run") // Remove this after validating
+        .arg("--suppress-cc=all")
+        .arg("--in-reply-to=1234.567-1-foo@bar.foo.bar")
+        .arg("--to=foo@bar.foo.bar")
+        .arg(format!("{}/1234.567-1-foo@bar.foo.bar-reply.mbx", tmp_dir.display()));
+    let mut expected_git_reply_command_2 = Command::new("git");
+    expected_git_reply_command_2
+        .arg("send-email")
+        .arg("--dry-run") // Remove this after validating
+        .arg("--suppress-cc=all")
+        .arg("--in-reply-to=1234.567-2-foo@bar.foo.bar")
+        .arg("--to=foo@bar.foo.bar")
+        .arg(format!("{}/1234.567-2-foo@bar.foo.bar-reply.mbx", tmp_dir.display()));
+    let mut expected_git_reply_command_3 = Command::new("git");
+    expected_git_reply_command_3
+        .arg("send-email")
+        .arg("--dry-run") // Remove this after validating
+        .arg("--suppress-cc=all")
+        .arg("--in-reply-to=1234.567-3-foo@bar.foo.bar")
+        .arg("--to=foo@bar.foo.bar")
+        .arg(format!("{}/1234.567-3-foo@bar.foo.bar-reply.mbx", tmp_dir.display()));
+
+    let expected_git_reply_commands = vec![
+        expected_git_reply_command_0,
+        expected_git_reply_command_1,
+        expected_git_reply_command_2,
+        expected_git_reply_command_3
+    ];
+
+    let lore_api_client = FakeLoreAPIClient{ src_path: "".to_owned() };
+
+    let patches = vec![
+        fs::read_to_string("src/lore_session/res_prepare_reply_w_reviewed_by/cover_letter.cover").unwrap(),
+        fs::read_to_string("src/lore_session/res_prepare_reply_w_reviewed_by/patch_1.mbx").unwrap(),
+        fs::read_to_string("src/lore_session/res_prepare_reply_w_reviewed_by/patch_2.mbx").unwrap(),
+        fs::read_to_string("src/lore_session/res_prepare_reply_w_reviewed_by/patch_3.mbx").unwrap(),
+    ];
+
+    let git_reply_commands = prepare_reply_patchset_with_reviewed_by(
+        &lore_api_client, &tmp_dir, "all", &patches, "Bar Foo <bar@foo.bar.foo>"
+    ).unwrap();
+
+    for (expected, actual) in expected_git_reply_commands.iter().zip(git_reply_commands.iter()) {
+        assert!(commands_eq(&expected, &actual),
+            "Wrong git reply command\nExpected:{:?}\n  Actual:{:?}", expected, actual 
+        );
+
+    }
+
+    for i in 0..=3 {
+        let expected_path = format!("src/lore_session/res_prepare_reply_w_reviewed_by/expected_patch_{}-reply.mbx", i);
+        let actual_path = format!("{}/1234.567-{}-foo@bar.foo.bar-reply.mbx", tmp_dir.display(), i);
+        assert!(files_eq(&expected_path, &actual_path).unwrap(),
+            "Wrong reply with reviewed-by generated\nExpected ({}):\n{}\n  Actual({}):\n{}\n",
+            &expected_path, &fs::read_to_string(&expected_path).unwrap(),
+            &actual_path, &fs::read_to_string(&actual_path).unwrap()
+        );
+    }
+
+    fs::remove_dir_all(tmp_dir).unwrap();
 }

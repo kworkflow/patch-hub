@@ -1,0 +1,19 @@
+Subject: Re: [PATCH 0/3] file: Implement something
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+> Patchset description
+> 
+> Foo Bar (3):
+>   file: Do foo
+>   file: Do bar
+>   file: Do foo bar
+> 
+>  file.rs | 6 +++---
+>  1 file changed, 3 insertions(+), 3 deletions(-)
+> 
+> -- 
+> 2.34.1
+
+Reviewed-by: Bar Foo <bar@foo.bar.foo>

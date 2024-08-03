@@ -1,0 +1,27 @@
+Subject: Re: [PATCH 2/3] file: Do bar
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+> Patch 2 description
+> 
+> Signed-off-by: Foo Bar <foo@bar.foo.bar>
+> ---
+>  file.rs | 2 +-
+>  1 file changed, 1 insertions(+), 1 deletions(-)
+> 
+> diff --git a/file.rs b/file.rs
+> index fedcba..123456 100644
+> --- a/file.rs
+> +++ b/file.rs
+> @@ -57,6 +57,6 @@ CONTEXT;
+> context
+>  
+> -addition
+> +deletion
+> 
+> context
+> -- 
+> 2.34.1
+
+Reviewed-by: Bar Foo <bar@foo.bar.foo>
