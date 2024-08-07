@@ -1,3 +1,16 @@
+# Version 0.1.1 (2024-08-07)
+
+This is a minor release to fix the issues #18 and #19.
+
+### New Functionalities and Changes
+
+1. Use a vendored version of the `openssl` dependency to ensure that the pre-compiled binaries of `patch-hub` don't crash at start-up like mentioned in #19 and to avoid missing dependencies when cross-compiling for the `x86_64-unknown-linux-musl` target.
+2. Add support to the `x86_64-unknown-linux-musl` target, which produces more portable and self-contained binaries when compared with the `-gnu` target. This was done by adding this target to the release CI pipeline.
+
+### Problems and Future Changes
+
+Adding `openssl` as a vendored dependency seems like an acceptable decision to solve the issues mentioned, which are kind of critical (especially #19). Still, the drawbacks of longer compile times, bigger executables, and more memory usage ("duplicated" `openssl` objects) aren't neglectable, so other solutions should be considered.
+
 # Version 0.1.0 (2024-08-04)
 
 I am really happy to announce the **first** release of `patch-hub` :tada: :confetti_ball: :sparkles:
