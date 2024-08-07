@@ -47,16 +47,9 @@ for later consult.
 
 ### pre-compiled binaries
 
-You can find pre-compiled `patch-hub` binaries on our [releases
-page](https://github.com/kworkflow/patch-hub/releases). On this page, the
-binaries will be in compressed files with the pattern
-`x86_64-unknown-linux-[gnu|musl].tar.xz`, so you only need to decompress the
-desired file (don't forget to validate the correspondent checksum) and add the
-`patch-hub` executable to your `PATH`.
+You can find pre-compiled `patch-hub` binaries on our [releases page](https://github.com/kworkflow/patch-hub/releases).
 
-Currently, we only support the target `x86_64-unknown-linux-gnu`, which should
-work well with most Linux systems, but we aim to bring support to the
-`x86_64-unknown-linux-musl` target for more portability.
+There are two versions of the binary: `-x86_64-unknown-linux-gnu` (dynamically linked) and `-x86_64-unknown-linux-musl` (statically linked). The first uses the GNU C library (glibc), while the second uses the musl C library (musl libc). In a nutshell, `-x86_64-unknown-linux-gnu` is more compatible with various Linux distributions due to its reliance on the widely used glibc. At the same time, `x86_64-unknown-linux-musl` produces more portable and self-contained binaries because it includes all necessary libraries within the binary itself.
 
 ### compiling from source
 
