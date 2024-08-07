@@ -1,6 +1,8 @@
 use app::{
     App, CurrentScreen
 };
+use clap::Parser;
+use cli::Cli;
 use ratatui::{
     backend::Backend,
     crossterm::event::{
@@ -11,10 +13,14 @@ use ratatui::{
 use ui::draw_ui;
 
 mod app;
+mod cli;
 mod ui;
 mod utils;
 
 fn main() -> color_eyre::Result<()> {
+    // We use an unused var because we only parse for `-h|--help` and `-V|--version`
+    let _args = Cli::parse();
+
     utils::install_hooks()?;
     let mut terminal = utils::init()?;
     let mut app = App::new();
