@@ -3,6 +3,7 @@ name = "patch-hub"
 version = "0.1.1"
 edition = "2021"
 repository = "https://github.com/kworkflow/patch-hub"
+description = "patch-hub is a TUI that streamlines the interaction of Linux developers with patches archived on lore.kernel.org"
 
 [dependencies]
 color-eyre = "0.6.3"
@@ -13,6 +14,7 @@ serde = { version = "1.0.203", features = ["derive"] }
 serde-xml-rs = "0.6.0"
 serde_json = "1.0.120"
 openssl = { version = "0.10.66", features = ["vendored"] }
+clap = { version = "4.5.13", features = ["derive"] }
 
 # The profile that 'cargo dist' will build with
 [profile.dist]
