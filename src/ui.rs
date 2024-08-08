@@ -480,6 +480,7 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
     f.render_widget(keys_hint_footer, footer_chunks[1]);
 }
 
+#[allow(dead_code)]
 /// helper function to create a centered rect using up certain percentage of the available rect `r`
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     // Cut the given rectangle into three vertical pieces
