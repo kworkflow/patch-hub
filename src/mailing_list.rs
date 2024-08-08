@@ -1,5 +1,8 @@
 use serde::{Serialize, Deserialize};
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
 pub struct MailingList {
     name: String,
