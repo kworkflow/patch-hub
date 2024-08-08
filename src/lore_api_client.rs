@@ -19,11 +19,11 @@ impl BlockingLoreAPIClient {
 }
 
 pub trait PatchFeedRequest {
-    fn request_patch_feed(self: &Self, target_list: &String, min_index: u32) -> Result<String, FailedFeedRequest>;
+    fn request_patch_feed(self: &Self, target_list: &str, min_index: u32) -> Result<String, FailedFeedRequest>;
 }
 
 impl PatchFeedRequest for BlockingLoreAPIClient {
-    fn request_patch_feed(self: &Self, target_list: &String, min_index: u32) -> Result<String, FailedFeedRequest> {
+    fn request_patch_feed(self: &Self, target_list: &str, min_index: u32) -> Result<String, FailedFeedRequest> {
         let feed_request: String;
         let feed_response: Response;
         let feed_response_body: String;
