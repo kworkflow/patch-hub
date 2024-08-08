@@ -1,9 +1,13 @@
 use reqwest::blocking::Response;
 use reqwest::Error;
 
+#[cfg(test)]
+mod tests;
+
 const LORE_DOMAIN: &str = r"https://lore.kernel.org";
 const BASE_QUERY_FOR_FEED_REQUEST: &str = r"?x=A&q=((s:patch+OR+s:rfc)+AND+NOT+s:re:)";
 
+#[derive(Debug)]
 pub enum FailedFeedRequest {
     UnknownError(Error),
     StatusNotOk(Response),
