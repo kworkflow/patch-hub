@@ -136,8 +136,12 @@ impl LoreSession {
 pub fn download_patchset(output_dir: &str, patch: &Patch) -> io::Result<String> {
     let message_id: &str = &patch.get_message_id().href;
     let mbox_name: String = extract_mbox_name_from_message_id(message_id);
-    let filepath: String = format!("{output_dir}/{mbox_name}");
 
+    if !Path::new(output_dir).exists() {
+        fs::create_dir_all(output_dir)?;
+    }
+
+    let filepath: String = format!("{output_dir}/{mbox_name}");
     if !Path::new(&filepath).exists() {
         Command::new("b4")
             .arg("--quiet")
@@ -153,7 +157,6 @@ pub fn download_patchset(output_dir: &str, patch: &Patch) -> io::Result<String> 
             .stderr(Stdio::null())
             .status()?;
     }
-
 
     Ok(filepath)
 }
