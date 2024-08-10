@@ -1,5 +1,8 @@
 use std::env;
 
+#[cfg(test)]
+mod tests;
+
 pub struct Config {
     page_size: usize,
     patchsets_cache_dir: String,
@@ -17,44 +20,38 @@ impl Config {
             Err(_) => 30,
         };
 
-        let patchsets_cache_dir: String = match env::var("KW_CACHE_DIR") {
-            Ok(value) => format!("{value}/patch_hub/patchsets"),
+        let patchsets_cache_dir: String = match env::var("PATCH_HUB_CACHE_DIR") {
+            Ok(value) => format!("{value}/patchsets"),
+            Err(_) => format!("{}/.cache/patch_hub/patchsets", env::var("HOME").unwrap()),
+        };
+
+        let bookmarked_patchsets_path: String = match env::var("PATCH_HUB_DATA_DIR") {
+            Ok(value) => format!("{value}/bookmarked_patchsets.json"),
             Err(_) => format!(
-                "{}/.cache/kw/patch_hub/patchsets",
+                "{}/.local/share/patch_hub/bookmarked_patchsets.json",
                 env::var("HOME").unwrap()
             ),
         };
 
-        let bookmarked_patchsets_path: String = match env::var("KW_DATA_DIR") {
-            Ok(value) => format!("{value}/patch_hub/bookmarked_patchsets.json"),
+        let mailing_lists_path: String = match env::var("PATCH_HUB_DATA_DIR") {
+            Ok(value) => format!("{value}/mailing_lists.json"),
             Err(_) => format!(
-                "{}/.local/share/kw/patch_hub/bookmarked_patchsets.json",
+                "{}/.local/share/patch_hub/mailing_lists.json",
                 env::var("HOME").unwrap()
             ),
         };
 
-        let mailing_lists_path: String = match env::var("KW_DATA_DIR") {
-            Ok(value) => format!("{value}/patch_hub/mailing_lists.json"),
+        let reviewed_patchsets_path: String = match env::var("PATCH_HUB_DATA_DIR") {
+            Ok(value) => format!("{value}/reviewed_patchsets.json"),
             Err(_) => format!(
-                "{}/.local/share/kw/patch_hub/mailing_lists.json",
+                "{}/.local/share/patch_hub/reviewed_patchsets.json",
                 env::var("HOME").unwrap()
             ),
         };
 
-        let reviewed_patchsets_path: String = match env::var("KW_DATA_DIR") {
-            Ok(value) => format!("{value}/patch_hub/reviewed_patchsets.json"),
-            Err(_) => format!(
-                "{}/.local/share/kw/patch_hub/reviewed_patchsets.json",
-                env::var("HOME").unwrap()
-            ),
-        };
-
-        let logs_path = match env::var("KW_DATA_DIR") {
-            Ok(value) => format!("{value}/patch_hub/logs"),
-            Err(_) => format!(
-                "{}/.local/share/kw/patch_hub/logs",
-                env::var("HOME").unwrap()
-            ),
+        let logs_path = match env::var("PATCH_HUB_DATA_DIR") {
+            Ok(value) => format!("{value}/logs"),
+            Err(_) => format!("{}/.local/share/patch_hub/logs", env::var("HOME").unwrap()),
         };
 
         Config {
