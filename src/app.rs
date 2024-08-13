@@ -219,6 +219,7 @@ impl PatchsetDetailsAndActionsState {
     pub fn reply_patchset_with_reviewed_by(
         &self,
         target_list: &str,
+        git_send_email_options: &str,
     ) -> color_eyre::Result<Vec<usize>> {
         let lore_api_client = BlockingLoreAPIClient::new();
         let (git_user_name, git_user_email) = lore_session::get_git_signature("");
@@ -238,6 +239,7 @@ impl PatchsetDetailsAndActionsState {
             target_list,
             &self.patches,
             &format!("{git_user_name} <{git_user_email}>"),
+            git_send_email_options,
         ) {
             Ok(commands_vector) => commands_vector,
             Err(failed_patch_html_request) => {
@@ -508,7 +510,7 @@ impl App {
                 .patchset_details_and_actions_state
                 .as_ref()
                 .unwrap()
-                .reply_patchset_with_reviewed_by("all")?;
+                .reply_patchset_with_reviewed_by("all", self.config.get_git_send_email_options())?;
 
             if !successful_indexes.is_empty() {
                 self.reviewed_patchsets.insert(

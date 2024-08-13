@@ -32,6 +32,10 @@ fn can_build_with_default_values() {
         "/fake/home/path/.local/share/patch_hub/logs",
         config.get_logs_path()
     );
+    assert_eq!(
+        "--dry-run --suppress-cc=all",
+        config.get_git_send_email_options()
+    );
 }
 
 #[test]
@@ -57,6 +61,10 @@ fn can_build_with_config_file() {
         config.get_reviewed_patchsets_path()
     );
     assert_eq!("/logs/path", config.get_logs_path());
+    assert_eq!(
+        "--long-option value -s -h -o -r -t",
+        config.get_git_send_email_options()
+    );
 }
 
 #[test]
@@ -66,10 +74,12 @@ fn can_build_with_env_vars() {
     env::set_var("PATCH_HUB_PAGE_SIZE", "42");
     env::set_var("PATCH_HUB_CACHE_DIR", "/fake/cache/path");
     env::set_var("PATCH_HUB_DATA_DIR", "/fake/data/path");
+    env::set_var("PATCH_HUB_GIT_SEND_EMAIL_OPTIONS", "--option1 --option2");
     let config = Config::build();
     env::remove_var("PATCH_HUB_PAGE_SIZE");
     env::remove_var("PATCH_HUB_CACHE_DIR");
     env::remove_var("PATCH_HUB_DATA_DIR");
+    env::remove_var("PATCH_HUB_GIT_SEND_EMAIL_OPTIONS");
 
     assert_eq!(42, config.get_page_size());
     assert_eq!(
@@ -89,6 +99,7 @@ fn can_build_with_env_vars() {
         config.get_reviewed_patchsets_path()
     );
     assert_eq!("/fake/data/path/logs", config.get_logs_path());
+    assert_eq!("--option1 --option2", config.get_git_send_email_options());
 
     env::remove_var("PATCH_HUB_CACHE_DIR");
     env::remove_var("PATCH_HUB_DATA_DIR");

@@ -390,7 +390,7 @@ fn should_extract_git_reply_command_from_patch_html() {
     let mut expected_git_reply_command = Command::new("git");
     expected_git_reply_command
         .arg("send-email")
-        .arg("--dry-run") // Remove this after validating
+        .arg("--dry-run")
         .arg("--suppress-cc=all")
         .arg("--in-reply-to=1234.567-3-john@johnson.com")
         .arg("--to=foo@bar.com")
@@ -398,7 +398,7 @@ fn should_extract_git_reply_command_from_patch_html() {
         .arg("--cc=foo@list.org")
         .arg("--cc=bar@list.org");
 
-    let git_reply_command = extract_git_reply_command(&patch_html);
+    let git_reply_command = extract_git_reply_command(&patch_html, "--dry-run --suppress-cc=all");
 
     assert!(
         commands_eq(&expected_git_reply_command, &git_reply_command),
@@ -520,6 +520,7 @@ fn should_prepare_reply_patchset_with_reviewed_by() {
         "all",
         &patches,
         "Bar Foo <bar@foo.bar.foo>",
+        "--dry-run --suppress-cc=all",
     )
     .unwrap();
 
