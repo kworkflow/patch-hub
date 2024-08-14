@@ -33,10 +33,18 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
     loop {
         terminal.draw(|f| draw_ui(f, &app))?;
 
-        if app.current_screen == CurrentScreen::MailingListSelection
-            && app.mailing_list_selection_state.mailing_lists.len() == 0
-        {
-            app.mailing_list_selection_state.refresh_available_mailing_lists()?;
+        match app.current_screen {
+            CurrentScreen::MailingListSelection => {
+                if app.mailing_list_selection_state.mailing_lists.is_empty() {
+                    app.mailing_list_selection_state.refresh_available_mailing_lists()?;
+                }
+            },
+            CurrentScreen::BookmarkedPatchsets => {
+                if app.bookmarked_patchsets_state.bookmarked_patchsets.is_empty() {
+                    app.set_current_screen(CurrentScreen::MailingListSelection);
+                }
+            },
+            _ => {},
         }
 
         if event::poll(std::time::Duration::from_millis(16))? {
