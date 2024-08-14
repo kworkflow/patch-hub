@@ -45,6 +45,13 @@ for later consult.
 
 ## :package: How To Install
 
+### external dependencies
+
+In order to use `patch-hub` you must install:
+
+- [`b4`](https://github.com/mricon/b4)
+- [`git-email`](https://git-scm.com/docs/git-send-email/en) (`git send-email` command)
+
 ### pre-compiled binaries
 
 You can find pre-compiled `patch-hub` binaries on our [releases page](https://github.com/kworkflow/patch-hub/releases).
