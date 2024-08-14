@@ -326,13 +326,13 @@ impl MailingListSelectionState {
     }
 
     pub fn has_valid_target_list(self: &Self) -> bool {
-        for mailing_list in &self.possible_mailing_lists {
-            if mailing_list.get_name().eq(&self.target_list) {
-                return true;
-            }
-        }
+        let list_length = self.possible_mailing_lists.len(); // Possible mailing list length
+        let list_index = self.highlighted_list_index as usize; // Index of the selected mailing list
 
-        false
+        if list_index <= list_length - 1 {
+            return true;
+        }
+        return false;
     }
 }
 
@@ -397,10 +397,16 @@ impl App {
     }
 
     pub fn init_latest_patchsets_state(self: &mut Self) {
+        let selection_state = &self.mailing_list_selection_state; // Mailing list selection state
+        let list_index = selection_state.highlighted_list_index as usize;   // Highlighted list index
+        let target_list = selection_state.possible_mailing_lists[list_index].get_name().to_string();  // Target list in a string form
+
+        // Initialize the latest patchsets state with the target list and the page size
         self.latest_patchsets_state = Some(
-            LatestPatchsetsState::new(self.mailing_list_selection_state.target_list.clone(), self.config.page_size)
+            LatestPatchsetsState::new(target_list, self.config.page_size)
         );
     }
+
 
     pub fn reset_latest_patchsets_state(self: &mut Self) {
         self.latest_patchsets_state = None;
