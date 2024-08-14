@@ -295,13 +295,6 @@ impl MailingListSelectionState {
         self.process_possible_mailing_lists();
     }
 
-    pub fn set_target_list_with_highlighted_list(self: &mut Self) {
-        if let Some(highlighted_list) = self.possible_mailing_lists.get(self.highlighted_list_index as usize) {
-            self.target_list = highlighted_list.get_name().to_string();
-        }
-        self.process_possible_mailing_lists();
-    }
-
     fn process_possible_mailing_lists(self: &mut Self) {
         let mut possible_mailing_lists: Vec<MailingList> = Vec::new();
 
@@ -326,13 +319,13 @@ impl MailingListSelectionState {
     }
 
     pub fn has_valid_target_list(self: &Self) -> bool {
-        for mailing_list in &self.possible_mailing_lists {
-            if mailing_list.get_name().eq(&self.target_list) {
-                return true;
-            }
-        }
+        let list_length = self.possible_mailing_lists.len(); // Possible mailing list length
+        let list_index = self.highlighted_list_index as usize; // Index of the selected mailing list
 
-        false
+        if list_index <= list_length - 1 {
+            return true;
+        }
+        return false;
     }
 }
 
@@ -397,8 +390,16 @@ impl App {
     }
 
     pub fn init_latest_patchsets_state(self: &mut Self) {
+        // the target mailing list for "latest patchsets" is the highlighted
+        // entry in the possible lists of "mailing list selection"
+        let list_index = self.mailing_list_selection_state
+            .highlighted_list_index as usize;
+        let target_list = self.mailing_list_selection_state
+            .possible_mailing_lists[list_index]
+            .get_name().to_string();
+
         self.latest_patchsets_state = Some(
-            LatestPatchsetsState::new(self.mailing_list_selection_state.target_list.clone(), self.config.page_size)
+            LatestPatchsetsState::new(target_list, self.config.page_size)
         );
     }
 

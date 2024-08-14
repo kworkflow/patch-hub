@@ -59,9 +59,6 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
                             KeyCode::F(5) => {
                                 app.mailing_list_selection_state.refresh_available_mailing_lists()?;
                             }
-                            KeyCode::Tab => {
-                                app.mailing_list_selection_state.set_target_list_with_highlighted_list();
-                            }
                             KeyCode::F(1) => {
                                 if !app.bookmarked_patchsets_state.bookmarked_patchsets.is_empty() {
                                     app.mailing_list_selection_state.clear_target_list();
