@@ -1,7 +1,7 @@
 use crate::mailing_list::MailingList;
 use crate::patch::{Patch, PatchFeed, PatchRegex};
 use crate::lore_api_client::{
-    AvailableListsRequest, FailedAvailableListsRequest, FailedFeedRequest, FailedPatchHTMLRequest, PatchFeedRequest, PatchHTMLRequest
+    AvailableListsRequest, FailedAvailableListsRequest, FailedPatchHTMLRequest, PatchFeedRequest, PatchHTMLRequest
 };
 use std::collections::HashMap;
 use std::mem::swap;
@@ -9,6 +9,7 @@ use std::{fs::{self, File}, io};
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Command, Stdio};
+use color_eyre::eyre::{bail, Result};
 use regex::Regex;
 use serde_xml_rs::from_str;
 
@@ -44,14 +45,14 @@ impl LoreSession {
         self.processed_patches_map.get(message_id)
     }
 
-    pub fn process_n_representative_patches<T: PatchFeedRequest>(self: &mut Self, lore_api_client: &T, n: u32) -> Result<(), FailedFeedRequest> {
+    pub fn process_n_representative_patches<T: PatchFeedRequest>(self: &mut Self, lore_api_client: &T, n: u32) -> Result<()> {
         let mut patch_feed: PatchFeed;
         let mut processed_patches_ids: Vec<String>;
 
         while self.representative_patches_ids.len() < usize::try_from(n).unwrap() {
             match lore_api_client.request_patch_feed(&self.target_list, self.min_index) {
                 Ok(feed_response_body) => patch_feed = from_str(&feed_response_body).unwrap(),
-                Err(failed_feed_request) => return Err(failed_feed_request),
+                Err(failed_feed_request) => bail!(failed_feed_request),
             }
 
             processed_patches_ids = self.process_patches(patch_feed);

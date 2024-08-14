@@ -1,3 +1,6 @@
+use std::fmt::Display;
+
+use color_eyre::eyre::{bail, Result};
 use reqwest::blocking::Response;
 use reqwest::Error;
 
@@ -14,6 +17,16 @@ pub enum FailedFeedRequest {
     EndOfFeed,
 }
 
+impl Display for FailedFeedRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FailedFeedRequest::UnknownError(error) => write!(f, "Unknown error: {}", error),
+            FailedFeedRequest::StatusNotOk(response) => write!(f, "Status not OK: {}", response.status()),
+            FailedFeedRequest::EndOfFeed => write!(f, "End of feed"),
+        }
+    }
+}
+
 pub struct BlockingLoreAPIClient {}
 
 impl BlockingLoreAPIClient {
@@ -23,11 +36,11 @@ impl BlockingLoreAPIClient {
 }
 
 pub trait PatchFeedRequest {
-    fn request_patch_feed(self: &Self, target_list: &str, min_index: u32) -> Result<String, FailedFeedRequest>;
+    fn request_patch_feed(self: &Self, target_list: &str, min_index: u32) -> Result<String>;
 }
 
 impl PatchFeedRequest for BlockingLoreAPIClient {
-    fn request_patch_feed(self: &Self, target_list: &str, min_index: u32) -> Result<String, FailedFeedRequest> {
+    fn request_patch_feed(self: &Self, target_list: &str, min_index: u32) -> Result<String> {
         let feed_request: String;
         let feed_response: Response;
         let feed_response_body: String;
@@ -36,17 +49,17 @@ impl PatchFeedRequest for BlockingLoreAPIClient {
 
         match reqwest::blocking::get(feed_request) {
             Ok(response) => feed_response = response,
-            Err(error) =>  return Err(FailedFeedRequest::UnknownError(error)),
+            Err(error) =>  bail!(FailedFeedRequest::UnknownError(error)),
         };
 
         match feed_response.status().as_u16() {
             200 => (),
-            _ => return Err(FailedFeedRequest::StatusNotOk(feed_response)),
+            _ => bail!(FailedFeedRequest::StatusNotOk(feed_response)),
         };
 
-        feed_response_body = feed_response.text().unwrap();
+        feed_response_body = feed_response.text()?;
         if feed_response_body.eq(r"</feed>") {
-            return Err(FailedFeedRequest::EndOfFeed);
+            bail!(FailedFeedRequest::EndOfFeed);
         };
 
         Ok(feed_response_body)

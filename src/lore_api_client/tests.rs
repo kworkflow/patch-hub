@@ -1,3 +1,5 @@
+use color_eyre::eyre::Context;
+
 use super::*;
 use crate::patch::PatchFeed;
 
@@ -21,18 +23,18 @@ fn blocking_client_should_detect_failed_patch_feed_request() {
     let lore_api_client = BlockingLoreAPIClient::new();
 
     if let Err(failed_feed_request) = lore_api_client.request_patch_feed("invalid-list", 0) {
-        match failed_feed_request {
+        match failed_feed_request.downcast::<FailedFeedRequest>().context("Downcasting report to FailedFeedRequest").unwrap() {
             FailedFeedRequest::StatusNotOk(_) => (),
-            _ => panic!("Invalid request should return non 200 OK status.\n{failed_feed_request:#?}")
+            err => panic!("Invalid request should return non 200 OK status.\n{:#?}", err)
         }
     } else {
         panic!("Invalid request shouldn't be successful");
     }
 
     if let Err(failed_feed_request) = lore_api_client.request_patch_feed("amd-gfx", 300000) {
-        match failed_feed_request {
+        match failed_feed_request.downcast::<FailedFeedRequest>().context("Downcasting report to FailedFeedRequest").unwrap() {
             FailedFeedRequest::EndOfFeed => (),
-            _ => panic!("Out-of-bounds request should return end of feed.\n{failed_feed_request:#?}")
+            err => panic!("Out-of-bounds request should return end of feed.\n{err:#?}")
         }
     } else {
         panic!("Out-of-bounds request shouldn't be successful");

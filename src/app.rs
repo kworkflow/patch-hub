@@ -5,9 +5,7 @@ use patch_hub::{
     lore_session::{
         self, LoreSession
     },
-    lore_api_client::{
-        BlockingLoreAPIClient, FailedFeedRequest
-    },
+    lore_api_client::BlockingLoreAPIClient,
     mailing_list::MailingList,
     patch::Patch
 };
@@ -74,15 +72,7 @@ impl LatestPatchsetsState {
     }
 
     pub fn fetch_current_page(self: &mut Self) -> color_eyre::Result<()> {
-        if let Err(failed_feed_request) = self
-            .lore_session.process_n_representative_patches(&self.lore_api_client, self.page_size * &self.page_number) {
-            match failed_feed_request {
-                FailedFeedRequest::UnknownError(error) => bail!("[FailedFeedRequest::UnknownError]\n*\tFailed to request feed\n*\t{error:#?}"),
-                FailedFeedRequest::StatusNotOk(feed_response) => bail!("[FailedFeedRequest::StatusNotOk]\n*\tRequest returned with non-OK status\n*\t{feed_response:#?}"),
-                FailedFeedRequest::EndOfFeed => (),
-            }
-        };
-        Ok(())
+        self.lore_session.process_n_representative_patches(&self.lore_api_client, self.page_size * &self.page_number)
     }
 
     pub fn select_below_patchset(self: &mut Self) {
