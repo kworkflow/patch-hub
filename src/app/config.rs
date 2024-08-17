@@ -1,3 +1,4 @@
+use derive_getters::Getters;
 use serde::{Deserialize, Serialize};
 use std::{
     env,
@@ -9,8 +10,9 @@ use std::{
 #[cfg(test)]
 mod tests;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Getters)]
 pub struct Config {
+    #[getter(skip)]
     page_size: usize,
     patchsets_cache_dir: String,
     bookmarked_patchsets_path: String,
@@ -97,40 +99,8 @@ impl Config {
         config
     }
 
-    pub fn get_page_size(&self) -> usize {
+    pub fn page_size(&self) -> usize {
         self.page_size
-    }
-
-    pub fn get_patchsets_cache_dir(&self) -> &str {
-        &self.patchsets_cache_dir
-    }
-
-    pub fn get_bookmarked_patchsets_path(&self) -> &str {
-        &self.bookmarked_patchsets_path
-    }
-
-    pub fn get_mailing_lists_path(&self) -> &str {
-        &self.mailing_lists_path
-    }
-
-    pub fn get_reviewed_patchsets_path(&self) -> &str {
-        &self.reviewed_patchsets_path
-    }
-
-    pub fn get_logs_path(&self) -> &str {
-        &self.logs_path
-    }
-
-    pub fn get_git_send_email_options(&self) -> &str {
-        &self.git_send_email_options
-    }
-
-    pub fn get_cache_dir(&self) -> &str {
-        &self.cache_dir
-    }
-
-    pub fn get_data_dir(&self) -> &str {
-        &self.data_dir
     }
 
     pub fn set_page_size(&mut self, page_size: usize) {

@@ -24,7 +24,7 @@ fn can_initialize_fresh_lore_session() {
     let lore_session: LoreSession = LoreSession::new("some-list".to_string());
 
     assert!(
-        lore_session.get_representative_patches_ids().is_empty(),
+        lore_session.representative_patches_ids().is_empty(),
         "`LoreSession` should initialize with an empty vector of representative patches IDs"
     );
 }
@@ -46,24 +46,21 @@ fn should_process_one_representative_patch() {
 
     assert_eq!(
         1,
-        lore_session.get_representative_patches_ids().len(),
+        lore_session.representative_patches_ids().len(),
         "Should have processed exactly 1 representative patches, but processed {}",
-        lore_session.get_representative_patches_ids().len()
+        lore_session.representative_patches_ids().len()
     );
 
     assert_eq!(
         message_id,
-        lore_session
-            .get_representative_patches_ids()
-            .first()
-            .unwrap(),
+        lore_session.representative_patches_ids().first().unwrap(),
         "Wrong representative patch message ID"
     );
 
     let patch: &Patch = lore_session.get_processed_patch(message_id).unwrap();
     assert_eq!(
         "some/subsystem: Do this and that",
-        patch.get_title(),
+        patch.title(),
         "Wrong title of processed patch"
     );
     assert_eq!(
@@ -71,18 +68,18 @@ fn should_process_one_representative_patch() {
             name: "John Johnson".to_string(),
             email: "john@johnson.com".to_string()
         },
-        patch.get_author(),
+        patch.author(),
         "Wrong author of processed patch"
     );
-    assert_eq!(1, patch.get_version(), "Wrong version of processed patch");
+    assert_eq!(1, patch.version(), "Wrong version of processed patch");
     assert_eq!(
         0,
-        patch.get_number_in_series(),
+        patch.number_in_series(),
         "Wrong number in series of processed patch"
     );
     assert_eq!(
         2,
-        patch.get_total_in_series(),
+        patch.total_in_series(),
         "Wrong total in series of processed patch"
     );
 }
@@ -106,33 +103,24 @@ fn should_process_multiple_representative_patches() {
 
     assert_eq!(
         3,
-        lore_session.get_representative_patches_ids().len(),
+        lore_session.representative_patches_ids().len(),
         "Should have processed exactly 3 representative patches, but processed {}",
-        lore_session.get_representative_patches_ids().len()
+        lore_session.representative_patches_ids().len()
     );
 
     assert_eq!(
         message_id_1,
-        lore_session
-            .get_representative_patches_ids()
-            .first()
-            .unwrap(),
+        lore_session.representative_patches_ids().first().unwrap(),
         "Wrong representative patch message ID at index 0"
     );
     assert_eq!(
         message_id_2,
-        lore_session
-            .get_representative_patches_ids()
-            .get(1)
-            .unwrap(),
+        lore_session.representative_patches_ids().get(1).unwrap(),
         "Wrong representative patch message ID at index 1"
     );
     assert_eq!(
         message_id_3,
-        lore_session
-            .get_representative_patches_ids()
-            .get(2)
-            .unwrap(),
+        lore_session.representative_patches_ids().get(2).unwrap(),
         "Wrong representative patch message ID at index 2"
     );
 }
@@ -242,62 +230,62 @@ fn should_process_available_lists() {
 
     assert_eq!(
         "linux-mm".to_string(),
-        available_lists[0].get_name(),
+        available_lists[0].name().to_string(),
         "Wrong list name for index 0"
     );
     assert_eq!(
         "Linux-mm Archive on lore.kernel.org".to_string(),
-        available_lists[0].get_description(),
+        available_lists[0].description().to_string(),
         "Wrong list description for index 0"
     );
     assert_eq!(
         "linux-kselftest".to_string(),
-        available_lists[42].get_name(),
+        available_lists[42].name().to_string(),
         "Wrong list name for index 42"
     );
     assert_eq!(
         "Linux Kernel Selftest development".to_string(),
-        available_lists[42].get_description(),
+        available_lists[42].description().to_string(),
         "Wrong list description for index 42"
     );
     assert_eq!(
         "distributions".to_string(),
-        available_lists[99].get_name(),
+        available_lists[99].name().to_string(),
         "Wrong list name for index 99"
     );
     assert_eq!(
         "Forum for Linux distributions to discuss problems and share PSAs".to_string(),
-        available_lists[99].get_description(),
+        available_lists[99].description().to_string(),
         "Wrong list description for index 99"
     );
     assert_eq!(
         "grub-devel".to_string(),
-        available_lists[135].get_name(),
+        available_lists[135].name().to_string(),
         "Wrong list name for index 135"
     );
     assert_eq!(
         "Grub Development Archive on lore.kernel.org".to_string(),
-        available_lists[135].get_description(),
+        available_lists[135].description().to_string(),
         "Wrong list description for index 135"
     );
     assert_eq!(
         "linux-nilfs".to_string(),
-        available_lists[180].get_name(),
+        available_lists[180].name().to_string(),
         "Wrong list name for index 180"
     );
     assert_eq!(
         "Linux NILFS development".to_string(),
-        available_lists[180].get_description(),
+        available_lists[180].description().to_string(),
         "Wrong list description for index 180"
     );
     assert_eq!(
         "linux-sparse".to_string(),
-        available_lists[198].get_name(),
+        available_lists[198].name().to_string(),
         "Wrong list name for index 198"
     );
     assert_eq!(
         "Linux SPARSE checker discussions".to_string(),
-        available_lists[198].get_description(),
+        available_lists[198].description().to_string(),
         "Wrong list description for index 198"
     );
 }
@@ -325,32 +313,32 @@ fn should_fetch_all_available_lists() {
 
     assert_eq!(
         "accel-config".to_string(),
-        sorted_available_lists[0].get_name(),
+        sorted_available_lists[0].name().to_string(),
         "Wrong list name for index 0"
     );
     assert_eq!(
         "Accel-Config development".to_string(),
-        sorted_available_lists[0].get_description(),
+        sorted_available_lists[0].description().to_string(),
         "Wrong list description for index 0"
     );
     assert_eq!(
         "linux-mediatek".to_string(),
-        sorted_available_lists[159].get_name(),
+        sorted_available_lists[159].name().to_string(),
         "Wrong list name for index 159"
     );
     assert_eq!(
         "Linux-mediatek Archive on lore.kernel.org".to_string(),
-        sorted_available_lists[159].get_description(),
+        sorted_available_lists[159].description().to_string(),
         "Wrong list description for index 159"
     );
     assert_eq!(
         "yocto-toaster".to_string(),
-        sorted_available_lists[319].get_name(),
+        sorted_available_lists[319].name().to_string(),
         "Wrong list name for index 319"
     );
     assert_eq!(
         "Yocto Toaster".to_string(),
-        sorted_available_lists[319].get_description(),
+        sorted_available_lists[319].description().to_string(),
         "Wrong list description for index 319"
     );
 

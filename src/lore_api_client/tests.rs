@@ -8,7 +8,7 @@ fn blocking_client_can_request_valid_patch_feed() {
 
     let patch_feed = lore_api_client.request_patch_feed("amd-gfx", 0).unwrap();
     let patch_feed: PatchFeed = serde_xml_rs::from_str(&patch_feed).unwrap();
-    let patches = patch_feed.get_patches();
+    let patches = patch_feed.patches();
 
     assert_eq!(
         200,

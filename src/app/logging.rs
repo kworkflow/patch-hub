@@ -233,7 +233,7 @@ impl Logger {
         let logger = Logger::get_logger();
 
         if logger.log_file.is_none() {
-            let logs_path = &config.get_logs_path();
+            let logs_path = &config.logs_path();
             fs::create_dir_all(logs_path)
                 .unwrap_or_else(|_| panic!("Failed to create the logs folder at {}", logs_path));
 

@@ -1,29 +1,27 @@
+use derive_getters::Getters;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
 mod tests;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Getters, Serialize, Deserialize, Debug, Clone)]
 pub struct PatchFeed {
     #[serde(rename = "entry")]
     patches: Vec<Patch>,
 }
 
-impl PatchFeed {
-    pub fn get_patches(self) -> Vec<Patch> {
-        self.patches
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Getters, Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Patch {
     r#title: String,
     #[serde(default = "default_version")]
+    #[getter(skip)]
     version: usize,
     #[serde(default = "default_number_in_series")]
+    #[getter(skip)]
     number_in_series: usize,
     #[serde(default = "default_total_in_series")]
+    #[getter(skip)]
     total_in_series: usize,
     author: Author,
     #[serde(rename = "link")]
@@ -74,36 +72,16 @@ impl Patch {
         }
     }
 
-    pub fn get_title(&self) -> &str {
-        &self.title
-    }
-
-    pub fn get_version(&self) -> usize {
+    pub fn version(&self) -> usize {
         self.version
     }
 
-    pub fn get_number_in_series(&self) -> usize {
+    pub fn number_in_series(&self) -> usize {
         self.number_in_series
     }
 
-    pub fn get_total_in_series(&self) -> usize {
+    pub fn total_in_series(&self) -> usize {
         self.total_in_series
-    }
-
-    pub fn get_author(&self) -> &Author {
-        &self.author
-    }
-
-    pub fn get_in_reply_to(&self) -> &Option<MessageID> {
-        &self.in_reply_to
-    }
-
-    pub fn get_updated(&self) -> &str {
-        &self.updated
-    }
-
-    pub fn get_message_id(&self) -> &MessageID {
-        &self.message_id
     }
 
     pub fn update_patch_metadata(&mut self, patch_regex: &PatchRegex) {

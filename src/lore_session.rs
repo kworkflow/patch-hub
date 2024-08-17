@@ -4,6 +4,7 @@ use crate::lore_api_client::{
 };
 use crate::mailing_list::MailingList;
 use crate::patch::{Patch, PatchFeed, PatchRegex};
+use derive_getters::Getters;
 use regex::Regex;
 use serde_xml_rs::from_str;
 use std::collections::HashMap;
@@ -21,11 +22,16 @@ mod tests;
 
 const LORE_PAGE_SIZE: usize = 200;
 
+#[derive(Getters)]
 pub struct LoreSession {
     representative_patches_ids: Vec<String>,
+    #[getter(skip)]
     processed_patches_map: HashMap<String, Patch>,
+    #[getter(skip)]
     patch_regex: PatchRegex,
+    #[getter(skip)]
     target_list: String,
+    #[getter(skip)]
     min_index: usize,
 }
 
@@ -38,10 +44,6 @@ impl LoreSession {
             patch_regex: PatchRegex::new(),
             min_index: 0,
         }
-    }
-
-    pub fn get_representative_patches_ids(&self) -> &Vec<String> {
-        &self.representative_patches_ids
     }
 
     pub fn get_processed_patch(&self, message_id: &str) -> Option<&Patch> {
@@ -74,16 +76,16 @@ impl LoreSession {
     fn process_patches(&mut self, patch_feed: PatchFeed) -> Vec<String> {
         let mut processed_patches_ids: Vec<String> = Vec::new();
 
-        for mut patch in patch_feed.get_patches() {
+        for mut patch in patch_feed.patches().clone() {
             patch.update_patch_metadata(&self.patch_regex);
 
             if !self
                 .processed_patches_map
-                .contains_key(&patch.get_message_id().href)
+                .contains_key(&patch.message_id().href)
             {
-                processed_patches_ids.push(patch.get_message_id().href.clone());
+                processed_patches_ids.push(patch.message_id().href.clone());
                 self.processed_patches_map
-                    .insert(patch.get_message_id().href.clone(), patch);
+                    .insert(patch.message_id().href.clone(), patch);
             }
         }
 
@@ -96,19 +98,19 @@ impl LoreSession {
 
         for message_id in processed_patches_ids {
             patch = self.processed_patches_map.get(&message_id).unwrap();
-            patch_number_in_series = patch.get_number_in_series();
+            patch_number_in_series = patch.number_in_series();
 
             if patch_number_in_series > 1 {
                 continue;
             }
 
             if patch_number_in_series == 1 {
-                if let Some(in_reply_to) = &patch.get_in_reply_to() {
+                if let Some(in_reply_to) = &patch.in_reply_to() {
                     if let Some(patch_in_reply_to) =
                         self.processed_patches_map.get(&in_reply_to.href)
                     {
-                        if (patch_in_reply_to.get_number_in_series() == 0)
-                            && (patch.get_version() == patch_in_reply_to.get_version())
+                        if (patch_in_reply_to.number_in_series() == 0)
+                            && (patch.version() == patch_in_reply_to.version())
                         {
                             continue;
                         };
@@ -117,7 +119,7 @@ impl LoreSession {
             }
 
             self.representative_patches_ids
-                .push(patch.get_message_id().href.clone());
+                .push(patch.message_id().href.clone());
         }
     }
 
@@ -148,7 +150,7 @@ impl LoreSession {
 }
 
 pub fn download_patchset(output_dir: &str, patch: &Patch) -> io::Result<String> {
-    let message_id: &str = &patch.get_message_id().href;
+    let message_id: &str = &patch.message_id().href;
     let mbox_name: String = extract_mbox_name_from_message_id(message_id);
 
     if !Path::new(output_dir).exists() {
@@ -161,7 +163,7 @@ pub fn download_patchset(output_dir: &str, patch: &Patch) -> io::Result<String> 
             .arg("--quiet")
             .arg("am")
             .arg("--use-version")
-            .arg(format!("{}", patch.get_version()))
+            .arg(format!("{}", patch.version()))
             .arg(message_id)
             .arg("--outdir")
             .arg(output_dir)

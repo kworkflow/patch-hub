@@ -1,5 +1,6 @@
 use color_eyre::eyre::bail;
 use config::Config;
+use derive_getters::Getters;
 use edit_config::EditConfigState;
 use logging::Logger;
 use patch_hub::{
@@ -55,12 +56,16 @@ impl BookmarkedPatchsetsState {
     }
 }
 
+#[derive(Getters)]
 pub struct LatestPatchsetsState {
+    #[getter(skip)]
     lore_session: LoreSession,
+    #[getter(skip)]
     lore_api_client: BlockingLoreAPIClient,
     target_list: String,
     page_number: usize,
     patchset_index: usize,
+    #[getter(skip)]
     page_size: usize,
 }
 
@@ -91,7 +96,7 @@ impl LatestPatchsetsState {
     }
 
     pub fn select_below_patchset(&mut self) {
-        if self.patchset_index + 1 < self.lore_session.get_representative_patches_ids().len()
+        if self.patchset_index + 1 < self.lore_session.representative_patches_ids().len()
             && self.patchset_index + 1 < self.page_size * self.page_number
         {
             self.patchset_index += 1;
@@ -108,7 +113,7 @@ impl LatestPatchsetsState {
     }
 
     pub fn increment_page(&mut self) {
-        let patchsets_processed: usize = self.lore_session.get_representative_patches_ids().len();
+        let patchsets_processed: usize = self.lore_session.representative_patches_ids().len();
         if self.page_size * self.page_number > patchsets_processed {
             return;
         }
@@ -124,22 +129,10 @@ impl LatestPatchsetsState {
         self.patchset_index = self.page_size * (&self.page_number - 1);
     }
 
-    pub fn get_target_list(&self) -> &str {
-        &self.target_list
-    }
-
-    pub fn get_page_number(&self) -> usize {
-        self.page_number
-    }
-
-    pub fn get_patchset_index(&self) -> usize {
-        self.patchset_index
-    }
-
     pub fn get_selected_patchset(&self) -> Patch {
         let message_id: &str = self
             .lore_session
-            .get_representative_patches_ids()
+            .representative_patches_ids()
             .get(self.patchset_index)
             .unwrap();
 
@@ -311,7 +304,7 @@ impl MailingListSelectionState {
         let mut possible_mailing_lists: Vec<MailingList> = Vec::new();
 
         for mailing_list in &self.mailing_lists {
-            if mailing_list.get_name().starts_with(&self.target_list) {
+            if mailing_list.name().starts_with(&self.target_list) {
                 possible_mailing_lists.push(mailing_list.clone());
             }
         }
@@ -367,14 +360,14 @@ impl App {
         config.create_dirs();
 
         let mailing_lists =
-            lore_session::load_available_lists(config.get_mailing_lists_path()).unwrap_or_default();
+            lore_session::load_available_lists(config.mailing_lists_path()).unwrap_or_default();
 
         let bookmarked_patchsets =
-            lore_session::load_bookmarked_patchsets(config.get_bookmarked_patchsets_path())
+            lore_session::load_bookmarked_patchsets(config.bookmarked_patchsets_path())
                 .unwrap_or_default();
 
         let reviewed_patchsets =
-            lore_session::load_reviewed_patchsets(config.get_reviewed_patchsets_path())
+            lore_session::load_reviewed_patchsets(config.reviewed_patchsets_path())
                 .unwrap_or_default();
 
         // Initialize the logger before the app starts
@@ -388,7 +381,7 @@ impl App {
                 target_list: String::new(),
                 possible_mailing_lists: mailing_lists,
                 highlighted_list_index: 0,
-                mailing_lists_path: config.get_mailing_lists_path().to_string(),
+                mailing_lists_path: config.mailing_lists_path().to_string(),
             },
             latest_patchsets_state: None,
             patchset_details_and_actions_state: None,
@@ -407,11 +400,11 @@ impl App {
         // entry in the possible lists of "mailing list selection"
         let list_index = self.mailing_list_selection_state.highlighted_list_index;
         let target_list = self.mailing_list_selection_state.possible_mailing_lists[list_index]
-            .get_name()
+            .name()
             .to_string();
         self.latest_patchsets_state = Some(LatestPatchsetsState::new(
             target_list,
-            self.config.get_page_size(),
+            self.config.page_size(),
         ));
     }
 
@@ -448,7 +441,7 @@ impl App {
         };
 
         let patchset_path: String = match lore_session::download_patchset(
-            self.config.get_patchsets_cache_dir(),
+            self.config.patchsets_cache_dir(),
             &representative_patch,
         ) {
             Ok(result) => result,
@@ -502,7 +495,7 @@ impl App {
 
         lore_session::save_bookmarked_patchsets(
             &self.bookmarked_patchsets_state.bookmarked_patchsets,
-            self.config.get_bookmarked_patchsets_path(),
+            self.config.bookmarked_patchsets_path(),
         )?;
 
         let should_reply_with_reviewed_by = *self
@@ -517,17 +510,17 @@ impl App {
                 .patchset_details_and_actions_state
                 .as_ref()
                 .unwrap()
-                .reply_patchset_with_reviewed_by("all", self.config.get_git_send_email_options())?;
+                .reply_patchset_with_reviewed_by("all", self.config.git_send_email_options())?;
 
             if !successful_indexes.is_empty() {
                 self.reviewed_patchsets.insert(
-                    representative_patch.get_message_id().href.clone(),
+                    representative_patch.message_id().href.clone(),
                     successful_indexes,
                 );
 
                 lore_session::save_reviewed_patchsets(
                     &self.reviewed_patchsets,
-                    self.config.get_reviewed_patchsets_path(),
+                    self.config.reviewed_patchsets_path(),
                 )?;
             }
 

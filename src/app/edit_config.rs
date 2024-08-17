@@ -13,12 +13,12 @@ pub struct EditConfigState {
 impl EditConfigState {
     pub fn new(config: &Config) -> Self {
         let mut config_buffer = HashMap::new();
-        config_buffer.insert(EditableConfig::PageSize, config.get_page_size().to_string());
-        config_buffer.insert(EditableConfig::CacheDir, config.get_cache_dir().to_string());
-        config_buffer.insert(EditableConfig::DataDir, config.get_data_dir().to_string());
+        config_buffer.insert(EditableConfig::PageSize, config.page_size().to_string());
+        config_buffer.insert(EditableConfig::CacheDir, config.cache_dir().to_string());
+        config_buffer.insert(EditableConfig::DataDir, config.data_dir().to_string());
         config_buffer.insert(
             EditableConfig::GitSendEmailOpt,
-            config.get_git_send_email_options().to_string(),
+            config.git_send_email_options().to_string(),
         );
 
         EditConfigState {
