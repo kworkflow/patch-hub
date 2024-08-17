@@ -102,10 +102,10 @@ fn test_update_patch_metadata() {
 
     assert_eq!(
         "[RESEND] hitchhiker/guide: Life, the Universe and Everything",
-        patch.get_title(),
+        patch.title(),
         "The title should have the patch tag `[v7 PATCH 3/42]` stripped"
     );
-    assert_eq!(7, patch.get_version(), "Wrong version!");
-    assert_eq!(3, patch.get_number_in_series(), "Wrong number in series!");
-    assert_eq!(42, patch.get_total_in_series(), "Wrong total in series!");
+    assert_eq!(7, *patch.version(), "Wrong version!");
+    assert_eq!(3, *patch.number_in_series(), "Wrong number in series!");
+    assert_eq!(42, *patch.total_in_series(), "Wrong total in series!");
 }

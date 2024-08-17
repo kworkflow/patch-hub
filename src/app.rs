@@ -1,5 +1,6 @@
 use color_eyre::eyre::bail;
 use config::Config;
+use derive_getters::Getters;
 use logging::Logger;
 use patch_hub::{
     lore_api_client::{BlockingLoreAPIClient, FailedFeedRequest},
@@ -52,12 +53,16 @@ impl BookmarkedPatchsetsState {
     }
 }
 
+#[derive(Getters)]
 pub struct LatestPatchsetsState {
+    #[getter(skip)]
     lore_session: LoreSession,
+    #[getter(skip)]
     lore_api_client: BlockingLoreAPIClient,
     target_list: String,
     page_number: usize,
     patchset_index: usize,
+    #[getter(skip)]
     page_size: usize,
 }
 
@@ -88,7 +93,7 @@ impl LatestPatchsetsState {
     }
 
     pub fn select_below_patchset(&mut self) {
-        if self.patchset_index + 1 < self.lore_session.get_representative_patches_ids().len()
+        if self.patchset_index + 1 < self.lore_session.representative_patches_ids().len()
             && self.patchset_index + 1 < self.page_size * self.page_number
         {
             self.patchset_index += 1;
@@ -105,7 +110,7 @@ impl LatestPatchsetsState {
     }
 
     pub fn increment_page(&mut self) {
-        let patchsets_processed: usize = self.lore_session.get_representative_patches_ids().len();
+        let patchsets_processed: usize = self.lore_session.representative_patches_ids().len();
         if self.page_size * self.page_number > patchsets_processed {
             return;
         }
@@ -121,22 +126,10 @@ impl LatestPatchsetsState {
         self.patchset_index = self.page_size * (&self.page_number - 1);
     }
 
-    pub fn get_target_list(&self) -> &str {
-        &self.target_list
-    }
-
-    pub fn get_page_number(&self) -> usize {
-        self.page_number
-    }
-
-    pub fn get_patchset_index(&self) -> usize {
-        self.patchset_index
-    }
-
     pub fn get_selected_patchset(&self) -> Patch {
         let message_id: &str = self
             .lore_session
-            .get_representative_patches_ids()
+            .representative_patches_ids()
             .get(self.patchset_index)
             .unwrap();
 
@@ -306,7 +299,7 @@ impl MailingListSelectionState {
         let mut possible_mailing_lists: Vec<MailingList> = Vec::new();
 
         for mailing_list in &self.mailing_lists {
-            if mailing_list.get_name().starts_with(&self.target_list) {
+            if mailing_list.name().starts_with(&self.target_list) {
                 possible_mailing_lists.push(mailing_list.clone());
             }
         }
@@ -398,7 +391,7 @@ impl App {
         // entry in the possible lists of "mailing list selection"
         let list_index = self.mailing_list_selection_state.highlighted_list_index;
         let target_list = self.mailing_list_selection_state.possible_mailing_lists[list_index]
-            .get_name()
+            .name()
             .to_string();
         self.latest_patchsets_state = Some(LatestPatchsetsState::new(
             target_list,
@@ -512,7 +505,7 @@ impl App {
 
             if !successful_indexes.is_empty() {
                 self.reviewed_patchsets.insert(
-                    representative_patch.get_message_id().href.clone(),
+                    representative_patch.message_id().href.clone(),
                     successful_indexes,
                 );
 

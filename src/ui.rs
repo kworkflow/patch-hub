@@ -63,11 +63,11 @@ fn render_mailing_list_selection(f: &mut Frame, app: &App, chunk: Rect) {
         list_items.push(ListItem::new(
             Line::from(vec![
                 Span::styled(
-                    mailing_list.get_name().to_string(),
+                    mailing_list.name().to_string(),
                     Style::default().fg(Color::Magenta),
                 ),
                 Span::styled(
-                    format!(" - {}", mailing_list.get_description()),
+                    format!(" - {}", mailing_list.description()),
                     Style::default().fg(Color::White),
                 ),
             ])
@@ -110,17 +110,17 @@ fn render_bookmarked_patchsets(
         .iter()
         .enumerate()
     {
-        let patch_title = format!("{:width$}", patch.get_title(), width = 70);
+        let patch_title = format!("{:width$}", patch.title(), width = 70);
         let patch_title = format!("{:.width$}", patch_title, width = 70);
-        let patch_author = format!("{:width$}", patch.get_author().name, width = 30);
+        let patch_author = format!("{:width$}", patch.author().name, width = 30);
         let patch_author = format!("{:.width$}", patch_author, width = 30);
         list_items.push(ListItem::new(
             Line::from(Span::styled(
                 format!(
                     "{:03}. V{:02} | #{:02} | {} | {}",
                     index,
-                    patch.get_version(),
-                    patch.get_total_in_series(),
+                    patch.version(),
+                    patch.total_in_series(),
                     patch_title,
                     patch_author
                 ),
@@ -153,16 +153,12 @@ fn render_bookmarked_patchsets(
 }
 
 fn render_list(f: &mut Frame, app: &App, chunk: Rect) {
-    let page_number = app
-        .latest_patchsets_state
-        .as_ref()
-        .unwrap()
-        .get_page_number();
+    let page_number = app.latest_patchsets_state.as_ref().unwrap().page_number();
     let patchset_index = app
         .latest_patchsets_state
         .as_ref()
         .unwrap()
-        .get_patchset_index();
+        .patchset_index();
     let mut list_items = Vec::<ListItem>::new();
 
     let patch_feed_page: Vec<&Patch> = app
@@ -174,17 +170,17 @@ fn render_list(f: &mut Frame, app: &App, chunk: Rect) {
 
     let mut index: usize = (page_number - 1) * app.config.page_size;
     for patch in patch_feed_page {
-        let patch_title = format!("{:width$}", patch.get_title(), width = 70);
+        let patch_title = format!("{:width$}", patch.title(), width = 70);
         let patch_title = format!("{:.width$}", patch_title, width = 70);
-        let patch_author = format!("{:width$}", patch.get_author().name, width = 30);
+        let patch_author = format!("{:width$}", patch.author().name, width = 30);
         let patch_author = format!("{:.width$}", patch_author, width = 30);
         list_items.push(ListItem::new(
             Line::from(Span::styled(
                 format!(
                     "{:03}. V{:02} | #{:02} | {} | {}",
                     index,
-                    patch.get_version(),
-                    patch.get_total_in_series(),
+                    patch.version(),
+                    patch.total_in_series(),
                     patch_title,
                     patch_author
                 ),
@@ -239,35 +235,35 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
         Line::from(vec![
             Span::styled(r#"  Title: "#, Style::default().fg(Color::Cyan)),
             Span::styled(
-                patchset_details.get_title().to_string(),
+                patchset_details.title().to_string(),
                 Style::default().fg(Color::White),
             ),
         ]),
         Line::from(vec![
             Span::styled("Author: ", Style::default().fg(Color::Cyan)),
             Span::styled(
-                patchset_details.get_author().name.to_string(),
+                patchset_details.author().name.to_string(),
                 Style::default().fg(Color::White),
             ),
         ]),
         Line::from(vec![
             Span::styled("Version: ", Style::default().fg(Color::Cyan)),
             Span::styled(
-                format!("{}", patchset_details.get_version()),
+                format!("{}", patchset_details.version()),
                 Style::default().fg(Color::White),
             ),
         ]),
         Line::from(vec![
             Span::styled("Patch count: ", Style::default().fg(Color::Cyan)),
             Span::styled(
-                format!("{}", patchset_details.get_total_in_series()),
+                format!("{}", patchset_details.total_in_series()),
                 Style::default().fg(Color::White),
             ),
         ]),
         Line::from(vec![
             Span::styled("Last updated: ", Style::default().fg(Color::Cyan)),
             Span::styled(
-                patchset_details.get_updated().to_string(),
+                patchset_details.updated().to_string(),
                 Style::default().fg(Color::White),
             ),
         ]),
@@ -349,7 +345,7 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
         .as_ref()
         .unwrap()
         .representative_patch
-        .get_message_id()
+        .message_id()
         .href;
     let mut preview_title = String::from(" Preview ");
     if let Some(successful_indexes) = app.reviewed_patchsets.get(representative_patch_message_id) {
@@ -396,7 +392,7 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
             } else {
                 for mailing_list in &app.mailing_list_selection_state.mailing_lists {
                     if mailing_list
-                        .get_name()
+                        .name()
                         .eq(&app.mailing_list_selection_state.target_list)
                     {
                         text_area = Span::styled(
@@ -405,7 +401,7 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
                         );
                         break;
                     } else if mailing_list
-                        .get_name()
+                        .name()
                         .starts_with(&app.mailing_list_selection_state.target_list)
                     {
                         text_area = Span::styled(
@@ -437,14 +433,8 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
             vec![Span::styled(
                 format!(
                     "Latest Patchsets from {} (page {})",
-                    &app.latest_patchsets_state
-                        .as_ref()
-                        .unwrap()
-                        .get_target_list(),
-                    &app.latest_patchsets_state
-                        .as_ref()
-                        .unwrap()
-                        .get_page_number()
+                    &app.latest_patchsets_state.as_ref().unwrap().target_list(),
+                    &app.latest_patchsets_state.as_ref().unwrap().page_number()
                 ),
                 Style::default().fg(Color::Green),
             )]

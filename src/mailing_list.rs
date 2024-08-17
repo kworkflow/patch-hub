@@ -1,9 +1,10 @@
+use derive_getters::Getters;
 use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
 mod tests;
 
-#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
+#[derive(Getters, Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
 pub struct MailingList {
     name: String,
     description: String,
@@ -15,14 +16,6 @@ impl MailingList {
             name: name.to_string(),
             description: description.to_string(),
         }
-    }
-
-    pub fn get_name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn get_description(&self) -> &str {
-        &self.description
     }
 }
 
