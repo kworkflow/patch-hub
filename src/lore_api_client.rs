@@ -23,20 +23,29 @@ impl BlockingLoreAPIClient {
 }
 
 pub trait PatchFeedRequest {
-    fn request_patch_feed(self: &Self, target_list: &str, min_index: u32) -> Result<String, FailedFeedRequest>;
+    fn request_patch_feed(
+        self: &Self,
+        target_list: &str,
+        min_index: u32,
+    ) -> Result<String, FailedFeedRequest>;
 }
 
 impl PatchFeedRequest for BlockingLoreAPIClient {
-    fn request_patch_feed(self: &Self, target_list: &str, min_index: u32) -> Result<String, FailedFeedRequest> {
+    fn request_patch_feed(
+        self: &Self,
+        target_list: &str,
+        min_index: u32,
+    ) -> Result<String, FailedFeedRequest> {
         let feed_request: String;
         let feed_response: Response;
         let feed_response_body: String;
-        
-        feed_request = format!("{LORE_DOMAIN}/{target_list}/{BASE_QUERY_FOR_FEED_REQUEST}&o={min_index}");
+
+        feed_request =
+            format!("{LORE_DOMAIN}/{target_list}/{BASE_QUERY_FOR_FEED_REQUEST}&o={min_index}");
 
         match reqwest::blocking::get(feed_request) {
             Ok(response) => feed_response = response,
-            Err(error) =>  return Err(FailedFeedRequest::UnknownError(error)),
+            Err(error) => return Err(FailedFeedRequest::UnknownError(error)),
         };
 
         match feed_response.status().as_u16() {
@@ -60,19 +69,25 @@ pub enum FailedAvailableListsRequest {
 }
 
 pub trait AvailableListsRequest {
-    fn request_available_lists(self: &Self, min_index: u32) -> Result<String, FailedAvailableListsRequest>;
+    fn request_available_lists(
+        self: &Self,
+        min_index: u32,
+    ) -> Result<String, FailedAvailableListsRequest>;
 }
 
 impl AvailableListsRequest for BlockingLoreAPIClient {
-    fn request_available_lists(self: &Self, min_index: u32) -> Result<String, FailedAvailableListsRequest> {
+    fn request_available_lists(
+        self: &Self,
+        min_index: u32,
+    ) -> Result<String, FailedAvailableListsRequest> {
         let available_lists_request: String;
         let available_lists: Response;
-        
+
         available_lists_request = format!("{LORE_DOMAIN}/?&o={min_index}");
 
         match reqwest::blocking::get(available_lists_request) {
             Ok(response) => available_lists = response,
-            Err(error) =>  return Err(FailedAvailableListsRequest::UnknownError(error)),
+            Err(error) => return Err(FailedAvailableListsRequest::UnknownError(error)),
         };
 
         match available_lists.status().as_u16() {
@@ -91,11 +106,19 @@ pub enum FailedPatchHTMLRequest {
 }
 
 pub trait PatchHTMLRequest {
-    fn request_patch_html(self: &Self, target_list: &str, message_id: &str) -> Result<String, FailedPatchHTMLRequest>;
+    fn request_patch_html(
+        self: &Self,
+        target_list: &str,
+        message_id: &str,
+    ) -> Result<String, FailedPatchHTMLRequest>;
 }
 
 impl PatchHTMLRequest for BlockingLoreAPIClient {
-    fn request_patch_html(self: &Self, target_list: &str, message_id: &str) -> Result<String, FailedPatchHTMLRequest> {
+    fn request_patch_html(
+        self: &Self,
+        target_list: &str,
+        message_id: &str,
+    ) -> Result<String, FailedPatchHTMLRequest> {
         let patch_html_request: String;
         let patch_html: Response;
 
@@ -103,7 +126,7 @@ impl PatchHTMLRequest for BlockingLoreAPIClient {
 
         match reqwest::blocking::get(patch_html_request) {
             Ok(response) => patch_html = response,
-            Err(error) =>  return Err(FailedPatchHTMLRequest::UnknownError(error)),
+            Err(error) => return Err(FailedPatchHTMLRequest::UnknownError(error)),
         };
 
         match patch_html.status().as_u16() {

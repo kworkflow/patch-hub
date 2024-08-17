@@ -1,10 +1,6 @@
-use std::io::{
-    self, stdout, Stdout
-};
+use color_eyre::{config::HookBuilder, eyre};
+use std::io::{self, stdout, Stdout};
 use std::panic;
-use color_eyre::{
-    config::HookBuilder, eyre
-};
 
 use ratatui::{
     backend::CrosstermBackend,

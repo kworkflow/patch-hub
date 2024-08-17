@@ -62,15 +62,17 @@ fn render_mailing_list_selection(f: &mut Frame, app: &App, chunk: Rect) {
     for mailing_list in &app.mailing_list_selection_state.possible_mailing_lists {
         list_items.push(ListItem::new(
             Line::from(vec![
-            Span::styled(
-                format!("{}", mailing_list.get_name()),
-                Style::default().fg(Color::Magenta),
-            ),
-            Span::styled(
-                format!(" - {}", mailing_list.get_description()),
-                Style::default().fg(Color::White),
-            ),
-        ]).centered()))
+                Span::styled(
+                    format!("{}", mailing_list.get_name()),
+                    Style::default().fg(Color::Magenta),
+                ),
+                Span::styled(
+                    format!(" - {}", mailing_list.get_description()),
+                    Style::default().fg(Color::White),
+                ),
+            ])
+            .centered(),
+        ))
     }
 
     let list_block = Block::default()
@@ -306,7 +308,10 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
             Span::styled("ookmark", Style::default().fg(Color::Cyan)),
         ]),
         Line::from(vec![
-            if *patchset_actions.get(&PatchsetAction::ReplyWithReviewedBy).unwrap() {
+            if *patchset_actions
+                .get(&PatchsetAction::ReplyWithReviewedBy)
+                .unwrap()
+            {
                 Span::styled("[x] ", Style::default().fg(Color::Green))
             } else {
                 Span::styled("[ ] ", Style::default().fg(Color::Cyan))
@@ -343,7 +348,9 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
         .patchset_details_and_actions_state
         .as_ref()
         .unwrap()
-        .representative_patch.get_message_id().href;
+        .representative_patch
+        .get_message_id()
+        .href;
     let mut preview_title = String::from(" Preview ");
     if let Some(successful_indexes) = app.reviewed_patchsets.get(representative_patch_message_id) {
         if successful_indexes.contains(&preview_index) {
@@ -367,7 +374,9 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(ratatui::widgets::BorderType::Double)
-                .title(Line::styled(preview_title, Style::default().fg(Color::Green)).left_aligned())
+                .title(
+                    Line::styled(preview_title, Style::default().fg(Color::Green)).left_aligned(),
+                )
                 .padding(Padding::vertical(1)),
         )
         .left_aligned()
@@ -387,23 +396,29 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
                     Span::styled("type the target list", Style::default().fg(Color::DarkGray))
             } else {
                 for mailing_list in &app.mailing_list_selection_state.mailing_lists {
-                    if mailing_list.get_name().eq(&app.mailing_list_selection_state.target_list) {
+                    if mailing_list
+                        .get_name()
+                        .eq(&app.mailing_list_selection_state.target_list)
+                    {
                         text_area = Span::styled(
                             &app.mailing_list_selection_state.target_list,
-                            Style::default().fg(Color::Green)
+                            Style::default().fg(Color::Green),
                         );
                         break;
-                    } else if mailing_list.get_name().starts_with(&app.mailing_list_selection_state.target_list) {
+                    } else if mailing_list
+                        .get_name()
+                        .starts_with(&app.mailing_list_selection_state.target_list)
+                    {
                         text_area = Span::styled(
                             &app.mailing_list_selection_state.target_list,
-                            Style::default().fg(Color::LightCyan)
+                            Style::default().fg(Color::LightCyan),
                         );
                     }
                 }
                 if text_area.content.is_empty() {
                     text_area = Span::styled(
                         &app.mailing_list_selection_state.target_list,
-                        Style::default().fg(Color::Red)
+                        Style::default().fg(Color::Red),
                     );
                 }
             }
