@@ -9,7 +9,7 @@ struct FakeLoreAPIClient {
 }
 impl PatchFeedRequest for FakeLoreAPIClient {
     fn request_patch_feed(
-        self: &Self,
+        &self,
         target_list: &str,
         min_index: u32,
     ) -> Result<String, FailedFeedRequest> {
@@ -24,7 +24,7 @@ fn can_initialize_fresh_lore_session() {
     let lore_session: LoreSession = LoreSession::new("some-list".to_string());
 
     assert!(
-        lore_session.get_representative_patches_ids().len() == 0,
+        lore_session.get_representative_patches_ids().is_empty(),
         "`LoreSession` should initialize with an empty vector of representative patches IDs"
     );
 }
@@ -38,9 +38,11 @@ fn should_process_one_representative_patch() {
                 .to_string(),
     };
     let message_id: &str = "http://lore.kernel.org/some-subsystem/1234.567-1-john@johnson.com/";
-    let patch: &Patch;
 
-    if let Ok(_) = lore_session.process_n_representative_patches(&lore_api_client, 1) {};
+    if lore_session
+        .process_n_representative_patches(&lore_api_client, 1)
+        .is_ok()
+    {};
 
     assert_eq!(
         1,
@@ -53,12 +55,12 @@ fn should_process_one_representative_patch() {
         message_id,
         lore_session
             .get_representative_patches_ids()
-            .get(0)
+            .first()
             .unwrap(),
         "Wrong representative patch message ID"
     );
 
-    patch = lore_session.get_processed_patch(message_id).unwrap();
+    let patch = lore_session.get_processed_patch(message_id).unwrap();
     assert_eq!(
         "some/subsystem: Do this and that",
         patch.get_title(),
@@ -97,7 +99,10 @@ fn should_process_multiple_representative_patches() {
     let message_id_2: &str = "http://lore.kernel.org/some-subsystem/first-patch-lima@luma.rs/";
     let message_id_3: &str = "http://lore.kernel.org/some-subsystem/1234.567-1-john@johnson.com/";
 
-    if let Ok(_) = lore_session.process_n_representative_patches(&lore_api_client, 3) {};
+    if lore_session
+        .process_n_representative_patches(&lore_api_client, 3)
+        .is_ok()
+    {};
 
     assert_eq!(
         3,
@@ -110,7 +115,7 @@ fn should_process_multiple_representative_patches() {
         message_id_1,
         lore_session
             .get_representative_patches_ids()
-            .get(0)
+            .first()
             .unwrap(),
         "Wrong representative patch message ID at index 0"
     );
@@ -135,14 +140,12 @@ fn should_process_multiple_representative_patches() {
 #[test]
 fn test_split_patchset_invalid_cases() {
     let ret: Result<Vec<String>, String> = split_patchset("invalid/path");
-    assert_eq!(Err(format!("invalid/path: Path doesn't exist")), ret);
+    assert_eq!(Err("invalid/path: Path doesn't exist".to_string()), ret);
 
     let ret: Result<Vec<String>, String> =
         split_patchset("src/test_samples/lore_session/split_patchset/not_a_file");
     assert_eq!(
-        Err(format!(
-            "src/test_samples/lore_session/split_patchset/not_a_file: Not a file"
-        )),
+        Err("src/test_samples/lore_session/split_patchset/not_a_file: Not a file".to_string()),
         ret
     );
 }
@@ -153,7 +156,7 @@ fn should_split_patchset_without_cover_letter() {
         "src/test_samples/lore_session/split_patchset/patchset_sample_without_cover_letter.mbx",
     );
 
-    if let Err(_) = ret {
+    if ret.is_err() {
         panic!("Should return a `Vec<String>` type");
     }
 
@@ -188,7 +191,7 @@ fn should_split_patchset_complete() {
     let ret: Result<Vec<String>, String> =
         split_patchset("src/test_samples/lore_session/split_patchset/patchset_sample_complete.mbx");
 
-    if let Err(_) = ret {
+    if ret.is_err() {
         panic!("Should return a `Vec<String>` type");
     }
 
@@ -301,7 +304,7 @@ fn should_process_available_lists() {
 
 impl AvailableListsRequest for FakeLoreAPIClient {
     fn request_available_lists(
-        self: &Self,
+        &self,
         min_index: u32,
     ) -> Result<String, FailedAvailableListsRequest> {
         match min_index {
@@ -420,7 +423,7 @@ fn files_eq(path1: &str, path2: &str) -> io::Result<bool> {
 
 impl PatchHTMLRequest for FakeLoreAPIClient {
     fn request_patch_html(
-        self: &Self,
+        &self,
         _target_list: &str,
         message_id: &str,
     ) -> Result<String, FailedPatchHTMLRequest> {
@@ -513,7 +516,7 @@ fn should_prepare_reply_patchset_with_reviewed_by() {
 
     let git_reply_commands = prepare_reply_patchset_with_reviewed_by(
         &lore_api_client,
-        &tmp_dir,
+        tmp_dir,
         "all",
         &patches,
         "Bar Foo <bar@foo.bar.foo>",
@@ -525,7 +528,7 @@ fn should_prepare_reply_patchset_with_reviewed_by() {
         .zip(git_reply_commands.iter())
     {
         assert!(
-            commands_eq(&expected, &actual),
+            commands_eq(expected, actual),
             "Wrong git reply command\nExpected:{:?}\n  Actual:{:?}",
             expected,
             actual

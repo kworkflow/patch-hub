@@ -27,7 +27,7 @@ fn main() -> color_eyre::Result<()> {
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre::Result<()> {
     loop {
-        terminal.draw(|f| draw_ui(f, &app))?;
+        terminal.draw(|f| draw_ui(f, app))?;
 
         match app.current_screen {
             CurrentScreen::MailingListSelection => {

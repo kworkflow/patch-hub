@@ -50,7 +50,7 @@ fn blocking_client_should_detect_failed_patch_feed_request() {
 fn blocking_client_can_request_valid_available_lists() {
     let lore_api_client = BlockingLoreAPIClient::new();
 
-    if let Err(_) = lore_api_client.request_available_lists(0) {
+    if lore_api_client.request_available_lists(0).is_err() {
         panic!("Valid request should be successful");
     }
 }
@@ -60,8 +60,9 @@ fn blocking_client_can_request_valid_available_lists() {
 fn blocking_client_can_request_valid_patch_html() {
     let lore_api_client = BlockingLoreAPIClient::new();
 
-    if let Err(_) =
-        lore_api_client.request_patch_html("all", "Pine.LNX.4.58.0507282031180.3307@g5.osdl.org")
+    if lore_api_client
+        .request_patch_html("all", "Pine.LNX.4.58.0507282031180.3307@g5.osdl.org")
+        .is_err()
     {
         panic!("Valid request should be successful");
     }

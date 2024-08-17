@@ -16,30 +16,30 @@ pub struct BookmarkedPatchsetsState {
 }
 
 impl BookmarkedPatchsetsState {
-    pub fn select_below_patchset(self: &mut Self) {
+    pub fn select_below_patchset(&mut self) {
         if (self.patchset_index as usize) + 1 < self.bookmarked_patchsets.len() {
             self.patchset_index += 1;
         }
     }
 
-    pub fn select_above_patchset(self: &mut Self) {
+    pub fn select_above_patchset(&mut self) {
         self.patchset_index = self.patchset_index.saturating_sub(1);
     }
 
-    fn get_selected_patchset(self: &Self) -> Patch {
+    fn get_selected_patchset(&self) -> Patch {
         self.bookmarked_patchsets
             .get(self.patchset_index as usize)
             .unwrap()
             .clone()
     }
 
-    fn bookmark_selected_patch(self: &mut Self, patch_to_bookmark: &Patch) {
+    fn bookmark_selected_patch(&mut self, patch_to_bookmark: &Patch) {
         if !self.bookmarked_patchsets.contains(patch_to_bookmark) {
             self.bookmarked_patchsets.push(patch_to_bookmark.clone());
         }
     }
 
-    fn unbookmark_selected_patch(self: &mut Self, patch_to_unbookmark: &Patch) {
+    fn unbookmark_selected_patch(&mut self, patch_to_unbookmark: &Patch) {
         if let Some(index) = self
             .bookmarked_patchsets
             .iter()
@@ -71,10 +71,10 @@ impl LatestPatchsetsState {
         }
     }
 
-    pub fn fetch_current_page(self: &mut Self) -> color_eyre::Result<()> {
+    pub fn fetch_current_page(&mut self) -> color_eyre::Result<()> {
         if let Err(failed_feed_request) = self.lore_session.process_n_representative_patches(
             &self.lore_api_client,
-            self.page_size * &self.page_number,
+            self.page_size * self.page_number,
         ) {
             match failed_feed_request {
                 FailedFeedRequest::UnknownError(error) => bail!("[FailedFeedRequest::UnknownError]\n*\tFailed to request feed\n*\t{error:#?}"),
@@ -85,22 +85,22 @@ impl LatestPatchsetsState {
         Ok(())
     }
 
-    pub fn select_below_patchset(self: &mut Self) {
-        if self.patchset_index + 1 < self.page_size * &self.page_number {
+    pub fn select_below_patchset(&mut self) {
+        if self.patchset_index + 1 < self.page_size * self.page_number {
             self.patchset_index += 1;
         }
     }
 
-    pub fn select_above_patchset(self: &mut Self) {
+    pub fn select_above_patchset(&mut self) {
         if self.patchset_index == 0 {
             return;
         }
-        if self.patchset_index - 1 >= self.page_size * (&self.page_number - 1) {
+        if self.patchset_index > self.page_size * (&self.page_number - 1) {
             self.patchset_index -= 1;
         }
     }
 
-    pub fn increment_page(self: &mut Self) {
+    pub fn increment_page(&mut self) {
         let patchsets_processed: u32 = self
             .lore_session
             .get_representative_patches_ids()
@@ -114,7 +114,7 @@ impl LatestPatchsetsState {
         self.patchset_index = self.page_size * (&self.page_number - 1);
     }
 
-    pub fn decrement_page(self: &mut Self) {
+    pub fn decrement_page(&mut self) {
         if self.page_number == 1 {
             return;
         }
@@ -122,19 +122,19 @@ impl LatestPatchsetsState {
         self.patchset_index = self.page_size * (&self.page_number - 1);
     }
 
-    pub fn get_target_list(self: &Self) -> &str {
+    pub fn get_target_list(&self) -> &str {
         &self.target_list
     }
 
-    pub fn get_page_number(self: &Self) -> u32 {
+    pub fn get_page_number(&self) -> u32 {
         self.page_number
     }
 
-    pub fn get_patchset_index(self: &Self) -> u32 {
+    pub fn get_patchset_index(&self) -> u32 {
         self.patchset_index
     }
 
-    pub fn get_selected_patchset(self: &Self) -> Patch {
+    pub fn get_selected_patchset(&self) -> Patch {
         let message_id: &str = self
             .lore_session
             .get_representative_patches_ids()
@@ -147,7 +147,7 @@ impl LatestPatchsetsState {
             .clone()
     }
 
-    pub fn get_current_patch_feed_page(self: &Self) -> Option<Vec<&Patch>> {
+    pub fn get_current_patch_feed_page(&self) -> Option<Vec<&Patch>> {
         self.lore_session
             .get_patch_feed_page(self.page_size, self.page_number)
     }
@@ -169,48 +169,48 @@ pub enum PatchsetAction {
 }
 
 impl PatchsetDetailsAndActionsState {
-    pub fn preview_next_patch(self: &mut Self) {
+    pub fn preview_next_patch(&mut self) {
         if ((self.preview_index as usize) + 1) < self.patches.len() {
             self.preview_index += 1;
             self.preview_scroll_offset = 0;
         }
     }
 
-    pub fn preview_previous_patch(self: &mut Self) {
+    pub fn preview_previous_patch(&mut self) {
         if (self.preview_index as usize) > 0 {
             self.preview_index -= 1;
             self.preview_scroll_offset = 0;
         }
     }
 
-    pub fn preview_scroll_down(self: &mut Self) {
+    pub fn preview_scroll_down(&mut self) {
         let number_of_lines = self.patches[self.preview_index as usize].lines().count();
         if ((self.preview_scroll_offset as usize) + 1) <= number_of_lines {
             self.preview_scroll_offset += 1;
         }
     }
 
-    pub fn preview_scroll_up(self: &mut Self) {
+    pub fn preview_scroll_up(&mut self) {
         if (self.preview_scroll_offset as usize) > 0 {
             self.preview_scroll_offset -= 1;
         }
     }
 
-    pub fn toggle_bookmark_action(self: &mut Self) {
+    pub fn toggle_bookmark_action(&mut self) {
         self.toggle_action(PatchsetAction::Bookmark);
     }
 
-    pub fn toggle_reply_with_reviewed_by_action(self: &mut Self) {
+    pub fn toggle_reply_with_reviewed_by_action(&mut self) {
         self.toggle_action(PatchsetAction::ReplyWithReviewedBy);
     }
 
-    fn toggle_action(self: &mut Self, patchset_action: PatchsetAction) {
+    fn toggle_action(&mut self, patchset_action: PatchsetAction) {
         let current_value = *self.patchset_actions.get(&patchset_action).unwrap();
         self.patchset_actions
             .insert(patchset_action, !current_value);
     }
 
-    pub fn actions_require_user_io(self: &Self) -> bool {
+    pub fn actions_require_user_io(&self) -> bool {
         *self
             .patchset_actions
             .get(&PatchsetAction::ReplyWithReviewedBy)
@@ -218,7 +218,7 @@ impl PatchsetDetailsAndActionsState {
     }
 
     pub fn reply_patchset_with_reviewed_by(
-        self: &Self,
+        &self,
         target_list: &str,
     ) -> color_eyre::Result<Vec<u32>> {
         let lore_api_client = BlockingLoreAPIClient::new();
@@ -267,7 +267,7 @@ pub struct MailingListSelectionState {
 }
 
 impl MailingListSelectionState {
-    pub fn refresh_available_mailing_lists(self: &mut Self) -> color_eyre::Result<()> {
+    pub fn refresh_available_mailing_lists(&mut self) -> color_eyre::Result<()> {
         let lore_api_client = BlockingLoreAPIClient::new();
 
         match lore_session::fetch_available_lists(&lore_api_client) {
@@ -286,24 +286,24 @@ impl MailingListSelectionState {
         Ok(())
     }
 
-    pub fn remove_last_target_list_char(self: &mut Self) {
+    pub fn remove_last_target_list_char(&mut self) {
         if !self.target_list.is_empty() {
             self.target_list.pop();
             self.process_possible_mailing_lists();
         }
     }
 
-    pub fn push_char_to_target_list(self: &mut Self, ch: char) {
+    pub fn push_char_to_target_list(&mut self, ch: char) {
         self.target_list.push(ch);
         self.process_possible_mailing_lists();
     }
 
-    pub fn clear_target_list(self: &mut Self) {
+    pub fn clear_target_list(&mut self) {
         self.target_list.clear();
         self.process_possible_mailing_lists();
     }
 
-    fn process_possible_mailing_lists(self: &mut Self) {
+    fn process_possible_mailing_lists(&mut self) {
         let mut possible_mailing_lists: Vec<MailingList> = Vec::new();
 
         for mailing_list in &self.mailing_lists {
@@ -316,24 +316,24 @@ impl MailingListSelectionState {
         self.highlighted_list_index = 0;
     }
 
-    pub fn highlight_below_list(self: &mut Self) {
+    pub fn highlight_below_list(&mut self) {
         if (self.highlighted_list_index as usize) + 1 < self.possible_mailing_lists.len() {
             self.highlighted_list_index += 1;
         }
     }
 
-    pub fn highlight_above_list(self: &mut Self) {
+    pub fn highlight_above_list(&mut self) {
         self.highlighted_list_index = self.highlighted_list_index.saturating_sub(1);
     }
 
-    pub fn has_valid_target_list(self: &Self) -> bool {
+    pub fn has_valid_target_list(&self) -> bool {
         let list_length = self.possible_mailing_lists.len(); // Possible mailing list length
         let list_index = self.highlighted_list_index as usize; // Index of the selected mailing list
 
-        if list_index <= list_length - 1 {
+        if list_index < list_length {
             return true;
         }
-        return false;
+        false
     }
 }
 
@@ -357,25 +357,24 @@ pub struct App {
 
 impl App {
     pub fn new() -> App {
-        let mailing_lists: Vec<MailingList>;
-        let bookmarked_patchsets: Vec<Patch>;
-        let reviewed_patchsets: HashMap<String, Vec<u32>>;
         let config: Config = Config::build();
 
-        match lore_session::load_available_lists(&config.mailing_lists_path) {
-            Ok(vec_of_mailing_lists) => mailing_lists = vec_of_mailing_lists,
-            Err(_) => mailing_lists = Vec::new(),
-        }
+        let mailing_lists = match lore_session::load_available_lists(&config.mailing_lists_path) {
+            Ok(vec_of_mailing_lists) => vec_of_mailing_lists,
+            Err(_) => Vec::new(),
+        };
 
-        match lore_session::load_bookmarked_patchsets(&config.bookmarked_patchsets_path) {
-            Ok(vec_of_patchsets) => bookmarked_patchsets = vec_of_patchsets,
-            Err(_) => bookmarked_patchsets = Vec::new(),
-        }
+        let bookmarked_patchsets =
+            match lore_session::load_bookmarked_patchsets(&config.bookmarked_patchsets_path) {
+                Ok(vec_of_patchsets) => vec_of_patchsets,
+                Err(_) => Vec::new(),
+            };
 
-        match lore_session::load_reviewed_patchsets(&config.reviewed_patchsets_path) {
-            Ok(vec_of_patchsets) => reviewed_patchsets = vec_of_patchsets,
-            Err(_) => reviewed_patchsets = HashMap::new(),
-        }
+        let reviewed_patchsets =
+            match lore_session::load_reviewed_patchsets(&config.reviewed_patchsets_path) {
+                Ok(vec_of_patchsets) => vec_of_patchsets,
+                Err(_) => HashMap::new(),
+            };
 
         App {
             current_screen: CurrentScreen::MailingListSelection,
@@ -397,7 +396,7 @@ impl App {
         }
     }
 
-    pub fn init_latest_patchsets_state(self: &mut Self) {
+    pub fn init_latest_patchsets_state(&mut self) {
         // the target mailing list for "latest patchsets" is the highlighted
         // entry in the possible lists of "mailing list selection"
         let list_index = self.mailing_list_selection_state.highlighted_list_index as usize;
@@ -411,17 +410,16 @@ impl App {
         ));
     }
 
-    pub fn reset_latest_patchsets_state(self: &mut Self) {
+    pub fn reset_latest_patchsets_state(&mut self) {
         self.latest_patchsets_state = None;
     }
 
     pub fn init_patchset_details_and_actions_state(
-        self: &mut Self,
+        &mut self,
         current_screen: CurrentScreen,
     ) -> color_eyre::Result<()> {
         let representative_patch: Patch;
         let mut is_patchset_bookmarked = true;
-        let patchset_path: String;
 
         match current_screen {
             CurrentScreen::BookmarkedPatchsets => {
@@ -444,13 +442,13 @@ impl App {
             screen => bail!(format!("Invalid screen passed as argument {screen:?}")),
         };
 
-        match lore_session::download_patchset(
+        let patchset_path = match lore_session::download_patchset(
             &self.config.patchsets_cache_dir,
             &representative_patch,
         ) {
-            Ok(result) => patchset_path = result,
+            Ok(result) => result,
             Err(io_error) => bail!("{io_error}"),
-        }
+        };
 
         match lore_session::split_patchset(&patchset_path) {
             Ok(patches) => {
@@ -471,11 +469,11 @@ impl App {
         }
     }
 
-    pub fn reset_patchset_details_and_actions_state(self: &mut Self) {
+    pub fn reset_patchset_details_and_actions_state(&mut self) {
         self.patchset_details_and_actions_state = None;
     }
 
-    pub fn consolidate_patchset_actions(self: &mut Self) -> color_eyre::Result<()> {
+    pub fn consolidate_patchset_actions(&mut self) -> color_eyre::Result<()> {
         let representative_patch = &self
             .patchset_details_and_actions_state
             .as_ref()
@@ -537,7 +535,7 @@ impl App {
         Ok(())
     }
 
-    pub fn set_current_screen(self: &mut Self, new_current_screen: CurrentScreen) {
+    pub fn set_current_screen(&mut self, new_current_screen: CurrentScreen) {
         self.current_screen = new_current_screen;
     }
 }
