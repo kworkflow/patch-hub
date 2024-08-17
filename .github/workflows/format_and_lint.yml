@@ -1,0 +1,34 @@
+name: Format and lint
+on:
+  pull_request:
+    types:
+    - opened
+    - synchronize
+    - reopened
+    - ready_for_review
+    - labeled
+    paths:
+    - src/**
+  push:
+    paths:
+    - src/**
+    branches: 
+    - master
+    - unstable
+jobs:
+  format-and-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: '!github.event.pull_request.draft'
+    steps:
+      - name: Run format_and_lint.sh
+        shell: bash
+        run: |
+          chmod +x format_and_lint.sh
+          ./format_and_lint.sh
+      - name: Verify code changes
+        shell: bash
+        run: |
+          [ -n "$(git status --porcelain)" ] && \
+          echo "Code changes found. Commit them before continuing" && \
+          exit 1
