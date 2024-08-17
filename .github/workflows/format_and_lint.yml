@@ -1,0 +1,57 @@
+name: Format and Lint
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - labeled
+    paths:
+      - src/**
+  push:
+    paths:
+      - src/**
+    branches: 
+      - master
+      - unstable
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: '!github.event.pull_request.draft'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update rustup and install rustfmt
+        shell: bash
+        run: |
+          rustup update
+          rustup component add rustfmt
+          rustup install stable
+
+      - name: Check rustfmt errors
+        shell: bash
+        run: |
+          cargo fmt --all -- --check
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: '!github.event.pull_request.draft'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update rustup and install clippy
+        shell: bash
+        run: |
+          rustup update
+          rustup component add clippy
+          rustup install stable
+
+      - name: Check clippy errors
+        shell: bash
+        run: |
+          cargo clippy --all-features --all-targets --tests -- --allow=clippy::too-many-arguments --deny=warnings --deny=clippy::map_unwrap_or --deny=unconditional_recursion
