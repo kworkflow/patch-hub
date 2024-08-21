@@ -2,14 +2,9 @@ use std::{collections::HashMap, path::Path, process::Command};
 use color_eyre::eyre::bail;
 use config::Config;
 use patch_hub::{
-    lore_session::{
+    lore_api_client::{BlockingLoreAPIClient, FailedFeedRequest}, lore_session::{
         self, LoreSession
-    },
-    lore_api_client::{
-        BlockingLoreAPIClient, FailedFeedRequest
-    },
-    mailing_list::MailingList,
-    patch::Patch
+    }, mailing_list::MailingList, patch::Patch
 };
 
 mod config;
@@ -74,15 +69,14 @@ impl LatestPatchsetsState {
     }
 
     pub fn fetch_current_page(self: &mut Self) -> color_eyre::Result<()> {
-        if let Err(failed_feed_request) = self
-            .lore_session.process_n_representative_patches(&self.lore_api_client, self.page_size * &self.page_number) {
-            match failed_feed_request {
-                FailedFeedRequest::UnknownError(error) => bail!("[FailedFeedRequest::UnknownError]\n*\tFailed to request feed\n*\t{error:#?}"),
-                FailedFeedRequest::StatusNotOk(feed_response) => bail!("[FailedFeedRequest::StatusNotOk]\n*\tRequest returned with non-OK status\n*\t{feed_response:#?}"),
-                FailedFeedRequest::EndOfFeed => (),
-            }
-        };
-        Ok(())
+        match self.lore_session.process_n_representative_patches(&self.lore_api_client, self.page_size * self.page_number) {
+            Ok(_) => Ok(()),
+            Err(report) => match report.downcast::<FailedFeedRequest>() {
+                Ok(FailedFeedRequest::EndOfFeed) => Ok(()),
+                Ok(other) => bail!(other),
+                Err(err) => Err(err),
+            },
+        }
     }
 
     pub fn select_below_patchset(self: &mut Self) {

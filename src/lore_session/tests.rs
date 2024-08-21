@@ -6,7 +6,7 @@ use std::fs;
 
 struct FakeLoreAPIClient { src_path: String }
 impl PatchFeedRequest for FakeLoreAPIClient {
-    fn request_patch_feed(self: &Self, target_list: &str, min_index: u32) -> Result<String, FailedFeedRequest> {
+    fn request_patch_feed(self: &Self, target_list: &str, min_index: u32) -> Result<String> {
         let _ = min_index;
         let _ = target_list;
         Ok(fs::read_to_string(&self.src_path).unwrap())
