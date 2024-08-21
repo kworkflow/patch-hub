@@ -86,7 +86,7 @@ impl LatestPatchsetsState {
     }
 
     pub fn select_below_patchset(self: &mut Self) {
-        if self.patchset_index + 1 < self.page_size * &self.page_number {
+        if self.patchset_index + 1 < self.lore_session.get_representative_patches_ids().len() as u32 {
             self.patchset_index += 1;
         }
     }
