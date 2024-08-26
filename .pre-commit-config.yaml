@@ -1,0 +1,23 @@
+repos:
+  - repo: local
+    hooks:
+      # Formatter
+      - id: rustfmt
+        name: rustfmt
+        language: rust
+        entry: cargo fmt
+        args: ["--all"]
+        types: [rust]
+        pass_filenames: false
+      # Linter
+      - id: clippy
+        name: clippy
+        language: rust
+        entry: cargo clippy
+        args: [
+          "--all-features", "--all-targets", "--tests",
+          "--", "--allow=clippy::too-many-arguments", "--deny=warnings",
+          "--deny=clippy::map_unwrap_or", "--deny=unconditional_recursion"
+        ]
+        types: [rust]
+        pass_filenames: false
