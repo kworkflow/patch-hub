@@ -28,7 +28,7 @@ pub struct LoreSession {
 impl LoreSession {
     pub fn new(target_list: String) -> LoreSession {
         LoreSession {
-            target_list: target_list,
+            target_list,
             representative_patches_ids: Vec::new(),
             processed_patches_map: HashMap::new(),
             patch_regex: PatchRegex::new(),
@@ -36,15 +36,15 @@ impl LoreSession {
         }
     }
 
-    pub fn get_representative_patches_ids(self: &Self) -> &Vec<String> {
+    pub fn get_representative_patches_ids(&self) -> &Vec<String> {
         &self.representative_patches_ids
     }
 
-    pub fn get_processed_patch(self: &Self, message_id: &str) -> Option<&Patch> {
+    pub fn get_processed_patch(&self, message_id: &str) -> Option<&Patch> {
         self.processed_patches_map.get(message_id)
     }
 
-    pub fn process_n_representative_patches<T: PatchFeedRequest>(self: &mut Self, lore_api_client: &T, n: u32) -> Result<(), FailedFeedRequest> {
+    pub fn process_n_representative_patches<T: PatchFeedRequest>(&mut self, lore_api_client: &T, n: u32) -> Result<(), FailedFeedRequest> {
         let mut patch_feed: PatchFeed;
         let mut processed_patches_ids: Vec<String>;
 
@@ -63,7 +63,7 @@ impl LoreSession {
         Ok(())
     }
 
-    fn process_patches(self: &mut Self, patch_feed: PatchFeed) -> Vec<String> {
+    fn process_patches(&mut self, patch_feed: PatchFeed) -> Vec<String> {
         let mut processed_patches_ids: Vec<String> = Vec::new();
 
         for mut patch in patch_feed.get_patches() {
@@ -78,7 +78,7 @@ impl LoreSession {
         processed_patches_ids
     }
 
-    fn update_representative_patches(self: &mut Self, processed_patches_ids: Vec<String>) {
+    fn update_representative_patches(&mut self, processed_patches_ids: Vec<String>) {
         let mut patch: &Patch;
         let mut patch_number_in_series: u32;
 
@@ -106,7 +106,7 @@ impl LoreSession {
         }
     }
 
-    pub fn get_patch_feed_page(self: &Self, page_size: u32, page_number: u32) -> Option<Vec<&Patch>> {
+    pub fn get_patch_feed_page(&self, page_size: u32, page_number: u32) -> Option<Vec<&Patch>> {
         let mut patch_feed_page: Vec<&Patch> = Vec::new();
         let representative_patches_ids_max_index: u32 = (self.representative_patches_ids.len() - 1).try_into().unwrap();
         let lower_end: u32 = page_size * (page_number - 1);
@@ -197,12 +197,12 @@ pub fn split_patchset(patchset_path_str: &str) -> Result<Vec<String>, String> {
 }
 
 fn extract_patches(mbox_path: &Path, patches: &mut Vec<String>) {
-    let mbox_reader: BufReader<fs::File>;
+    
     let mut current_patch: String = String::new();
     let mut is_reading_patch: bool = false;
     let mut is_last_line: bool = false;
 
-    mbox_reader = io::BufReader::new(
+    let mbox_reader: BufReader<fs::File> = io::BufReader::new(
         fs::File::open(mbox_path).unwrap()
     );
 
@@ -268,15 +268,15 @@ where T: AvailableListsRequest {
     let mut min_index = 0;
 
     loop {
-        let available_lists_str: String;
-        match lore_api_client.request_available_lists(min_index) {
-            Ok(value) => available_lists_str = value,
+        
+        let available_lists_str: String = match lore_api_client.request_available_lists(min_index) {
+            Ok(value) => value,
             Err(failed_available_lists_request) => return Err(failed_available_lists_request),
-        }
+        };
 
         let mut tmp_available_lists = process_available_lists(available_lists_str);
 
-        if tmp_available_lists.len() == 0 {
+        if tmp_available_lists.is_empty() {
             break;
         }
 
@@ -313,7 +313,7 @@ fn process_available_lists(available_lists_str: String) -> Vec<MailingList> {
         list_descriptions.push(description);
     }
 
-    let pairs: Vec<(&str, &str)> = list_names.into_iter().zip(list_descriptions.into_iter()).collect();
+    let pairs: Vec<(&str, &str)> = list_names.into_iter().zip(list_descriptions).collect();
 
     for (name, description) in pairs {
         if name == "all" {
@@ -347,7 +347,7 @@ pub fn load_available_lists(filepath: &str) -> io::Result<Vec<MailingList>> {
 
 pub fn prepare_reply_patchset_with_reviewed_by<T>(
     lore_api_client: &T, tmp_dir: &Path, target_list: &str,
-    patches: &Vec<String>, git_signature: &str
+    patches: &[String], git_signature: &str
 ) -> Result<Vec<Command>, FailedPatchHTMLRequest>
 where T: PatchHTMLRequest {
     let mut git_reply_commands: Vec<Command> = Vec::new();
@@ -383,7 +383,7 @@ fn generate_patch_reply_template(patch_contents: &str) -> String {
     let mut patch_lines_iterator = patch_contents.lines();
 
     // Process the headers
-    while let Some(line) = patch_lines_iterator.next() {
+    for line in patch_lines_iterator.by_ref() {
         let mut line_to_push = String::new();
 
         if line.starts_with("Subject: ") {
@@ -436,7 +436,7 @@ fn extract_git_reply_command(patch_html: &str) -> Command {
 pub fn get_git_signature(git_repo_path: &str) -> (String, String) {
     let mut git_user_name_command = Command::new("git");
     if !git_repo_path.is_empty() {
-        git_user_name_command.arg("-C").arg(format!("{}", git_repo_path));
+        git_user_name_command.arg("-C").arg(git_repo_path);
     }
     let git_user_name_output = git_user_name_command.arg("config")
         .arg("user.name")
@@ -446,7 +446,7 @@ pub fn get_git_signature(git_repo_path: &str) -> (String, String) {
 
     let mut git_user_email_command = Command::new("git");
     if !git_repo_path.is_empty() {
-        git_user_email_command.arg("-C").arg(format!("{}", git_repo_path));
+        git_user_email_command.arg("-C").arg(git_repo_path);
     }
     let git_user_email_output = git_user_email_command.arg("config")
         .arg("user.email")

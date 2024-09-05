@@ -12,28 +12,28 @@ pub struct MailingList {
 impl MailingList {
     pub fn new(name: &str, description: &str) -> Self {
         MailingList {
-            name: format!("{name}"),
-            description: format!("{description}"),
+            name: name.to_string(),
+            description: description.to_string(),
         }
     }
 
-    pub fn get_name(self: &Self) -> &str {
+    pub fn get_name(&self) -> &str {
         &self.name
     }
 
-    pub fn get_description(self: &Self) -> &str {
+    pub fn get_description(&self) -> &str {
         &self.description
     }
 }
 
 impl Ord for MailingList {
-    fn cmp(self: &Self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.name.cmp(&other.name)
     }
 }
 
 impl PartialOrd for MailingList {
-    fn partial_cmp(self: &Self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }

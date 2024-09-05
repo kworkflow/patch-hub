@@ -24,7 +24,7 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
     render_title(f, chunks[0]);
 
     match app.current_screen {
-        CurrentScreen::MailingListSelection => render_mailing_list_selection(f, &app, chunks[1]),
+        CurrentScreen::MailingListSelection => render_mailing_list_selection(f, app, chunks[1]),
         CurrentScreen::BookmarkedPatchsets => {
             render_bookmarked_patchsets(f, &app.bookmarked_patchsets_state, chunks[1])
         }
@@ -63,7 +63,7 @@ fn render_mailing_list_selection(f: &mut Frame, app: &App, chunk: Rect) {
         list_items.push(ListItem::new(
             Line::from(vec![
             Span::styled(
-                format!("{}", mailing_list.get_name()),
+                mailing_list.get_name().to_string(),
                 Style::default().fg(Color::Magenta),
             ),
             Span::styled(
@@ -101,10 +101,9 @@ fn render_bookmarked_patchsets(
     chunk: Rect,
 ) {
     let patchset_index = bookmarked_patchsets_state.patchset_index;
-    let mut index: u32 = 0;
     let mut list_items = Vec::<ListItem>::new();
 
-    for patch in &bookmarked_patchsets_state.bookmarked_patchsets {
+    for (index, patch) in bookmarked_patchsets_state.bookmarked_patchsets.iter().enumerate() {
         let patch_title = format!("{:width$}", patch.get_title(), width = 70);
         let patch_title = format!("{:.width$}", patch_title, width = 70);
         let patch_author = format!("{:width$}", patch.get_author().name, width = 30);
@@ -123,7 +122,6 @@ fn render_bookmarked_patchsets(
             ))
             .centered(),
         ));
-        index += 1;
     }
 
     let list_block = Block::default()
@@ -237,14 +235,14 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
         Line::from(vec![
             Span::styled(r#"  Title: "#, Style::default().fg(Color::Cyan)),
             Span::styled(
-                format!("{}", patchset_details.get_title()),
+                patchset_details.get_title().to_string(),
                 Style::default().fg(Color::White),
             ),
         ]),
         Line::from(vec![
             Span::styled("Author: ", Style::default().fg(Color::Cyan)),
             Span::styled(
-                format!("{}", patchset_details.get_author().name),
+                patchset_details.get_author().name.to_string(),
                 Style::default().fg(Color::White),
             ),
         ]),
@@ -265,7 +263,7 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
         Line::from(vec![
             Span::styled("Last updated: ", Style::default().fg(Color::Cyan)),
             Span::styled(
-                format!("{}", patchset_details.get_updated()),
+                patchset_details.get_updated().to_string(),
                 Style::default().fg(Color::White),
             ),
         ]),
@@ -347,7 +345,7 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
     let mut preview_title = String::from(" Preview ");
     if let Some(successful_indexes) = app.reviewed_patchsets.get(representative_patch_message_id) {
         if successful_indexes.contains(&preview_index) {
-            preview_title = format!(" Preview [REVIEWED] ");
+            preview_title = " Preview [REVIEWED] ".to_string();
         }
     };
 
@@ -362,7 +360,7 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
         .unwrap()
         .patches[preview_index as usize]
         .replace('\t', "        ");
-    let patch_preview = Paragraph::new(Text::from(format!("{patch_preview}")))
+    let patch_preview = Paragraph::new(Text::from(patch_preview.to_string()))
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -377,8 +375,7 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
 }
 
 fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
-    let mode_footer_text: Vec<Span>;
-    match app.current_screen {
+    let mode_footer_text = match app.current_screen {
         CurrentScreen::MailingListSelection => {
             let mut text_area = Span::default();
 
@@ -408,19 +405,19 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
                 }
             }
 
-            mode_footer_text = vec![
+            vec![
                 Span::styled("Target List: ", Style::default().fg(Color::Green)),
                 text_area,
             ]
         }
         CurrentScreen::BookmarkedPatchsets => {
-            mode_footer_text = vec![Span::styled(
+            vec![Span::styled(
                 "Bookmarked Patchsets",
                 Style::default().fg(Color::Green),
             )]
         }
         CurrentScreen::LatestPatchsets => {
-            mode_footer_text = vec![Span::styled(
+            vec![Span::styled(
                 format!(
                     "Latest Patchsets from {} (page {})",
                     &app.latest_patchsets_state
@@ -436,12 +433,12 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
             )]
         }
         CurrentScreen::PatchsetDetails => {
-            mode_footer_text = vec![Span::styled(
+            vec![Span::styled(
                 "Patchset Details and Actions",
                 Style::default().fg(Color::Green),
             )]
         }
-    }
+    };
     let mode_footer = Paragraph::new(Line::from(mode_footer_text))
         .block(Block::default().borders(Borders::ALL))
         .centered();
