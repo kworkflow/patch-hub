@@ -1,3 +1,24 @@
+# Version 0.1.2 (2024-09-06)
+
+It has been quite a while since the release of v0.1.1 (about one month). The rate of development dropped a little, but there were some meaningful contributions (including from new contributors :stuck_out_tongue:), so this release is to avoid keeping `patch-hub` outdated.
+
+### New Functionalities and Changes
+
+1. Add a `--version | -V` flag to display the `patch-hub` version (issue #17).
+2. Suppress warning for unused function `centerd_rect`.
+3. Rearrange unit test sample files to `src/test_samples` and add unit tests for `src/mailing_lists.rs` and `src/lore_api_client`.
+4. Create the cache directory before using it (issue #21).
+5. Remove vendoring of `openssl` (issue #22).
+6. Remove tab completion from the "Mailing List Selection" screen and allow the user to input the list without entirely typing it (issue #25).
+7. Fix crashing bug of hitting `ENTER` when there is no bookmarked patchset (issue #12).
+8. Fix overflow in the patchsets of the last page.
+
+### Problems and Future Changes
+
+Many fronts are being explored right now, like: making configurations more robust and adding `git send-email` configurations, adding formatting and linting to the project, implementing logging, and more. The integration of `kw` and `patch-hub` is also being done by [this PR](https://github.com/kworkflow/kworkflow/pull/1155).
+
+IMHO, the following steps are to close these started fronts, make a new release, and then stop adding features to pay the enormous technical debt we have in the project.
+
 # Version 0.1.1 (2024-08-07)
 
 This is a minor release to fix the issues #18 and #19.
