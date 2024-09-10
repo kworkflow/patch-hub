@@ -10,12 +10,6 @@ pub struct Config {
 
 impl Config {
     pub fn build() -> Self {
-        
-        
-        
-        
-        
-
         let page_size: u32 = match env::var("PATCH_HUB_PAGE_SIZE") {
             Ok(value) => value.parse().unwrap(),
             Err(_) => 30,
@@ -23,22 +17,34 @@ impl Config {
 
         let patchsets_cache_dir: String = match env::var("KW_CACHE_DIR") {
             Ok(value) => format!("{value}/patch_hub/patchsets"),
-            Err(_) => format!("{}/.cache/kw/patch_hub/patchsets", env::var("HOME").unwrap()),
+            Err(_) => format!(
+                "{}/.cache/kw/patch_hub/patchsets",
+                env::var("HOME").unwrap()
+            ),
         };
 
         let bookmarked_patchsets_path: String = match env::var("KW_DATA_DIR") {
             Ok(value) => format!("{value}/patch_hub/bookmarked_patchsets.json"),
-            Err(_) => format!("{}/.local/share/kw/patch_hub/bookmarked_patchsets.json", env::var("HOME").unwrap()),
+            Err(_) => format!(
+                "{}/.local/share/kw/patch_hub/bookmarked_patchsets.json",
+                env::var("HOME").unwrap()
+            ),
         };
 
         let mailing_lists_path: String = match env::var("KW_DATA_DIR") {
             Ok(value) => format!("{value}/patch_hub/mailing_lists.json"),
-            Err(_) => format!("{}/.local/share/kw/patch_hub/mailing_lists.json", env::var("HOME").unwrap()),
+            Err(_) => format!(
+                "{}/.local/share/kw/patch_hub/mailing_lists.json",
+                env::var("HOME").unwrap()
+            ),
         };
 
         let reviewed_patchsets_path: String = match env::var("KW_DATA_DIR") {
             Ok(value) => format!("{value}/patch_hub/reviewed_patchsets.json"),
-            Err(_) => format!("{}/.local/share/kw/patch_hub/reviewed_patchsets.json", env::var("HOME").unwrap()),
+            Err(_) => format!(
+                "{}/.local/share/kw/patch_hub/reviewed_patchsets.json",
+                env::var("HOME").unwrap()
+            ),
         };
 
         Config {

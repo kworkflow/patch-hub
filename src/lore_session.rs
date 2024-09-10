@@ -1,16 +1,20 @@
+use crate::lore_api_client::{
+    AvailableListsRequest, FailedAvailableListsRequest, FailedFeedRequest, FailedPatchHTMLRequest,
+    PatchFeedRequest, PatchHTMLRequest,
+};
 use crate::mailing_list::MailingList;
 use crate::patch::{Patch, PatchFeed, PatchRegex};
-use crate::lore_api_client::{
-    AvailableListsRequest, FailedAvailableListsRequest, FailedFeedRequest, FailedPatchHTMLRequest, PatchFeedRequest, PatchHTMLRequest
-};
-use std::collections::HashMap;
-use std::mem::swap;
-use std::{fs::{self, File}, io};
-use std::io::{BufRead, BufReader};
-use std::path::Path;
-use std::process::{Command, Stdio};
 use regex::Regex;
 use serde_xml_rs::from_str;
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader};
+use std::mem::swap;
+use std::path::Path;
+use std::process::{Command, Stdio};
+use std::{
+    fs::{self, File},
+    io,
+};
 
 #[cfg(test)]
 mod tests;
@@ -44,7 +48,11 @@ impl LoreSession {
         self.processed_patches_map.get(message_id)
     }
 
-    pub fn process_n_representative_patches<T: PatchFeedRequest>(&mut self, lore_api_client: &T, n: u32) -> Result<(), FailedFeedRequest> {
+    pub fn process_n_representative_patches<T: PatchFeedRequest>(
+        &mut self,
+        lore_api_client: &T,
+        n: u32,
+    ) -> Result<(), FailedFeedRequest> {
         let mut patch_feed: PatchFeed;
         let mut processed_patches_ids: Vec<String>;
 
@@ -69,9 +77,13 @@ impl LoreSession {
         for mut patch in patch_feed.get_patches() {
             patch.update_patch_metadata(&self.patch_regex);
 
-            if !self.processed_patches_map.contains_key(&patch.get_message_id().href) {
+            if !self
+                .processed_patches_map
+                .contains_key(&patch.get_message_id().href)
+            {
                 processed_patches_ids.push(patch.get_message_id().href.clone());
-                self.processed_patches_map.insert(patch.get_message_id().href.clone(), patch);
+                self.processed_patches_map
+                    .insert(patch.get_message_id().href.clone(), patch);
             }
         }
 
@@ -89,12 +101,14 @@ impl LoreSession {
             if patch_number_in_series > 1 {
                 continue;
             }
-            
+
             if patch_number_in_series == 1 {
                 if let Some(in_reply_to) = &patch.get_in_reply_to() {
-                    if let Some(patch_in_reply_to) = self.processed_patches_map.get(&in_reply_to.href) {
-                        if (patch_in_reply_to.get_number_in_series() == 0) &&
-                            (patch.get_version() == patch_in_reply_to.get_version())
+                    if let Some(patch_in_reply_to) =
+                        self.processed_patches_map.get(&in_reply_to.href)
+                    {
+                        if (patch_in_reply_to.get_number_in_series() == 0)
+                            && (patch.get_version() == patch_in_reply_to.get_version())
                         {
                             continue;
                         };
@@ -102,13 +116,16 @@ impl LoreSession {
                 };
             }
 
-            self.representative_patches_ids.push(patch.get_message_id().href.clone());
+            self.representative_patches_ids
+                .push(patch.get_message_id().href.clone());
         }
     }
 
     pub fn get_patch_feed_page(&self, page_size: u32, page_number: u32) -> Option<Vec<&Patch>> {
         let mut patch_feed_page: Vec<&Patch> = Vec::new();
-        let representative_patches_ids_max_index: u32 = (self.representative_patches_ids.len() - 1).try_into().unwrap();
+        let representative_patches_ids_max_index: u32 = (self.representative_patches_ids.len() - 1)
+            .try_into()
+            .unwrap();
         let lower_end: u32 = page_size * (page_number - 1);
         let mut upper_end: u32 = page_size * page_number;
 
@@ -122,10 +139,9 @@ impl LoreSession {
 
         for i in lower_end..upper_end {
             patch_feed_page.push(
-                self.processed_patches_map.get(
-                    &self.representative_patches_ids[usize::try_from(i).unwrap()]
-                ).
-                unwrap()
+                self.processed_patches_map
+                    .get(&self.representative_patches_ids[usize::try_from(i).unwrap()])
+                    .unwrap(),
             )
         }
 
@@ -182,9 +198,9 @@ pub fn split_patchset(patchset_path_str: &str) -> Result<Vec<String>, String> {
     let cover_letter_path: &Path = Path::new(&cover_letter_path_str);
 
     if !patchset_path.exists() {
-        return Err(format!("{}: Path doesn't exist", patchset_path.display()))
+        return Err(format!("{}: Path doesn't exist", patchset_path.display()));
     } else if !patchset_path.is_file() {
-        return Err(format!("{}: Not a file", patchset_path.display()))
+        return Err(format!("{}: Not a file", patchset_path.display()));
     }
 
     if cover_letter_path.exists() && cover_letter_path.is_file() {
@@ -197,14 +213,11 @@ pub fn split_patchset(patchset_path_str: &str) -> Result<Vec<String>, String> {
 }
 
 fn extract_patches(mbox_path: &Path, patches: &mut Vec<String>) {
-    
     let mut current_patch: String = String::new();
     let mut is_reading_patch: bool = false;
     let mut is_last_line: bool = false;
 
-    let mbox_reader: BufReader<fs::File> = io::BufReader::new(
-        fs::File::open(mbox_path).unwrap()
-    );
+    let mbox_reader: BufReader<fs::File> = io::BufReader::new(fs::File::open(mbox_path).unwrap());
 
     for line in mbox_reader.lines() {
         let line = line.unwrap();
@@ -242,7 +255,10 @@ fn extract_patches(mbox_path: &Path, patches: &mut Vec<String>) {
     }
 }
 
-pub fn save_bookmarked_patchsets(bookmarked_patchsets: &Vec<Patch>, filepath: &str) -> io::Result<()> {
+pub fn save_bookmarked_patchsets(
+    bookmarked_patchsets: &Vec<Patch>,
+    filepath: &str,
+) -> io::Result<()> {
     if let Some(parent) = Path::new(filepath).parent() {
         fs::create_dir_all(parent)?;
     }
@@ -262,13 +278,16 @@ pub fn load_bookmarked_patchsets(filepath: &str) -> io::Result<Vec<Patch>> {
     Ok(bookmarked_patchesets)
 }
 
-pub fn fetch_available_lists<T>(lore_api_client: &T) -> Result<Vec<MailingList>, FailedAvailableListsRequest>
-where T: AvailableListsRequest {
+pub fn fetch_available_lists<T>(
+    lore_api_client: &T,
+) -> Result<Vec<MailingList>, FailedAvailableListsRequest>
+where
+    T: AvailableListsRequest,
+{
     let mut available_lists: Vec<MailingList> = Vec::new();
     let mut min_index = 0;
 
     loop {
-        
         let available_lists_str: String = match lore_api_client.request_available_lists(min_index) {
             Ok(value) => value,
             Err(failed_available_lists_request) => return Err(failed_available_lists_request),
@@ -346,17 +365,24 @@ pub fn load_available_lists(filepath: &str) -> io::Result<Vec<MailingList>> {
 }
 
 pub fn prepare_reply_patchset_with_reviewed_by<T>(
-    lore_api_client: &T, tmp_dir: &Path, target_list: &str,
-    patches: &[String], git_signature: &str
+    lore_api_client: &T,
+    tmp_dir: &Path,
+    target_list: &str,
+    patches: &[String],
+    git_signature: &str,
 ) -> Result<Vec<Command>, FailedPatchHTMLRequest>
-where T: PatchHTMLRequest {
+where
+    T: PatchHTMLRequest,
+{
     let mut git_reply_commands: Vec<Command> = Vec::new();
     let re_message_id = Regex::new(r#"(?m)^Message-Id: <(.*?)>"#).unwrap();
 
     for patch in patches.iter() {
         let message_id = re_message_id
-            .captures(patch).unwrap()
-            .get(1).unwrap()
+            .captures(patch)
+            .unwrap()
+            .get(1)
+            .unwrap()
             .as_str();
 
         let reply_path = tmp_dir.join(format!("{message_id}-reply.mbx"));
@@ -388,7 +414,10 @@ fn generate_patch_reply_template(patch_contents: &str) -> String {
 
         if line.starts_with("Subject: ") {
             line_to_push = line.replace("Subject: ", "Subject: Re: ") + "\n";
-        } else if line.starts_with("From: ") || line.starts_with("Date: ") || line.starts_with("Message-Id: ") {
+        } else if line.starts_with("From: ")
+            || line.starts_with("Date: ")
+            || line.starts_with("Message-Id: ")
+        {
             continue;
         } else if !line.trim().is_empty() {
             line_to_push = format!("{}\n", line);
@@ -415,9 +444,8 @@ fn extract_git_reply_command(patch_html: &str) -> Command {
     git_reply_command.arg("--dry-run");
     git_reply_command.arg("--suppress-cc=all");
 
-    let re_full_git_command = Regex::new(
-        r#"(?s)git-send-email\(1\):(.*?)/path/to/YOUR_REPLY"#
-    ).unwrap();
+    let re_full_git_command =
+        Regex::new(r#"(?s)git-send-email\(1\):(.*?)/path/to/YOUR_REPLY"#).unwrap();
     let re_long_options = Regex::new(r"--[^\s=]+=[^\s]+").unwrap();
 
     if let Some(capture) = re_full_git_command.captures(patch_html) {
@@ -438,26 +466,35 @@ pub fn get_git_signature(git_repo_path: &str) -> (String, String) {
     if !git_repo_path.is_empty() {
         git_user_name_command.arg("-C").arg(git_repo_path);
     }
-    let git_user_name_output = git_user_name_command.arg("config")
+    let git_user_name_output = git_user_name_command
+        .arg("config")
         .arg("user.name")
         .output()
         .unwrap();
-    let git_user_name = std::str::from_utf8(&git_user_name_output.stdout).unwrap().trim();
+    let git_user_name = std::str::from_utf8(&git_user_name_output.stdout)
+        .unwrap()
+        .trim();
 
     let mut git_user_email_command = Command::new("git");
     if !git_repo_path.is_empty() {
         git_user_email_command.arg("-C").arg(git_repo_path);
     }
-    let git_user_email_output = git_user_email_command.arg("config")
+    let git_user_email_output = git_user_email_command
+        .arg("config")
         .arg("user.email")
         .output()
         .unwrap();
-    let git_user_email = std::str::from_utf8(&git_user_email_output.stdout).unwrap().trim();
+    let git_user_email = std::str::from_utf8(&git_user_email_output.stdout)
+        .unwrap()
+        .trim();
 
     (git_user_name.to_owned(), git_user_email.to_owned())
 }
 
-pub fn save_reviewed_patchsets(reviewed_patchsets: &HashMap<String, Vec<u32>>, filepath: &str) -> io::Result<()> {
+pub fn save_reviewed_patchsets(
+    reviewed_patchsets: &HashMap<String, Vec<u32>>,
+    filepath: &str,
+) -> io::Result<()> {
     if let Some(parent) = Path::new(filepath).parent() {
         fs::create_dir_all(parent)?;
     }

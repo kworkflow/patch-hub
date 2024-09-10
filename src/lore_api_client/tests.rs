@@ -10,7 +10,9 @@ fn blocking_client_can_request_valid_patch_feed() {
     let patch_feed: PatchFeed = serde_xml_rs::from_str(&patch_feed).unwrap();
     let patches = patch_feed.get_patches();
 
-    assert_eq!(200, patches.len(),
+    assert_eq!(
+        200,
+        patches.len(),
         "Should successfully request patch feed with 200 patches"
     );
 }
@@ -23,7 +25,9 @@ fn blocking_client_should_detect_failed_patch_feed_request() {
     if let Err(failed_feed_request) = lore_api_client.request_patch_feed("invalid-list", 0) {
         match failed_feed_request {
             FailedFeedRequest::StatusNotOk(_) => (),
-            _ => panic!("Invalid request should return non 200 OK status.\n{failed_feed_request:#?}")
+            _ => {
+                panic!("Invalid request should return non 200 OK status.\n{failed_feed_request:#?}")
+            }
         }
     } else {
         panic!("Invalid request shouldn't be successful");
@@ -32,7 +36,9 @@ fn blocking_client_should_detect_failed_patch_feed_request() {
     if let Err(failed_feed_request) = lore_api_client.request_patch_feed("amd-gfx", 300000) {
         match failed_feed_request {
             FailedFeedRequest::EndOfFeed => (),
-            _ => panic!("Out-of-bounds request should return end of feed.\n{failed_feed_request:#?}")
+            _ => {
+                panic!("Out-of-bounds request should return end of feed.\n{failed_feed_request:#?}")
+            }
         }
     } else {
         panic!("Out-of-bounds request shouldn't be successful");
@@ -54,7 +60,10 @@ fn blocking_client_can_request_valid_available_lists() {
 fn blocking_client_can_request_valid_patch_html() {
     let lore_api_client = BlockingLoreAPIClient::new();
 
-    if lore_api_client.request_patch_html("all", "Pine.LNX.4.58.0507282031180.3307@g5.osdl.org").is_err() {
+    if lore_api_client
+        .request_patch_html("all", "Pine.LNX.4.58.0507282031180.3307@g5.osdl.org")
+        .is_err()
+    {
         panic!("Valid request should be successful");
     }
 }

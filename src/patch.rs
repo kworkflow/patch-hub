@@ -44,13 +44,24 @@ pub struct MessageID {
     pub href: String,
 }
 
-fn default_version() -> u32 { 1 }
-fn default_number_in_series() -> u32 { 1 }
-fn default_total_in_series() -> u32 { 1 }
+fn default_version() -> u32 {
+    1
+}
+fn default_number_in_series() -> u32 {
+    1
+}
+fn default_total_in_series() -> u32 {
+    1
+}
 
 impl Patch {
-    pub fn new(title: String, author: Author, message_id: MessageID,
-        in_reply_to: Option<MessageID>, updated: String) -> Patch {
+    pub fn new(
+        title: String,
+        author: Author,
+        message_id: MessageID,
+        in_reply_to: Option<MessageID>,
+        updated: String,
+    ) -> Patch {
         Patch {
             title,
             author,
@@ -96,8 +107,6 @@ impl Patch {
     }
 
     pub fn update_patch_metadata(&mut self, patch_regex: &PatchRegex) {
-        
-
         let patch_tag: String = match self.get_patch_tag(&patch_regex.re_patch_tag) {
             Some(value) => value.to_string(),
             None => return,
@@ -117,10 +126,7 @@ impl Patch {
     }
 
     fn remove_patch_tag_from_title(&mut self, patch_tag: &str) {
-        self.title = self.title
-            .replace(patch_tag, "")
-            .trim()
-            .to_string();
+        self.title = self.title.replace(patch_tag, "").trim().to_string();
     }
 
     fn set_version(&mut self, patch_tag: &str, re_patch_version: &Regex) {

@@ -5,10 +5,15 @@ use serde_xml_rs::from_str;
 fn can_deserialize_patch_without_in_reply_to() {
     let expected_patch: Patch = Patch::new(
         "[PATCH 0/42] hitchhiker/guide: Complete Collection".to_string(),
-        Author { name: "Foo Bar".to_string(), email: "foo@bar.foo.bar".to_string() },
-        MessageID { href: "http://lore.kernel.org/some-list/1234-1-foo@bar.foo.bar".to_string() },
+        Author {
+            name: "Foo Bar".to_string(),
+            email: "foo@bar.foo.bar".to_string(),
+        },
+        MessageID {
+            href: "http://lore.kernel.org/some-list/1234-1-foo@bar.foo.bar".to_string(),
+        },
         None,
-        "2024-07-06T19:15:48Z".to_string()
+        "2024-07-06T19:15:48Z".to_string(),
     );
     let serialized_patch: &str = r#"
         <entry xmlns:thr="http://purl.org/syndication/thread/1.0">
@@ -27,7 +32,8 @@ fn can_deserialize_patch_without_in_reply_to() {
 
     let actual_patch: Patch = from_str(serialized_patch).unwrap();
 
-    assert_eq!(expected_patch, actual_patch,
+    assert_eq!(
+        expected_patch, actual_patch,
         "An entry from a patch feed should deserialize into"
     )
 }
@@ -36,10 +42,17 @@ fn can_deserialize_patch_without_in_reply_to() {
 fn can_deserialize_patch_with_in_reply_to() {
     let expected_patch: Patch = Patch::new(
         "[PATCH 3/42] hitchhiker/guide: Life, the Universe and Everything".to_string(),
-        Author { name: "Foo Bar".to_string(), email: "foo@bar.foo.bar".to_string() },
-        MessageID { href: "http://lore.kernel.org/some-list/1234-2-foo@bar.foo.bar".to_string() },
-        Some(MessageID { href: "http://lore.kernel.org/some-list/1234-1-foo@bar.foo.bar".to_string() }),
-        "2024-07-06T19:16:53Z".to_string()
+        Author {
+            name: "Foo Bar".to_string(),
+            email: "foo@bar.foo.bar".to_string(),
+        },
+        MessageID {
+            href: "http://lore.kernel.org/some-list/1234-2-foo@bar.foo.bar".to_string(),
+        },
+        Some(MessageID {
+            href: "http://lore.kernel.org/some-list/1234-1-foo@bar.foo.bar".to_string(),
+        }),
+        "2024-07-06T19:16:53Z".to_string(),
     );
     let serialized_patch: &str = r#"
         <entry xmlns:thr="http://purl.org/syndication/thread/1.0">
@@ -61,7 +74,8 @@ fn can_deserialize_patch_with_in_reply_to() {
 
     let actual_patch: Patch = from_str(serialized_patch).unwrap();
 
-    assert_eq!(expected_patch, actual_patch,
+    assert_eq!(
+        expected_patch, actual_patch,
         "An entry from a patch feed should deserialize into"
     )
 }
@@ -71,15 +85,24 @@ fn test_update_patch_metadata() {
     let patch_regex: PatchRegex = PatchRegex::new();
     let mut patch: Patch = Patch::new(
         "[RESEND][v7 PATCH 3/42] hitchhiker/guide: Life, the Universe and Everything".to_string(),
-        Author { name: "Foo Bar".to_string(), email: "foo@bar.foo.bar".to_string() },
-        MessageID { href: "http://lore.kernel.org/some-list/1234-2-foo@bar.foo.bar".to_string() },
-        Some(MessageID { href: "http://lore.kernel.org/some-list/1234-1-foo@bar.foo.bar".to_string() }),
-        "2024-07-06T19:16:53Z".to_string()
+        Author {
+            name: "Foo Bar".to_string(),
+            email: "foo@bar.foo.bar".to_string(),
+        },
+        MessageID {
+            href: "http://lore.kernel.org/some-list/1234-2-foo@bar.foo.bar".to_string(),
+        },
+        Some(MessageID {
+            href: "http://lore.kernel.org/some-list/1234-1-foo@bar.foo.bar".to_string(),
+        }),
+        "2024-07-06T19:16:53Z".to_string(),
     );
 
     patch.update_patch_metadata(&patch_regex);
 
-    assert_eq!("[RESEND] hitchhiker/guide: Life, the Universe and Everything", patch.get_title(),
+    assert_eq!(
+        "[RESEND] hitchhiker/guide: Life, the Universe and Everything",
+        patch.get_title(),
         "The title should have the patch tag `[v7 PATCH 3/42]` stripped"
     );
     assert_eq!(7, patch.get_version(), "Wrong version!");
