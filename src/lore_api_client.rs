@@ -32,7 +32,7 @@ pub trait PatchFeedRequest {
     fn request_patch_feed(
         &self,
         target_list: &str,
-        min_index: u32,
+        min_index: usize,
     ) -> Result<String, FailedFeedRequest>;
 }
 
@@ -40,7 +40,7 @@ impl PatchFeedRequest for BlockingLoreAPIClient {
     fn request_patch_feed(
         &self,
         target_list: &str,
-        min_index: u32,
+        min_index: usize,
     ) -> Result<String, FailedFeedRequest> {
         let feed_request: String =
             format!("{LORE_DOMAIN}/{target_list}/{BASE_QUERY_FOR_FEED_REQUEST}&o={min_index}");
@@ -73,14 +73,14 @@ pub enum FailedAvailableListsRequest {
 pub trait AvailableListsRequest {
     fn request_available_lists(
         &self,
-        min_index: u32,
+        min_index: usize,
     ) -> Result<String, FailedAvailableListsRequest>;
 }
 
 impl AvailableListsRequest for BlockingLoreAPIClient {
     fn request_available_lists(
         &self,
-        min_index: u32,
+        min_index: usize,
     ) -> Result<String, FailedAvailableListsRequest> {
         let available_lists_request: String = format!("{LORE_DOMAIN}/?&o={min_index}");
 

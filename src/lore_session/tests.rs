@@ -11,7 +11,7 @@ impl PatchFeedRequest for FakeLoreAPIClient {
     fn request_patch_feed(
         &self,
         target_list: &str,
-        min_index: u32,
+        min_index: usize,
     ) -> Result<String, FailedFeedRequest> {
         let _ = min_index;
         let _ = target_list;
@@ -305,7 +305,7 @@ fn should_process_available_lists() {
 impl AvailableListsRequest for FakeLoreAPIClient {
     fn request_available_lists(
         &self,
-        min_index: u32,
+        min_index: usize,
     ) -> Result<String, FailedAvailableListsRequest> {
         match min_index {
             0 => Ok(fs::read_to_string("src/test_samples/lore_session/process_available_lists/available_lists_response-1.html").unwrap()),

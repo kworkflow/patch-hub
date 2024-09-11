@@ -20,11 +20,11 @@ impl PatchFeed {
 pub struct Patch {
     r#title: String,
     #[serde(default = "default_version")]
-    version: u32,
+    version: usize,
     #[serde(default = "default_number_in_series")]
-    number_in_series: u32,
+    number_in_series: usize,
     #[serde(default = "default_total_in_series")]
-    total_in_series: u32,
+    total_in_series: usize,
     author: Author,
     #[serde(rename = "link")]
     message_id: MessageID,
@@ -44,13 +44,13 @@ pub struct MessageID {
     pub href: String,
 }
 
-fn default_version() -> u32 {
+fn default_version() -> usize {
     1
 }
-fn default_number_in_series() -> u32 {
+fn default_number_in_series() -> usize {
     1
 }
-fn default_total_in_series() -> u32 {
+fn default_total_in_series() -> usize {
     1
 }
 
@@ -78,15 +78,15 @@ impl Patch {
         &self.title
     }
 
-    pub fn get_version(&self) -> u32 {
+    pub fn get_version(&self) -> usize {
         self.version
     }
 
-    pub fn get_number_in_series(&self) -> u32 {
+    pub fn get_number_in_series(&self) -> usize {
         self.number_in_series
     }
 
-    pub fn get_total_in_series(&self) -> u32 {
+    pub fn get_total_in_series(&self) -> usize {
         self.total_in_series
     }
 

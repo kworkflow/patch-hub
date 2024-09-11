@@ -12,12 +12,12 @@ mod config;
 
 pub struct BookmarkedPatchsetsState {
     pub bookmarked_patchsets: Vec<Patch>,
-    pub patchset_index: u32,
+    pub patchset_index: usize,
 }
 
 impl BookmarkedPatchsetsState {
     pub fn select_below_patchset(&mut self) {
-        if (self.patchset_index as usize) + 1 < self.bookmarked_patchsets.len() {
+        if self.patchset_index + 1 < self.bookmarked_patchsets.len() {
             self.patchset_index += 1;
         }
     }
@@ -28,7 +28,7 @@ impl BookmarkedPatchsetsState {
 
     fn get_selected_patchset(&self) -> Patch {
         self.bookmarked_patchsets
-            .get(self.patchset_index as usize)
+            .get(self.patchset_index)
             .unwrap()
             .clone()
     }
@@ -54,13 +54,13 @@ pub struct LatestPatchsetsState {
     lore_session: LoreSession,
     lore_api_client: BlockingLoreAPIClient,
     target_list: String,
-    page_number: u32,
-    patchset_index: u32,
-    page_size: u32,
+    page_number: usize,
+    patchset_index: usize,
+    page_size: usize,
 }
 
 impl LatestPatchsetsState {
-    pub fn new(target_list: String, page_size: u32) -> LatestPatchsetsState {
+    pub fn new(target_list: String, page_size: usize) -> LatestPatchsetsState {
         LatestPatchsetsState {
             lore_session: LoreSession::new(target_list.clone()),
             lore_api_client: BlockingLoreAPIClient::new(),
@@ -86,8 +86,7 @@ impl LatestPatchsetsState {
     }
 
     pub fn select_below_patchset(&mut self) {
-        if (self.patchset_index as usize) + 1
-            < self.lore_session.get_representative_patches_ids().len()
+        if self.patchset_index + 1 < self.lore_session.get_representative_patches_ids().len()
             && self.patchset_index + 1 < self.page_size * self.page_number
         {
             self.patchset_index += 1;
@@ -104,12 +103,7 @@ impl LatestPatchsetsState {
     }
 
     pub fn increment_page(&mut self) {
-        let patchsets_processed: u32 = self
-            .lore_session
-            .get_representative_patches_ids()
-            .len()
-            .try_into()
-            .unwrap();
+        let patchsets_processed: usize = self.lore_session.get_representative_patches_ids().len();
         if self.page_size * self.page_number > patchsets_processed {
             return;
         }
@@ -129,11 +123,11 @@ impl LatestPatchsetsState {
         &self.target_list
     }
 
-    pub fn get_page_number(&self) -> u32 {
+    pub fn get_page_number(&self) -> usize {
         self.page_number
     }
 
-    pub fn get_patchset_index(&self) -> u32 {
+    pub fn get_patchset_index(&self) -> usize {
         self.patchset_index
     }
 
@@ -141,7 +135,7 @@ impl LatestPatchsetsState {
         let message_id: &str = self
             .lore_session
             .get_representative_patches_ids()
-            .get(self.patchset_index as usize)
+            .get(self.patchset_index)
             .unwrap();
 
         self.lore_session
@@ -159,8 +153,8 @@ impl LatestPatchsetsState {
 pub struct PatchsetDetailsAndActionsState {
     pub representative_patch: Patch,
     pub patches: Vec<String>,
-    pub preview_index: u32,
-    pub preview_scroll_offset: u32,
+    pub preview_index: usize,
+    pub preview_scroll_offset: usize,
     pub patchset_actions: HashMap<PatchsetAction, bool>,
     pub last_screen: CurrentScreen,
 }
@@ -173,28 +167,28 @@ pub enum PatchsetAction {
 
 impl PatchsetDetailsAndActionsState {
     pub fn preview_next_patch(&mut self) {
-        if ((self.preview_index as usize) + 1) < self.patches.len() {
+        if (self.preview_index + 1) < self.patches.len() {
             self.preview_index += 1;
             self.preview_scroll_offset = 0;
         }
     }
 
     pub fn preview_previous_patch(&mut self) {
-        if (self.preview_index as usize) > 0 {
+        if self.preview_index > 0 {
             self.preview_index -= 1;
             self.preview_scroll_offset = 0;
         }
     }
 
     pub fn preview_scroll_down(&mut self) {
-        let number_of_lines = self.patches[self.preview_index as usize].lines().count();
-        if ((self.preview_scroll_offset as usize) + 1) <= number_of_lines {
+        let number_of_lines = self.patches[self.preview_index].lines().count();
+        if (self.preview_scroll_offset + 1) <= number_of_lines {
             self.preview_scroll_offset += 1;
         }
     }
 
     pub fn preview_scroll_up(&mut self) {
-        if (self.preview_scroll_offset as usize) > 0 {
+        if self.preview_scroll_offset > 0 {
             self.preview_scroll_offset -= 1;
         }
     }
@@ -223,7 +217,7 @@ impl PatchsetDetailsAndActionsState {
     pub fn reply_patchset_with_reviewed_by(
         &self,
         target_list: &str,
-    ) -> color_eyre::Result<Vec<u32>> {
+    ) -> color_eyre::Result<Vec<usize>> {
         let lore_api_client = BlockingLoreAPIClient::new();
         let (git_user_name, git_user_email) = lore_session::get_git_signature("");
         let mut successful_indexes = Vec::new();
@@ -253,7 +247,7 @@ impl PatchsetDetailsAndActionsState {
             let mut child = command.spawn().unwrap();
             let exit_status = child.wait().unwrap();
             if exit_status.success() {
-                successful_indexes.push(index as u32);
+                successful_indexes.push(index);
             }
         }
 
@@ -265,7 +259,7 @@ pub struct MailingListSelectionState {
     pub mailing_lists: Vec<MailingList>,
     pub target_list: String,
     pub possible_mailing_lists: Vec<MailingList>,
-    pub highlighted_list_index: u32,
+    pub highlighted_list_index: usize,
     pub mailing_lists_path: String,
 }
 
@@ -320,7 +314,7 @@ impl MailingListSelectionState {
     }
 
     pub fn highlight_below_list(&mut self) {
-        if (self.highlighted_list_index as usize) + 1 < self.possible_mailing_lists.len() {
+        if self.highlighted_list_index + 1 < self.possible_mailing_lists.len() {
             self.highlighted_list_index += 1;
         }
     }
@@ -331,7 +325,7 @@ impl MailingListSelectionState {
 
     pub fn has_valid_target_list(&self) -> bool {
         let list_length = self.possible_mailing_lists.len(); // Possible mailing list length
-        let list_index = self.highlighted_list_index as usize; // Index of the selected mailing list
+        let list_index = self.highlighted_list_index; // Index of the selected mailing list
 
         if list_index < list_length {
             return true;
@@ -354,7 +348,7 @@ pub struct App {
     pub bookmarked_patchsets_state: BookmarkedPatchsetsState,
     pub latest_patchsets_state: Option<LatestPatchsetsState>,
     pub patchset_details_and_actions_state: Option<PatchsetDetailsAndActionsState>,
-    pub reviewed_patchsets: HashMap<String, Vec<u32>>,
+    pub reviewed_patchsets: HashMap<String, Vec<usize>>,
     pub config: Config,
 }
 
@@ -396,11 +390,10 @@ impl App {
     pub fn init_latest_patchsets_state(&mut self) {
         // the target mailing list for "latest patchsets" is the highlighted
         // entry in the possible lists of "mailing list selection"
-        let list_index = self.mailing_list_selection_state.highlighted_list_index as usize;
+        let list_index = self.mailing_list_selection_state.highlighted_list_index;
         let target_list = self.mailing_list_selection_state.possible_mailing_lists[list_index]
             .get_name()
             .to_string();
-
         self.latest_patchsets_state = Some(LatestPatchsetsState::new(
             target_list,
             self.config.page_size,
