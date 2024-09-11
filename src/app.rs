@@ -1,6 +1,7 @@
 use std::{collections::HashMap, path::Path, process::Command};
 use color_eyre::eyre::bail;
 use config::Config;
+use logging::Logger;
 use patch_hub::{
     lore_session::{
         self, LoreSession
@@ -13,6 +14,7 @@ use patch_hub::{
 };
 
 mod config;
+pub mod logging;
 
 pub struct BookmarkedPatchsetsState {
     pub bookmarked_patchsets: Vec<Patch>,
@@ -368,6 +370,10 @@ impl App {
             Ok(vec_of_patchsets) => reviewed_patchsets = vec_of_patchsets,
             Err(_) => reviewed_patchsets = HashMap::new(),
         }
+
+        // Initialize the logger before the app starts
+        Logger::logger().init_log_file(&config);
+        Logger::logger().write("patch-hub started");    
 
         App {
             current_screen: CurrentScreen::MailingListSelection,

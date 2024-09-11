@@ -6,6 +6,8 @@ pub struct Config {
     pub bookmarked_patchsets_path: String,
     pub mailing_lists_path: String,
     pub reviewed_patchsets_path: String,
+    /// Logs directory
+    pub logs_path: String,
 }
 
 impl Config {
@@ -41,12 +43,18 @@ impl Config {
             Err(_) => format!("{}/.local/share/kw/patch_hub/reviewed_patchsets.json", env::var("HOME").unwrap()),
         };
 
+        let logs_path = match env::var("KW_DATA_DIR") {
+            Ok(value) => format!("{value}/patch_hub/logs"),
+            Err(_) => format!("{}/.local/share/kw/patch_hub/logs", env::var("HOME").unwrap()),
+        };
+
         Config {
             page_size,
             patchsets_cache_dir,
             bookmarked_patchsets_path,
             mailing_lists_path,
             reviewed_patchsets_path,
+            logs_path,
         }
     }
 }

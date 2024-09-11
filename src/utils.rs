@@ -16,6 +16,8 @@ use ratatui::{
     Terminal,
 };
 
+use crate::app::logging::Logger;
+
 /// A type alias for the terminal type used in this application
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
 
@@ -42,6 +44,7 @@ pub fn install_hooks() -> color_eyre::Result<()> {
     let panic_hook = panic_hook.into_panic_hook();
     panic::set_hook(Box::new(move |panic_info| {
         restore().unwrap();
+        Logger::logger().flush();
         panic_hook(panic_info);
     }));
 

@@ -1,5 +1,5 @@
 use app::{
-    App, CurrentScreen
+    logging::Logger, App, CurrentScreen
 };
 use clap::Parser;
 use cli::Cli;
@@ -26,6 +26,9 @@ fn main() -> color_eyre::Result<()> {
     let mut app = App::new();
     run_app(&mut terminal, &mut app)?;
     utils::restore()?;
+
+    Logger::logger().flush();
+
     Ok(())
 }
 
