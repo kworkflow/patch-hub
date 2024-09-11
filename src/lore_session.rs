@@ -123,10 +123,7 @@ impl LoreSession {
 
     pub fn get_patch_feed_page(&self, page_size: usize, page_number: usize) -> Option<Vec<&Patch>> {
         let mut patch_feed_page: Vec<&Patch> = Vec::new();
-            let representative_patches_ids_max_index: usize = (self.representative_patches_ids.len()
-                - 1)
-            .try_into()
-            .unwrap();
+        let representative_patches_ids_max_index: usize = self.representative_patches_ids.len() - 1;
         let lower_end: usize = page_size * (page_number - 1);
         let mut upper_end: usize = page_size * page_number;
 

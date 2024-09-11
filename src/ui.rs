@@ -213,9 +213,7 @@ fn render_list(f: &mut Frame, app: &App, chunk: Rect) {
 
     let mut list_state = ListState::default();
     list_state.select(Some(
-        (patchset_index - (page_number - 1) * app.config.page_size)
-            .try_into()
-            .unwrap(),
+        patchset_index - (page_number - 1) * app.config.page_size,
     ));
 
     f.render_stateful_widget(list, chunk, &mut list_state);

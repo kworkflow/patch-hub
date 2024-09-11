@@ -103,12 +103,7 @@ impl LatestPatchsetsState {
     }
 
     pub fn increment_page(&mut self) {
-        let patchsets_processed: usize = self
-            .lore_session
-            .get_representative_patches_ids()
-            .len()
-            .try_into()
-            .unwrap();
+        let patchsets_processed: usize = self.lore_session.get_representative_patches_ids().len();
         if self.page_size * self.page_number > patchsets_processed {
             return;
         }
@@ -399,7 +394,6 @@ impl App {
         let target_list = self.mailing_list_selection_state.possible_mailing_lists[list_index]
             .get_name()
             .to_string();
-
         self.latest_patchsets_state = Some(LatestPatchsetsState::new(
             target_list,
             self.config.page_size,
