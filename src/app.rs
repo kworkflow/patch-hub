@@ -1,5 +1,6 @@
 use color_eyre::eyre::bail;
 use config::Config;
+use logging::Logger;
 use patch_hub::{
     lore_api_client::{BlockingLoreAPIClient, FailedFeedRequest},
     lore_session::{self, LoreSession},
@@ -9,6 +10,7 @@ use patch_hub::{
 use std::{collections::HashMap, path::Path, process::Command};
 
 mod config;
+pub mod logging;
 
 pub struct BookmarkedPatchsetsState {
     pub bookmarked_patchsets: Vec<Patch>,
@@ -366,6 +368,10 @@ impl App {
         let reviewed_patchsets =
             lore_session::load_reviewed_patchsets(&config.reviewed_patchsets_path)
                 .unwrap_or_default();
+
+        // Initialize the logger before the app starts
+        Logger::get_logger().init_log_file(&config);
+        Logger::get_logger().write("patch-hub started");
 
         App {
             current_screen: CurrentScreen::MailingListSelection,

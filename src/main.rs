@@ -1,4 +1,4 @@
-use app::{App, CurrentScreen};
+use app::{logging::Logger, App, CurrentScreen};
 use clap::Parser;
 use cli::Cli;
 use ratatui::{
@@ -22,6 +22,9 @@ fn main() -> color_eyre::Result<()> {
     let mut app = App::new();
     run_app(&mut terminal, &mut app)?;
     utils::restore()?;
+
+    Logger::get_logger().flush();
+
     Ok(())
 }
 
