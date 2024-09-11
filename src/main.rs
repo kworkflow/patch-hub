@@ -23,7 +23,7 @@ fn main() -> color_eyre::Result<()> {
     run_app(&mut terminal, &mut app)?;
     utils::restore()?;
 
-    Logger::get_logger().flush();
+    Logger::flush();
 
     Ok(())
 }

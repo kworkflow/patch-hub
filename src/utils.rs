@@ -40,7 +40,7 @@ pub fn install_hooks() -> color_eyre::Result<()> {
     let panic_hook = panic_hook.into_panic_hook();
     panic::set_hook(Box::new(move |panic_info| {
         restore().unwrap();
-        Logger::get_logger().flush();
+        Logger::flush();
         panic_hook(panic_info);
     }));
 
