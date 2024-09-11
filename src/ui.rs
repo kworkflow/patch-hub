@@ -92,7 +92,7 @@ fn render_mailing_list_selection(f: &mut Frame, app: &App, chunk: Rect) {
         .highlight_spacing(HighlightSpacing::Always);
 
     let mut list_state = ListState::default();
-    list_state.select(Some(highlighted_list_index as usize));
+    list_state.select(Some(highlighted_list_index));
 
     f.render_stateful_widget(list, chunk, &mut list_state);
 }
@@ -147,7 +147,7 @@ fn render_bookmarked_patchsets(
         .highlight_spacing(HighlightSpacing::Always);
 
     let mut list_state = ListState::default();
-    list_state.select(Some(patchset_index as usize));
+    list_state.select(Some(patchset_index));
 
     f.render_stateful_widget(list, chunk, &mut list_state);
 }
@@ -172,7 +172,7 @@ fn render_list(f: &mut Frame, app: &App, chunk: Rect) {
         .get_current_patch_feed_page()
         .unwrap();
 
-    let mut index: u32 = (page_number - 1) * app.config.page_size;
+    let mut index: usize = (page_number - 1) * app.config.page_size;
     for patch in patch_feed_page {
         let patch_title = format!("{:width$}", patch.get_title(), width = 70);
         let patch_title = format!("{:.width$}", patch_title, width = 70);
@@ -369,7 +369,7 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
         .patchset_details_and_actions_state
         .as_ref()
         .unwrap()
-        .patches[preview_index as usize]
+        .patches[preview_index]
         .replace('\t', "        ");
     let patch_preview = Paragraph::new(Text::from(patch_preview.to_string()))
         .block(

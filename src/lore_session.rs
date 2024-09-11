@@ -19,14 +19,14 @@ use std::{
 #[cfg(test)]
 mod tests;
 
-const LORE_PAGE_SIZE: u32 = 200;
+const LORE_PAGE_SIZE: usize = 200;
 
 pub struct LoreSession {
     representative_patches_ids: Vec<String>,
     processed_patches_map: HashMap<String, Patch>,
     patch_regex: PatchRegex,
     target_list: String,
-    min_index: u32,
+    min_index: usize,
 }
 
 impl LoreSession {
@@ -51,12 +51,12 @@ impl LoreSession {
     pub fn process_n_representative_patches<T: PatchFeedRequest>(
         &mut self,
         lore_api_client: &T,
-        n: u32,
+        n: usize,
     ) -> Result<(), FailedFeedRequest> {
         let mut patch_feed: PatchFeed;
         let mut processed_patches_ids: Vec<String>;
 
-        while self.representative_patches_ids.len() < usize::try_from(n).unwrap() {
+        while self.representative_patches_ids.len() < n {
             match lore_api_client.request_patch_feed(&self.target_list, self.min_index) {
                 Ok(feed_response_body) => patch_feed = from_str(&feed_response_body).unwrap(),
                 Err(failed_feed_request) => return Err(failed_feed_request),
@@ -92,7 +92,7 @@ impl LoreSession {
 
     fn update_representative_patches(&mut self, processed_patches_ids: Vec<String>) {
         let mut patch: &Patch;
-        let mut patch_number_in_series: u32;
+        let mut patch_number_in_series: usize;
 
         for message_id in processed_patches_ids {
             patch = self.processed_patches_map.get(&message_id).unwrap();
@@ -121,13 +121,14 @@ impl LoreSession {
         }
     }
 
-    pub fn get_patch_feed_page(&self, page_size: u32, page_number: u32) -> Option<Vec<&Patch>> {
+    pub fn get_patch_feed_page(&self, page_size: usize, page_number: usize) -> Option<Vec<&Patch>> {
         let mut patch_feed_page: Vec<&Patch> = Vec::new();
-        let representative_patches_ids_max_index: u32 = (self.representative_patches_ids.len() - 1)
+            let representative_patches_ids_max_index: usize = (self.representative_patches_ids.len()
+                - 1)
             .try_into()
             .unwrap();
-        let lower_end: u32 = page_size * (page_number - 1);
-        let mut upper_end: u32 = page_size * page_number;
+        let lower_end: usize = page_size * (page_number - 1);
+        let mut upper_end: usize = page_size * page_number;
 
         if representative_patches_ids_max_index <= lower_end {
             return None;
@@ -140,7 +141,7 @@ impl LoreSession {
         for i in lower_end..upper_end {
             patch_feed_page.push(
                 self.processed_patches_map
-                    .get(&self.representative_patches_ids[usize::try_from(i).unwrap()])
+                    .get(&self.representative_patches_ids[i])
                     .unwrap(),
             )
         }
@@ -492,7 +493,7 @@ pub fn get_git_signature(git_repo_path: &str) -> (String, String) {
 }
 
 pub fn save_reviewed_patchsets(
-    reviewed_patchsets: &HashMap<String, Vec<u32>>,
+    reviewed_patchsets: &HashMap<String, Vec<usize>>,
     filepath: &str,
 ) -> io::Result<()> {
     if let Some(parent) = Path::new(filepath).parent() {
@@ -508,7 +509,7 @@ pub fn save_reviewed_patchsets(
     Ok(())
 }
 
-pub fn load_reviewed_patchsets(filepath: &str) -> io::Result<HashMap<String, Vec<u32>>> {
+pub fn load_reviewed_patchsets(filepath: &str) -> io::Result<HashMap<String, Vec<usize>>> {
     let reviewed_patchsets_file = File::open(filepath)?;
     let reviewed_patchsets = serde_json::from_reader(reviewed_patchsets_file)?;
     Ok(reviewed_patchsets)

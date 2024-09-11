@@ -1,7 +1,7 @@
 use std::env;
 
 pub struct Config {
-    pub page_size: u32,
+    pub page_size: usize,
     pub patchsets_cache_dir: String,
     pub bookmarked_patchsets_path: String,
     pub mailing_lists_path: String,
@@ -10,7 +10,7 @@ pub struct Config {
 
 impl Config {
     pub fn build() -> Self {
-        let page_size: u32 = match env::var("PATCH_HUB_PAGE_SIZE") {
+        let page_size: usize = match env::var("PATCH_HUB_PAGE_SIZE") {
             Ok(value) => value.parse().unwrap(),
             Err(_) => 30,
         };
