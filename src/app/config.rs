@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, fs};
 
 pub struct Config {
     pub page_size: u32,
@@ -53,6 +53,26 @@ impl Config {
             bookmarked_patchsets_path,
             mailing_lists_path,
             reviewed_patchsets_path,
+        }
+    }
+
+    /// Creates the needed directories if they don't exist.
+    /// The directories are defined during the Config build.
+    ///
+    /// This function must be called as soon as the Config is built so no other function attempt to use an inexistent folder.
+    pub fn create_dirs(&self) {
+        let paths = vec![
+            &self.patchsets_cache_dir,
+            &self.bookmarked_patchsets_path,
+            &self.mailing_lists_path,
+            &self.reviewed_patchsets_path,
+        ];
+
+        for path in paths {
+            if fs::metadata(path).is_err() {
+                // TODO: Log the folder creation
+                fs::create_dir_all(path).unwrap();
+            }
         }
     }
 }

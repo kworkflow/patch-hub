@@ -361,6 +361,7 @@ pub struct App {
 impl App {
     pub fn new() -> App {
         let config: Config = Config::build();
+        config.create_dirs();
 
         let mailing_lists =
             lore_session::load_available_lists(&config.mailing_lists_path).unwrap_or_default();
