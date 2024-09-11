@@ -373,7 +373,7 @@ impl App {
 
         // Initialize the logger before the app starts
         Logger::logger().init_log_file(&config);
-        Logger::logger().write("patch-hub started");    
+        Logger::info("patch-hub started");    
 
         App {
             current_screen: CurrentScreen::MailingListSelection,
