@@ -172,4 +172,23 @@ impl Config {
         fs::rename(tmp_filename, config_path)?;
         Ok(())
     }
+
+    /// Creates the needed directories if they don't exist.
+    /// The directories are defined during the Config build.
+    ///
+    /// This function must be called as soon as the Config is built so no other function attempt to use an inexistent folder.
+    pub fn create_dirs(&self) {
+        let paths = vec![
+            &self.cache_dir,
+            &self.data_dir,
+            &self.patchsets_cache_dir,
+            &self.logs_path,
+        ];
+
+        for path in paths {
+            if fs::metadata(path).is_err() {
+                fs::create_dir_all(path).unwrap();
+            }
+        }
+    }
 }
