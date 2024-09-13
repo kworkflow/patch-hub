@@ -1,0 +1,51 @@
+name: Cargo Build and Unit Test
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - labeled
+    paths:
+      - src/**
+  push:
+    paths:
+      - src/**
+    branches:
+      - master
+      - unstable
+      - feat-build-and-unit-test-ci
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-unit-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: '!github.event.pull_request.draft'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update rustup and install rustc and cargo
+        shell: bash
+        run: |
+          rustup update
+          rustup install stable
+
+      - name: Check for compilation errors
+        shell: bash
+        run: |
+          cargo build --verbose
+
+      - name: Run unit test suites
+        shell: bash
+        run: |
+          cargo test --all-targets --verbose && exit 0
+          printf '\e[1;33m\t==========================================\n\e[0m'
+          printf '\e[1;33m\tUNIT TEST SUITE FAILED\n\e[0m'
+          printf '\e[1;33m\tPLEASE, SOLVE THEM LOCALLY W/ `cargo test`\e[0m\n'
+          printf '\e[1;33m\t==========================================\n\e[0m'
+          exit 1
