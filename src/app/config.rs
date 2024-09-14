@@ -63,9 +63,6 @@ impl Config {
     pub fn create_dirs(&self) {
         let paths = vec![
             &self.patchsets_cache_dir,
-            &self.bookmarked_patchsets_path,
-            &self.mailing_lists_path,
-            &self.reviewed_patchsets_path,
         ];
 
         for path in paths {
