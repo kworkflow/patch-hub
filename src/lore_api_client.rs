@@ -1,3 +1,4 @@
+use mockall::automock;
 use reqwest::blocking::Response;
 use reqwest::Error;
 
@@ -28,6 +29,7 @@ impl BlockingLoreAPIClient {
     }
 }
 
+#[automock]
 pub trait PatchFeedRequest {
     fn request_patch_feed(
         &self,
@@ -70,6 +72,7 @@ pub enum FailedAvailableListsRequest {
     StatusNotOk(Response),
 }
 
+#[automock]
 pub trait AvailableListsRequest {
     fn request_available_lists(
         &self,
