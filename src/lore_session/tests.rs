@@ -2,20 +2,31 @@ use io::Read;
 
 use super::*;
 use crate::patch::Author;
+
+use mockall::mock;
 use std::fs;
 
-struct FakeLoreAPIClient {
-    src_path: String,
-}
-impl PatchFeedRequest for FakeLoreAPIClient {
-    fn request_patch_feed(
-        &self,
-        target_list: &str,
-        min_index: usize,
-    ) -> Result<String, FailedFeedRequest> {
-        let _ = min_index;
-        let _ = target_list;
-        Ok(fs::read_to_string(&self.src_path).unwrap())
+mock! {
+    BlockingLoreAPIClient {}
+    impl PatchFeedRequest for BlockingLoreAPIClient {
+        fn request_patch_feed(
+                    &self,
+                    target_list: &str,
+                    min_index: usize,
+                ) -> Result<String, FailedFeedRequest>;
+    }
+    impl AvailableListsRequest for BlockingLoreAPIClient {
+        fn request_available_lists(
+            &self,
+            min_index: usize,
+        ) -> Result<String, FailedAvailableListsRequest>;
+    }
+    impl PatchHTMLRequest for BlockingLoreAPIClient {
+        fn request_patch_html(
+            &self,
+            _target_list: &str,
+            message_id: &str,
+        ) -> Result<String, FailedPatchHTMLRequest>;
     }
 }
 
@@ -31,18 +42,28 @@ fn can_initialize_fresh_lore_session() {
 
 #[test]
 fn should_process_one_representative_patch() {
-    let mut lore_session: LoreSession = LoreSession::new("some-list".to_string());
-    let lore_api_client: FakeLoreAPIClient = FakeLoreAPIClient {
-        src_path:
-            "src/test_samples/lore_session/process_representative_patch/patch_feed_sample_1.xml"
-                .to_string(),
-    };
+    let src_path =
+        "src/test_samples/lore_session/process_representative_patch/patch_feed_sample_1.xml";
+    let target_list = "some-list";
+
+    let mut lore_api_client = MockBlockingLoreAPIClient::new();
+
+    lore_api_client
+        .expect_request_patch_feed()
+        .withf(move |target_list_arg, min_index_arg| {
+            target_list_arg == target_list && *min_index_arg == 0
+        })
+        .times(1)
+        .returning(move |_, _| Ok(fs::read_to_string(src_path).unwrap()));
+
+    let mut lore_session: LoreSession = LoreSession::new(target_list.to_string());
+
     let message_id: &str = "http://lore.kernel.org/some-subsystem/1234.567-1-john@johnson.com/";
 
-    if lore_session
-        .process_n_representative_patches(&lore_api_client, 1)
-        .is_ok()
-    {};
+    let process_n_representative_patches_result =
+        lore_session.process_n_representative_patches(&lore_api_client, 1);
+
+    assert!(process_n_representative_patches_result.is_ok());
 
     assert_eq!(
         1,
@@ -86,20 +107,30 @@ fn should_process_one_representative_patch() {
 
 #[test]
 fn should_process_multiple_representative_patches() {
-    let mut lore_session: LoreSession = LoreSession::new("some-list".to_string());
-    let lore_api_client: FakeLoreAPIClient = FakeLoreAPIClient {
-        src_path:
-            "src/test_samples/lore_session/process_representative_patch/patch_feed_sample_2.xml"
-                .to_string(),
-    };
+    let src_path =
+        "src/test_samples/lore_session/process_representative_patch/patch_feed_sample_2.xml";
+    let target_list = "some-list";
+
+    let mut lore_api_client = MockBlockingLoreAPIClient::new();
+
+    lore_api_client
+        .expect_request_patch_feed()
+        .withf(move |target_list_arg, min_index_arg| {
+            target_list_arg == target_list && *min_index_arg == 0
+        })
+        .times(1)
+        .returning(move |_, _| Ok(fs::read_to_string(src_path).unwrap()));
+
+    let mut lore_session: LoreSession = LoreSession::new(target_list.to_string());
+
     let message_id_1: &str = "http://lore.kernel.org/some-subsystem/1234.567-1-roberto@silva.br/";
     let message_id_2: &str = "http://lore.kernel.org/some-subsystem/first-patch-lima@luma.rs/";
     let message_id_3: &str = "http://lore.kernel.org/some-subsystem/1234.567-1-john@johnson.com/";
 
-    if lore_session
-        .process_n_representative_patches(&lore_api_client, 3)
-        .is_ok()
-    {};
+    let process_n_representative_patches_result =
+        lore_session.process_n_representative_patches(&lore_api_client, 3);
+
+    assert!(process_n_representative_patches_result.is_ok());
 
     assert_eq!(
         3,
@@ -290,25 +321,37 @@ fn should_process_available_lists() {
     );
 }
 
-impl AvailableListsRequest for FakeLoreAPIClient {
-    fn request_available_lists(
-        &self,
-        min_index: usize,
-    ) -> Result<String, FailedAvailableListsRequest> {
-        match min_index {
-            0 => Ok(fs::read_to_string("src/test_samples/lore_session/process_available_lists/available_lists_response-1.html").unwrap()),
-            200 => Ok(fs::read_to_string("src/test_samples/lore_session/process_available_lists/available_lists_response-2.html").unwrap()),
-            400 => Ok(fs::read_to_string("src/test_samples/lore_session/process_available_lists/available_lists_response-3.html").unwrap()),
-            _ => panic!("Should not try other `min_index` other than `0`, `200`, and `400`"),
-        }
-    }
-}
-
 #[test]
 fn should_fetch_all_available_lists() {
-    let lore_api_client = FakeLoreAPIClient {
-        src_path: "".to_string(),
-    };
+    let mut lore_api_client = MockBlockingLoreAPIClient::new();
+
+    lore_api_client.expect_request_available_lists()
+    .withf(|min_index_args| {
+        *min_index_args == 0
+    })
+    .times(1)
+    .returning(|_| {
+        Ok(fs::read_to_string("src/test_samples/lore_session/process_available_lists/available_lists_response-1.html").unwrap())
+    });
+
+    lore_api_client.expect_request_available_lists()
+    .withf(|min_index_args| {
+        *min_index_args == 200
+    })
+    .times(1)
+    .returning(|_| {
+        Ok(fs::read_to_string("src/test_samples/lore_session/process_available_lists/available_lists_response-2.html").unwrap())
+    });
+
+    lore_api_client.expect_request_available_lists()
+    .withf(|min_index_args| {
+        *min_index_args == 400
+    })
+    .times(1)
+    .returning(|_| {
+        Ok(fs::read_to_string("src/test_samples/lore_session/process_available_lists/available_lists_response-3.html").unwrap())
+    });
+
     let sorted_available_lists = fetch_available_lists(&lore_api_client).unwrap();
 
     assert_eq!(
@@ -409,25 +452,6 @@ fn files_eq(path1: &str, path2: &str) -> io::Result<bool> {
     Ok(buf1 == buf2)
 }
 
-impl PatchHTMLRequest for FakeLoreAPIClient {
-    fn request_patch_html(
-        &self,
-        _target_list: &str,
-        message_id: &str,
-    ) -> Result<String, FailedPatchHTMLRequest> {
-        let patch_html = "git-send-email(1): ".to_owned();
-        let patch_html = match message_id {
-            "1234.567-0-foo@bar.foo.bar" => patch_html + "git send-email --in-reply-to=1234.567-0-foo@bar.foo.bar --to=foo@bar.foo.bar /path/to/YOUR_REPLY",
-            "1234.567-1-foo@bar.foo.bar" => patch_html + "git send-email --in-reply-to=1234.567-1-foo@bar.foo.bar --to=foo@bar.foo.bar /path/to/YOUR_REPLY",
-            "1234.567-2-foo@bar.foo.bar" => patch_html + "git send-email --in-reply-to=1234.567-2-foo@bar.foo.bar --to=foo@bar.foo.bar /path/to/YOUR_REPLY",
-            "1234.567-3-foo@bar.foo.bar" => patch_html + "git send-email --in-reply-to=1234.567-3-foo@bar.foo.bar --to=foo@bar.foo.bar /path/to/YOUR_REPLY",
-            _ => panic!("Should not try other message-IDs than `1234.567-{{0,1,2,3}}`"),
-        };
-
-        Ok(patch_html.to_owned())
-    }
-}
-
 #[test]
 fn should_prepare_reply_patchset_with_reviewed_by() {
     let tmp_dir = Command::new("mktemp").arg("--directory").output().unwrap();
@@ -485,9 +509,17 @@ fn should_prepare_reply_patchset_with_reviewed_by() {
         expected_git_reply_command_3,
     ];
 
-    let lore_api_client = FakeLoreAPIClient {
-        src_path: "".to_owned(),
-    };
+    let target_list = "all";
+    let mut lore_api_client = MockBlockingLoreAPIClient::new();
+
+    lore_api_client.expect_request_patch_html()
+    .withf(move |target_list_arg, _| {
+        target_list_arg == target_list
+    })
+    .times(4)
+    .returning(|_, message_id| {
+        Ok(format!("git-send-email(1): git send-email --in-reply-to={} --to=foo@bar.foo.bar /path/to/YOUR_REPLY", message_id))
+    });
 
     let patches = vec![
         fs::read_to_string(
@@ -505,7 +537,7 @@ fn should_prepare_reply_patchset_with_reviewed_by() {
     let git_reply_commands = prepare_reply_patchset_with_reviewed_by(
         &lore_api_client,
         tmp_dir,
-        "all",
+        target_list,
         &patches,
         "Bar Foo <bar@foo.bar.foo>",
         "--dry-run --suppress-cc=all",
