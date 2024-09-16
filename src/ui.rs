@@ -11,6 +11,8 @@ use ratatui::{
 
 use crate::app::{App, BookmarkedPatchsetsState, CurrentScreen, PatchsetAction};
 
+mod render_edit_config;
+
 pub fn draw_ui(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -30,6 +32,7 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
         }
         CurrentScreen::LatestPatchsets => render_list(f, app, chunks[1]),
         CurrentScreen::PatchsetDetails => render_patchset_details_and_actions(f, app, chunks[1]),
+        CurrentScreen::EditConfig => render_edit_config::render_main(f, app, chunks[1]),
     }
 
     render_navi_bar(f, app, chunks[2]);
@@ -455,6 +458,7 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
                 Style::default().fg(Color::Green),
             )]
         }
+        CurrentScreen::EditConfig => render_edit_config::mode_footer_text(app),
     };
     let mode_footer = Paragraph::new(Line::from(mode_footer_text))
         .block(Block::default().borders(Borders::ALL))
@@ -463,7 +467,7 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
     let current_keys_hint = {
         match app.current_screen {
             CurrentScreen::MailingListSelection => Span::styled(
-                "(ESC) to quit | (ENTER) to confirm | (🡇 ) down | (🡅 ) up | (F1) to bookmarked patchsets | (F5) refresh lists",
+                "(ESC) to quit | (ENTER) to confirm | (🡇 ) down | (🡅 ) up | (F1) to bookmarked patchsets | (F2) edit config | (F5) refresh lists",
                 Style::default().fg(Color::Red),
             ),
             CurrentScreen::BookmarkedPatchsets => Span::styled(
@@ -478,6 +482,7 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
                 "(ESC) to return | (ENTER) run actions | ( j / 🡇 ) down | ( k / 🡅 ) up | (n) next patch | (p) previous patch",
                 Style::default().fg(Color::Red),
             ),
+            CurrentScreen::EditConfig => render_edit_config::keys_hint(app),
         }
     };
 

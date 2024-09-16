@@ -125,17 +125,14 @@ impl Config {
         &self.git_send_email_options
     }
 
-    #[allow(dead_code)]
     pub fn get_cache_dir(&self) -> &str {
         &self.cache_dir
     }
 
-    #[allow(dead_code)]
     pub fn get_data_dir(&self) -> &str {
         &self.data_dir
     }
 
-    #[allow(dead_code)]
     pub fn set_page_size(&mut self, page_size: usize) {
         self.page_size = page_size;
     }
@@ -153,12 +150,10 @@ impl Config {
         self.data_dir = data_dir;
     }
 
-    #[allow(dead_code)]
     pub fn set_git_send_email_option(&mut self, git_send_email_options: String) {
         self.git_send_email_options = git_send_email_options;
     }
 
-    #[allow(dead_code)]
     pub fn save_patch_hub_config(&self) -> io::Result<()> {
         let config_path = if let Ok(path) = env::var("PATCH_HUB_CONFIG_PATH") {
             path

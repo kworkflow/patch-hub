@@ -1,5 +1,6 @@
 use color_eyre::eyre::bail;
 use config::Config;
+use edit_config::EditConfigState;
 use logging::Logger;
 use patch_hub::{
     lore_api_client::{BlockingLoreAPIClient, FailedFeedRequest},
@@ -11,6 +12,8 @@ use std::{collections::HashMap, path::Path, process::Command};
 
 mod config;
 pub mod logging;
+
+mod edit_config;
 
 pub struct BookmarkedPatchsetsState {
     pub bookmarked_patchsets: Vec<Patch>,
@@ -344,6 +347,7 @@ pub enum CurrentScreen {
     BookmarkedPatchsets,
     LatestPatchsets,
     PatchsetDetails,
+    EditConfig,
 }
 
 pub struct App {
@@ -352,6 +356,7 @@ pub struct App {
     pub bookmarked_patchsets_state: BookmarkedPatchsetsState,
     pub latest_patchsets_state: Option<LatestPatchsetsState>,
     pub patchset_details_and_actions_state: Option<PatchsetDetailsAndActionsState>,
+    pub edit_config_state: Option<EditConfigState>,
     pub reviewed_patchsets: HashMap<String, Vec<usize>>,
     pub config: Config,
 }
@@ -386,6 +391,7 @@ impl App {
             },
             latest_patchsets_state: None,
             patchset_details_and_actions_state: None,
+            edit_config_state: None,
             bookmarked_patchsets_state: BookmarkedPatchsetsState {
                 bookmarked_patchsets,
                 patchset_index: 0,
@@ -531,6 +537,32 @@ impl App {
         }
 
         Ok(())
+    }
+
+    pub fn init_edit_config_state(&mut self) {
+        self.edit_config_state = Some(EditConfigState::new(&self.config));
+    }
+
+    pub fn reset_edit_config_state(&mut self) {
+        self.edit_config_state = None;
+    }
+
+    pub fn consolidate_edit_config(&mut self) {
+        // TODO: Handle invalid values!
+        if let Some(edit_config) = &mut self.edit_config_state {
+            if let Ok(page_size) = edit_config.extract_page_size() {
+                self.config.set_page_size(page_size)
+            }
+            if let Ok(cache_dir) = edit_config.extract_cache_dir() {
+                self.config.set_cache_dir(cache_dir)
+            }
+            if let Ok(data_dir) = edit_config.extract_data_dir() {
+                self.config.set_data_dir(data_dir)
+            }
+            if let Ok(git_send_email_option) = edit_config.extract_git_send_email_option() {
+                self.config.set_git_send_email_option(git_send_email_option)
+            }
+        }
     }
 
     pub fn set_current_screen(&mut self, new_current_screen: CurrentScreen) {
