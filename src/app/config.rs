@@ -19,6 +19,10 @@ pub struct Config {
     /// Logs directory
     logs_path: String,
     git_send_email_options: String,
+    /// Base directory for all patch-hub cache
+    cache_dir: String,
+    /// Base directory for all patch-hub cache
+    data_dir: String,
 }
 
 impl Config {
@@ -34,6 +38,8 @@ impl Config {
             reviewed_patchsets_path: format!("{data_dir}/reviewed_patchsets.json"),
             logs_path: format!("{data_dir}/logs"),
             git_send_email_options: "--dry-run --suppress-cc=all".to_string(),
+            cache_dir,
+            data_dir,
         }
     }
 
@@ -67,14 +73,11 @@ impl Config {
         };
 
         if let Ok(cache_dir) = env::var("PATCH_HUB_CACHE_DIR") {
-            self.patchsets_cache_dir = format!("{cache_dir}/patchsets");
+            self.set_cache_dir(cache_dir);
         };
 
         if let Ok(data_dir) = env::var("PATCH_HUB_DATA_DIR") {
-            self.bookmarked_patchsets_path = format!("{data_dir}/bookmarked_patchsets.json");
-            self.mailing_lists_path = format!("{data_dir}/mailing_lists.json");
-            self.reviewed_patchsets_path = format!("{data_dir}/reviewed_patchsets.json");
-            self.logs_path = format!("{data_dir}/logs");
+            self.set_data_dir(data_dir);
         };
 
         if let Ok(git_send_email_options) = env::var("PATCH_HUB_GIT_SEND_EMAIL_OPTIONS") {
@@ -120,6 +123,39 @@ impl Config {
 
     pub fn get_git_send_email_options(&self) -> &str {
         &self.git_send_email_options
+    }
+
+    #[allow(dead_code)]
+    pub fn get_cache_dir(&self) -> &str {
+        &self.cache_dir
+    }
+
+    #[allow(dead_code)]
+    pub fn get_data_dir(&self) -> &str {
+        &self.data_dir
+    }
+
+    #[allow(dead_code)]
+    pub fn set_page_size(&mut self, page_size: usize) {
+        self.page_size = page_size;
+    }
+
+    pub fn set_cache_dir(&mut self, cache_dir: String) {
+        self.patchsets_cache_dir = format!("{cache_dir}/patchsets");
+        self.cache_dir = cache_dir;
+    }
+
+    pub fn set_data_dir(&mut self, data_dir: String) {
+        self.bookmarked_patchsets_path = format!("{data_dir}/bookmarked_patchsets.json");
+        self.mailing_lists_path = format!("{data_dir}/mailing_lists.json");
+        self.reviewed_patchsets_path = format!("{data_dir}/reviewed_patchsets.json");
+        self.logs_path = format!("{data_dir}/logs");
+        self.data_dir = data_dir;
+    }
+
+    #[allow(dead_code)]
+    pub fn set_git_send_email_option(&mut self, git_send_email_options: String) {
+        self.git_send_email_options = git_send_email_options;
     }
 
     #[allow(dead_code)]
