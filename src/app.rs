@@ -146,6 +146,10 @@ impl LatestPatchsetsState {
         self.lore_session
             .get_patch_feed_page(self.page_size, self.page_number)
     }
+
+    pub fn get_number_of_processed_patchsets(&self) -> usize {
+        self.lore_session.representative_patches_ids().len()
+    }
 }
 
 pub struct PatchsetDetailsAndActionsState {
