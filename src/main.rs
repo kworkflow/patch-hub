@@ -30,13 +30,18 @@ fn main() -> color_eyre::Result<()> {
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre::Result<()> {
     loop {
-        terminal.draw(|f| draw_ui(f, app))?;
-
         match app.current_screen {
             CurrentScreen::MailingListSelection => {
                 if app.mailing_list_selection_state.mailing_lists.is_empty() {
                     app.mailing_list_selection_state
                         .refresh_available_mailing_lists()?;
+                }
+            }
+            CurrentScreen::LatestPatchsets => {
+                let patchsets_state = app.latest_patchsets_state.as_mut().unwrap();
+                if patchsets_state.get_number_of_processed_patchsets() == 0 {
+                    patchsets_state.fetch_current_page()?;
+                    app.mailing_list_selection_state.clear_target_list();
                 }
             }
             CurrentScreen::BookmarkedPatchsets => {
@@ -50,6 +55,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
             }
             _ => {}
         }
+        terminal.draw(|f| draw_ui(f, app))?;
 
         if event::poll(std::time::Duration::from_millis(16))? {
             if let Event::Key(key) = event::read()? {
@@ -63,11 +69,6 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre:
                             KeyCode::Enter => {
                                 if app.mailing_list_selection_state.has_valid_target_list() {
                                     app.init_latest_patchsets_state();
-                                    app.latest_patchsets_state
-                                        .as_mut()
-                                        .unwrap()
-                                        .fetch_current_page()?;
-                                    app.mailing_list_selection_state.clear_target_list();
                                     app.set_current_screen(CurrentScreen::LatestPatchsets);
                                 }
                             }
