@@ -8,10 +8,12 @@ use ratatui::{
     },
     Frame,
 };
+use render_patchset::render_patch_preview;
 
-use crate::app::{App, BookmarkedPatchsetsState, CurrentScreen, PatchsetAction};
+use crate::app::{logging::Logger, App, BookmarkedPatchsetsState, CurrentScreen, PatchsetAction};
 
 mod render_edit_config;
+mod render_patchset;
 
 pub fn draw_ui(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
@@ -21,7 +23,7 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
             Constraint::Min(1),
             Constraint::Length(3),
         ])
-        .split(f.size());
+        .split(f.area());
 
     render_title(f, chunks[0]);
 
@@ -368,7 +370,16 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
         .unwrap()
         .patches[preview_index]
         .replace('\t', "        ");
-    let patch_preview = Paragraph::new(Text::from(patch_preview.to_string()))
+    // TODO: Pass the terminal size to the external program
+    let patch_preview = match render_patch_preview(&patch_preview) {
+        Ok(rendered) => rendered,
+        Err(_) => {
+            Logger::error("Failed to render patch preview with external program");
+            Text::from(patch_preview)
+        }
+    };
+
+    let patch_preview = Paragraph::new(patch_preview)
         .block(
             Block::default()
                 .borders(Borders::ALL)

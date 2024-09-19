@@ -9,7 +9,7 @@ description = "patch-hub is a TUI that streamlines the interaction of Linux deve
 color-eyre = "0.6.3"
 mockall = "0.13.0"
 derive-getters = "0.4.0"
-ratatui = "0.27.0"
+ratatui = "0.28.1"
 regex = "1.10.5"
 reqwest = { version = "0.12.5", default-features = false, features = ["blocking", "rustls-tls"] }
 serde = { version = "1.0.203", features = ["derive"] }
@@ -17,6 +17,7 @@ serde-xml-rs = "0.6.0"
 serde_json = "1.0.120"
 clap = { version = "4.5.13", features = ["derive"] }
 chrono = "0.4.38"
+ansi-to-tui = "6.0.0"
 
 # The profile that 'cargo dist' will build with
 [profile.dist]
