@@ -1,4 +1,5 @@
 use color_eyre::{config::HookBuilder, eyre};
+use ratatui::layout::Position;
 use std::io::{self, stdout, Stdout};
 use std::panic;
 
@@ -58,7 +59,7 @@ pub fn install_hooks() -> color_eyre::Result<()> {
 
 pub fn setup_user_io<B: Backend>(terminal: &mut Terminal<B>) -> color_eyre::Result<()> {
     terminal.clear()?;
-    terminal.set_cursor(0, 0)?;
+    terminal.set_cursor_position(Position::new(0, 0))?;
     terminal.show_cursor()?;
     disable_raw_mode()?;
     Ok(())

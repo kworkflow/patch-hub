@@ -1,4 +1,5 @@
 use patch_hub::patch::Patch;
+use patchset_details::render_patch_preview;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -9,8 +10,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, BookmarkedPatchsetsState, CurrentScreen, PatchsetAction};
+use crate::app::{logging::Logger, App, BookmarkedPatchsetsState, CurrentScreen, PatchsetAction};
 
+mod patchset_details;
 mod render_edit_config;
 
 pub fn draw_ui(f: &mut Frame, app: &App) {
@@ -21,7 +23,7 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
             Constraint::Min(1),
             Constraint::Length(3),
         ])
-        .split(f.size());
+        .split(f.area());
 
     render_title(f, chunks[0]);
 
@@ -372,7 +374,16 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
         .unwrap()
         .patches[preview_index]
         .replace('\t', "        ");
-    let patch_preview = Paragraph::new(Text::from(patch_preview.to_string()))
+    // TODO: Pass the terminal size to the external program
+    let patch_preview = match render_patch_preview(&patch_preview) {
+        Ok(rendered) => rendered,
+        Err(_) => {
+            Logger::error("Failed to render patch preview with bat");
+            Text::from(patch_preview)
+        }
+    };
+
+    let patch_preview = Paragraph::new(patch_preview)
         .block(
             Block::default()
                 .borders(Borders::ALL)
