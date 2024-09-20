@@ -6,11 +6,19 @@ use std::{
 use ansi_to_tui::IntoText;
 use ratatui::text::Text;
 
-use crate::app::logging::Logger;
+use crate::app::{logging::Logger, patch_renderer::PatchRenderer};
 
-pub fn render_patch_preview(raw: &str) -> color_eyre::Result<Text<'static>> {
-    // TODO: Use the patch_renderer from the config
-    let text = bat_patch_renderer(raw)?.into_text()?;
+pub fn render_patch_preview(
+    raw: &str,
+    renderer: &PatchRenderer,
+) -> color_eyre::Result<Text<'static>> {
+    let text = match renderer {
+        PatchRenderer::Default => Ok(raw.to_string()),
+        PatchRenderer::Bat => bat_patch_renderer(raw),
+        PatchRenderer::Delta => delta_patch_renderer(raw),
+    }?
+    .into_text()?;
+
     Ok(text)
 }
 

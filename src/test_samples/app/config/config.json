@@ -1,11 +1,12 @@
 {
-    "page_size": 1234,
-    "patchsets_cache_dir": "/cachedir/path",
-    "bookmarked_patchsets_path": "/bookmarked/patchsets/path",
-    "mailing_lists_path": "/mailing/lists/path",
-    "reviewed_patchsets_path": "/reviewed/patchsets/path",
-    "logs_path":"/logs/path",
-    "git_send_email_options": "--long-option value -s -h -o -r -t",
-    "cache_dir": "/cache_dir",
-    "data_dir": "/data_dir"
+  "page_size": 1234,
+  "patchsets_cache_dir": "/cachedir/path",
+  "bookmarked_patchsets_path": "/bookmarked/patchsets/path",
+  "mailing_lists_path": "/mailing/lists/path",
+  "reviewed_patchsets_path": "/reviewed/patchsets/path",
+  "logs_path":"/logs/path",
+  "git_send_email_options": "--long-option value -s -h -o -r -t",
+  "cache_dir": "/cache_dir",
+  "data_dir": "/data_dir",
+  "patch_renderer": "default"
 }
