@@ -375,7 +375,7 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
         .patches[preview_index]
         .replace('\t', "        ");
     // TODO: Pass the terminal size to the external program
-    let patch_preview = match render_patch_preview(&patch_preview) {
+    let patch_preview = match render_patch_preview(&patch_preview, app.config.patch_renderer()) {
         Ok(rendered) => rendered,
         Err(_) => {
             Logger::error("Failed to render patch preview with bat");

@@ -6,6 +6,8 @@ use std::{
     path::Path,
 };
 
+use super::patch_renderer::PatchRenderer;
+
 #[cfg(test)]
 mod tests;
 
@@ -23,6 +25,8 @@ pub struct Config {
     cache_dir: String,
     /// Base directory for all patch-hub cache
     data_dir: String,
+    /// Renderer to use for patch previews
+    patch_renderer: PatchRenderer,
 }
 
 impl Config {
@@ -38,6 +42,7 @@ impl Config {
             reviewed_patchsets_path: format!("{data_dir}/reviewed_patchsets.json"),
             logs_path: format!("{data_dir}/logs"),
             git_send_email_options: "--dry-run --suppress-cc=all".to_string(),
+            patch_renderer: Default::default(),
             cache_dir,
             data_dir,
         }
@@ -82,6 +87,14 @@ impl Config {
 
         if let Ok(git_send_email_options) = env::var("PATCH_HUB_GIT_SEND_EMAIL_OPTIONS") {
             self.git_send_email_options = git_send_email_options;
+        };
+
+        if let Ok(patch_renderer) = env::var("PATCH_HUB_PATCH_RENDERER") {
+            self.patch_renderer = match &patch_renderer[..] {
+                "bat" => PatchRenderer::Bat,
+                "delta" => PatchRenderer::Delta,
+                _ => PatchRenderer::Default,
+            };
         };
     }
 
@@ -131,6 +144,11 @@ impl Config {
 
     pub fn get_data_dir(&self) -> &str {
         &self.data_dir
+    }
+
+    /// Returns the patch renderer to use for patch previews
+    pub fn patch_renderer(&self) -> PatchRenderer {
+        self.patch_renderer
     }
 
     pub fn set_page_size(&mut self, page_size: usize) {

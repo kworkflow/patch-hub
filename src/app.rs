@@ -12,7 +12,7 @@ use std::{collections::HashMap, path::Path, process::Command};
 
 mod config;
 pub mod logging;
-
+pub mod patch_renderer;
 mod edit_config;
 
 pub struct BookmarkedPatchsetsState {
