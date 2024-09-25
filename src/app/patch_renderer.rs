@@ -11,6 +11,8 @@ pub enum PatchRenderer {
     Bat,
     #[serde(rename = "delta")]
     Delta,
+    #[serde(rename = "diff-so-fancy")]
+    DiffSoFancy,
 }
 
 impl From<String> for PatchRenderer {
@@ -18,6 +20,7 @@ impl From<String> for PatchRenderer {
         match value.as_str() {
             "bat" => PatchRenderer::Bat,
             "delta" => PatchRenderer::Delta,
+            "diff-so-fancy" => PatchRenderer::DiffSoFancy,
             _ => PatchRenderer::Default,
         }
     }
@@ -28,6 +31,7 @@ impl From<&str> for PatchRenderer {
         match value {
             "bat" => PatchRenderer::Bat,
             "delta" => PatchRenderer::Delta,
+            "diff-so-fancy" => PatchRenderer::DiffSoFancy,
             _ => PatchRenderer::Default,
         }
     }
@@ -39,6 +43,7 @@ impl Display for PatchRenderer {
             PatchRenderer::Default => write!(f, "default"),
             PatchRenderer::Bat => write!(f, "bat"),
             PatchRenderer::Delta => write!(f, "delta"),
+            PatchRenderer::DiffSoFancy => write!(f, "diff-so-fancy"),
         }
     }
 }
