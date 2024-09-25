@@ -1,4 +1,5 @@
-use app::{logging::Logger, App, CurrentScreen};
+use crate::app::App;
+use app::{logging::Logger, screens::CurrentScreen};
 use clap::Parser;
 use cli::Cli;
 use ratatui::{
