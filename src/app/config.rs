@@ -88,11 +88,12 @@ impl Config {
     }
 
     pub fn build() -> Self {
-        let mut config = Self::default();
-
-        if let Some(config_from_file) = Self::detect_patch_hub_config_file() {
-            config = config_from_file;
-        }
+        let mut config = Self::detect_patch_hub_config_file().unwrap_or_else(|| {
+            let config = Self::default();
+            // TODO: Better handle this error
+            let _ = config.save_patch_hub_config();
+            config
+        });
 
         config.override_with_env_vars();
 
