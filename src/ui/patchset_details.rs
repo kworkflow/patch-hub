@@ -94,3 +94,61 @@ fn diff_so_fancy_renderer(patch: &str) -> color_eyre::Result<String> {
     Ok(String::from_utf8(output.stdout)?)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "optional-dependency"]
+    fn test_bat_patch_renderer() {
+        let patch = "\
+        diff --git a/file.txt b/file.txt
+        index 83db48f..e3b0c44 100644
+        --- a/file.txt
+        +++ b/file.txt
+        @@ -1 +1 @@
+        -Hello, world!
+        +Hello, Rust!
+        ";
+        let result = bat_patch_renderer(patch);
+        assert!(result.is_ok());
+        let rendered_patch = result.unwrap();
+        assert!(rendered_patch.contains("Hello, Rust!"));
+    }
+
+    #[test]
+    #[ignore = "optional-dependency"]
+    fn test_delta_patch_renderer() {
+        let patch = "\
+        diff --git a/file.txt b/file.txt
+        index 83db48f..e3b0c44 100644
+        --- a/file.txt
+        +++ b/file.txt
+        @@ -1 +1 @@
+        -Hello, world!
+        +Hello, Rust!
+        ";
+        let result = delta_patch_renderer(patch);
+        assert!(result.is_ok());
+        let rendered_patch = result.unwrap();
+        assert!(rendered_patch.contains("Hello, Rust!"));
+    }
+
+    #[test]
+    #[ignore = "optional-dependency"]
+    fn test_diff_so_fancy_renderer() {
+        let patch = "\
+        diff --git a/file.txt b/file.txt
+        index 83db48f..e3b0c44 100644
+        --- a/file.txt
+        +++ b/file.txt
+        @@ -1 +1 @@
+        -Hello, world!
+        +Hello, Rust!
+        ";
+        let result = diff_so_fancy_renderer(patch);
+        assert!(result.is_ok());
+        let rendered_patch = result.unwrap();
+        assert!(rendered_patch.contains("Hello, Rust!"));
+    }
+}
