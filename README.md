@@ -33,7 +33,13 @@ updated, and so on) and individual patch contents, as well as apply actions
 based on patchsets, like bookmarking/unbookmarking and replying to the entire
 series with the `Reviewed-by` tag.
 
-4. _Bookmarked Patchsets_: Keep track of specific patchsets by bookmarking them
+4. _Patchset Rendering_: Use external tools like [`bat`](https://github.com/sharkdp/bat), 
+[`delta`](https://github.com/dandavison/delta), [`diff-so-fancy`](https://github.com/so-fancy/diff-so-fancy) 
+to render the patch details and have a better preview screen with colors,
+layouts and even syntax highlight. If you don't wish to use external
+dependencies, you can opt for the vanilla renderer (denominated `default`).
+
+5. _Bookmarked Patchsets_: Keep track of specific patchsets by bookmarking them
 for later consult.
 
 **More features coming!**
@@ -51,6 +57,7 @@ In order to use `patch-hub` you must install:
 
 - [`b4`](https://github.com/mricon/b4)
 - [`git-email`](https://git-scm.com/docs/git-send-email/en) (`git send-email` command)
+- [`bat`](https://github.com/sharkdp/bat), [`delta`](https://github.com/dandavison/delta) and/or [`diff-so-fancy`](https://github.com/so-fancy/diff-so-fancy) optional but highly recommended patchset renderers to enhance previewing patches
 
 ### pre-compiled binaries
 
