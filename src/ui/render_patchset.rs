@@ -93,3 +93,59 @@ fn diff_so_fancy_renderer(patch: &str) -> color_eyre::Result<String> {
     let output = dsf.wait_with_output()?;
     Ok(String::from_utf8(output.stdout)?)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+
+    const PATCH_SAMPLE: &str = "diff --git a/file.txt b/file.txt
+index 83db48f..e3b0c44 100644
+--- a/file.txt
++++ b/file.txt
+@@ -1 +1 @@
+-Hello, world!
++Hello, Rust!
+";
+
+    #[test]
+    #[ignore = "optional-dependency"]
+    fn test_bat_patch_renderer() {
+        let result = bat_patch_renderer(PATCH_SAMPLE);
+        assert!(result.is_ok());
+        let rendered_patch = result.unwrap();
+        assert_eq!(
+            fs::read_to_string("src/test_samples/ui/render_patchset/expected_bat.diff").unwrap(),
+            rendered_patch,
+            "Wrong rendering of bat"
+        );
+    }
+
+    #[test]
+    #[ignore = "optional-dependency"]
+    fn test_delta_patch_renderer() {
+        let result = delta_patch_renderer(PATCH_SAMPLE);
+        assert!(result.is_ok());
+        let rendered_patch = result.unwrap();
+        assert_eq!(
+            fs::read_to_string("src/test_samples/ui/render_patchset/expected_delta.diff").unwrap(),
+            rendered_patch,
+            "Wrong rendering of delta"
+        );
+    }
+
+    #[test]
+    #[ignore = "optional-dependency"]
+    fn test_diff_so_fancy_renderer() {
+        let result = diff_so_fancy_renderer(PATCH_SAMPLE);
+        assert!(result.is_ok());
+        let rendered_patch = result.unwrap();
+        assert_eq!(
+            fs::read_to_string("src/test_samples/ui/render_patchset/expected_diff-so-fancy.diff")
+                .unwrap(),
+            rendered_patch,
+            "Wrong rendering of diff-so-fancy"
+        );
+    }
+}
