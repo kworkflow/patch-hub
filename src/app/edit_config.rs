@@ -20,6 +20,10 @@ impl EditConfigState {
             EditableConfig::GitSendEmailOpt,
             config.git_send_email_options().to_string(),
         );
+        config_buffer.insert(
+            EditableConfig::PatchRenderer,
+            config.patch_renderer().to_string(),
+        );
 
         EditConfigState {
             config_buffer,
@@ -145,6 +149,11 @@ impl EditConfigState {
         // TODO: Check if the option is valid
         Ok(git_send_emial_option)
     }
+
+    pub fn extract_patch_renderer(&mut self) -> Result<String, ()> {
+        let patch_renderer = self.extract_config_buffer_val(&EditableConfig::PatchRenderer);
+        Ok(patch_renderer)
+    }
 }
 
 #[derive(Debug, Hash, Eq, PartialEq)]
@@ -153,6 +162,7 @@ enum EditableConfig {
     CacheDir,
     DataDir,
     GitSendEmailOpt,
+    PatchRenderer,
 }
 
 impl EditableConfig {
@@ -162,6 +172,7 @@ impl EditableConfig {
             1 => Some(EditableConfig::CacheDir),
             2 => Some(EditableConfig::DataDir),
             3 => Some(EditableConfig::GitSendEmailOpt),
+            4 => Some(EditableConfig::PatchRenderer),
             _ => None, // Handle out of bounds
         }
     }
@@ -173,6 +184,9 @@ impl Display for EditableConfig {
             EditableConfig::PageSize => write!(f, "Page Size"),
             EditableConfig::CacheDir => write!(f, "Cache Directory"),
             EditableConfig::DataDir => write!(f, "Data Directory"),
+            EditableConfig::PatchRenderer => {
+                write!(f, "Patch Renderer (bat, delta, diff-so-fancy)")
+            }
             EditableConfig::GitSendEmailOpt => write!(f, "`git send email` option"),
         }
     }
