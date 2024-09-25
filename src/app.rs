@@ -563,6 +563,9 @@ impl App {
             if let Ok(git_send_email_option) = edit_config.extract_git_send_email_option() {
                 self.config.set_git_send_email_option(git_send_email_option)
             }
+            if let Ok(patch_renderer) = edit_config.extract_patch_renderer() {
+                self.config.set_patch_renderer(patch_renderer.into())
+            }
         }
     }
 

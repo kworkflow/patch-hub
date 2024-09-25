@@ -168,6 +168,10 @@ impl Config {
         self.git_send_email_options = git_send_email_options;
     }
 
+    pub fn set_patch_renderer(&mut self, patch_renderer: PatchRenderer) {
+        self.patch_renderer = patch_renderer;
+    }
+
     pub fn save_patch_hub_config(&self) -> io::Result<()> {
         let config_path = if let Ok(path) = env::var("PATCH_HUB_CONFIG_PATH") {
             path
