@@ -98,7 +98,7 @@ impl Logger {
     /// // Get the logger singleton and write a message to the log file
     /// Logger::get_logger().log(LogLevel::Info, "This is a log message");
     /// ```
-    fn log(&mut self, level: LogLevel, message: &str) {
+    fn log<M: Display>(&mut self, level: LogLevel, message: M) {
         let current_datetime = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let message = format!("[{}] {}", current_datetime, message);
 
@@ -135,7 +135,7 @@ impl Logger {
     /// ```
     #[inline]
     #[allow(dead_code)]
-    pub fn info(msg: &str) {
+    pub fn info<M: Display>(msg: M) {
         Logger::get_logger().log(LogLevel::Info, msg);
     }
 
@@ -159,7 +159,7 @@ impl Logger {
     /// ```
     #[inline]
     #[allow(dead_code)]
-    pub fn warn(msg: &str) {
+    pub fn warn<M: Display>(msg: M) {
         Logger::get_logger().log(LogLevel::Warning, msg);
     }
 
@@ -183,7 +183,7 @@ impl Logger {
     /// ```
     #[inline]
     #[allow(dead_code)]
-    pub fn error(msg: &str) {
+    pub fn error<M: Display>(msg: M) {
         Logger::get_logger().log(LogLevel::Error, msg);
     }
 
