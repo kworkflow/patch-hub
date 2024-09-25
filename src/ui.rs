@@ -9,7 +9,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, BookmarkedPatchsetsState, CurrentScreen, PatchsetAction};
+use crate::app::{self, App};
+use app::screens::{bookmarked::BookmarkedPatchsetsState, details::PatchsetAction, CurrentScreen};
 
 mod render_edit_config;
 
