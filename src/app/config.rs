@@ -90,11 +90,7 @@ impl Config {
         };
 
         if let Ok(patch_renderer) = env::var("PATCH_HUB_PATCH_RENDERER") {
-            self.patch_renderer = match &patch_renderer[..] {
-                "bat" => PatchRenderer::Bat,
-                "delta" => PatchRenderer::Delta,
-                _ => PatchRenderer::Default,
-            };
+            self.patch_renderer = patch_renderer.into();
         };
     }
 
