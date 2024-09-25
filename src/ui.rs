@@ -1,5 +1,4 @@
 use patch_hub::patch::Patch;
-use patchset_details::render_patch_preview;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -9,11 +8,12 @@ use ratatui::{
     },
     Frame,
 };
+use render_patchset::render_patch_preview;
 
 use crate::app::{logging::Logger, App, BookmarkedPatchsetsState, CurrentScreen, PatchsetAction};
 
-mod patchset_details;
 mod render_edit_config;
+mod render_patchset;
 
 pub fn draw_ui(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
