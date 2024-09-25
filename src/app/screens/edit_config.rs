@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Display, path::Path};
 
-use super::config::Config;
+use crate::app::config::Config;
 
 #[derive(Debug)]
 pub struct EditConfigState {
