@@ -7,5 +7,6 @@
     "logs_path":"/logs/path",
     "git_send_email_options": "--long-option value -s -h -o -r -t",
     "cache_dir": "/cache_dir",
-    "data_dir": "/data_dir"
+    "data_dir": "/data_dir",
+    "patch_renderer": "default"
 }
