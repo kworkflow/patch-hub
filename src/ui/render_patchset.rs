@@ -38,7 +38,7 @@ fn bat_patch_renderer(patch: &str) -> color_eyre::Result<String> {
         .stdout(Stdio::piped())
         .spawn()
         .map_err(|e| {
-            Logger::error(&format!("Failed to spawn bat for patch preview: {}", e));
+            Logger::error(format!("Failed to spawn bat for patch preview: {}", e));
             e
         })?;
 
@@ -62,7 +62,7 @@ fn delta_patch_renderer(patch: &str) -> color_eyre::Result<String> {
         .stdout(Stdio::piped())
         .spawn()
         .map_err(|e| {
-            Logger::error(&format!("Failed to spawn delta for patch preview: {}", e));
+            Logger::error(format!("Failed to spawn delta for patch preview: {}", e));
             e
         })?;
 
@@ -82,7 +82,7 @@ fn diff_so_fancy_renderer(patch: &str) -> color_eyre::Result<String> {
         .stdout(Stdio::piped())
         .spawn()
         .map_err(|e| {
-            Logger::error(&format!(
+            Logger::error(format!(
                 "Failed to spawn diff-so-fancy for patch preview: {}",
                 e
             ));
