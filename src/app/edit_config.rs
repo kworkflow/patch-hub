@@ -184,7 +184,9 @@ impl Display for EditableConfig {
             EditableConfig::PageSize => write!(f, "Page Size"),
             EditableConfig::CacheDir => write!(f, "Cache Directory"),
             EditableConfig::DataDir => write!(f, "Data Directory"),
-            EditableConfig::PatchRenderer => write!(f, "Patch Renderer (bat, delta, diff-so-fancy)"),
+            EditableConfig::PatchRenderer => {
+                write!(f, "Patch Renderer (bat, delta, diff-so-fancy)")
+            }
             EditableConfig::GitSendEmailOpt => write!(f, "`git send email` option"),
         }
     }
