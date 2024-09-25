@@ -9,4 +9,6 @@ pub enum PatchRenderer {
     Bat,
     #[serde(rename = "delta")]
     Delta,
+    #[serde(rename = "diff-so-fancy")]
+    DiffSoFancy,
 }

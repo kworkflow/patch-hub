@@ -11,9 +11,9 @@ use patch_hub::{
 use std::{collections::HashMap, path::Path, process::Command};
 
 mod config;
+mod edit_config;
 pub mod logging;
 pub mod patch_renderer;
-mod edit_config;
 
 pub struct BookmarkedPatchsetsState {
     pub bookmarked_patchsets: Vec<Patch>,
