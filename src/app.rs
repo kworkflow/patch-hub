@@ -4,8 +4,8 @@ use derive_getters::Getters;
 use edit_config::EditConfigState;
 use logging::Logger;
 use patch_hub::{
-    lore_api_client::{BlockingLoreAPIClient, FailedFeedRequest},
-    lore_session::{self, LoreSession},
+    lore_api_client::{BlockingLoreAPIClient, ClientError},
+    lore_session::{self, LoreSession, LoreSessionError},
     mailing_list::MailingList,
     patch::Patch,
 };
@@ -73,7 +73,7 @@ impl LatestPatchsetsState {
     pub fn new(target_list: String, page_size: usize) -> LatestPatchsetsState {
         LatestPatchsetsState {
             lore_session: LoreSession::new(target_list.clone()),
-            lore_api_client: BlockingLoreAPIClient::new(),
+            lore_api_client: BlockingLoreAPIClient::default(),
             target_list,
             page_number: 1,
             patchset_index: 0,
@@ -82,14 +82,17 @@ impl LatestPatchsetsState {
     }
 
     pub fn fetch_current_page(&mut self) -> color_eyre::Result<()> {
-        if let Err(failed_feed_request) = self.lore_session.process_n_representative_patches(
+        if let Err(lore_session_error) = self.lore_session.process_n_representative_patches(
             &self.lore_api_client,
             self.page_size * self.page_number,
         ) {
-            match failed_feed_request {
-                FailedFeedRequest::UnknownError(error) => bail!("[FailedFeedRequest::UnknownError]\n*\tFailed to request feed\n*\t{error:#?}"),
-                FailedFeedRequest::StatusNotOk(feed_response) => bail!("[FailedFeedRequest::StatusNotOk]\n*\tRequest returned with non-OK status\n*\t{feed_response:#?}"),
-                FailedFeedRequest::EndOfFeed => (),
+            match lore_session_error {
+                LoreSessionError::FromLoreAPIClient(client_error) => match client_error {
+                    ClientError::FromReqwest(_) | ClientError::UnexpectedResponse(_, _) => {
+                        bail!("[LoreSessionError::FromLoreAPIClient]\n*\tFailed to request feed\n*\t{client_error:#?}")
+                    }
+                    ClientError::EndOfFeed => (),
+                },
             }
         };
         Ok(())
@@ -217,7 +220,7 @@ impl PatchsetDetailsAndActionsState {
         target_list: &str,
         git_send_email_options: &str,
     ) -> color_eyre::Result<Vec<usize>> {
-        let lore_api_client = BlockingLoreAPIClient::new();
+        let lore_api_client = BlockingLoreAPIClient::default();
         let (git_user_name, git_user_email) = lore_session::get_git_signature("");
         let mut successful_indexes = Vec::new();
 
@@ -265,7 +268,7 @@ pub struct MailingListSelectionState {
 
 impl MailingListSelectionState {
     pub fn refresh_available_mailing_lists(&mut self) -> color_eyre::Result<()> {
-        let lore_api_client = BlockingLoreAPIClient::new();
+        let lore_api_client = BlockingLoreAPIClient::default();
 
         match lore_session::fetch_available_lists(&lore_api_client) {
             Ok(available_mailing_lists) => {

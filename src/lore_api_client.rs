@@ -1,6 +1,9 @@
 use mockall::automock;
-use reqwest::blocking::Response;
-use reqwest::Error;
+use reqwest::{
+    blocking::{RequestBuilder as BlockingRequestBuilder, Response},
+    Method, StatusCode,
+};
+use thiserror::Error;
 
 #[cfg(test)]
 mod tests;
@@ -8,24 +11,51 @@ mod tests;
 const LORE_DOMAIN: &str = r"https://lore.kernel.org";
 const BASE_QUERY_FOR_FEED_REQUEST: &str = r"?x=A&q=((s:patch+OR+s:rfc)+AND+NOT+s:re:)";
 
-#[derive(Debug)]
-pub enum FailedFeedRequest {
-    UnknownError(Error),
-    StatusNotOk(Response),
+#[derive(Error, Debug)]
+pub enum ClientError {
+    #[error(transparent)]
+    FromReqwest(#[from] reqwest::Error),
+
+    #[error("Got response with status {0}: {1:?}")]
+    UnexpectedResponse(StatusCode, Response),
+
+    #[error("Feed ended")]
     EndOfFeed,
 }
 
-pub struct BlockingLoreAPIClient {}
+pub struct BlockingLoreAPIClient {
+    pub lore_domain: String,
+    blocking_client: reqwest::blocking::Client,
+}
 
 impl Default for BlockingLoreAPIClient {
     fn default() -> Self {
-        Self::new()
+        let blocking_client = reqwest::blocking::Client::new();
+        Self::new(blocking_client)
     }
 }
 
 impl BlockingLoreAPIClient {
-    pub fn new() -> BlockingLoreAPIClient {
-        BlockingLoreAPIClient {}
+    pub fn new(blocking_client: reqwest::blocking::Client) -> BlockingLoreAPIClient {
+        BlockingLoreAPIClient {
+            lore_domain: LORE_DOMAIN.to_string(),
+            blocking_client,
+        }
+    }
+    pub fn request_and_get_body(
+        &self,
+        request_builder: BlockingRequestBuilder,
+    ) -> Result<String, ClientError> {
+        let response = request_builder.send()?;
+
+        let response_status = response.status();
+        let StatusCode::OK = response_status else {
+            return Err(ClientError::UnexpectedResponse(response_status, response));
+        };
+
+        let body = response.text()?;
+
+        Ok(body)
     }
 }
 
@@ -35,7 +65,7 @@ pub trait PatchFeedRequest {
         &self,
         target_list: &str,
         min_index: usize,
-    ) -> Result<String, FailedFeedRequest>;
+    ) -> Result<String, ClientError>;
 }
 
 impl PatchFeedRequest for BlockingLoreAPIClient {
@@ -43,76 +73,48 @@ impl PatchFeedRequest for BlockingLoreAPIClient {
         &self,
         target_list: &str,
         min_index: usize,
-    ) -> Result<String, FailedFeedRequest> {
-        let feed_request: String =
-            format!("{LORE_DOMAIN}/{target_list}/{BASE_QUERY_FOR_FEED_REQUEST}&o={min_index}");
+    ) -> Result<String, ClientError> {
+        let feed_url: String = format!(
+            "{}/{target_list}/{BASE_QUERY_FOR_FEED_REQUEST}&o={min_index}",
+            self.lore_domain
+        );
 
-        let feed_response: Response = match reqwest::blocking::get(feed_request) {
-            Ok(response) => response,
-            Err(error) => return Err(FailedFeedRequest::UnknownError(error)),
-        };
+        let request_builder = self.blocking_client.request(Method::GET, feed_url);
 
-        match feed_response.status().as_u16() {
-            200 => (),
-            _ => return Err(FailedFeedRequest::StatusNotOk(feed_response)),
-        };
+        let feed_response_body = self.request_and_get_body(request_builder)?;
 
-        let feed_response_body: String = feed_response.text().unwrap();
         if feed_response_body.eq(r"</feed>") {
-            return Err(FailedFeedRequest::EndOfFeed);
+            return Err(ClientError::EndOfFeed);
         };
 
         Ok(feed_response_body)
     }
 }
 
-#[derive(Debug)]
-pub enum FailedAvailableListsRequest {
-    UnknownError(Error),
-    StatusNotOk(Response),
-}
-
 #[automock]
 pub trait AvailableListsRequest {
-    fn request_available_lists(
-        &self,
-        min_index: usize,
-    ) -> Result<String, FailedAvailableListsRequest>;
+    fn request_available_lists(&self, min_index: usize) -> Result<String, ClientError>;
 }
 
 impl AvailableListsRequest for BlockingLoreAPIClient {
-    fn request_available_lists(
-        &self,
-        min_index: usize,
-    ) -> Result<String, FailedAvailableListsRequest> {
-        let available_lists_request: String = format!("{LORE_DOMAIN}/?&o={min_index}");
+    fn request_available_lists(&self, min_index: usize) -> Result<String, ClientError> {
+        let available_lists_url = format!("{}/?&o={min_index}", self.lore_domain);
 
-        let available_lists: Response = match reqwest::blocking::get(available_lists_request) {
-            Ok(response) => response,
-            Err(error) => return Err(FailedAvailableListsRequest::UnknownError(error)),
-        };
+        let request_builder = self
+            .blocking_client
+            .request(Method::GET, available_lists_url);
 
-        match available_lists.status().as_u16() {
-            200 => (),
-            _ => return Err(FailedAvailableListsRequest::StatusNotOk(available_lists)),
-        };
-
-        Ok(available_lists.text().unwrap())
+        self.request_and_get_body(request_builder)
     }
 }
 
-#[derive(Debug)]
-pub enum FailedPatchHTMLRequest {
-    UnknownError(Error),
-    StatusNotOk(Response),
-}
-
+#[automock]
 pub trait PatchHTMLRequest {
     fn request_patch_html(
         &self,
         target_list: &str,
         message_id: &str,
-    ) -> Result<String, FailedPatchHTMLRequest>;
+    ) -> Result<String, ClientError>;
 }
 
 impl PatchHTMLRequest for BlockingLoreAPIClient {
@@ -120,19 +122,11 @@ impl PatchHTMLRequest for BlockingLoreAPIClient {
         &self,
         target_list: &str,
         message_id: &str,
-    ) -> Result<String, FailedPatchHTMLRequest> {
-        let patch_html_request: String = format!("{LORE_DOMAIN}/{target_list}/{message_id}/");
+    ) -> Result<String, ClientError> {
+        let patch_html_url = format!("{}/{target_list}/{message_id}/", self.lore_domain);
 
-        let patch_html: Response = match reqwest::blocking::get(patch_html_request) {
-            Ok(response) => response,
-            Err(error) => return Err(FailedPatchHTMLRequest::UnknownError(error)),
-        };
+        let request_builder = self.blocking_client.request(Method::GET, patch_html_url);
 
-        match patch_html.status().as_u16() {
-            200 => (),
-            _ => return Err(FailedPatchHTMLRequest::StatusNotOk(patch_html)),
-        };
-
-        Ok(patch_html.text().unwrap())
+        self.request_and_get_body(request_builder)
     }
 }

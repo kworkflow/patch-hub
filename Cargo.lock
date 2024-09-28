@@ -816,6 +816,7 @@ dependencies = [
  "serde",
  "serde-xml-rs",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
