@@ -11,7 +11,7 @@ pub struct MailingListSelectionState {
 
 impl MailingListSelectionState {
     pub fn refresh_available_mailing_lists(&mut self) -> color_eyre::Result<()> {
-        let lore_api_client = BlockingLoreAPIClient::new();
+        let lore_api_client = BlockingLoreAPIClient::default();
 
         match lore_session::fetch_available_lists(&lore_api_client) {
             Ok(available_mailing_lists) => {

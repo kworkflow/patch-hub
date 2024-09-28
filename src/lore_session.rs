@@ -1,6 +1,5 @@
 use crate::lore_api_client::{
-    AvailableListsRequest, FailedAvailableListsRequest, FailedFeedRequest, FailedPatchHTMLRequest,
-    PatchFeedRequest, PatchHTMLRequest,
+    AvailableListsRequest, ClientError, PatchFeedRequest, PatchHTMLRequest,
 };
 use crate::mailing_list::MailingList;
 use crate::patch::{Patch, PatchFeed, PatchRegex};
@@ -16,6 +15,7 @@ use std::{
     fs::{self, File},
     io,
 };
+use thiserror::Error;
 
 #[cfg(test)]
 mod tests;
@@ -33,6 +33,12 @@ pub struct LoreSession {
     target_list: String,
     #[getter(skip)]
     min_index: usize,
+}
+
+#[derive(Error, Debug)]
+pub enum LoreSessionError {
+    #[error(transparent)]
+    FromLoreAPIClient(#[from] ClientError),
 }
 
 impl LoreSession {
@@ -54,17 +60,14 @@ impl LoreSession {
         &mut self,
         lore_api_client: &T,
         n: usize,
-    ) -> Result<(), FailedFeedRequest> {
-        let mut patch_feed: PatchFeed;
-        let mut processed_patches_ids: Vec<String>;
-
+    ) -> Result<(), LoreSessionError> {
         while self.representative_patches_ids.len() < n {
-            match lore_api_client.request_patch_feed(&self.target_list, self.min_index) {
-                Ok(feed_response_body) => patch_feed = from_str(&feed_response_body).unwrap(),
-                Err(failed_feed_request) => return Err(failed_feed_request),
-            }
+            let feed_response_body =
+                lore_api_client.request_patch_feed(&self.target_list, self.min_index)?;
 
-            processed_patches_ids = self.process_patches(patch_feed);
+            let patch_feed = from_str(&feed_response_body).unwrap();
+
+            let processed_patches_ids = self.process_patches(patch_feed);
             self.update_representative_patches(processed_patches_ids);
 
             self.min_index += LORE_PAGE_SIZE;
@@ -278,9 +281,7 @@ pub fn load_bookmarked_patchsets(filepath: &str) -> io::Result<Vec<Patch>> {
     Ok(bookmarked_patchesets)
 }
 
-pub fn fetch_available_lists<T>(
-    lore_api_client: &T,
-) -> Result<Vec<MailingList>, FailedAvailableListsRequest>
+pub fn fetch_available_lists<T>(lore_api_client: &T) -> Result<Vec<MailingList>, LoreSessionError>
 where
     T: AvailableListsRequest,
 {
@@ -288,12 +289,9 @@ where
     let mut min_index = 0;
 
     loop {
-        let available_lists_str: String = match lore_api_client.request_available_lists(min_index) {
-            Ok(value) => value,
-            Err(failed_available_lists_request) => return Err(failed_available_lists_request),
-        };
+        let available_lists_body = lore_api_client.request_available_lists(min_index)?;
 
-        let mut tmp_available_lists = process_available_lists(available_lists_str);
+        let mut tmp_available_lists = process_available_lists(available_lists_body);
 
         if tmp_available_lists.is_empty() {
             break;
@@ -371,7 +369,7 @@ pub fn prepare_reply_patchset_with_reviewed_by<T>(
     patches: &[String],
     git_signature: &str,
     git_send_email_options: &str,
-) -> Result<Vec<Command>, FailedPatchHTMLRequest>
+) -> Result<Vec<Command>, LoreSessionError>
 where
     T: PatchHTMLRequest,
 {
@@ -391,12 +389,9 @@ where
         reply.push_str(&format!("\nReviewed-by: {git_signature}\n"));
         fs::write(&reply_path, &reply).unwrap();
 
-        let patch_html = match lore_api_client.request_patch_html(target_list, message_id) {
-            Ok(response_payload) => response_payload,
-            Err(failed_patch_html_request) => return Err(failed_patch_html_request),
-        };
+        let patch_body = lore_api_client.request_patch_html(target_list, message_id)?;
 
-        let mut git_reply_command = extract_git_reply_command(&patch_html, git_send_email_options);
+        let mut git_reply_command = extract_git_reply_command(&patch_body, git_send_email_options);
         git_reply_command.arg(format!("{}", reply_path.display()));
 
         git_reply_commands.push(git_reply_command);

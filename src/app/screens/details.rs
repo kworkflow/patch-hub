@@ -72,7 +72,7 @@ impl PatchsetDetailsAndActionsState {
         target_list: &str,
         git_send_email_options: &str,
     ) -> color_eyre::Result<Vec<usize>> {
-        let lore_api_client = BlockingLoreAPIClient::new();
+        let lore_api_client = BlockingLoreAPIClient::default();
         let (git_user_name, git_user_email) = lore_session::get_git_signature("");
         let mut successful_indexes = Vec::new();
 
