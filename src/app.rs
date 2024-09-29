@@ -70,10 +70,14 @@ pub struct LatestPatchsetsState {
 }
 
 impl LatestPatchsetsState {
-    pub fn new(target_list: String, page_size: usize) -> LatestPatchsetsState {
+    pub fn new(
+        target_list: String,
+        page_size: usize,
+        lore_api_client: BlockingLoreAPIClient,
+    ) -> LatestPatchsetsState {
         LatestPatchsetsState {
             lore_session: LoreSession::new(target_list.clone()),
-            lore_api_client: BlockingLoreAPIClient::default(),
+            lore_api_client,
             target_list,
             page_number: 1,
             patchset_index: 0,
@@ -158,6 +162,7 @@ pub struct PatchsetDetailsAndActionsState {
     pub preview_scroll_offset: usize,
     pub patchset_actions: HashMap<PatchsetAction, bool>,
     pub last_screen: CurrentScreen,
+    pub lore_api_client: BlockingLoreAPIClient,
 }
 
 #[derive(Hash, Eq, PartialEq)]
@@ -220,7 +225,6 @@ impl PatchsetDetailsAndActionsState {
         target_list: &str,
         git_send_email_options: &str,
     ) -> color_eyre::Result<Vec<usize>> {
-        let lore_api_client = BlockingLoreAPIClient::default();
         let (git_user_name, git_user_email) = lore_session::get_git_signature("");
         let mut successful_indexes = Vec::new();
 
@@ -233,7 +237,7 @@ impl PatchsetDetailsAndActionsState {
         let tmp_dir = Path::new(std::str::from_utf8(&tmp_dir.stdout).unwrap().trim());
 
         let git_reply_commands = match lore_session::prepare_reply_patchset_with_reviewed_by(
-            &lore_api_client,
+            &self.lore_api_client,
             tmp_dir,
             target_list,
             &self.patches,
@@ -264,13 +268,12 @@ pub struct MailingListSelectionState {
     pub possible_mailing_lists: Vec<MailingList>,
     pub highlighted_list_index: usize,
     pub mailing_lists_path: String,
+    pub lore_api_client: BlockingLoreAPIClient,
 }
 
 impl MailingListSelectionState {
     pub fn refresh_available_mailing_lists(&mut self) -> color_eyre::Result<()> {
-        let lore_api_client = BlockingLoreAPIClient::default();
-
-        match lore_session::fetch_available_lists(&lore_api_client) {
+        match lore_session::fetch_available_lists(&self.lore_api_client) {
             Ok(available_mailing_lists) => {
                 self.mailing_lists = available_mailing_lists;
             }
@@ -355,6 +358,7 @@ pub struct App {
     pub edit_config_state: Option<EditConfigState>,
     pub reviewed_patchsets: HashMap<String, Vec<usize>>,
     pub config: Config,
+    pub lore_api_client: BlockingLoreAPIClient,
 }
 
 impl App {
@@ -373,6 +377,8 @@ impl App {
             lore_session::load_reviewed_patchsets(config.reviewed_patchsets_path())
                 .unwrap_or_default();
 
+        let lore_api_client = BlockingLoreAPIClient::default();
+
         // Initialize the logger before the app starts
         Logger::init_log_file(&config);
         Logger::info("patch-hub started");
@@ -385,6 +391,7 @@ impl App {
                 possible_mailing_lists: mailing_lists,
                 highlighted_list_index: 0,
                 mailing_lists_path: config.mailing_lists_path().to_string(),
+                lore_api_client: lore_api_client.clone(),
             },
             latest_patchsets_state: None,
             patchset_details_and_actions_state: None,
@@ -395,6 +402,7 @@ impl App {
             },
             reviewed_patchsets,
             config,
+            lore_api_client,
         }
     }
 
@@ -408,6 +416,7 @@ impl App {
         self.latest_patchsets_state = Some(LatestPatchsetsState::new(
             target_list,
             self.config.page_size(),
+            self.lore_api_client.clone(),
         ));
     }
 
@@ -463,6 +472,7 @@ impl App {
                         (PatchsetAction::ReplyWithReviewedBy, false),
                     ]),
                     last_screen: current_screen,
+                    lore_api_client: self.lore_api_client.clone(),
                 });
                 Ok(())
             }
