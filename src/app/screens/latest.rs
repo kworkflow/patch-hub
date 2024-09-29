@@ -17,10 +17,14 @@ pub struct LatestPatchsetsState {
 }
 
 impl LatestPatchsetsState {
-    pub fn new(target_list: String, page_size: usize) -> LatestPatchsetsState {
+    pub fn new(
+        target_list: String,
+        page_size: usize,
+        lore_api_client: BlockingLoreAPIClient,
+    ) -> LatestPatchsetsState {
         LatestPatchsetsState {
             lore_session: LoreSession::new(target_list.clone()),
-            lore_api_client: BlockingLoreAPIClient::default(),
+            lore_api_client,
             target_list,
             page_number: 1,
             patchset_index: 0,

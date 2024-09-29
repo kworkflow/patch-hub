@@ -1,7 +1,7 @@
 use color_eyre::eyre::bail;
 use config::Config;
 use logging::Logger;
-use patch_hub::{lore_session, patch::Patch};
+use patch_hub::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
 use screens::{
     bookmarked::BookmarkedPatchsetsState,
     details::{PatchsetAction, PatchsetDetailsAndActionsState},
@@ -26,6 +26,7 @@ pub struct App {
     pub edit_config_state: Option<EditConfigState>,
     pub reviewed_patchsets: HashMap<String, Vec<usize>>,
     pub config: Config,
+    pub lore_api_client: BlockingLoreAPIClient,
 }
 
 impl App {
@@ -44,6 +45,8 @@ impl App {
             lore_session::load_reviewed_patchsets(config.reviewed_patchsets_path())
                 .unwrap_or_default();
 
+        let lore_api_client = BlockingLoreAPIClient::default();
+
         // Initialize the logger before the app starts
         Logger::init_log_file(&config);
         Logger::info("patch-hub started");
@@ -56,6 +59,7 @@ impl App {
                 possible_mailing_lists: mailing_lists,
                 highlighted_list_index: 0,
                 mailing_lists_path: config.mailing_lists_path().to_string(),
+                lore_api_client: lore_api_client.clone(),
             },
             latest_patchsets_state: None,
             patchset_details_and_actions_state: None,
@@ -66,6 +70,7 @@ impl App {
             },
             reviewed_patchsets,
             config,
+            lore_api_client,
         }
     }
 
@@ -79,6 +84,7 @@ impl App {
         self.latest_patchsets_state = Some(LatestPatchsetsState::new(
             target_list,
             self.config.page_size(),
+            self.lore_api_client.clone(),
         ));
     }
 
@@ -134,6 +140,7 @@ impl App {
                         (PatchsetAction::ReplyWithReviewedBy, false),
                     ]),
                     last_screen: current_screen,
+                    lore_api_client: self.lore_api_client.clone(),
                 });
                 Ok(())
             }

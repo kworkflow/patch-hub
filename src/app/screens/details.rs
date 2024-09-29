@@ -10,6 +10,7 @@ pub struct PatchsetDetailsAndActionsState {
     pub preview_scroll_offset: usize,
     pub patchset_actions: HashMap<PatchsetAction, bool>,
     pub last_screen: CurrentScreen,
+    pub lore_api_client: BlockingLoreAPIClient,
 }
 
 #[derive(Hash, Eq, PartialEq)]
@@ -72,7 +73,6 @@ impl PatchsetDetailsAndActionsState {
         target_list: &str,
         git_send_email_options: &str,
     ) -> color_eyre::Result<Vec<usize>> {
-        let lore_api_client = BlockingLoreAPIClient::default();
         let (git_user_name, git_user_email) = lore_session::get_git_signature("");
         let mut successful_indexes = Vec::new();
 
@@ -85,7 +85,7 @@ impl PatchsetDetailsAndActionsState {
         let tmp_dir = Path::new(std::str::from_utf8(&tmp_dir.stdout).unwrap().trim());
 
         let git_reply_commands = match lore_session::prepare_reply_patchset_with_reviewed_by(
-            &lore_api_client,
+            &self.lore_api_client,
             tmp_dir,
             target_list,
             &self.patches,

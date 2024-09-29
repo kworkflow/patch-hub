@@ -23,6 +23,7 @@ pub enum ClientError {
     EndOfFeed,
 }
 
+#[derive(Clone)]
 pub struct BlockingLoreAPIClient {
     pub lore_domain: String,
     blocking_client: reqwest::blocking::Client,
