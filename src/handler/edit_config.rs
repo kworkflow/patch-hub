@@ -6,18 +6,18 @@ pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()
         match edit_config_state.is_editing() {
             true => match key.code {
                 KeyCode::Esc => {
-                    edit_config_state.clear_editing_val();
+                    edit_config_state.clear_edit();
                     edit_config_state.toggle_editing();
                 }
                 KeyCode::Backspace => {
-                    edit_config_state.remove_char_from_editing_val();
+                    edit_config_state.backspace_edit();
                 }
                 KeyCode::Char(ch) => {
-                    edit_config_state.add_char_to_editing_val(ch);
+                    edit_config_state.append_edit(ch);
                 }
                 KeyCode::Enter => {
-                    edit_config_state.push_editing_val_to_buffer();
-                    edit_config_state.clear_editing_val();
+                    edit_config_state.stage_edit();
+                    edit_config_state.clear_edit();
                     edit_config_state.toggle_editing();
                 }
                 _ => {}
@@ -31,10 +31,10 @@ pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()
                     edit_config_state.toggle_editing();
                 }
                 KeyCode::Char('j') | KeyCode::Down => {
-                    edit_config_state.highlight_below_entry();
+                    edit_config_state.highlight_next();
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
-                    edit_config_state.highlight_above_entry();
+                    edit_config_state.highlight_prev();
                 }
                 KeyCode::Enter => {
                     app.consolidate_edit_config();

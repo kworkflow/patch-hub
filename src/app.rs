@@ -226,16 +226,16 @@ impl App {
     pub fn consolidate_edit_config(&mut self) {
         // TODO: Handle invalid values!
         if let Some(edit_config) = &mut self.edit_config_state {
-            if let Ok(page_size) = edit_config.extract_page_size() {
+            if let Ok(page_size) = edit_config.page_size() {
                 self.config.set_page_size(page_size)
             }
-            if let Ok(cache_dir) = edit_config.extract_cache_dir() {
+            if let Ok(cache_dir) = edit_config.cache_dir() {
                 self.config.set_cache_dir(cache_dir)
             }
-            if let Ok(data_dir) = edit_config.extract_data_dir() {
+            if let Ok(data_dir) = edit_config.data_dir() {
                 self.config.set_data_dir(data_dir)
             }
-            if let Ok(git_send_email_option) = edit_config.extract_git_send_email_option() {
+            if let Ok(git_send_email_option) = edit_config.git_send_email_option() {
                 self.config.set_git_send_email_option(git_send_email_option)
             }
             if let Ok(patch_renderer) = edit_config.extract_patch_renderer() {

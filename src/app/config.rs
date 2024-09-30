@@ -53,7 +53,10 @@ impl Config {
         }
     }
 
-    fn detect_patch_hub_config_file() -> Option<Config> {
+    /// Loads the configuration for patch-hub from the config file.
+    ///
+    /// Returns `None` if the config file is not found or if it's not a valid JSON.
+    fn load_file() -> Option<Config> {
         if let Ok(config_path) = env::var("PATCH_HUB_CONFIG_PATH") {
             if Path::new(&config_path).is_file() {
                 let file_contents = fs::read_to_string(&config_path).unwrap_or(String::new());
@@ -100,7 +103,7 @@ impl Config {
     }
 
     pub fn build() -> Self {
-        let mut config = Self::detect_patch_hub_config_file().unwrap_or_else(|| {
+        let mut config = Self::load_file().unwrap_or_else(|| {
             let config = Self::default();
             // TODO: Better handle this error
             let _ = config.save_patch_hub_config();
