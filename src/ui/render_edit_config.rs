@@ -21,20 +21,17 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
         .constraints(constraints)
         .split(chunk);
 
-    let highlighted_entry = edit_config_state.get_highlighted_entry();
-    for i in 0..edit_config_state.get_number_of_configs() {
+    let highlighted_entry = edit_config_state.highlighted();
+    for i in 0..edit_config_state.config_count() {
         if i + 1 > config_chunks.len() {
             break;
         }
 
-        let (config, value) = edit_config_state.get_config_by_index(i);
+        let (config, value) = edit_config_state.config(i);
         let value = Line::from(
             if edit_config_state.is_editing() && i == highlighted_entry {
                 vec![
-                    Span::styled(
-                        edit_config_state.get_editing_val().to_string(),
-                        Style::default(),
-                    ),
+                    Span::styled(edit_config_state.edit().to_string(), Style::default()),
                     Span::styled(" ", Style::default().bg(Color::White)),
                 ]
             } else {

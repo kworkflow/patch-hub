@@ -1,12 +1,17 @@
 use std::{collections::HashMap, fmt::Display, path::Path};
 
+use derive_getters::Getters;
+
 use super::config::Config;
 
-#[derive(Debug)]
+#[derive(Debug, Getters)]
 pub struct EditConfigState {
+    #[getter(skip)]
     config_buffer: HashMap<EditableConfig, String>,
+    #[getter(rename = "highlighted")]
     highlighted_entry: usize,
     is_editing: bool,
+    #[getter(rename = "edit")]
     editing_val: String,
 }
 
@@ -29,28 +34,19 @@ impl EditConfigState {
         }
     }
 
-    pub fn is_editing(&self) -> bool {
-        self.is_editing
-    }
-
-    pub fn get_number_of_configs(&self) -> usize {
+    /// Get the number of config entries in the config buffer
+    pub fn config_count(&self) -> usize {
         self.config_buffer.len()
     }
 
-    pub fn get_config_by_index(&self, i: usize) -> (String, String) {
+    /// Get the config entry at the given index
+    pub fn config(&self, i: usize) -> (String, String) {
         let editable_config = EditableConfig::from_integer(i).unwrap();
         let value = self.config_buffer.get(&editable_config).unwrap();
         (editable_config.to_string(), value.clone())
     }
 
-    pub fn get_highlighted_entry(&self) -> usize {
-        self.highlighted_entry
-    }
-
-    pub fn get_editing_val(&self) -> &str {
-        &self.editing_val
-    }
-
+    /// Toggle editing mode
     pub fn toggle_editing(&mut self) {
         if !self.is_editing {
             let editable_config = EditableConfig::from_integer(self.highlighted_entry).unwrap();
@@ -61,33 +57,39 @@ impl EditConfigState {
         self.is_editing = !self.is_editing;
     }
 
-    pub fn highlight_above_entry(&mut self) {
+    /// Move the highlight to the previous entry
+    pub fn highlight_prev(&mut self) {
         if self.highlighted_entry > 0 {
             self.highlighted_entry -= 1;
         }
     }
 
-    pub fn highlight_below_entry(&mut self) {
+    /// Move the highlight to the next entry
+    pub fn highlight_next(&mut self) {
         if self.highlighted_entry + 1 < self.config_buffer.len() {
             self.highlighted_entry += 1;
         }
     }
 
-    pub fn remove_char_from_editing_val(&mut self) {
+    /// Remove the last char from the current editing value if not empty
+    pub fn backspace_edit(&mut self) {
         if !self.editing_val.is_empty() {
             self.editing_val.pop();
         }
     }
 
-    pub fn add_char_to_editing_val(&mut self, ch: char) {
+    /// Appends a new char to the current editing value
+    pub fn append_edit(&mut self, ch: char) {
         self.editing_val.push(ch);
     }
 
-    pub fn clear_editing_val(&mut self) {
+    /// Clear the current editing value
+    pub fn clear_edit(&mut self) {
         self.editing_val.clear();
     }
 
-    pub fn push_editing_val_to_buffer(&mut self) {
+    /// Save the current edit value to the config buffer
+    pub fn save_edit(&mut self) {
         let editable_config = EditableConfig::from_integer(self.highlighted_entry).unwrap();
         self.config_buffer
             .insert(editable_config, std::mem::take(&mut self.editing_val));
@@ -103,7 +105,12 @@ impl EditConfigState {
         ret_value
     }
 
-    pub fn extract_page_size(&mut self) -> Result<usize, ()> {
+    /// Extracts the page size from the config
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the page size inserted string is not a valid integer
+    pub fn page_size(&mut self) -> Result<usize, ()> {
         match self
             .extract_config_buffer_val(&EditableConfig::PageSize)
             .parse::<usize>()
@@ -123,7 +130,12 @@ impl EditConfigState {
         }
     }
 
-    pub fn extract_cache_dir(&mut self) -> Result<String, ()> {
+    /// Extracts the cache directory from the config
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the cache directory is not a valid directory
+    pub fn cache_dir(&mut self) -> Result<String, ()> {
         let cache_dir = self.extract_config_buffer_val(&EditableConfig::CacheDir);
         match Self::is_valid_dir(&cache_dir) {
             true => Ok(cache_dir),
@@ -131,7 +143,12 @@ impl EditConfigState {
         }
     }
 
-    pub fn extract_data_dir(&mut self) -> Result<String, ()> {
+    /// Extracts the data directory from the config
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data directory is not a valid directory
+    pub fn data_dir(&mut self) -> Result<String, ()> {
         let data_dir = self.extract_config_buffer_val(&EditableConfig::DataDir);
         match Self::is_valid_dir(&data_dir) {
             true => Ok(data_dir),
@@ -139,7 +156,8 @@ impl EditConfigState {
         }
     }
 
-    pub fn extract_git_send_email_option(&mut self) -> Result<String, ()> {
+    /// Extracts the `git send email` option from the config
+    pub fn git_send_email_option(&mut self) -> Result<String, ()> {
         let git_send_emial_option =
             self.extract_config_buffer_val(&EditableConfig::GitSendEmailOpt);
         // TODO: Check if the option is valid
