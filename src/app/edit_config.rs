@@ -1,5 +1,7 @@
 use std::{collections::HashMap, fmt::Display, path::Path};
 
+use color_eyre::eyre::bail;
+
 use super::config::Config;
 
 #[derive(Debug)]
@@ -38,7 +40,7 @@ impl EditConfigState {
     }
 
     pub fn get_config_by_index(&self, i: usize) -> (String, String) {
-        let editable_config = EditableConfig::from_integer(i).unwrap();
+        let editable_config = EditableConfig::try_from(i).unwrap();
         let value = self.config_buffer.get(&editable_config).unwrap();
         (editable_config.to_string(), value.clone())
     }
@@ -53,7 +55,7 @@ impl EditConfigState {
 
     pub fn toggle_editing(&mut self) {
         if !self.is_editing {
-            let editable_config = EditableConfig::from_integer(self.highlighted_entry).unwrap();
+            let editable_config = EditableConfig::try_from(self.highlighted_entry).unwrap();
             if let Some(value) = self.config_buffer.get(&editable_config) {
                 self.editing_val = value.clone();
             }
@@ -88,7 +90,7 @@ impl EditConfigState {
     }
 
     pub fn push_editing_val_to_buffer(&mut self) {
-        let editable_config = EditableConfig::from_integer(self.highlighted_entry).unwrap();
+        let editable_config = EditableConfig::try_from(self.highlighted_entry).unwrap();
         self.config_buffer
             .insert(editable_config, std::mem::take(&mut self.editing_val));
     }
@@ -155,14 +157,16 @@ enum EditableConfig {
     GitSendEmailOpt,
 }
 
-impl EditableConfig {
-    fn from_integer(i: usize) -> Option<EditableConfig> {
-        match i {
-            0 => Some(EditableConfig::PageSize),
-            1 => Some(EditableConfig::CacheDir),
-            2 => Some(EditableConfig::DataDir),
-            3 => Some(EditableConfig::GitSendEmailOpt),
-            _ => None, // Handle out of bounds
+impl TryFrom<usize> for EditableConfig {
+    type Error = color_eyre::Report;
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(EditableConfig::PageSize),
+            1 => Ok(EditableConfig::CacheDir),
+            2 => Ok(EditableConfig::DataDir),
+            3 => Ok(EditableConfig::GitSendEmailOpt),
+            _ => bail!("Invalid index {} for EditableConfig", value), // Handle out of bounds
         }
     }
 }
