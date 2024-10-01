@@ -25,6 +25,8 @@ pub struct Config {
     cache_dir: String,
     /// Base directory for all patch-hub cache
     data_dir: String,
+    /// Maximum age of a log file in days
+    max_log_age: u64,
 }
 
 impl Config {
@@ -42,6 +44,7 @@ impl Config {
             git_send_email_options: "--dry-run --suppress-cc=all".to_string(),
             cache_dir,
             data_dir,
+            max_log_age: 0,
         }
     }
 

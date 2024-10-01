@@ -1,5 +1,6 @@
 {
     "page_size": 1234,
+    "max_log_age": 30,
     "patchsets_cache_dir": "/cachedir/path",
     "bookmarked_patchsets_path": "/bookmarked/patchsets/path",
     "mailing_lists_path": "/mailing/lists/path",

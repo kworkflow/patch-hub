@@ -12,9 +12,9 @@ use patch_hub::{
 use std::{collections::HashMap, path::Path, process::Command};
 
 mod config;
-pub mod logging;
-
 mod edit_config;
+mod loggc;
+pub mod logging;
 
 pub struct BookmarkedPatchsetsState {
     pub bookmarked_patchsets: Vec<Patch>,
@@ -373,6 +373,7 @@ impl App {
         // Initialize the logger before the app starts
         Logger::init_log_file(&config);
         Logger::info("patch-hub started");
+        loggc::collect_garbage(&config);
 
         App {
             current_screen: CurrentScreen::MailingListSelection,
