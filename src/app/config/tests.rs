@@ -36,6 +36,7 @@ fn can_build_with_default_values() {
         "--dry-run --suppress-cc=all",
         config.git_send_email_options()
     );
+    assert_eq!(30, config.max_log_age());
 }
 
 #[test]
@@ -62,6 +63,7 @@ fn can_build_with_config_file() {
         "--long-option value -s -h -o -r -t",
         config.git_send_email_options()
     );
+    assert_eq!(42, config.max_log_age());
 }
 
 #[test]

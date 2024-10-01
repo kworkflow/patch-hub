@@ -50,6 +50,7 @@ impl App {
         // Initialize the logger before the app starts
         Logger::init_log_file(&config);
         Logger::info("patch-hub started");
+        logging::log_gc::collect_garbage(&config);
 
         App {
             current_screen: CurrentScreen::MailingListSelection,

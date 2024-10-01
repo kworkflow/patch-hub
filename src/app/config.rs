@@ -29,6 +29,8 @@ pub struct Config {
     data_dir: String,
     /// Renderer to use for patch previews
     patch_renderer: PatchRenderer,
+    /// Maximum age of a log file in days
+    max_log_age: usize,
 }
 
 impl Config {
@@ -47,6 +49,7 @@ impl Config {
             patch_renderer: Default::default(),
             cache_dir,
             data_dir,
+            max_log_age: 30,
         }
     }
 
