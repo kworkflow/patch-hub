@@ -285,6 +285,10 @@ pub mod log_gc {
     /// Collects the garbage from the logs directory.
     /// Will check for log files `patch-hub_*.log` and remove them if they are older than the `max_log_age` in the config.
     pub fn collect_garbage(config: &Config) {
+        if config.max_log_age() == 0 {
+            return;
+        }
+
         let now = std::time::SystemTime::now();
         let logs_path = config.logs_path();
         let Ok(logs) = std::fs::read_dir(logs_path) else {
