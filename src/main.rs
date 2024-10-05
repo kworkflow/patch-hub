@@ -23,6 +23,7 @@ fn main() -> color_eyre::Result<()> {
     run_app(&mut terminal, &mut app)?;
     utils::restore()?;
 
+    Logger::info("patch-hub finished");
     Logger::flush();
 
     Ok(())

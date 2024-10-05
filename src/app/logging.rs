@@ -7,9 +7,13 @@ use std::{
 use super::config::Config;
 use chrono::Local;
 
+const LATEST_LOG_FILENAME: &str = "latest.log";
+
 static mut LOG_BUFFER: Logger = Logger {
     log_file: None,
     log_filepath: None,
+    latest_log_file: None,
+    latest_log_filepath: None,
     logs_to_print: Vec::new(),
     print_level: LogLevel::Warning,
 };
@@ -58,6 +62,8 @@ pub struct LogMessage {
 pub struct Logger {
     log_file: Option<File>,
     log_filepath: Option<String>,
+    latest_log_file: Option<File>,
+    latest_log_filepath: Option<String>,
     logs_to_print: Vec<LogMessage>,
     print_level: LogLevel, // TODO: Add a log level configuration
 }
@@ -108,6 +114,11 @@ impl Logger {
             .as_mut()
             .expect("Log file not initialized, make sure to call Logger::init_log_file() before writing to the log file");
         writeln!(file, "{log}").expect("Failed to write to log file");
+
+        let latest_log_file = self.latest_log_file
+        .as_mut()
+        .expect("Latest log file not initialized, make sure to call Logger::init_log_file() before writing to the log file");
+        writeln!(latest_log_file, "{log}").expect("Failed to write to real time log file");
 
         if self.print_level <= level {
             // Only save logs to print w/ level equal or higher than the filter log level
@@ -232,17 +243,38 @@ impl Logger {
     pub fn init_log_file(config: &Config) {
         let logger = Logger::get_logger();
 
-        if logger.log_file.is_none() {
-            let logs_path = &config.logs_path();
-            fs::create_dir_all(logs_path)
-                .unwrap_or_else(|_| panic!("Failed to create the logs folder at {}", logs_path));
+        let logs_path = &config.logs_path();
+        fs::create_dir_all(logs_path)
+            .unwrap_or_else(|_| panic!("Failed to create the logs folder at {}", logs_path));
 
+        if logger.latest_log_file.is_none() {
+            let latest_log_filename = LATEST_LOG_FILENAME.to_string();
+            let latest_log_filepath = format!("{}/{}", logs_path, latest_log_filename);
+
+            File::create(&latest_log_filepath).expect("To clear latest.log file successfully");
+
+            logger.latest_log_file = Some(
+                OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&latest_log_filepath)
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "Failed to create the latest.log file at {}",
+                            latest_log_filepath
+                        )
+                    }),
+            );
+            logger.latest_log_filepath = Some(latest_log_filepath);
+        }
+
+        if logger.log_file.is_none() {
             let log_filename = format!(
                 "patch-hub_{}.log",
                 chrono::Local::now().format("%Y%m%d-%H%M%S")
             );
-
             let log_filepath = format!("{}/{}", logs_path, log_filename);
+
             logger.log_file = Some(
                 OpenOptions::new()
                     .create(true)
