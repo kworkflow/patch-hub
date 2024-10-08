@@ -151,7 +151,13 @@ impl Config {
             )
         };
 
-        let tmp_filename = format!("{}.tmp", config_path);
+        let config_path = Path::new(&config_path);
+        // We need to assure that the parent dir of `config_path` exists
+        if let Some(parent_dir) = Path::parent(config_path) {
+            fs::create_dir_all(parent_dir)?;
+        }
+
+        let tmp_filename = format!("{}.tmp", config_path.display());
         {
             let tmp_file = File::create(&tmp_filename)?;
             serde_json::to_writer_pretty(tmp_file, self)?;
