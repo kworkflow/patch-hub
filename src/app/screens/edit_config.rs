@@ -175,6 +175,7 @@ impl TryFrom<usize> for EditableConfig {
             1 => Ok(EditableConfig::CacheDir),
             2 => Ok(EditableConfig::DataDir),
             3 => Ok(EditableConfig::GitSendEmailOpt),
+            4 => Ok(EditableConfig::PatchRenderer),
             _ => bail!("Invalid index {} for EditableConfig", value), // Handle out of bounds
         }
     }
