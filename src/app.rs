@@ -10,6 +10,7 @@ use screens::{
     mail_list::MailingListSelectionState,
     CurrentScreen,
 };
+use throbber_widgets_tui::ThrobberState;
 use std::collections::HashMap;
 
 mod config;
@@ -27,6 +28,8 @@ pub struct App {
     pub reviewed_patchsets: HashMap<String, Vec<usize>>,
     pub config: Config,
     pub lore_api_client: BlockingLoreAPIClient,
+    pub throbber_state: ThrobberState, 
+    pub loading: bool, 
 }
 
 impl App {
@@ -72,8 +75,16 @@ impl App {
             reviewed_patchsets,
             config,
             lore_api_client,
+            throbber_state: ThrobberState::default(), 
+            loading: false, 
         }
     }
+
+    // pub fn on_tick(&mut self) {
+    //     if self.loading {
+    //         self.throbber_state.calc_next(); 
+    //     }
+    // }
 
     pub fn init_latest_patchsets_state(&mut self) {
         // the target mailing list for "latest patchsets" is the highlighted
