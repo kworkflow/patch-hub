@@ -4,10 +4,12 @@ use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{
-        Block, Borders, HighlightSpacing, List, ListItem, ListState, Padding, Paragraph, Wrap,
+        Block, Borders, HighlightSpacing, List, ListItem, ListState, Padding, Paragraph, Wrap
     },
     Frame,
 };
+use throbber_widgets_tui::Throbber;
+
 use render_patchset::render_patch_preview;
 
 use crate::app::{self, logging::Logger, App};
@@ -16,7 +18,7 @@ use app::screens::{bookmarked::BookmarkedPatchsetsState, details::PatchsetAction
 mod render_edit_config;
 mod render_patchset;
 
-pub fn draw_ui(f: &mut Frame, app: &App) {
+pub fn draw_ui(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -27,6 +29,15 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
         .split(f.area());
 
     render_title(f, chunks[0]);
+
+    if app.loading {
+        let throbber = Throbber::default()
+            .label("Loading...")  // Set label directly
+            .throbber_style(Style::default().fg(Color::Yellow));
+
+        let area = centered_rect(30, 10, f.area());
+        f.render_stateful_widget(throbber, area, &mut app.throbber_state);
+    }
 
     match app.current_screen {
         CurrentScreen::MailingListSelection => render_mailing_list_selection(f, app, chunks[1]),

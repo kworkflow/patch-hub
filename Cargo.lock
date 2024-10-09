@@ -866,6 +866,7 @@ dependencies = [
  "serde-xml-rs",
  "serde_json",
  "thiserror",
+ "throbber-widgets-tui",
 ]
 
 [[package]]
@@ -1455,6 +1456,16 @@ checksum = "8b9ef9bad013ada3808854ceac7b46812a6465ba368859a37e2100283d2d719c"
 dependencies = [
  "cfg-if",
  "once_cell",
+]
+
+[[package]]
+name = "throbber-widgets-tui"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fad9e055cadd9da8b4a67662b962e3e67e96af491ae9cec7e88aaff92e7c3666"
+dependencies = [
+ "rand",
+ "ratatui",
 ]
 
 [[package]]
