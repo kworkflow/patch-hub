@@ -8,7 +8,7 @@ use std::{ops::ControlFlow, time::Duration};
 
 use crate::{
     app::{screens::CurrentScreen, App},
-    ui::draw_ui,
+    ui::{draw_loading_screen, draw_ui},
 };
 
 use bookmarked::handle_bookmarked_patchsets;
@@ -29,7 +29,7 @@ fn key_handling<B: Backend>(
 ) -> color_eyre::Result<ControlFlow<(), ()>> {
     match app.current_screen {
         CurrentScreen::MailingListSelection => {
-            return handle_mailing_list_selection(app, key);
+            return handle_mailing_list_selection(terminal, app, key);
         }
         CurrentScreen::BookmarkedPatchsets => {
             handle_bookmarked_patchsets(app, key)?;
@@ -47,10 +47,11 @@ fn key_handling<B: Backend>(
     Ok(ControlFlow::Continue(()))
 }
 
-fn logic_handling(app: &mut App) -> color_eyre::Result<()> {
+fn logic_handling<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre::Result<()> {
     match app.current_screen {
         CurrentScreen::MailingListSelection => {
             if app.mailing_list_selection_state.mailing_lists.is_empty() {
+                terminal.draw(|f| draw_loading_screen(f, "Refreshing lists"))?;
                 app.mailing_list_selection_state
                     .refresh_available_mailing_lists()?;
             }
@@ -58,6 +59,7 @@ fn logic_handling(app: &mut App) -> color_eyre::Result<()> {
         CurrentScreen::LatestPatchsets => {
             let patchsets_state = app.latest_patchsets_state.as_mut().unwrap();
             if patchsets_state.processed_patchsets_count() == 0 {
+                terminal.draw(|f| draw_loading_screen(f, format!("Fetching patchsets from {}", patchsets_state.target_list())))?;
                 patchsets_state.fetch_current_page()?;
                 app.mailing_list_selection_state.clear_target_list();
             }
@@ -81,7 +83,7 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_e
     loop {
         terminal.draw(|f| draw_ui(f, app))?;
 
-        logic_handling(app)?;
+        logic_handling(terminal, app)?;
 
         if event::poll(Duration::from_millis(16))? {
             if let Event::Key(key) = event::read()? {

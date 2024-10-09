@@ -1,9 +1,10 @@
 use std::ops::ControlFlow;
 
-use crate::app::{screens::CurrentScreen, App};
-use ratatui::crossterm::event::{KeyCode, KeyEvent};
+use crate::{app::{screens::CurrentScreen, App}, ui::draw_loading_screen};
+use ratatui::{crossterm::event::{KeyCode, KeyEvent}, prelude::Backend, Terminal};
 
-pub fn handle_mailing_list_selection(
+pub fn handle_mailing_list_selection<B: Backend>(
+    terminal: &mut Terminal<B>,
     app: &mut App,
     key: KeyEvent,
 ) -> color_eyre::Result<ControlFlow<(), ()>> {
@@ -20,6 +21,7 @@ pub fn handle_mailing_list_selection(
             }
         }
         KeyCode::F(5) => {
+            terminal.draw(|f| draw_loading_screen(f, "Refreshing lists"))?;
             app.mailing_list_selection_state
                 .refresh_available_mailing_lists()?;
         }
