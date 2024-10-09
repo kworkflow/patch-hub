@@ -1,3 +1,27 @@
+# Version 0.1.3 (2024-10-09)
+
+Following the trend of v.0.1.2, this release took a long time to be done, and even more commits (forty!). These consisted of a mix of new features, refactorings and some fixes. This cycle was mostly done by @OJarrisonn, @th-duvanel, and @lorezonberts. My work was predominantly about solving merge conflicts and bugging on them (sorry guys :grimacing:). There are many optimazations and advances that aren't covered in the section below, but the highlights are described.
+
+### New Functionalities and Changes
+
+1. Add CI workflow for formatting and linting and enforce those in the codebase.
+2. Add a logging system with garbage collection.
+3. Use `derive_getters` instead of exhaustively implementing getters.
+4. Add many configurations and make them editable through the screen "Edit Config".
+5. Add CI workflow for building and testing.
+6. Modularize and encapsulate a great deal of the Model (`src/app.rs`) and Controller (`src/handler.rs`) components.
+7. Add support for alternative patch renderers bat, delta, and diff-so-fancy.
+
+### Problems and Future Changes
+
+This release opened up many possibilities for us to go going forward. Below are some of them.
+
+1. Continue to expand on the refactor front, mainly by modularizing and revamping the View component.
+2. Finish refining the patch preview screen is also something to keep on the radar.
+3. Adding a decent UI to replying patchsets, as well as expanding its functionalities (replying to a subset of patches, using other tags, in-line reviewing, etc.).
+4. There is already some talk about implementing a dynamic loading screen (which in itself is a huge rabbit hole).
+5. Finally, trying to solve the flaky behavior of Lore API requests.
+
 # Version 0.1.2 (2024-09-06)
 
 It has been quite a while since the release of v0.1.1 (about one month). The rate of development dropped a little, but there were some meaningful contributions (including from new contributors :stuck_out_tongue:), so this release is to avoid keeping `patch-hub` outdated.
