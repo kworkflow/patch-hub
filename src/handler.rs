@@ -11,6 +11,7 @@ use std::{
 
 use crate::{
     app::{screens::CurrentScreen, App},
+    loading_screen,
     ui::draw_ui,
 };
 
@@ -25,43 +26,59 @@ use ratatui::{
     Terminal,
 };
 
-fn key_handling<B: Backend>(
-    terminal: &mut Terminal<B>,
+fn key_handling<B>(
+    mut terminal: Terminal<B>,
     app: &mut App,
     key: KeyEvent,
-) -> color_eyre::Result<ControlFlow<(), ()>> {
+) -> color_eyre::Result<ControlFlow<(), Terminal<B>>>
+where
+    B: Backend + Send + 'static,
+{
     match app.current_screen {
         CurrentScreen::MailingListSelection => {
-            return handle_mailing_list_selection(app, key);
+            return handle_mailing_list_selection(app, key, terminal);
         }
         CurrentScreen::BookmarkedPatchsets => {
             handle_bookmarked_patchsets(app, key)?;
         }
         CurrentScreen::PatchsetDetails => {
-            handle_patchset_details(app, key, terminal)?;
+            handle_patchset_details(app, key, &mut terminal)?;
         }
         CurrentScreen::EditConfig => {
             handle_edit_config(app, key)?;
         }
         CurrentScreen::LatestPatchsets => {
-            handle_latest_patchsets(app, key)?;
+            return handle_latest_patchsets(app, key, terminal);
         }
     }
-    Ok(ControlFlow::Continue(()))
+    Ok(ControlFlow::Continue(terminal))
 }
 
-fn logic_handling(app: &mut App) -> color_eyre::Result<()> {
+fn logic_handling<B>(mut terminal: Terminal<B>, app: &mut App) -> color_eyre::Result<Terminal<B>>
+where
+    B: Backend + Send + 'static,
+{
     match app.current_screen {
         CurrentScreen::MailingListSelection => {
             if app.mailing_list_selection_state.mailing_lists.is_empty() {
-                app.mailing_list_selection_state
-                    .refresh_available_mailing_lists()?;
+                terminal = loading_screen! {
+                    terminal, "Fetching mailing lists" => {
+                        app.mailing_list_selection_state.refresh_available_mailing_lists()?;
+                    }
+                };
             }
         }
         CurrentScreen::LatestPatchsets => {
             let patchsets_state = app.latest_patchsets_state.as_mut().unwrap();
+            let target_list = patchsets_state.target_list().to_string();
             if patchsets_state.processed_patchsets_count() == 0 {
-                patchsets_state.fetch_current_page()?;
+                terminal = loading_screen! {
+                    terminal,
+                    format!("Fetching patchsets from {}", target_list) => {
+                        patchsets_state.fetch_current_page()?;
+                    }
+                };
+
                 app.mailing_list_selection_state.clear_target_list();
             }
         }
@@ -77,22 +94,26 @@ fn logic_handling(app: &mut App) -> color_eyre::Result<()> {
         _ => {}
     }
 
-    Ok(())
+    Ok(terminal)
 }
 
-pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_eyre::Result<()> {
+pub fn run_app<B>(mut terminal: Terminal<B>, mut app: App) -> color_eyre::Result<()>
+where
+    B: Backend + Send + 'static,
+{
     loop {
-        terminal.draw(|f| draw_ui(f, app))?;
+        terminal.draw(|f| draw_ui(f, &app))?;
 
-        logic_handling(app)?;
+        terminal = logic_handling(terminal, &mut app)?;
 
         if event::poll(Duration::from_millis(16))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Release {
                     continue;
                 }
-                if key_handling(terminal, app, key)? == ControlFlow::Break(()) {
-                    return Ok(());
+                match key_handling(terminal, &mut app, key)? {
+                    ControlFlow::Continue(t) => terminal = t,
+                    ControlFlow::Break(_) => return Ok(()),
                 }
             }
         }

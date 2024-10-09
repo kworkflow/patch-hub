@@ -1,7 +1,23 @@
-use crate::app::{screens::CurrentScreen, App};
-use ratatui::crossterm::event::{KeyCode, KeyEvent};
+use std::ops::ControlFlow;
 
-pub fn handle_latest_patchsets(app: &mut App, key: KeyEvent) -> color_eyre::Result<()> {
+use crate::{
+    app::{screens::CurrentScreen, App},
+    loading_screen,
+};
+use ratatui::{
+    crossterm::event::{KeyCode, KeyEvent},
+    prelude::Backend,
+    Terminal,
+};
+
+pub fn handle_latest_patchsets<B>(
+    app: &mut App,
+    key: KeyEvent,
+    mut terminal: Terminal<B>,
+) -> color_eyre::Result<ControlFlow<(), Terminal<B>>>
+where
+    B: Backend + Send + 'static,
+{
     let latest_patchsets = app.latest_patchsets_state.as_mut().unwrap();
 
     match key.code {
@@ -16,17 +32,28 @@ pub fn handle_latest_patchsets(app: &mut App, key: KeyEvent) -> color_eyre::Resu
             latest_patchsets.select_above_patchset();
         }
         KeyCode::Char('l') | KeyCode::Right => {
-            latest_patchsets.increment_page();
-            latest_patchsets.fetch_current_page()?;
+            let list_name = latest_patchsets.target_list().to_string();
+            terminal = loading_screen! {
+                terminal,
+                format!("Fetching patchsets from {}", list_name) => {
+                    latest_patchsets.increment_page();
+                    latest_patchsets.fetch_current_page()?;
+                }
+            };
         }
         KeyCode::Char('h') | KeyCode::Left => {
             latest_patchsets.decrement_page();
         }
         KeyCode::Enter => {
-            app.init_patchset_details_and_actions_state(CurrentScreen::LatestPatchsets)?;
-            app.set_current_screen(CurrentScreen::PatchsetDetails);
+            terminal = loading_screen! {
+                terminal,
+                "Downloading patchset" => {
+                    app.init_patchset_details_and_actions_state(CurrentScreen::LatestPatchsets)?;
+                    app.set_current_screen(CurrentScreen::PatchsetDetails);
+                }
+            };
         }
         _ => {}
     }
-    Ok(())
+    Ok(ControlFlow::Continue(terminal))
 }

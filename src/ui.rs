@@ -1,10 +1,13 @@
+use std::fmt::Display;
+
 use patch_hub::patch::Patch;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    prelude::Backend,
+    style::{Color, Modifier, Style, Stylize},
     text::{Line, Span, Text},
     widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph},
-    Frame,
+    Frame, Terminal,
 };
 
 use crate::app::{self, App};
@@ -37,6 +40,34 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
     }
 
     render_navi_bar(f, app, chunks[2]);
+}
+
+/// This function renders a loading screen taking a `terminal` instance and a
+/// `title`.
+pub fn render_loading_screen<B: Backend>(
+    mut terminal: Terminal<B>,
+    title: impl Display,
+) -> Terminal<B> {
+    let _ = terminal.draw(|f| draw_loading_screen(f, title));
+    terminal
+}
+
+/// The actual implementation of the loading screen rendering. Currently the
+/// loading notification is static.
+fn draw_loading_screen(f: &mut Frame, title: impl Display) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(1)])
+        .split(f.area());
+
+    let loading_text = Paragraph::new(Line::from(Span::styled(
+        title.to_string(),
+        Style::default().fg(Color::Green).italic(),
+    )))
+    .block(Block::default().borders(Borders::ALL))
+    .centered();
+
+    f.render_widget(loading_text, chunks[0]);
 }
 
 fn render_title(f: &mut Frame, chunk: Rect) {
