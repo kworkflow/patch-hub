@@ -2,13 +2,9 @@ use std::fmt::Display;
 
 use patch_hub::patch::Patch;
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style, Stylize},
-    text::{Line, Span, Text},
-    widgets::{
+    layout::{Alignment, Constraint, Direction, Layout, Rect}, prelude::Backend, style::{Color, Modifier, Style, Stylize}, text::{Line, Span, Text}, widgets::{
         Block, Borders, HighlightSpacing, List, ListItem, ListState, Padding, Paragraph, Wrap,
-    },
-    Frame,
+    }, Frame, Terminal
 };
 use render_patchset::render_patch_preview;
 
@@ -43,7 +39,12 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
     render_navi_bar(f, app, chunks[2]);
 }
 
-pub fn draw_loading_screen(f: &mut Frame, title: impl Display) {
+pub fn render_loading_screen<B: Backend>(mut terminal: Terminal<B>, title: impl Display) -> Terminal<B> {
+    let _ = terminal.draw(|f| draw_loading_screen(f, title));
+    terminal
+}
+
+fn draw_loading_screen(f: &mut Frame, title: impl Display) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(3), Constraint::Min(1)])

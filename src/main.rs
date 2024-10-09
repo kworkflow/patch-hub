@@ -15,9 +15,9 @@ fn main() -> color_eyre::Result<()> {
     let _args = Cli::parse();
 
     utils::install_hooks()?;
-    let mut terminal = utils::init()?;
-    let mut app = App::new();
-    run_app(&mut terminal, &mut app)?;
+    let terminal = utils::init()?;
+    let app = App::new();
+    run_app(terminal, app)?;
     utils::restore()?;
 
     Logger::info("patch-hub finished");

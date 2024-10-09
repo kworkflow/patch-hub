@@ -70,3 +70,10 @@ pub fn teardown_user_io<B: Backend>(terminal: &mut Terminal<B>) -> color_eyre::R
     terminal.clear()?;
     Ok(())
 }
+
+#[macro_export]
+macro_rules! loading_screen {
+    { $terminal:ident, $title:expr => $inst:expr} => {
+
+    };
+}
