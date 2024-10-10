@@ -38,17 +38,17 @@ impl PatchsetDetailsAndActionsState {
         }
     }
 
-    pub fn preview_scroll_down(&mut self) {
+    /// Scroll `n` lines down
+    pub fn preview_scroll_down(&mut self, n: usize) {
         let number_of_lines = self.patches[self.preview_index].lines().count();
-        if (self.preview_scroll_offset + 1) <= number_of_lines {
-            self.preview_scroll_offset += 1;
+        if (self.preview_scroll_offset + n) <= number_of_lines {
+            self.preview_scroll_offset += n;
         }
     }
 
-    pub fn preview_scroll_up(&mut self) {
-        if self.preview_scroll_offset > 0 {
-            self.preview_scroll_offset -= 1;
-        }
+    /// Scroll `n` lines up
+    pub fn preview_scroll_up(&mut self, n: usize) {
+        self.preview_scroll_offset = self.preview_scroll_offset.saturating_sub(n);
     }
 
     /// Move preview horizontally one column to the right

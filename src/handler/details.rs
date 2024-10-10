@@ -4,7 +4,7 @@ use crate::{
 };
 use ratatui::{
     backend::Backend,
-    crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
+    crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     Terminal,
 };
 
@@ -15,6 +15,27 @@ pub fn handle_patchset_details<B: Backend>(
 ) -> color_eyre::Result<()> {
     let patchset_details_and_actions = app.patchset_details_and_actions_state.as_mut().unwrap();
 
+    if key.modifiers.contains(KeyModifiers::CONTROL) {
+        // TODO: Get preview sub-window height w/out coupling it to UI
+        let terminal_height = terminal.size().unwrap().height as usize;
+        match key.code {
+            KeyCode::Char('b') => {
+                patchset_details_and_actions.preview_scroll_up(terminal_height);
+            }
+            KeyCode::Char('f') => {
+                patchset_details_and_actions.preview_scroll_down(terminal_height);
+            }
+            KeyCode::Char('u') => {
+                patchset_details_and_actions.preview_scroll_up(terminal_height / 2);
+            }
+            KeyCode::Char('d') => {
+                patchset_details_and_actions.preview_scroll_down(terminal_height / 2);
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+
     match key.code {
         KeyCode::Esc => {
             let ps_da_clone = patchset_details_and_actions.last_screen.clone();
@@ -22,10 +43,10 @@ pub fn handle_patchset_details<B: Backend>(
             app.reset_patchset_details_and_actions_state();
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            patchset_details_and_actions.preview_scroll_down();
+            patchset_details_and_actions.preview_scroll_down(1);
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            patchset_details_and_actions.preview_scroll_up();
+            patchset_details_and_actions.preview_scroll_up(1);
         }
         KeyCode::Char('h') | KeyCode::Left => {
             patchset_details_and_actions.preview_pan_left();
