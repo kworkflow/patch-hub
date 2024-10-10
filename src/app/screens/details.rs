@@ -8,6 +8,8 @@ pub struct PatchsetDetailsAndActionsState {
     pub patches: Vec<String>,
     pub preview_index: usize,
     pub preview_scroll_offset: usize,
+    /// Horizontal offset
+    pub preview_pan: usize,
     pub patchset_actions: HashMap<PatchsetAction, bool>,
     pub last_screen: CurrentScreen,
     pub lore_api_client: BlockingLoreAPIClient,
@@ -24,6 +26,7 @@ impl PatchsetDetailsAndActionsState {
         if (self.preview_index + 1) < self.patches.len() {
             self.preview_index += 1;
             self.preview_scroll_offset = 0;
+            self.preview_pan = 0;
         }
     }
 
@@ -31,6 +34,7 @@ impl PatchsetDetailsAndActionsState {
         if self.preview_index > 0 {
             self.preview_index -= 1;
             self.preview_scroll_offset = 0;
+            self.preview_pan = 0;
         }
     }
 
@@ -44,6 +48,20 @@ impl PatchsetDetailsAndActionsState {
     pub fn preview_scroll_up(&mut self) {
         if self.preview_scroll_offset > 0 {
             self.preview_scroll_offset -= 1;
+        }
+    }
+
+    /// Move preview horizontally one column to the right
+    pub fn preview_pan_right(&mut self) {
+        if self.preview_pan <= 200 {
+            self.preview_pan += 1;
+        }
+    }
+
+    /// Move preview horizontally one column to the left
+    pub fn preview_pan_left(&mut self) {
+        if self.preview_pan > 0 {
+            self.preview_pan -= 1;
         }
     }
 

@@ -36,6 +36,18 @@ pub fn handle_patchset_details<B: Backend>(
                 .unwrap()
                 .preview_scroll_up();
         }
+        KeyCode::Char('h') | KeyCode::Left => {
+            app.patchset_details_and_actions_state
+                .as_mut()
+                .unwrap()
+                .preview_pan_left();
+        }
+        KeyCode::Char('l') | KeyCode::Right => {
+            app.patchset_details_and_actions_state
+                .as_mut()
+                .unwrap()
+                .preview_pan_right();
+        }
         KeyCode::Char('n') => {
             app.patchset_details_and_actions_state
                 .as_mut()

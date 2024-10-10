@@ -365,6 +365,11 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
         .as_ref()
         .unwrap()
         .preview_scroll_offset;
+    let preview_pan = app
+        .patchset_details_and_actions_state
+        .as_ref()
+        .unwrap()
+        .preview_pan;
     let patch_preview = app
         .patchset_details_and_actions_state
         .as_ref()
@@ -391,7 +396,7 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
                 .padding(Padding::vertical(1)),
         )
         .left_aligned()
-        .scroll((preview_offset as u16, 0));
+        .scroll((preview_offset as u16, preview_pan as u16));
 
     f.render_widget(patch_preview, chunks[1]);
 }
@@ -481,7 +486,7 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
                 Style::default().fg(Color::Red),
             ),
             CurrentScreen::PatchsetDetails => Span::styled(
-                "(ESC) to return | (ENTER) run actions | ( j / 🡇 ) down | ( k / 🡅 ) up | (n) next patch | (p) previous patch",
+                "(ESC) to return | (ENTER) run actions | (jkhl / 🡇 🡅 🡄 🡆 ) | (n) next patch | (p) previous patch",
                 Style::default().fg(Color::Red),
             ),
             CurrentScreen::EditConfig => render_edit_config::keys_hint(app),
