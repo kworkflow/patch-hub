@@ -13,72 +13,40 @@ pub fn handle_patchset_details<B: Backend>(
     key: KeyEvent,
     terminal: &mut Terminal<B>,
 ) -> color_eyre::Result<()> {
+    let patchset_details_and_actions = app.patchset_details_and_actions_state.as_mut().unwrap();
+
     match key.code {
         KeyCode::Esc => {
-            app.set_current_screen(
-                app.patchset_details_and_actions_state
-                    .as_ref()
-                    .unwrap()
-                    .last_screen
-                    .clone(),
-            );
+            let ps_da_clone = patchset_details_and_actions.last_screen.clone();
+            app.set_current_screen(ps_da_clone);
             app.reset_patchset_details_and_actions_state();
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            app.patchset_details_and_actions_state
-                .as_mut()
-                .unwrap()
-                .preview_scroll_down();
+            patchset_details_and_actions.preview_scroll_down();
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            app.patchset_details_and_actions_state
-                .as_mut()
-                .unwrap()
-                .preview_scroll_up();
+            patchset_details_and_actions.preview_scroll_up();
         }
         KeyCode::Char('h') | KeyCode::Left => {
-            app.patchset_details_and_actions_state
-                .as_mut()
-                .unwrap()
-                .preview_pan_left();
+            patchset_details_and_actions.preview_pan_left();
         }
         KeyCode::Char('l') | KeyCode::Right => {
-            app.patchset_details_and_actions_state
-                .as_mut()
-                .unwrap()
-                .preview_pan_right();
+            patchset_details_and_actions.preview_pan_right();
         }
         KeyCode::Char('n') => {
-            app.patchset_details_and_actions_state
-                .as_mut()
-                .unwrap()
-                .preview_next_patch();
+            patchset_details_and_actions.preview_next_patch();
         }
         KeyCode::Char('p') => {
-            app.patchset_details_and_actions_state
-                .as_mut()
-                .unwrap()
-                .preview_previous_patch();
+            patchset_details_and_actions.preview_previous_patch();
         }
         KeyCode::Char('b') => {
-            app.patchset_details_and_actions_state
-                .as_mut()
-                .unwrap()
-                .toggle_bookmark_action();
+            patchset_details_and_actions.toggle_bookmark_action();
         }
         KeyCode::Char('r') => {
-            app.patchset_details_and_actions_state
-                .as_mut()
-                .unwrap()
-                .toggle_reply_with_reviewed_by_action();
+            patchset_details_and_actions.toggle_reply_with_reviewed_by_action();
         }
         KeyCode::Enter => {
-            if app
-                .patchset_details_and_actions_state
-                .as_ref()
-                .unwrap()
-                .actions_require_user_io()
-            {
+            if patchset_details_and_actions.actions_require_user_io() {
                 utils::setup_user_io(terminal)?;
                 app.consolidate_patchset_actions()?;
                 println!("\nPress ENTER continue...");
