@@ -1,3 +1,4 @@
+use crate::log_on_error;
 use color_eyre::eyre::bail;
 use config::Config;
 use logging::Logger;
@@ -11,8 +12,6 @@ use screens::{
     CurrentScreen,
 };
 use std::collections::HashMap;
-
-use crate::log_on_error;
 
 mod config;
 pub mod logging;
@@ -52,7 +51,7 @@ impl App {
         // Initialize the logger before the app starts
         Logger::init_log_file(&config);
         Logger::info("patch-hub started");
-        logging::log_gc::collect_garbage(&config);
+        logging::garbage_collector::collect_garbage(&config);
 
         App {
             current_screen: CurrentScreen::MailingListSelection,
