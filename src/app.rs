@@ -1,6 +1,7 @@
+use crate::log_on_error;
 use color_eyre::eyre::bail;
 use config::Config;
-use logging::Logger;
+use logging::logger::Logger;
 use patch_hub::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
 use screens::{
     bookmarked::BookmarkedPatchsetsState,
@@ -50,7 +51,7 @@ impl App {
         // Initialize the logger before the app starts
         Logger::init_log_file(&config);
         Logger::info("patch-hub started");
-        logging::log_gc::collect_garbage(&config);
+        logging::garbage_collector::collect_garbage(&config);
 
         App {
             current_screen: CurrentScreen::MailingListSelection,
@@ -121,15 +122,15 @@ impl App {
             screen => bail!(format!("Invalid screen passed as argument {screen:?}")),
         };
 
-        let patchset_path: String = match lore_session::download_patchset(
+        let patchset_path: String = match log_on_error!(lore_session::download_patchset(
             self.config.patchsets_cache_dir(),
             &representative_patch,
-        ) {
+        )) {
             Ok(result) => result,
             Err(io_error) => bail!("{io_error}"),
         };
 
-        match lore_session::split_patchset(&patchset_path) {
+        match log_on_error!(lore_session::split_patchset(&patchset_path)) {
             Ok(patches) => {
                 self.patchset_details_and_actions_state = Some(PatchsetDetailsAndActionsState {
                     representative_patch,

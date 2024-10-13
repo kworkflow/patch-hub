@@ -10,7 +10,7 @@ use ratatui::{
 };
 use render_patchset::render_patch_preview;
 
-use crate::app::{self, logging::Logger, App};
+use crate::app::{self, logging::logger::Logger, App};
 use app::screens::{bookmarked::BookmarkedPatchsetsState, details::PatchsetAction, CurrentScreen};
 
 mod render_edit_config;

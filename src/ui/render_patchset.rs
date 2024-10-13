@@ -6,7 +6,7 @@ use std::{
 use ansi_to_tui::IntoText;
 use ratatui::text::Text;
 
-use crate::app::{logging::Logger, patch_renderer::PatchRenderer};
+use crate::app::{logging::logger::Logger, patch_renderer::PatchRenderer};
 
 pub fn render_patch_preview(
     raw: &str,
