@@ -1,5 +1,5 @@
 use crate::app::App;
-use app::logging::Logger;
+use app::logging::logger::Logger;
 use clap::Parser;
 use cli::Cli;
 use handler::run_app;

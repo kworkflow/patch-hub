@@ -13,7 +13,7 @@ use ratatui::{
     Terminal,
 };
 
-use crate::app::logging::Logger;
+use crate::app::logging::logger::Logger;
 
 /// A type alias for the terminal type used in this application
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
