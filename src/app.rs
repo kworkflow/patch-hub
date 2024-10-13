@@ -12,6 +12,8 @@ use screens::{
 };
 use std::collections::HashMap;
 
+use crate::log_on_error;
+
 mod config;
 pub mod logging;
 pub mod patch_renderer;
@@ -121,15 +123,15 @@ impl App {
             screen => bail!(format!("Invalid screen passed as argument {screen:?}")),
         };
 
-        let patchset_path: String = match lore_session::download_patchset(
+        let patchset_path: String = match log_on_error!(lore_session::download_patchset(
             self.config.patchsets_cache_dir(),
             &representative_patch,
-        ) {
+        )) {
             Ok(result) => result,
             Err(io_error) => bail!("{io_error}"),
         };
 
-        match lore_session::split_patchset(&patchset_path) {
+        match log_on_error!(lore_session::split_patchset(&patchset_path)) {
             Ok(patches) => {
                 self.patchset_details_and_actions_state = Some(PatchsetDetailsAndActionsState {
                     representative_patch,
