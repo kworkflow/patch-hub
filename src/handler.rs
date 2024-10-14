@@ -4,7 +4,10 @@ pub mod edit_config;
 pub mod latest;
 pub mod mail_list;
 
-use std::{ops::ControlFlow, time::Duration};
+use std::{
+    ops::ControlFlow,
+    time::{Duration, Instant},
+};
 
 use crate::{
     app::{screens::CurrentScreen, App},
@@ -17,7 +20,7 @@ use edit_config::handle_edit_config;
 use latest::handle_latest_patchsets;
 use mail_list::handle_mailing_list_selection;
 use ratatui::{
-    crossterm::event::{self, Event, KeyEvent, KeyEventKind},
+    crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     prelude::Backend,
     Terminal,
 };
@@ -94,4 +97,23 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> color_e
             }
         }
     }
+}
+
+fn wait_key_press(ch: char, wait_time: Duration) -> color_eyre::Result<bool> {
+    let start = Instant::now();
+
+    while Instant::now() - start < wait_time {
+        if event::poll(Duration::from_millis(16))? {
+            if let Event::Key(key) = event::read()? {
+                if key.kind == KeyEventKind::Release {
+                    continue;
+                }
+                if key.code == KeyCode::Char(ch) {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+
+    Ok(false)
 }

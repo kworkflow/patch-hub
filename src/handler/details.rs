@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::{
     app::{screens::CurrentScreen, App},
     utils,
@@ -8,12 +10,21 @@ use ratatui::{
     Terminal,
 };
 
+use super::wait_key_press;
+
 pub fn handle_patchset_details<B: Backend>(
     app: &mut App,
     key: KeyEvent,
     terminal: &mut Terminal<B>,
 ) -> color_eyre::Result<()> {
     let patchset_details_and_actions = app.patchset_details_and_actions_state.as_mut().unwrap();
+
+    if key.modifiers.contains(KeyModifiers::SHIFT) {
+        if let KeyCode::Char('G') = key.code {
+            patchset_details_and_actions.go_to_last_line()
+        }
+        return Ok(());
+    }
 
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         // TODO: Get preview sub-window height w/out coupling it to UI
@@ -53,6 +64,11 @@ pub fn handle_patchset_details<B: Backend>(
         }
         KeyCode::Char('l') | KeyCode::Right => {
             patchset_details_and_actions.preview_pan_right();
+        }
+        KeyCode::Char('g') => {
+            if let Ok(true) = wait_key_press('g', Duration::from_millis(500)) {
+                patchset_details_and_actions.go_to_first_line();
+            }
         }
         KeyCode::Char('n') => {
             patchset_details_and_actions.preview_next_patch();

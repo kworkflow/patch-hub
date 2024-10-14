@@ -15,6 +15,8 @@ pub struct PatchsetDetailsAndActionsState {
     pub lore_api_client: BlockingLoreAPIClient,
 }
 
+const LAST_LINE_PADDING: usize = 10;
+
 #[derive(Hash, Eq, PartialEq)]
 pub enum PatchsetAction {
     Bookmark,
@@ -40,6 +42,7 @@ impl PatchsetDetailsAndActionsState {
 
     /// Scroll `n` lines down
     pub fn preview_scroll_down(&mut self, n: usize) {
+        // TODO: Support for renderers (only considers base preview string)
         let number_of_lines = self.patches[self.preview_index].lines().count();
         if (self.preview_scroll_offset + n) <= number_of_lines {
             self.preview_scroll_offset += n;
@@ -49,6 +52,18 @@ impl PatchsetDetailsAndActionsState {
     /// Scroll `n` lines up
     pub fn preview_scroll_up(&mut self, n: usize) {
         self.preview_scroll_offset = self.preview_scroll_offset.saturating_sub(n);
+    }
+
+    /// Scroll to the last line
+    pub fn go_to_last_line(&mut self) {
+        // TODO: Support for renderers (only considers base preview string)
+        let number_of_lines = self.patches[self.preview_index].lines().count();
+        self.preview_scroll_offset = number_of_lines - LAST_LINE_PADDING;
+    }
+
+    /// Scroll to first line
+    pub fn go_to_first_line(&mut self) {
+        self.preview_scroll_offset = 0;
     }
 
     /// Move preview horizontally one column to the right
