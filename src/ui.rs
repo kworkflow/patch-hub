@@ -222,6 +222,8 @@ fn render_list(f: &mut Frame, app: &App, chunk: Rect) {
 }
 
 fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
+    let patchset_details_and_actions = app.patchset_details_and_actions_state.as_ref().unwrap();
+
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
@@ -232,11 +234,7 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(chunks[0]);
 
-    let patchset_details = &app
-        .patchset_details_and_actions_state
-        .as_ref()
-        .unwrap()
-        .representative_patch;
+    let patchset_details = &patchset_details_and_actions.representative_patch;
     let patchset_details = vec![
         Line::from(vec![
             Span::styled(r#"  Title: "#, Style::default().fg(Color::Cyan)),
@@ -288,11 +286,7 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
 
     f.render_widget(patchset_details, details_and_actions_chunks[0]);
 
-    let patchset_actions = &app
-        .patchset_details_and_actions_state
-        .as_ref()
-        .unwrap()
-        .patchset_actions;
+    let patchset_actions = &patchset_details_and_actions.patchset_actions;
     let patchset_actions = vec![
         Line::from(vec![
             if *patchset_actions.get(&PatchsetAction::Bookmark).unwrap() {
@@ -340,16 +334,9 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
 
     f.render_widget(patchset_actions, details_and_actions_chunks[1]);
 
-    let preview_index = app
-        .patchset_details_and_actions_state
-        .as_ref()
-        .unwrap()
-        .preview_index;
+    let preview_index = patchset_details_and_actions.preview_index;
 
-    let representative_patch_message_id = &app
-        .patchset_details_and_actions_state
-        .as_ref()
-        .unwrap()
+    let representative_patch_message_id = &patchset_details_and_actions
         .representative_patch
         .message_id()
         .href;
@@ -360,22 +347,10 @@ fn render_patchset_details_and_actions(f: &mut Frame, app: &App, chunk: Rect) {
         }
     };
 
-    let preview_offset = app
-        .patchset_details_and_actions_state
-        .as_ref()
-        .unwrap()
-        .preview_scroll_offset;
-    let preview_pan = app
-        .patchset_details_and_actions_state
-        .as_ref()
-        .unwrap()
-        .preview_pan;
-    let patch_preview = app
-        .patchset_details_and_actions_state
-        .as_ref()
-        .unwrap()
-        .patches[preview_index]
-        .replace('\t', "        ");
+    let preview_offset = patchset_details_and_actions.preview_scroll_offset;
+    let preview_pan = patchset_details_and_actions.preview_pan;
+    let patch_preview =
+        patchset_details_and_actions.patches[preview_index].replace('\t', "        ");
     // TODO: Pass the terminal size to the external program
     let patch_preview = match render_patch_preview(&patch_preview, app.config.patch_renderer()) {
         Ok(rendered) => rendered,
