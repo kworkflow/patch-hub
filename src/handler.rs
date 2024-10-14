@@ -1,5 +1,5 @@
 pub mod bookmarked;
-pub mod details;
+pub mod details_actions;
 pub mod edit_config;
 pub mod latest;
 pub mod mail_list;
@@ -15,7 +15,7 @@ use crate::{
 };
 
 use bookmarked::handle_bookmarked_patchsets;
-use details::handle_patchset_details;
+use details_actions::handle_patchset_details;
 use edit_config::handle_edit_config;
 use latest::handle_latest_patchsets;
 use mail_list::handle_mailing_list_selection;

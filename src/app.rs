@@ -4,7 +4,7 @@ use logging::Logger;
 use patch_hub::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
 use screens::{
     bookmarked::BookmarkedPatchsetsState,
-    details::{PatchsetAction, PatchsetDetailsAndActionsState},
+    details_actions::{PatchsetAction, PatchsetDetailsAndActionsState},
     edit_config::EditConfigState,
     latest::LatestPatchsetsState,
     mail_list::MailingListSelectionState,
