@@ -13,7 +13,7 @@ use render_patchset::render_patch_preview;
 use crate::app::{self, logging::Logger, App};
 use app::screens::{bookmarked::BookmarkedPatchsetsState, details::PatchsetAction, CurrentScreen};
 
-mod render_edit_config;
+mod edit_config;
 mod render_patchset;
 
 pub fn draw_ui(f: &mut Frame, app: &App) {
@@ -35,7 +35,7 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
         }
         CurrentScreen::LatestPatchsets => render_list(f, app, chunks[1]),
         CurrentScreen::PatchsetDetails => render_patchset_details_and_actions(f, app, chunks[1]),
-        CurrentScreen::EditConfig => render_edit_config::render_main(f, app, chunks[1]),
+        CurrentScreen::EditConfig => edit_config::render_main(f, app, chunks[1]),
     }
 
     render_navi_bar(f, app, chunks[2]);
@@ -440,7 +440,7 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
                 Style::default().fg(Color::Green),
             )]
         }
-        CurrentScreen::EditConfig => render_edit_config::mode_footer_text(app),
+        CurrentScreen::EditConfig => edit_config::mode_footer_text(app),
     };
     let mode_footer = Paragraph::new(Line::from(mode_footer_text))
         .block(Block::default().borders(Borders::ALL))
@@ -464,7 +464,7 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
                 "(ESC) to return | (ENTER) run actions | (jkhl / 🡇 🡅 🡄 🡆 ) | (n) next patch | (p) previous patch",
                 Style::default().fg(Color::Red),
             ),
-            CurrentScreen::EditConfig => render_edit_config::keys_hint(app),
+            CurrentScreen::EditConfig => edit_config::keys_hint(app),
         }
     };
 
