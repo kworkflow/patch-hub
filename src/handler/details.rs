@@ -65,6 +65,9 @@ pub fn handle_patchset_details<B: Backend>(
         KeyCode::Char('l') | KeyCode::Right => {
             patchset_details_and_actions.preview_pan_right();
         }
+        KeyCode::Char('0') => {
+            patchset_details_and_actions.go_to_beg_of_line();
+        }
         KeyCode::Char('g') => {
             if let Ok(true) = wait_key_press('g', Duration::from_millis(500)) {
                 patchset_details_and_actions.go_to_first_line();

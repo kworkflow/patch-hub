@@ -80,6 +80,11 @@ impl PatchsetDetailsAndActionsState {
         }
     }
 
+    /// Move preview horizontally to start of line
+    pub fn go_to_beg_of_line(&mut self) {
+        self.preview_pan = 0;
+    }
+
     pub fn toggle_bookmark_action(&mut self) {
         self.toggle_action(PatchsetAction::Bookmark);
     }
