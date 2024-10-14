@@ -10,6 +10,8 @@ pub struct PatchsetDetailsAndActionsState {
     pub preview_scroll_offset: usize,
     /// Horizontal offset
     pub preview_pan: usize,
+    /// If true, display the preview in full screen
+    pub preview_fullscreen: bool,
     pub patchset_actions: HashMap<PatchsetAction, bool>,
     pub last_screen: CurrentScreen,
     pub lore_api_client: BlockingLoreAPIClient,
@@ -83,6 +85,11 @@ impl PatchsetDetailsAndActionsState {
     /// Move preview horizontally to start of line
     pub fn go_to_beg_of_line(&mut self) {
         self.preview_pan = 0;
+    }
+
+    /// Toggle the preview fullscreen
+    pub fn toggle_preview_fullscreen(&mut self) {
+        self.preview_fullscreen = !self.preview_fullscreen;
     }
 
     pub fn toggle_bookmark_action(&mut self) {

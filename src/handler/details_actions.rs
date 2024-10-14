@@ -73,6 +73,9 @@ pub fn handle_patchset_details<B: Backend>(
                 patchset_details_and_actions.go_to_first_line();
             }
         }
+        KeyCode::Char('f') => {
+            patchset_details_and_actions.toggle_preview_fullscreen();
+        }
         KeyCode::Char('n') => {
             patchset_details_and_actions.preview_next_patch();
         }

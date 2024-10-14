@@ -10,18 +10,8 @@ use crate::app::{logging::Logger, screens::details_actions::PatchsetAction, App}
 
 use super::render_patchset::render_patch_preview;
 
-pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
+fn render_details_and_actions(f: &mut Frame, app: &App, details_chunk: Rect, actions_chunk: Rect) {
     let patchset_details_and_actions = app.patchset_details_and_actions_state.as_ref().unwrap();
-
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
-        .split(chunk);
-
-    let details_and_actions_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(chunks[0]);
 
     let patchset_details = &patchset_details_and_actions.representative_patch;
     let patchset_details = vec![
@@ -73,7 +63,7 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
         .left_aligned()
         .wrap(Wrap { trim: true });
 
-    f.render_widget(patchset_details, details_and_actions_chunks[0]);
+    f.render_widget(patchset_details, details_chunk);
 
     let patchset_actions = &patchset_details_and_actions.patchset_actions;
     let patchset_actions = vec![
@@ -121,7 +111,11 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
         )
         .centered();
 
-    f.render_widget(patchset_actions, details_and_actions_chunks[1]);
+    f.render_widget(patchset_actions, actions_chunk);
+}
+
+fn render_preview(f: &mut Frame, app: &App, chunk: Rect) {
+    let patchset_details_and_actions = app.patchset_details_and_actions_state.as_ref().unwrap();
 
     let preview_index = patchset_details_and_actions.preview_index;
 
@@ -162,7 +156,33 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
         .left_aligned()
         .scroll((preview_offset as u16, preview_pan as u16));
 
-    f.render_widget(patch_preview, chunks[1]);
+    f.render_widget(patch_preview, chunk);
+}
+
+pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
+    let patchset_details_and_actions = app.patchset_details_and_actions_state.as_ref().unwrap();
+
+    if patchset_details_and_actions.preview_fullscreen {
+        render_preview(f, app, chunk);
+    } else {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+            .split(chunk);
+
+        let details_and_actions_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(chunks[0]);
+
+        render_details_and_actions(
+            f,
+            app,
+            details_and_actions_chunks[0],
+            details_and_actions_chunks[1],
+        );
+        render_preview(f, app, chunks[1]);
+    }
 }
 
 pub fn mode_footer_text() -> Vec<Span<'static>> {
@@ -174,7 +194,7 @@ pub fn mode_footer_text() -> Vec<Span<'static>> {
 
 pub fn keys_hint() -> Span<'static> {
     Span::styled(
-        "(ESC) to return | (ENTER) run actions | (jkhl / 🡇 🡅 🡄 🡆 ) | (n) next patch | (p) previous patch",
+        "(ESC) to return | (ENTER) run actions | (jkhl / 🡇 🡅 🡄 🡆 ) | (n) next patch | (p) previous patch | (f) fullscreen",
         Style::default().fg(Color::Red),
     )
 }

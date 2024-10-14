@@ -137,6 +137,7 @@ impl App {
                     preview_index: 0,
                     preview_scroll_offset: 0,
                     preview_pan: 0,
+                    preview_fullscreen: false,
                     patchset_actions: HashMap::from([
                         (PatchsetAction::Bookmark, is_patchset_bookmarked),
                         (PatchsetAction::ReplyWithReviewedBy, false),
