@@ -2,6 +2,7 @@ use color_eyre::eyre::bail;
 use config::Config;
 use logging::Logger;
 use patch_hub::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
+use patch_renderer::PatchRenderer;
 use screens::{
     bookmarked::BookmarkedPatchsetsState,
     details_actions::{PatchsetAction, PatchsetDetailsAndActionsState},
@@ -11,6 +12,8 @@ use screens::{
     CurrentScreen,
 };
 use std::collections::HashMap;
+
+use crate::utils;
 
 mod config;
 pub mod logging;
@@ -248,5 +251,46 @@ impl App {
 
     pub fn set_current_screen(&mut self, new_current_screen: CurrentScreen) {
         self.current_screen = new_current_screen;
+    }
+
+    /// Check if the external dependencies are installed
+    ///
+    /// Even if some dependencies are missing, the application can still run if they are not mandatory
+    pub fn check_external_deps(&self) -> bool {
+        let mut ok = true;
+
+        if !utils::binary_exists("b4") {
+            Logger::error("b4 is not installed, patchsets cannot be downloaded");
+            ok = false;
+        }
+
+        if !utils::binary_exists("git") {
+            Logger::warn("git is not installed, send-email won't work");
+        }
+
+        match self.config.patch_renderer() {
+            PatchRenderer::Bat => {
+                if !utils::binary_exists("bat") {
+                    Logger::warn("bat is not installed, patch rendering will fallback to default");
+                }
+            }
+            PatchRenderer::Delta => {
+                if !utils::binary_exists("delta") {
+                    Logger::warn(
+                        "delta is not installed, patch rendering will fallback to default",
+                    );
+                }
+            }
+            PatchRenderer::DiffSoFancy => {
+                if !utils::binary_exists("diff-so-fancy") {
+                    Logger::warn(
+                        "diff-so-fancy is not installed, patch rendering will fallback to default",
+                    );
+                }
+            }
+            _ => {}
+        }
+
+        ok
     }
 }

@@ -19,6 +19,7 @@ thiserror = "1.0.37"
 clap = { version = "4.5.13", features = ["derive"] }
 chrono = "0.4.38"
 ansi-to-tui = "6.0.0"
+which = "6.0.3"
 
 # The profile that 'cargo dist' will build with
 [profile.dist]
