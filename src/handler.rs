@@ -10,12 +10,13 @@ use std::{
 };
 
 use crate::{
-    app::{screens::CurrentScreen, App},
+    app::{logging::Logger, screens::CurrentScreen, App},
     loading_screen,
     ui::draw_ui,
 };
 
 use bookmarked::handle_bookmarked_patchsets;
+use color_eyre::eyre::bail;
 use details_actions::handle_patchset_details;
 use edit_config::handle_edit_config;
 use latest::handle_latest_patchsets;
@@ -101,6 +102,11 @@ pub fn run_app<B>(mut terminal: Terminal<B>, mut app: App) -> color_eyre::Result
 where
     B: Backend + Send + 'static,
 {
+    if !app.check_external_deps() {
+        Logger::error("patch-hub cannot be executed because some dependencies are missing");
+        bail!("patch-hub cannot be executed because some dependencies are missing, check logs for more information");
+    }
+
     loop {
         terminal.draw(|f| draw_ui(f, &app))?;
 

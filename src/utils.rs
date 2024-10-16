@@ -71,6 +71,12 @@ pub fn teardown_user_io<B: Backend>(terminal: &mut Terminal<B>) -> color_eyre::R
     Ok(())
 }
 
+#[inline]
+/// Simply calls `which` to check if a binary exists
+pub fn binary_exists(binary: &str) -> bool {
+    which::which(binary).is_ok()
+}
+
 #[macro_export]
 /// Macro that encapsulates a piece of code that takes long to run and displays a loading screen while it runs.
 ///
@@ -110,4 +116,14 @@ macro_rules! loading_screen {
             handle.join().unwrap()
         }
     };
+}
+
+mod tests {
+    #[test]
+    fn test_binary_exists() {
+        // cargo should always exist since we are running the tests with `cargo test`
+        assert!(super::binary_exists("cargo"));
+        // there is no way this binary exists
+        assert!(!super::binary_exists("there_is_no_way_this_binary_exists"));
+    }
 }
