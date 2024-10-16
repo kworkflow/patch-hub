@@ -17,7 +17,13 @@ fn main() -> color_eyre::Result<()> {
     utils::install_hooks()?;
     let mut terminal = utils::init()?;
     let mut app = App::new();
-    run_app(&mut terminal, &mut app)?;
+
+    if !app.check_external_deps() {
+        Logger::error("patch-hub cannot be executed because some dependencies are missing");
+    } else {
+        run_app(&mut terminal, &mut app)?;
+    }
+
     utils::restore()?;
 
     Logger::info("patch-hub finished");
