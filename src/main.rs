@@ -1,3 +1,5 @@
+use std::ops::ControlFlow;
+
 use crate::app::App;
 use app::logging::Logger;
 use clap::Parser;
@@ -11,12 +13,17 @@ mod ui;
 mod utils;
 
 fn main() -> color_eyre::Result<()> {
-    // We use an unused var because we only parse for `-h|--help` and `-V|--version`
-    let _args = Cli::parse();
+    let args = Cli::parse();
 
     utils::install_hooks()?;
     let mut terminal = utils::init()?;
     let mut app = App::new();
+
+    match args.resolve(terminal, &mut app) {
+        ControlFlow::Break(b) => return b,
+        ControlFlow::Continue(t) => terminal = t,
+    }
+
     run_app(&mut terminal, &mut app)?;
     utils::restore()?;
 
