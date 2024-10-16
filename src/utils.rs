@@ -72,8 +72,42 @@ pub fn teardown_user_io<B: Backend>(terminal: &mut Terminal<B>) -> color_eyre::R
 }
 
 #[macro_export]
+/// Macro that encapsulates a piece of code that takes long to run and displays a loading screen while it runs.
+///
+/// This macro takes two arguments: the terminal and the title of the loading screen (anything that implements `Display`).
+/// After a `=>` token, you can pass the code that takes long to run.
+///
+/// When the execution finishes, the macro will return the terminal.
+///
+/// Important to notice that the code block will run in the same scope as the rest of the macro
+///
+/// # Example
+/// ```rust norun
+/// terminal = loading_screen! { terminal, "Loading stuff" => {
+///    // code that takes long to run
+/// }};
+/// ```
 macro_rules! loading_screen {
-    { $terminal:ident, $title:expr => $inst:expr} => {
+    { $terminal:expr, $title:expr => $inst:expr} => {
+        {
+            let loading = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+            let loading_clone = std::sync::Arc::clone(&loading);
+            let mut terminal = $terminal;
 
+            let handle = std::thread::spawn(move || {
+                while loading_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                    terminal = $crate::ui::render_loading_screen(terminal, $title);
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+
+                terminal
+            });
+
+            $inst;
+
+            loading.store(false, std::sync::atomic::Ordering::Relaxed);
+
+            handle.join().unwrap()
+        }
     };
 }

@@ -1,42 +1,42 @@
-use std::{ops::ControlFlow, sync::{atomic::AtomicBool, Arc}};
+use std::ops::ControlFlow;
 
-use crate::{app::{screens::CurrentScreen, App}, ui::render_loading_screen};
-use ratatui::{crossterm::event::{KeyCode, KeyEvent}, prelude::Backend, Terminal};
+use crate::{
+    app::{screens::CurrentScreen, App},
+    loading_screen,
+};
+use ratatui::{
+    crossterm::event::{KeyCode, KeyEvent},
+    prelude::Backend,
+    Terminal,
+};
 
 pub fn handle_mailing_list_selection<B>(
     mut terminal: Terminal<B>,
     app: &mut App,
     key: KeyEvent,
 ) -> color_eyre::Result<ControlFlow<(), Terminal<B>>>
-where B: Backend + Send + 'static
+where
+    B: Backend + Send + 'static,
 {
     match key.code {
         KeyCode::Enter => {
             if app.mailing_list_selection_state.has_valid_target_list() {
                 app.init_latest_patchsets_state();
-                let list_name = app.latest_patchsets_state.as_ref().unwrap().target_list().to_string();
-
-                let loading = Arc::new(AtomicBool::new(true));
-                let loading_clone = Arc::clone(&loading);
-
-                let handle = std::thread::spawn(move || {
-                    while loading_clone.load(std::sync::atomic::Ordering::Relaxed) {
-                        terminal = render_loading_screen(terminal, format!("Fetching latest patchsets for {}", list_name));
-                        std::thread::sleep(std::time::Duration::from_millis(50));
-                    }
-
-                    terminal
-                });
-
-                app.latest_patchsets_state
-                    .as_mut()
+                let list_name = app
+                    .latest_patchsets_state
+                    .as_ref()
                     .unwrap()
-                    .fetch_current_page()?;
-                app.mailing_list_selection_state.clear_target_list();
-                app.set_current_screen(CurrentScreen::LatestPatchsets);
+                    .target_list()
+                    .to_string();
 
-                loading.store(false, std::sync::atomic::Ordering::Relaxed);
-                terminal = handle.join().unwrap();
+                terminal = loading_screen! {
+                    terminal,
+                    format!("Fetching latest patchsets for {}", list_name) => {
+                        app.latest_patchsets_state.as_mut().unwrap().fetch_current_page()?;
+                        app.mailing_list_selection_state.clear_target_list();
+                        app.set_current_screen(CurrentScreen::LatestPatchsets);
+                    }
+                };
             }
         }
         KeyCode::F(5) => {

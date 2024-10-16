@@ -4,10 +4,12 @@ pub mod edit_config;
 pub mod latest;
 pub mod mail_list;
 
-use std::{ops::ControlFlow, sync::{atomic::{AtomicBool, Ordering}, Arc}, thread, time::Duration};
+use std::{ops::ControlFlow, time::Duration};
 
 use crate::{
-    app::{screens::CurrentScreen, App}, ui::{draw_ui, render_loading_screen}
+    app::{screens::CurrentScreen, App},
+    loading_screen,
+    ui::draw_ui,
 };
 
 use bookmarked::handle_bookmarked_patchsets;
@@ -25,8 +27,9 @@ fn key_handling<B>(
     mut terminal: Terminal<B>,
     app: &mut App,
     key: KeyEvent,
-) -> color_eyre::Result<ControlFlow<(), Terminal<B>>> 
-where B: Backend + Send + 'static
+) -> color_eyre::Result<ControlFlow<(), Terminal<B>>>
+where
+    B: Backend + Send + 'static,
 {
     match app.current_screen {
         CurrentScreen::MailingListSelection => {
@@ -48,35 +51,31 @@ where B: Backend + Send + 'static
     Ok(ControlFlow::Continue(terminal))
 }
 
-fn logic_handling<B>(mut terminal: Terminal<B>, app: &mut App) -> color_eyre::Result<Terminal<B>> 
-where B: Backend + Send + 'static {
+fn logic_handling<B>(mut terminal: Terminal<B>, app: &mut App) -> color_eyre::Result<Terminal<B>>
+where
+    B: Backend + Send + 'static,
+{
     match app.current_screen {
         CurrentScreen::MailingListSelection => {
             if app.mailing_list_selection_state.mailing_lists.is_empty() {
-                let loading = Arc::new(AtomicBool::new(true));
-                let loading_clone = Arc::clone(&loading);
-                
-                let handle = std::thread::spawn(move || {
-                    while loading_clone.load(Ordering::Relaxed) {
-                        terminal = render_loading_screen(terminal, "Fetching mailing lists");
-                        thread::sleep(Duration::from_millis(50));
+                terminal = loading_screen! {
+                    terminal, "Fetching mailing lists" => {
+                        app.mailing_list_selection_state.refresh_available_mailing_lists()?;
                     }
-
-                    terminal
-                });
-
-                app.mailing_list_selection_state.refresh_available_mailing_lists()?; // SLOW AF
-
-                loading.store(false, Ordering::Relaxed);
-                terminal = handle.join().unwrap();
+                };
             }
         }
         CurrentScreen::LatestPatchsets => {
             let patchsets_state = app.latest_patchsets_state.as_mut().unwrap();
+            let target_list = patchsets_state.target_list().to_string();
             if patchsets_state.processed_patchsets_count() == 0 {
-                //terminal.draw(|f| draw_loading_screen(f, format!("Fetching patchsets from {}", patchsets_state.target_list())))?;
-                
-                patchsets_state.fetch_current_page()?;
+                terminal = loading_screen! {
+                    terminal,
+                    format!("Fetching patchsets from {}", target_list) => {
+                        patchsets_state.fetch_current_page()?;
+                    }
+                };
+
                 app.mailing_list_selection_state.clear_target_list();
             }
         }
@@ -96,7 +95,9 @@ where B: Backend + Send + 'static {
 }
 
 pub fn run_app<B>(mut terminal: Terminal<B>, mut app: App) -> color_eyre::Result<()>
-where B: Backend + Send + 'static {
+where
+    B: Backend + Send + 'static,
+{
     loop {
         terminal.draw(|f| draw_ui(f, &app))?;
 
