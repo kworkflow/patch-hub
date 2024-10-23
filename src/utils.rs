@@ -70,3 +70,13 @@ pub fn teardown_user_io<B: Backend>(terminal: &mut Terminal<B>) -> color_eyre::R
     terminal.clear()?;
     Ok(())
 }
+
+#[inline]
+/// Simply calls `which` to check if a binary exists
+pub fn binary_exists(binary: &str) -> bool {
+    std::process::Command::new("which")
+        .arg(binary)
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
