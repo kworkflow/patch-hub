@@ -10,5 +10,10 @@
   "data_dir": "/data_dir",
   "patch_renderer": "default",
   "cover_renderer": "default",
-  "max_log_age": 42
+  "max_log_age": 42,
+  "git_am_options": "--long-option value -s -h -o -r -t",
+  "kernel_trees": {
+    "linux": "/home/user/linux"
+  },
+  "git_am_branch_prefix": "patchset-"
 }
