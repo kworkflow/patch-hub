@@ -24,6 +24,10 @@ impl EditConfigState {
             config.git_send_email_options().to_string(),
         );
         config_buffer.insert(
+            EditableConfig::GitAmOpt,
+            config.git_am_options().to_string(),
+        );
+        config_buffer.insert(
             EditableConfig::PatchRenderer,
             config.patch_renderer().to_string(),
         );
@@ -166,6 +170,12 @@ impl EditConfigState {
         Ok(git_send_emial_option)
     }
 
+    /// Extracts the `git am` option from the config
+    pub fn git_am_option(&mut self) -> Result<String, ()> {
+        let git_am_option = self.extract_config_buffer_val(&EditableConfig::GitAmOpt);
+        Ok(git_am_option)
+    }
+
     pub fn extract_patch_renderer(&mut self) -> Result<String, ()> {
         let patch_renderer = self.extract_config_buffer_val(&EditableConfig::PatchRenderer);
         Ok(patch_renderer)
@@ -178,6 +188,7 @@ enum EditableConfig {
     CacheDir,
     DataDir,
     GitSendEmailOpt,
+    GitAmOpt,
     PatchRenderer,
 }
 
@@ -190,7 +201,8 @@ impl TryFrom<usize> for EditableConfig {
             1 => Ok(EditableConfig::CacheDir),
             2 => Ok(EditableConfig::DataDir),
             3 => Ok(EditableConfig::GitSendEmailOpt),
-            4 => Ok(EditableConfig::PatchRenderer),
+            4 => Ok(EditableConfig::GitAmOpt),
+            5 => Ok(EditableConfig::PatchRenderer),
             _ => bail!("Invalid index {} for EditableConfig", value), // Handle out of bounds
         }
     }
@@ -206,6 +218,7 @@ impl Display for EditableConfig {
                 write!(f, "Patch Renderer (bat, delta, diff-so-fancy)")
             }
             EditableConfig::GitSendEmailOpt => write!(f, "`git send email` option"),
+            EditableConfig::GitAmOpt => write!(f, "`git am` option"),
         }
     }
 }

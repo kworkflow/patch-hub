@@ -1,10 +1,7 @@
 use derive_getters::Getters;
 use serde::{Deserialize, Serialize};
 use std::{
-    env,
-    fs::{self, File},
-    io,
-    path::Path,
+    collections::HashMap, env, fs::{self, File}, io, path::Path
 };
 
 use super::patch_renderer::PatchRenderer;
@@ -31,6 +28,14 @@ pub struct Config {
     patch_renderer: PatchRenderer,
     /// Maximum age of a log file in days
     max_log_age: usize,
+    /// Flags to be use with `git am` command when applying patches
+    git_am_options: String,
+    #[getter(skip)]
+    /// List of kernel trees
+    kernel_trees: HashMap<String, String>,
+    /// The current kernel tree being used
+    current_tree: Option<String>,
+    git_am_branch_prefix: String,
 }
 
 impl Config {
@@ -50,6 +55,10 @@ impl Config {
             cache_dir,
             data_dir,
             max_log_age: 30,
+            git_am_options: "".to_string(),
+            kernel_trees: HashMap::new(),
+            current_tree: None,
+            git_am_branch_prefix: "patchset-".to_string(),
         }
     }
 
@@ -138,6 +147,21 @@ impl Config {
 
     pub fn set_git_send_email_option(&mut self, git_send_email_options: String) {
         self.git_send_email_options = git_send_email_options;
+    }
+
+    pub fn set_git_am_option(&mut self, git_am_options: String) {
+        self.git_am_options = git_am_options;
+    }
+
+    #[allow(dead_code)]
+    /// Returns the list of names of the registered kernel trees
+    pub fn kernel_trees(&self) -> Vec<&String> {
+        self.kernel_trees.keys().collect::<Vec<&String>>()
+    }
+
+    /// Returns the path of the kernel tree with the given name if it exists
+    pub fn kernel_tree_path(&self, kernel_tree: &str) -> Option<&String> {
+        self.kernel_trees.get(kernel_tree)
     }
 
     pub fn set_patch_renderer(&mut self, patch_renderer: PatchRenderer) {
