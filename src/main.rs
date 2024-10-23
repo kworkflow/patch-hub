@@ -12,11 +12,20 @@ mod utils;
 
 fn main() -> color_eyre::Result<()> {
     // We use an unused var because we only parse for `-h|--help` and `-V|--version`
-    let _args = Cli::parse();
+    let args = Cli::parse();
 
     utils::install_hooks()?;
     let mut terminal = utils::init()?;
     let mut app = App::new();
+
+    if args.show_configs {
+        Logger::info("Printing current configurations");
+        drop(terminal);
+        utils::restore()?;
+        println!("{}", serde_json::to_string_pretty(&app.config)?);
+        return Ok(());
+    }
+
     run_app(&mut terminal, &mut app)?;
     utils::restore()?;
 
