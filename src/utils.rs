@@ -76,3 +76,14 @@ pub fn teardown_user_io<B: Backend>(terminal: &mut Terminal<B>) -> color_eyre::R
 pub fn binary_exists(binary: &str) -> bool {
     which::which(binary).is_ok()
 }
+
+
+mod tests {
+    #[test]
+    fn test_binary_exists() {
+        // cargo should always exist since we are running the tests with `cargo test`
+        assert!(super::binary_exists("cargo")); 
+        // there is no way this binary exists
+        assert!(!super::binary_exists("there_is_no_way_this_binary_exists")); 
+    }
+}
