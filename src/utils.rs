@@ -97,7 +97,7 @@ macro_rules! loading_screen {
             let handle = std::thread::spawn(move || {
                 while loading_clone.load(std::sync::atomic::Ordering::Relaxed) {
                     terminal = $crate::ui::render_loading_screen(terminal, $title);
-                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    std::thread::sleep(std::time::Duration::from_millis(200));
                 }
 
                 terminal
