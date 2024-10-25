@@ -1,13 +1,10 @@
-use std::fmt::Display;
-
 use patch_hub::patch::Patch;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    prelude::Backend,
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph, Wrap},
-    Frame, Terminal,
+    widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState, Paragraph},
+    Frame,
 };
 
 use crate::app::{self, App};
@@ -15,19 +12,8 @@ use app::screens::{bookmarked::BookmarkedPatchsetsState, CurrentScreen};
 
 mod details_actions;
 mod edit_config;
+pub mod loading_screen;
 mod render_patchset;
-
-const SPINNER: [char; 8] = [
-    '\u{1F311}',
-    '\u{1F312}',
-    '\u{1F313}',
-    '\u{1F314}',
-    '\u{1F315}',
-    '\u{1F316}',
-    '\u{1F317}',
-    '\u{1F318}',
-];
-static mut SPINNER_TICK: usize = 1;
 
 pub fn draw_ui(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
@@ -52,42 +38,6 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
     }
 
     render_navi_bar(f, app, chunks[2]);
-}
-
-/// This function renders a loading screen taking a `terminal` instance and a
-/// `title`.
-pub fn render_loading_screen<B: Backend>(
-    mut terminal: Terminal<B>,
-    title: impl Display,
-) -> Terminal<B> {
-    let _ = terminal.draw(|f| draw_loading_screen(f, title));
-    terminal
-}
-
-/// Gets the current spinner state and updates the tick.
-fn spinner() -> char {
-    let spinner_state = SPINNER[unsafe { SPINNER_TICK }];
-    unsafe {
-        SPINNER_TICK = (SPINNER_TICK + 1) % 8;
-    }
-    spinner_state
-}
-
-/// The actual implementation of the loading screen rendering. Currently the
-/// loading notification is static.
-fn draw_loading_screen(f: &mut Frame, title: impl Display) {
-    let loading_text = format!("{} {}", title, spinner());
-
-    let loading_par = Paragraph::new(Line::from(Span::styled(
-        loading_text,
-        Style::default().fg(Color::Green),
-    )))
-    .block(Block::default().borders(Borders::ALL))
-    .centered()
-    .wrap(Wrap { trim: true });
-
-    let loading_area = centered_rect(30, 10, f.area());
-    f.render_widget(loading_par, loading_area);
 }
 
 fn render_title(f: &mut Frame, chunk: Rect) {
@@ -367,7 +317,6 @@ fn render_navi_bar(f: &mut Frame, app: &App, chunk: Rect) {
     f.render_widget(keys_hint_footer, footer_chunks[1]);
 }
 
-#[allow(dead_code)]
 /// helper function to create a centered rect using up certain percentage of the available rect `r`
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     // Cut the given rectangle into three vertical pieces
