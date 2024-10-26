@@ -27,5 +27,3 @@ assignees: ''
 
 - Project branch: [branch name]
 - Project commit hash: [commit hash]
-- `rustc` version: [output of `rustc --version`]
-- `cargo` version: [output of `cargo --version`]
