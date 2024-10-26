@@ -1,5 +1,5 @@
 use super::CurrentScreen;
-use ::patch_hub::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
+use ::patch_hub::lore::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
 use color_eyre::eyre::bail;
 use std::{collections::HashMap, path::Path, process::Command};
 

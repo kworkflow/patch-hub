@@ -2,7 +2,7 @@ use crate::log_on_error;
 use color_eyre::eyre::bail;
 use config::Config;
 use logging::Logger;
-use patch_hub::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
+use patch_hub::lore::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
 use patch_renderer::PatchRenderer;
 use screens::{
     bookmarked::BookmarkedPatchsetsState,

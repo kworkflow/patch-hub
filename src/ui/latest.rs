@@ -1,5 +1,5 @@
 use crate::app::App;
-use patch_hub::patch::Patch;
+use patch_hub::lore::patch::Patch;
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},

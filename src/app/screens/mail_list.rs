@@ -1,5 +1,7 @@
 use color_eyre::eyre::bail;
-use patch_hub::{lore_api_client::BlockingLoreAPIClient, lore_session, mailing_list::MailingList};
+use patch_hub::lore::{
+    lore_api_client::BlockingLoreAPIClient, lore_session, mailing_list::MailingList,
+};
 
 pub struct MailingListSelectionState {
     pub mailing_lists: Vec<MailingList>,

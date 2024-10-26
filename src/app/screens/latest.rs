@@ -1,6 +1,6 @@
 use color_eyre::eyre::bail;
 use derive_getters::Getters;
-use patch_hub::{
+use patch_hub::lore::{
     lore_api_client::{BlockingLoreAPIClient, ClientError},
     lore_session::{LoreSession, LoreSessionError},
     patch::Patch,

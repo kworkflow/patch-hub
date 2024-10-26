@@ -1,7 +1,7 @@
 use io::Read;
 
 use super::*;
-use crate::patch::Author;
+use crate::lore::patch::Author;
 
 use mockall::mock;
 use std::fs;

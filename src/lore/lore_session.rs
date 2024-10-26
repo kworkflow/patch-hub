@@ -1,8 +1,8 @@
-use crate::lore_api_client::{
+use crate::lore::lore_api_client::{
     AvailableListsRequest, ClientError, PatchFeedRequest, PatchHTMLRequest,
 };
-use crate::mailing_list::MailingList;
-use crate::patch::{Patch, PatchFeed, PatchRegex};
+use crate::lore::mailing_list::MailingList;
+use crate::lore::patch::{Patch, PatchFeed, PatchRegex};
 use derive_getters::Getters;
 use regex::Regex;
 use serde_xml_rs::from_str;

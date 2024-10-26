@@ -1,5 +1,5 @@
 use super::*;
-use crate::patch::PatchFeed;
+use crate::lore::patch::PatchFeed;
 
 #[test]
 #[ignore = "network-io"]
