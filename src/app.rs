@@ -178,6 +178,13 @@ impl App {
         self.patchset_details_and_actions_state = None;
     }
 
+    /// Determines and consolidates all actions (if any) to take for the current
+    /// patchset stored in `patchset_details_and_actions_state`.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if `patchset_details_and_actions_state` is
+    /// `None`.
     pub fn consolidate_patchset_actions(&mut self) -> color_eyre::Result<()> {
         let details_and_actions = self.patchset_details_and_actions_state.as_ref().unwrap();
         let representative_patch = &details_and_actions.representative_patch;
