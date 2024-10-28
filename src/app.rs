@@ -179,20 +179,11 @@ impl App {
     }
 
     pub fn consolidate_patchset_actions(&mut self) -> color_eyre::Result<()> {
-        let representative_patch = &self
-            .patchset_details_and_actions_state
-            .as_ref()
-            .unwrap()
-            .representative_patch;
+        let details_and_actions = self.patchset_details_and_actions_state.as_ref().unwrap();
+        let representative_patch = &details_and_actions.representative_patch;
+        let actions = &details_and_actions.patchset_actions;
 
-        let should_bookmark_patchset = *self
-            .patchset_details_and_actions_state
-            .as_ref()
-            .unwrap()
-            .patchset_actions
-            .get(&PatchsetAction::Bookmark)
-            .unwrap();
-        if should_bookmark_patchset {
+        if *actions.get(&PatchsetAction::Bookmark).unwrap() {
             self.bookmarked_patchsets_state
                 .bookmark_selected_patch(representative_patch);
         } else {
@@ -205,18 +196,8 @@ impl App {
             self.config.bookmarked_patchsets_path(),
         )?;
 
-        let should_reply_with_reviewed_by = *self
-            .patchset_details_and_actions_state
-            .as_ref()
-            .unwrap()
-            .patchset_actions
-            .get(&PatchsetAction::ReplyWithReviewedBy)
-            .unwrap();
-        if should_reply_with_reviewed_by {
-            let successful_indexes = self
-                .patchset_details_and_actions_state
-                .as_ref()
-                .unwrap()
+        if *actions.get(&PatchsetAction::ReplyWithReviewedBy).unwrap() {
+            let successful_indexes = details_and_actions
                 .reply_patchset_with_reviewed_by("all", self.config.git_send_email_options())?;
 
             if !successful_indexes.is_empty() {
