@@ -11,6 +11,7 @@ use std::io::{BufRead, BufReader};
 use std::mem::swap;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::LazyLock;
 use std::{
     fs::{self, File},
     io,
@@ -308,24 +309,28 @@ where
 }
 
 fn process_available_lists(available_lists_str: String) -> Vec<MailingList> {
-    let re_pre_block: Regex = Regex::new(r#"(?s)<pre>(.*?)</pre>"#).unwrap();
-    let re_list_name = Regex::new(r#"(?s)<a\s*href=".*?">(.*?)</a>"#).unwrap();
-    let re_list_description = Regex::new(r#"(?s)</a>\s*(.*?)\s*\*"#).unwrap();
+    static RE_PRE_BLOCK: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"(?s)<pre>(.*?)</pre>"#).unwrap());
+    static RE_LIST_NAME: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"(?s)<a\s*href=".*?">(.*?)</a>"#).unwrap());
+    static RE_LIST_DESCRIPTION: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"(?s)</a>\s*(.*?)\s*\*"#).unwrap());
+
     let mut list_names: Vec<&str> = Vec::new();
     let mut list_descriptions: Vec<&str> = Vec::new();
     let mut available_lists: Vec<MailingList> = Vec::new();
 
-    let pre_blocks: Vec<&str> = re_pre_block
+    let pre_blocks: Vec<&str> = RE_PRE_BLOCK
         .captures_iter(&available_lists_str)
         .map(|cap| cap.get(1).unwrap().as_str())
         .collect();
 
-    for capture in re_list_name.captures_iter(pre_blocks[2]) {
+    for capture in RE_LIST_NAME.captures_iter(pre_blocks[2]) {
         let name = capture.get(1).unwrap().as_str().trim();
         list_names.push(name);
     }
 
-    for capture in re_list_description.captures_iter(pre_blocks[2]) {
+    for capture in RE_LIST_DESCRIPTION.captures_iter(pre_blocks[2]) {
         let description = capture.get(1).unwrap().as_str().trim();
         list_descriptions.push(description);
     }
@@ -374,10 +379,12 @@ where
     T: PatchHTMLRequest,
 {
     let mut git_reply_commands: Vec<Command> = Vec::new();
-    let re_message_id = Regex::new(r#"(?m)^Message-Id: <(.*?)>"#).unwrap();
+
+    static RE_MESSAGE_ID: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"(?m)^Message-Id: <(.*?)>"#).unwrap());
 
     for patch in patches.iter() {
-        let message_id = re_message_id
+        let message_id = RE_MESSAGE_ID
             .captures(patch)
             .unwrap()
             .get(1)
@@ -441,15 +448,18 @@ fn extract_git_reply_command(patch_html: &str, git_send_email_options: &str) -> 
         git_reply_command.arg(option);
     }
 
-    let re_full_git_command =
-        Regex::new(r#"(?s)git-send-email\(1\):(.*?)/path/to/YOUR_REPLY"#).unwrap();
-    let re_long_options = Regex::new(r"--[^\s=]+=[^\s]+").unwrap();
+    static RE_FULL_GIT_COMMAND: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?s)git-send-email\(1\):(.*?)/path/to/YOUR_REPLY"#).unwrap()
+    });
 
-    if let Some(capture) = re_full_git_command.captures(patch_html) {
+    static RE_LONG_OPTIONS: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"--[^\s=]+=[^\s]+").unwrap());
+
+    if let Some(capture) = RE_FULL_GIT_COMMAND.captures(patch_html) {
         if let Some(full_git_command_match) = capture.get(1) {
             let full_git_command = full_git_command_match.as_str();
 
-            for long_option_match in re_long_options.find_iter(full_git_command) {
+            for long_option_match in RE_LONG_OPTIONS.find_iter(full_git_command) {
                 git_reply_command.arg(long_option_match.as_str());
             }
         }
