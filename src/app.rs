@@ -1,9 +1,11 @@
 use crate::log_on_error;
+use ansi_to_tui::IntoText;
 use color_eyre::eyre::bail;
 use config::Config;
 use logging::Logger;
 use patch_hub::lore::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
-use patch_renderer::PatchRenderer;
+use patch_renderer::{render_patch_preview, PatchRenderer};
+use ratatui::text::Text;
 use screens::{
     bookmarked::BookmarkedPatchsetsState,
     details_actions::{PatchsetAction, PatchsetDetailsAndActionsState},
@@ -134,10 +136,27 @@ impl App {
         };
 
         match log_on_error!(lore_session::split_patchset(&patchset_path)) {
-            Ok(patches) => {
+            Ok(raw_patches) => {
+                let mut patches_preview: Vec<Text> = Vec::new();
+                for raw_patch in &raw_patches {
+                    let raw_patch = raw_patch.replace('\t', "        ");
+                    let patch_preview =
+                        match render_patch_preview(&raw_patch, self.config.patch_renderer()) {
+                            Ok(render) => render,
+                            Err(_) => {
+                                Logger::error(
+                                    "Failed to render patch preview with external program",
+                                );
+                                raw_patch
+                            }
+                        }
+                        .into_text()?;
+                    patches_preview.push(patch_preview);
+                }
                 self.patchset_details_and_actions_state = Some(PatchsetDetailsAndActionsState {
                     representative_patch,
-                    patches,
+                    raw_patches,
+                    patches_preview,
                     preview_index: 0,
                     preview_scroll_offset: 0,
                     preview_pan: 0,

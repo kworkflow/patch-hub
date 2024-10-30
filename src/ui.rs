@@ -14,7 +14,6 @@ mod latest;
 pub mod loading_screen;
 mod mail_list;
 mod navigation_bar;
-mod render_patchset;
 
 pub fn draw_ui(f: &mut Frame, app: &App) {
     let chunks = Layout::default()

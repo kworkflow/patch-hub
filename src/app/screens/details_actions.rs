@@ -1,11 +1,15 @@
 use super::CurrentScreen;
 use ::patch_hub::lore::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
 use color_eyre::eyre::bail;
+use ratatui::text::Text;
 use std::{collections::HashMap, path::Path, process::Command};
 
 pub struct PatchsetDetailsAndActionsState {
     pub representative_patch: Patch,
-    pub patches: Vec<String>,
+    /// Raw patches as plain text files
+    pub raw_patches: Vec<String>,
+    /// Patches in the format to be displayed as preview
+    pub patches_preview: Vec<Text<'static>>,
     pub preview_index: usize,
     pub preview_scroll_offset: usize,
     /// Horizontal offset
@@ -27,7 +31,7 @@ pub enum PatchsetAction {
 
 impl PatchsetDetailsAndActionsState {
     pub fn preview_next_patch(&mut self) {
-        if (self.preview_index + 1) < self.patches.len() {
+        if (self.preview_index + 1) < self.patches_preview.len() {
             self.preview_index += 1;
             self.preview_scroll_offset = 0;
             self.preview_pan = 0;
@@ -45,7 +49,7 @@ impl PatchsetDetailsAndActionsState {
     /// Scroll `n` lines down
     pub fn preview_scroll_down(&mut self, n: usize) {
         // TODO: Support for renderers (only considers base preview string)
-        let number_of_lines = self.patches[self.preview_index].lines().count();
+        let number_of_lines = self.patches_preview[self.preview_index].height();
         if (self.preview_scroll_offset + n) <= number_of_lines {
             self.preview_scroll_offset += n;
         }
@@ -59,7 +63,7 @@ impl PatchsetDetailsAndActionsState {
     /// Scroll to the last line
     pub fn go_to_last_line(&mut self) {
         // TODO: Support for renderers (only considers base preview string)
-        let number_of_lines = self.patches[self.preview_index].lines().count();
+        let number_of_lines = self.patches_preview[self.preview_index].height();
         self.preview_scroll_offset = number_of_lines - LAST_LINE_PADDING;
     }
 
@@ -133,7 +137,7 @@ impl PatchsetDetailsAndActionsState {
             &self.lore_api_client,
             tmp_dir,
             target_list,
-            &self.patches,
+            &self.raw_patches,
             &format!("{git_user_name} <{git_user_email}>"),
             git_send_email_options,
         ) {
