@@ -126,3 +126,28 @@ fn test_config_precedence() {
     env::remove_var("PATCH_HUB_CONFIG_PATH");
     env::remove_var("PATCH_HUB_PAGE_SIZE");
 }
+
+#[test]
+fn test_save_patch_hub_config() {
+    let _lock = TEST_LOCK.lock().unwrap();
+
+    let config = Config::build();
+    let save_result = config.save_patch_hub_config();
+    assert!(save_result.is_ok());
+
+    let config_path = format!(
+        "{}/.config/patch-hub/config.json",
+        env::var("HOME").unwrap()
+    );
+    let saved_config = std::fs::read_to_string(config_path).unwrap();
+    let saved_config: Config = serde_json::from_str(&saved_config).unwrap();
+
+    assert_eq!(config.page_size(), saved_config.page_size());
+    assert_eq!(config.patchsets_cache_dir(), saved_config.patchsets_cache_dir());
+    assert_eq!(config.bookmarked_patchsets_path(), saved_config.bookmarked_patchsets_path());
+    assert_eq!(config.mailing_lists_path(), saved_config.mailing_lists_path());
+    assert_eq!(config.reviewed_patchsets_path(), saved_config.reviewed_patchsets_path());
+    assert_eq!(config.logs_path(), saved_config.logs_path());
+    assert_eq!(config.git_send_email_options(), saved_config.git_send_email_options());
+    assert_eq!(config.max_log_age(), saved_config.max_log_age());
+}

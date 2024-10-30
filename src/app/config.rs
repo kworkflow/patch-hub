@@ -67,7 +67,8 @@ impl Config {
         }
 
         let config_path = format!(
-            "{}/.local/share/patch_hub/config.json",
+            // "{}/.local/share/patch_hub/config.json",
+            "{}/.config/patch-hub/config.json",
             env::var("HOME").unwrap()
         );
         if Path::new(&config_path).is_file() {
@@ -149,7 +150,7 @@ impl Config {
             path
         } else {
             format!(
-                "{}/.local/share/patch_hub/config.json",
+                "{}/.config/patch-hub/config.json",
                 env::var("HOME").unwrap()
             )
         };
