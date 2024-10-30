@@ -144,6 +144,10 @@ impl Config {
         self.patch_renderer = patch_renderer;
     }
 
+    pub fn set_max_log_age(&mut self, max_log_age: usize) {
+        self.max_log_age = max_log_age;
+    }
+
     pub fn save_patch_hub_config(&self) -> io::Result<()> {
         let config_path = if let Ok(path) = env::var("PATCH_HUB_CONFIG_PATH") {
             path
