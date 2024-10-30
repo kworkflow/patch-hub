@@ -24,7 +24,7 @@ fn blocking_client_should_detect_failed_patch_feed_request() {
 
     if let Err(client_error) = lore_api_client.request_patch_feed("invalid-list", 0) {
         match client_error {
-            ClientError::UnexpectedResponse(_, _) => (),
+            ClientError::FromUreq(_) => (),
             _ => {
                 panic!("Invalid request should return non 200 OK status.\n{client_error:#?}")
             }
