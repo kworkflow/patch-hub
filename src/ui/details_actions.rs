@@ -1,14 +1,12 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
+    text::{Line, Span},
     widgets::{Block, Borders, Padding, Paragraph, Wrap},
     Frame,
 };
 
-use crate::app::{logging::Logger, screens::details_actions::PatchsetAction, App};
-
-use super::render_patchset::render_patch_preview;
+use crate::app::{screens::details_actions::PatchsetAction, App};
 
 fn render_details_and_actions(f: &mut Frame, app: &App, details_chunk: Rect, actions_chunk: Rect) {
     let patchset_details_and_actions = app.patchset_details_and_actions_state.as_ref().unwrap();
@@ -132,16 +130,7 @@ fn render_preview(f: &mut Frame, app: &App, chunk: Rect) {
 
     let preview_offset = patchset_details_and_actions.preview_scroll_offset;
     let preview_pan = patchset_details_and_actions.preview_pan;
-    let patch_preview =
-        patchset_details_and_actions.patches[preview_index].replace('\t', "        ");
-    // TODO: Pass the terminal size to the external program
-    let patch_preview = match render_patch_preview(&patch_preview, app.config.patch_renderer()) {
-        Ok(rendered) => rendered,
-        Err(_) => {
-            Logger::error("Failed to render patch preview with external program");
-            Text::from(patch_preview)
-        }
-    };
+    let patch_preview = patchset_details_and_actions.patches_preview[preview_index].clone();
 
     let patch_preview = Paragraph::new(patch_preview)
         .block(
