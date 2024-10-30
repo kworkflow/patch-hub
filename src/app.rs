@@ -247,6 +247,9 @@ impl App {
             if let Ok(patch_renderer) = edit_config.extract_patch_renderer() {
                 self.config.set_patch_renderer(patch_renderer.into())
             }
+            if let Ok(max_log_age) = edit_config.max_log_age() {
+                self.config.set_max_log_age(max_log_age)
+            }
         }
     }
 
