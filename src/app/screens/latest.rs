@@ -39,7 +39,7 @@ impl LatestPatchsetsState {
         ) {
             match lore_session_error {
                 LoreSessionError::FromLoreAPIClient(client_error) => match client_error {
-                    ClientError::FromReqwest(_) | ClientError::UnexpectedResponse(_, _) => {
+                    ClientError::FromUreq(_) | ClientError::UnexpectedResponse(_, _) => {
                         bail!("Failed to request feed\n{client_error:#?}")
                     }
                     ClientError::EndOfFeed => (),
