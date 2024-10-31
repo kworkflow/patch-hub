@@ -148,6 +148,7 @@ impl App {
                     ]),
                     last_screen: current_screen,
                     lore_api_client: self.lore_api_client.clone(),
+                    path: patchset_path,
                 });
                 Ok(())
             }

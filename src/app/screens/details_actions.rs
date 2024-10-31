@@ -5,6 +5,7 @@ use std::{collections::HashMap, path::Path, process::Command};
 
 pub struct PatchsetDetailsAndActionsState {
     pub representative_patch: Patch,
+    pub path: String,
     pub patches: Vec<String>,
     pub preview_index: usize,
     pub preview_scroll_offset: usize,
