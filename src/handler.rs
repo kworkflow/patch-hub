@@ -112,17 +112,21 @@ where
 
         terminal = logic_handling(terminal, &mut app)?;
 
-        if event::poll(Duration::from_millis(16))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Release {
-                    continue;
-                }
-                match key_handling(terminal, &mut app, key)? {
-                    ControlFlow::Continue(t) => terminal = t,
-                    ControlFlow::Break(_) => return Ok(()),
-                }
+        // *IMPORTANT*: Uncommenting the if below makes `patch-hub` not block
+        // until an event is captured.  We should only do it when (if ever) we
+        // need to refresh the UI independently of any event as doing so gravely
+        // hinders the performance to below acceptable.
+        // if event::poll(Duration::from_millis(16))? {
+        if let Event::Key(key) = event::read()? {
+            if key.kind == KeyEventKind::Release {
+                continue;
+            }
+            match key_handling(terminal, &mut app, key)? {
+                ControlFlow::Continue(t) => terminal = t,
+                ControlFlow::Break(_) => return Ok(()),
             }
         }
+        // }
     }
 }
 
