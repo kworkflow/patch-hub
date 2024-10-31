@@ -1,3 +1,5 @@
+use crate::app::{config::Config, logging::Logger};
+
 use super::CurrentScreen;
 use ::patch_hub::lore::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
 use color_eyre::eyre::bail;
@@ -202,5 +204,82 @@ impl DetailsActions {
         }
 
         Ok(())
+    }
+
+    /// Apply the patchset to the current selected kernel tree
+    pub fn apply_patchset(&self, config: &Config) {
+        let tree = config.current_tree().as_ref().unwrap();
+        let tree_path = config.kernel_tree_path(tree).unwrap();
+        let am_options = config.git_am_options();
+        let branch_prefix = config.git_am_branch_prefix();
+        // TODO: Select a kernel tree
+
+        // Change the current working directory to the tree_path
+        // Save the old working directory
+        let oldwd = std::env::current_dir().unwrap();
+
+        std::env::set_current_dir(tree_path).unwrap();
+        // TODO: Select a branch
+        // 3. Create a new branch
+        let branch_name = format!(
+            "{}{}",
+            branch_prefix,
+            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S")
+        );
+        let _ = Command::new("git")
+            .arg("checkout")
+            .arg("-b")
+            .arg(&branch_name)
+            .output()
+            .unwrap();
+
+        // 3. Apply the patchset
+        let mut cmd = Command::new("git");
+
+        cmd.arg("am").arg(&self.path);
+
+        am_options.split_whitespace().for_each(|opt| {
+            cmd.arg(opt);
+        });
+
+        let out = cmd.output().unwrap();
+
+        if !out.status.success() {
+            Logger::error(format!(
+                "Failed to apply the patchset `{}`",
+                self.representative_patch.title()
+            ));
+            Logger::error(String::from_utf8_lossy(&out.stderr));
+            let _ = Command::new("git")
+                .arg("am")
+                .arg("--abort")
+                .output()
+                .unwrap();
+        } else {
+            Logger::info(format!(
+                "Patchset `{}` applied successfully to `{}` tree at branch `{}`",
+                self.representative_patch.title(),
+                tree,
+                branch_name
+            ));
+        }
+
+        // 4. git checkout -
+        let _ = Command::new("git")
+            .arg("checkout")
+            .arg("-")
+            .output()
+            .unwrap();
+
+        if !out.status.success() {
+            let _ = Command::new("git")
+                .arg("branch")
+                .arg("-D")
+                .arg(&branch_name)
+                .output()
+                .unwrap();
+        }
+        // 5. CD back
+        std::env::set_current_dir(&oldwd).unwrap();
     }
 }

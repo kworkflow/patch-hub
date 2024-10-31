@@ -67,6 +67,9 @@ pub fn handle_patchset_details<B: Backend>(
             app.set_current_screen(ps_da_clone);
             app.reset_details_actions();
         }
+        KeyCode::Char('a') => {
+            patchset_details_and_actions.apply_patchset(&app.config);
+        }
         KeyCode::Char('j') | KeyCode::Down => {
             patchset_details_and_actions.preview_scroll_down(1);
         }
