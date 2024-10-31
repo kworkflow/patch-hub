@@ -40,7 +40,7 @@ where
             return handle_mailing_list_selection(app, key, terminal);
         }
         CurrentScreen::BookmarkedPatchsets => {
-            handle_bookmarked_patchsets(app, key)?;
+            return handle_bookmarked_patchsets(app, key, terminal);
         }
         CurrentScreen::PatchsetDetails => {
             handle_patchset_details(app, key, &mut terminal)?;
