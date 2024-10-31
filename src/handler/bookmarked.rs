@@ -1,7 +1,23 @@
-use crate::app::{screens::CurrentScreen, App};
-use ratatui::crossterm::event::{KeyCode, KeyEvent};
+use std::ops::ControlFlow;
 
-pub fn handle_bookmarked_patchsets(app: &mut App, key: KeyEvent) -> color_eyre::Result<()> {
+use crate::{
+    app::{screens::CurrentScreen, App},
+    loading_screen,
+};
+use ratatui::{
+    crossterm::event::{KeyCode, KeyEvent},
+    prelude::Backend,
+    Terminal,
+};
+
+pub fn handle_bookmarked_patchsets<B>(
+    app: &mut App,
+    key: KeyEvent,
+    mut terminal: Terminal<B>,
+) -> color_eyre::Result<ControlFlow<(), Terminal<B>>>
+where
+    B: Backend + Send + 'static,
+{
     match key.code {
         KeyCode::Esc => {
             app.bookmarked_patchsets_state.patchset_index = 0;
@@ -14,10 +30,15 @@ pub fn handle_bookmarked_patchsets(app: &mut App, key: KeyEvent) -> color_eyre::
             app.bookmarked_patchsets_state.select_above_patchset();
         }
         KeyCode::Enter => {
-            app.init_patchset_details_and_actions_state(CurrentScreen::BookmarkedPatchsets)?;
-            app.set_current_screen(CurrentScreen::PatchsetDetails);
+            terminal = loading_screen! {
+                terminal,
+                "Loading patchset" => {
+                    app.init_patchset_details_and_actions_state(CurrentScreen::BookmarkedPatchsets)?;
+                    app.set_current_screen(CurrentScreen::PatchsetDetails);
+                }
+            };
         }
         _ => {}
     }
-    Ok(())
+    Ok(ControlFlow::Continue(terminal))
 }

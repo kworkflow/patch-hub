@@ -47,7 +47,7 @@ where
         KeyCode::Enter => {
             terminal = loading_screen! {
                 terminal,
-                "Downloading patchset" => {
+                "Loading patchset" => {
                     app.init_patchset_details_and_actions_state(CurrentScreen::LatestPatchsets)?;
                     app.set_current_screen(CurrentScreen::PatchsetDetails);
                 }
