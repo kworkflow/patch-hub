@@ -19,6 +19,9 @@ pub struct DetailsActions {
     pub has_cover_letter: bool,
     /// Which patches to reply
     pub patches_to_reply: Vec<bool>,
+    /// Path to applicable .mbx of patchset
+    #[allow(dead_code)]
+    pub patchset_path: String,
     pub preview_index: usize,
     pub preview_scroll_offset: usize,
     /// Horizontal offset

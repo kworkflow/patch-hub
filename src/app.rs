@@ -247,6 +247,7 @@ impl App {
                     acked_by,
                     last_screen: self.current_screen.clone(),
                     lore_api_client: self.lore_api_client.clone(),
+                    patchset_path,
                 });
                 Ok(())
             }
