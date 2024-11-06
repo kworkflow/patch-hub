@@ -189,7 +189,7 @@ impl PatchsetDetailsAndActionsState {
             .output()
             .unwrap();
 
-        // 3. Apply the patchset
+        // 4. Apply the patchset
         let mut cmd = Command::new("git");
 
         cmd.arg("am").arg(&self.path);
@@ -205,7 +205,12 @@ impl PatchsetDetailsAndActionsState {
                 "Failed to apply the patchset `{}`",
                 self.representative_patch.title()
             ));
-            Logger::error(String::from_utf8_lossy(&out.stderr));
+
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            if !stderr.trim().is_empty() {
+                Logger::error(format!("git am output: {}", stderr));
+            }
+
             let _ = Command::new("git")
                 .arg("am")
                 .arg("--abort")
@@ -220,7 +225,7 @@ impl PatchsetDetailsAndActionsState {
             ));
         }
 
-        // 4. git checkout -
+        // 5. git checkout -
         let _ = Command::new("git")
             .arg("checkout")
             .arg("-")
@@ -235,7 +240,7 @@ impl PatchsetDetailsAndActionsState {
                 .output()
                 .unwrap();
         }
-        // 5. CD back
+        // 6. CD back
         std::env::set_current_dir(&oldwd).unwrap();
     }
 }
