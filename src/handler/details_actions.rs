@@ -21,8 +21,12 @@ pub fn handle_patchset_details<B: Backend>(
     let patchset_details_and_actions = app.details_actions.as_mut().unwrap();
 
     if key.modifiers.contains(KeyModifiers::SHIFT) {
-        if let KeyCode::Char('G') = key.code {
-            patchset_details_and_actions.go_to_last_line()
+        match key.code {
+            KeyCode::Char('G') => patchset_details_and_actions.go_to_last_line(),
+            KeyCode::Char('R') => {
+                patchset_details_and_actions.toggle_reply_with_reviewed_by_action(true);
+            }
+            _ => {}
         }
         return Ok(());
     }
@@ -91,7 +95,7 @@ pub fn handle_patchset_details<B: Backend>(
             patchset_details_and_actions.toggle_bookmark_action();
         }
         KeyCode::Char('r') => {
-            patchset_details_and_actions.toggle_reply_with_reviewed_by_action();
+            patchset_details_and_actions.toggle_reply_with_reviewed_by_action(false);
         }
         KeyCode::Enter => {
             if patchset_details_and_actions.actions_require_user_io() {
@@ -135,6 +139,7 @@ pub fn generate_help_popup() -> Box<dyn PopUp> {
         .keybind("p", "Preview previous patch")
         .keybind("b", "Toggle bookmark action")
         .keybind("r", "Toggle reply with Reviewed-by action")
+        .keybind("Shift+r", "Toggle reply with Reviewed-by action for all patches")
         .build();
 
     Box::new(popup)

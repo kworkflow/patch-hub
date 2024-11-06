@@ -106,8 +106,16 @@ impl DetailsActions {
         self.toggle_action(PatchsetAction::Bookmark);
     }
 
-    pub fn toggle_reply_with_reviewed_by_action(&mut self) {
-        if let Some(entry) = self.patches_to_reply.get_mut(self.preview_index) {
+    pub fn toggle_reply_with_reviewed_by_action(&mut self, all: bool) {
+        if all {
+            if self.patches_to_reply.contains(&false) {
+                // If there is at least one patch not to be replied, set all to be
+                self.patches_to_reply = vec![true; self.patches_to_reply.len()];
+            } else {
+                // If all patches are set to be replied, set none to be
+                self.patches_to_reply = vec![false; self.patches_to_reply.len()];
+            }
+        } else if let Some(entry) = self.patches_to_reply.get_mut(self.preview_index) {
             *entry = !*entry;
         }
 
