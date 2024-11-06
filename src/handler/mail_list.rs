@@ -20,8 +20,8 @@ where
 {
     match key.code {
         KeyCode::Enter => {
-            if app.mailing_list_selection_state.has_valid_target_list() {
-                app.init_latest_patchsets_state();
+            if app.mailing_list_selection.has_valid_target_list() {
+                app.init_latest_patchsets();
                 let list_name = app
                     .latest_patchsets_state
                     .as_ref()
@@ -33,7 +33,7 @@ where
                     terminal,
                     format!("Fetching patchsets from {}", list_name) => {
                         app.latest_patchsets_state.as_mut().unwrap().fetch_current_page()?;
-                        app.mailing_list_selection_state.clear_target_list();
+                        app.mailing_list_selection.clear_target_list();
                         app.set_current_screen(CurrentScreen::LatestPatchsets);
                     }
                 };
@@ -43,13 +43,13 @@ where
             terminal = loading_screen! {
                 terminal,
                 "Refreshing lists" => {
-                    app.mailing_list_selection_state
+                    app.mailing_list_selection
                         .refresh_available_mailing_lists()?;
                 }
             };
         }
         KeyCode::F(2) => {
-            app.init_edit_config_state();
+            app.init_edit_config();
             app.set_current_screen(CurrentScreen::EditConfig);
         }
         KeyCode::F(1) => {
@@ -58,26 +58,24 @@ where
                 .bookmarked_patchsets
                 .is_empty()
             {
-                app.mailing_list_selection_state.clear_target_list();
+                app.mailing_list_selection.clear_target_list();
                 app.set_current_screen(CurrentScreen::BookmarkedPatchsets);
             }
         }
         KeyCode::Backspace => {
-            app.mailing_list_selection_state
-                .remove_last_target_list_char();
+            app.mailing_list_selection.remove_last_target_list_char();
         }
         KeyCode::Esc => {
             return Ok(ControlFlow::Break(()));
         }
         KeyCode::Char(ch) => {
-            app.mailing_list_selection_state
-                .push_char_to_target_list(ch);
+            app.mailing_list_selection.push_char_to_target_list(ch);
         }
         KeyCode::Down => {
-            app.mailing_list_selection_state.highlight_below_list();
+            app.mailing_list_selection.highlight_below_list();
         }
         KeyCode::Up => {
-            app.mailing_list_selection_state.highlight_above_list();
+            app.mailing_list_selection.highlight_above_list();
         }
         _ => {}
     }

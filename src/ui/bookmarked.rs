@@ -1,5 +1,5 @@
 use crate::app;
-use app::screens::bookmarked::BookmarkedPatchsetsState;
+use app::screens::bookmarked::BookmarkedPatchsets;
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
@@ -8,19 +8,11 @@ use ratatui::{
     Frame,
 };
 
-pub fn render_main(
-    f: &mut Frame,
-    bookmarked_patchsets_state: &BookmarkedPatchsetsState,
-    chunk: Rect,
-) {
-    let patchset_index = bookmarked_patchsets_state.patchset_index;
+pub fn render_main(f: &mut Frame, bookmarked_patchsets: &BookmarkedPatchsets, chunk: Rect) {
+    let patchset_index = bookmarked_patchsets.patchset_index;
     let mut list_items = Vec::<ListItem>::new();
 
-    for (index, patch) in bookmarked_patchsets_state
-        .bookmarked_patchsets
-        .iter()
-        .enumerate()
-    {
+    for (index, patch) in bookmarked_patchsets.bookmarked_patchsets.iter().enumerate() {
         let patch_title = format!("{:width$}", patch.title(), width = 70);
         let patch_title = format!("{:.width$}", patch_title, width = 70);
         let patch_author = format!("{:width$}", patch.author().name, width = 30);

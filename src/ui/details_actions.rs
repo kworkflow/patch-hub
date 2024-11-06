@@ -9,7 +9,7 @@ use ratatui::{
 use crate::app::{screens::details_actions::PatchsetAction, App};
 
 fn render_details_and_actions(f: &mut Frame, app: &App, details_chunk: Rect, actions_chunk: Rect) {
-    let patchset_details_and_actions = app.patchset_details_and_actions_state.as_ref().unwrap();
+    let patchset_details_and_actions = app.details_actions.as_ref().unwrap();
 
     let patchset_details = &patchset_details_and_actions.representative_patch;
     let patchset_details = vec![
@@ -113,7 +113,7 @@ fn render_details_and_actions(f: &mut Frame, app: &App, details_chunk: Rect, act
 }
 
 fn render_preview(f: &mut Frame, app: &App, chunk: Rect) {
-    let patchset_details_and_actions = app.patchset_details_and_actions_state.as_ref().unwrap();
+    let patchset_details_and_actions = app.details_actions.as_ref().unwrap();
 
     let preview_index = patchset_details_and_actions.preview_index;
 
@@ -149,7 +149,7 @@ fn render_preview(f: &mut Frame, app: &App, chunk: Rect) {
 }
 
 pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
-    let patchset_details_and_actions = app.patchset_details_and_actions_state.as_ref().unwrap();
+    let patchset_details_and_actions = app.details_actions.as_ref().unwrap();
 
     if patchset_details_and_actions.preview_fullscreen {
         render_preview(f, app, chunk);

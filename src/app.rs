@@ -7,11 +7,11 @@ use patch_hub::lore::{lore_api_client::BlockingLoreAPIClient, lore_session, patc
 use patch_renderer::{render_patch_preview, PatchRenderer};
 use ratatui::text::Text;
 use screens::{
-    bookmarked::BookmarkedPatchsetsState,
-    details_actions::{PatchsetAction, PatchsetDetailsAndActionsState},
-    edit_config::EditConfigState,
-    latest::LatestPatchsetsState,
-    mail_list::MailingListSelectionState,
+    bookmarked::BookmarkedPatchsets,
+    details_actions::{DetailsActions, PatchsetAction},
+    edit_config::EditConfig,
+    latest::LatestPatchsets,
+    mail_list::MailingListSelection,
     CurrentScreen,
 };
 use std::collections::HashMap;
@@ -25,11 +25,11 @@ pub mod screens;
 
 pub struct App {
     pub current_screen: CurrentScreen,
-    pub mailing_list_selection_state: MailingListSelectionState,
-    pub bookmarked_patchsets_state: BookmarkedPatchsetsState,
-    pub latest_patchsets_state: Option<LatestPatchsetsState>,
-    pub patchset_details_and_actions_state: Option<PatchsetDetailsAndActionsState>,
-    pub edit_config_state: Option<EditConfigState>,
+    pub mailing_list_selection: MailingListSelection,
+    pub bookmarked_patchsets_state: BookmarkedPatchsets,
+    pub latest_patchsets_state: Option<LatestPatchsets>,
+    pub details_actions: Option<DetailsActions>,
+    pub edit_config_state: Option<EditConfig>,
     pub reviewed_patchsets: HashMap<String, Vec<usize>>,
     pub config: Config,
     pub lore_api_client: BlockingLoreAPIClient,
@@ -60,7 +60,7 @@ impl App {
 
         App {
             current_screen: CurrentScreen::MailingListSelection,
-            mailing_list_selection_state: MailingListSelectionState {
+            mailing_list_selection: MailingListSelection {
                 mailing_lists: mailing_lists.clone(),
                 target_list: String::new(),
                 possible_mailing_lists: mailing_lists,
@@ -69,9 +69,9 @@ impl App {
                 lore_api_client: lore_api_client.clone(),
             },
             latest_patchsets_state: None,
-            patchset_details_and_actions_state: None,
+            details_actions: None,
             edit_config_state: None,
-            bookmarked_patchsets_state: BookmarkedPatchsetsState {
+            bookmarked_patchsets_state: BookmarkedPatchsets {
                 bookmarked_patchsets,
                 patchset_index: 0,
             },
@@ -81,25 +81,25 @@ impl App {
         }
     }
 
-    pub fn init_latest_patchsets_state(&mut self) {
+    pub fn init_latest_patchsets(&mut self) {
         // the target mailing list for "latest patchsets" is the highlighted
         // entry in the possible lists of "mailing list selection"
-        let list_index = self.mailing_list_selection_state.highlighted_list_index;
-        let target_list = self.mailing_list_selection_state.possible_mailing_lists[list_index]
+        let list_index = self.mailing_list_selection.highlighted_list_index;
+        let target_list = self.mailing_list_selection.possible_mailing_lists[list_index]
             .name()
             .to_string();
-        self.latest_patchsets_state = Some(LatestPatchsetsState::new(
+        self.latest_patchsets_state = Some(LatestPatchsets::new(
             target_list,
             self.config.page_size(),
             self.lore_api_client.clone(),
         ));
     }
 
-    pub fn reset_latest_patchsets_state(&mut self) {
+    pub fn reset_latest_patchsets(&mut self) {
         self.latest_patchsets_state = None;
     }
 
-    pub fn init_patchset_details_and_actions_state(
+    pub fn init_details_actions(
         &mut self,
         current_screen: CurrentScreen,
     ) -> color_eyre::Result<()> {
@@ -153,7 +153,7 @@ impl App {
                         .into_text()?;
                     patches_preview.push(patch_preview);
                 }
-                self.patchset_details_and_actions_state = Some(PatchsetDetailsAndActionsState {
+                self.details_actions = Some(DetailsActions {
                     representative_patch,
                     raw_patches,
                     patches_preview,
@@ -174,19 +174,15 @@ impl App {
         }
     }
 
-    pub fn reset_patchset_details_and_actions_state(&mut self) {
-        self.patchset_details_and_actions_state = None;
+    pub fn reset_details_actions(&mut self) {
+        self.details_actions = None;
     }
 
     pub fn consolidate_patchset_actions(&mut self) -> color_eyre::Result<()> {
-        let representative_patch = &self
-            .patchset_details_and_actions_state
-            .as_ref()
-            .unwrap()
-            .representative_patch;
+        let representative_patch = &self.details_actions.as_ref().unwrap().representative_patch;
 
         let should_bookmark_patchset = *self
-            .patchset_details_and_actions_state
+            .details_actions
             .as_ref()
             .unwrap()
             .patchset_actions
@@ -206,7 +202,7 @@ impl App {
         )?;
 
         let should_reply_with_reviewed_by = *self
-            .patchset_details_and_actions_state
+            .details_actions
             .as_ref()
             .unwrap()
             .patchset_actions
@@ -214,7 +210,7 @@ impl App {
             .unwrap();
         if should_reply_with_reviewed_by {
             let successful_indexes = self
-                .patchset_details_and_actions_state
+                .details_actions
                 .as_ref()
                 .unwrap()
                 .reply_patchset_with_reviewed_by("all", self.config.git_send_email_options())?;
@@ -231,7 +227,7 @@ impl App {
                 )?;
             }
 
-            self.patchset_details_and_actions_state
+            self.details_actions
                 .as_mut()
                 .unwrap()
                 .toggle_action(PatchsetAction::ReplyWithReviewedBy);
@@ -240,11 +236,11 @@ impl App {
         Ok(())
     }
 
-    pub fn init_edit_config_state(&mut self) {
-        self.edit_config_state = Some(EditConfigState::new(&self.config));
+    pub fn init_edit_config(&mut self) {
+        self.edit_config_state = Some(EditConfig::new(&self.config));
     }
 
-    pub fn reset_edit_config_state(&mut self) {
+    pub fn reset_edit_config(&mut self) {
         self.edit_config_state = None;
     }
 

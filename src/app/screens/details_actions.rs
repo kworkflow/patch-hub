@@ -4,7 +4,7 @@ use color_eyre::eyre::bail;
 use ratatui::text::Text;
 use std::{collections::HashMap, path::Path, process::Command};
 
-pub struct PatchsetDetailsAndActionsState {
+pub struct DetailsActions {
     pub representative_patch: Patch,
     /// Raw patches as plain text files
     pub raw_patches: Vec<String>,
@@ -29,7 +29,7 @@ pub enum PatchsetAction {
     ReplyWithReviewedBy,
 }
 
-impl PatchsetDetailsAndActionsState {
+impl DetailsActions {
     pub fn preview_next_patch(&mut self) {
         if (self.preview_index + 1) < self.patches_preview.len() {
             self.preview_index += 1;

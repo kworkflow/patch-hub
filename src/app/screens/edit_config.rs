@@ -5,7 +5,7 @@ use color_eyre::eyre::bail;
 use derive_getters::Getters;
 
 #[derive(Debug, Getters)]
-pub struct EditConfigState {
+pub struct EditConfig {
     #[getter(skip)]
     config_buffer: HashMap<EditableConfig, String>,
     highlighted: usize,
@@ -13,7 +13,7 @@ pub struct EditConfigState {
     curr_edit: String,
 }
 
-impl EditConfigState {
+impl EditConfig {
     pub fn new(config: &Config) -> Self {
         let mut config_buffer = HashMap::new();
         config_buffer.insert(EditableConfig::PageSize, config.page_size().to_string());
@@ -29,7 +29,7 @@ impl EditConfigState {
         );
         config_buffer.insert(EditableConfig::MaxLogAge, config.max_log_age().to_string());
 
-        EditConfigState {
+        EditConfig {
             config_buffer,
             highlighted: 0,
             is_editing: false,
@@ -99,7 +99,7 @@ impl EditConfigState {
     }
 }
 
-impl EditConfigState {
+impl EditConfig {
     fn extract_config_buffer_val(&mut self, editable_config: &EditableConfig) -> String {
         let mut ret_value = String::new();
         if let Some(config_value) = self.config_buffer.get_mut(editable_config) {

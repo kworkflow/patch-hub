@@ -1,11 +1,11 @@
 use patch_hub::lore::patch::Patch;
 
-pub struct BookmarkedPatchsetsState {
+pub struct BookmarkedPatchsets {
     pub bookmarked_patchsets: Vec<Patch>,
     pub patchset_index: usize,
 }
 
-impl BookmarkedPatchsetsState {
+impl BookmarkedPatchsets {
     pub fn select_below_patchset(&mut self) {
         if self.patchset_index + 1 < self.bookmarked_patchsets.len() {
             self.patchset_index += 1;

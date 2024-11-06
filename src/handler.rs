@@ -61,10 +61,10 @@ where
 {
     match app.current_screen {
         CurrentScreen::MailingListSelection => {
-            if app.mailing_list_selection_state.mailing_lists.is_empty() {
+            if app.mailing_list_selection.mailing_lists.is_empty() {
                 terminal = loading_screen! {
                     terminal, "Fetching mailing lists" => {
-                        app.mailing_list_selection_state.refresh_available_mailing_lists()?;
+                        app.mailing_list_selection.refresh_available_mailing_lists()?;
                     }
                 };
             }
@@ -80,7 +80,7 @@ where
                     }
                 };
 
-                app.mailing_list_selection_state.clear_target_list();
+                app.mailing_list_selection.clear_target_list();
             }
         }
         CurrentScreen::BookmarkedPatchsets => {
