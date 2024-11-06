@@ -61,16 +61,16 @@ where
 {
     match app.current_screen {
         CurrentScreen::MailingListSelection => {
-            if app.mailing_list_selection_state.mailing_lists.is_empty() {
+            if app.mailing_list_selection.mailing_lists.is_empty() {
                 terminal = loading_screen! {
                     terminal, "Fetching mailing lists" => {
-                        app.mailing_list_selection_state.refresh_available_mailing_lists()?;
+                        app.mailing_list_selection.refresh_available_mailing_lists()?;
                     }
                 };
             }
         }
         CurrentScreen::LatestPatchsets => {
-            let patchsets_state = app.latest_patchsets_state.as_mut().unwrap();
+            let patchsets_state = app.latest_patchsets.as_mut().unwrap();
             let target_list = patchsets_state.target_list().to_string();
             if patchsets_state.processed_patchsets_count() == 0 {
                 terminal = loading_screen! {
@@ -80,15 +80,11 @@ where
                     }
                 };
 
-                app.mailing_list_selection_state.clear_target_list();
+                app.mailing_list_selection.clear_target_list();
             }
         }
         CurrentScreen::BookmarkedPatchsets => {
-            if app
-                .bookmarked_patchsets_state
-                .bookmarked_patchsets
-                .is_empty()
-            {
+            if app.bookmarked_patchsets.bookmarked_patchsets.is_empty() {
                 app.set_current_screen(CurrentScreen::MailingListSelection);
             }
         }

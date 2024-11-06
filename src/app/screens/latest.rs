@@ -7,7 +7,7 @@ use patch_hub::lore::{
 };
 
 #[derive(Getters)]
-pub struct LatestPatchsetsState {
+pub struct LatestPatchsets {
     lore_session: LoreSession,
     lore_api_client: BlockingLoreAPIClient,
     target_list: String,
@@ -16,13 +16,13 @@ pub struct LatestPatchsetsState {
     page_size: usize,
 }
 
-impl LatestPatchsetsState {
+impl LatestPatchsets {
     pub fn new(
         target_list: String,
         page_size: usize,
         lore_api_client: BlockingLoreAPIClient,
-    ) -> LatestPatchsetsState {
-        LatestPatchsetsState {
+    ) -> LatestPatchsets {
+        LatestPatchsets {
             lore_session: LoreSession::new(target_list.clone()),
             lore_api_client,
             target_list,

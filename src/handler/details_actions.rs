@@ -17,7 +17,7 @@ pub fn handle_patchset_details<B: Backend>(
     key: KeyEvent,
     terminal: &mut Terminal<B>,
 ) -> color_eyre::Result<()> {
-    let patchset_details_and_actions = app.patchset_details_and_actions_state.as_mut().unwrap();
+    let patchset_details_and_actions = app.details_actions.as_mut().unwrap();
 
     if key.modifiers.contains(KeyModifiers::SHIFT) {
         if let KeyCode::Char('G') = key.code {
@@ -51,7 +51,7 @@ pub fn handle_patchset_details<B: Backend>(
         KeyCode::Esc => {
             let ps_da_clone = patchset_details_and_actions.last_screen.clone();
             app.set_current_screen(ps_da_clone);
-            app.reset_patchset_details_and_actions_state();
+            app.reset_details_actions();
         }
         KeyCode::Char('j') | KeyCode::Down => {
             patchset_details_and_actions.preview_scroll_down(1);

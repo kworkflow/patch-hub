@@ -18,11 +18,11 @@ pub fn handle_latest_patchsets<B>(
 where
     B: Backend + Send + 'static,
 {
-    let latest_patchsets = app.latest_patchsets_state.as_mut().unwrap();
+    let latest_patchsets = app.latest_patchsets.as_mut().unwrap();
 
     match key.code {
         KeyCode::Esc => {
-            app.reset_latest_patchsets_state();
+            app.reset_latest_patchsets();
             app.set_current_screen(CurrentScreen::MailingListSelection);
         }
         KeyCode::Char('j') | KeyCode::Down => {
@@ -48,7 +48,7 @@ where
             terminal = loading_screen! {
                 terminal,
                 "Loading patchset" => {
-                    app.init_patchset_details_and_actions_state(CurrentScreen::LatestPatchsets)?;
+                    app.init_details_actions(CurrentScreen::LatestPatchsets)?;
                     app.set_current_screen(CurrentScreen::PatchsetDetails);
                 }
             };

@@ -20,20 +20,20 @@ where
 {
     match key.code {
         KeyCode::Esc => {
-            app.bookmarked_patchsets_state.patchset_index = 0;
+            app.bookmarked_patchsets.patchset_index = 0;
             app.set_current_screen(CurrentScreen::MailingListSelection);
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            app.bookmarked_patchsets_state.select_below_patchset();
+            app.bookmarked_patchsets.select_below_patchset();
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            app.bookmarked_patchsets_state.select_above_patchset();
+            app.bookmarked_patchsets.select_above_patchset();
         }
         KeyCode::Enter => {
             terminal = loading_screen! {
                 terminal,
                 "Loading patchset" => {
-                    app.init_patchset_details_and_actions_state(CurrentScreen::BookmarkedPatchsets)?;
+                    app.init_details_actions(CurrentScreen::BookmarkedPatchsets)?;
                     app.set_current_screen(CurrentScreen::PatchsetDetails);
                 }
             };

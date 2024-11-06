@@ -2,7 +2,7 @@ use crate::app::{screens::CurrentScreen, App};
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
 pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()> {
-    if let Some(edit_config_state) = app.edit_config_state.as_mut() {
+    if let Some(edit_config_state) = app.edit_config.as_mut() {
         match edit_config_state.is_editing() {
             true => match key.code {
                 KeyCode::Esc => {
@@ -24,7 +24,7 @@ pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()
             },
             false => match key.code {
                 KeyCode::Esc => {
-                    app.reset_edit_config_state();
+                    app.reset_edit_config();
                     app.set_current_screen(CurrentScreen::MailingListSelection);
                 }
                 KeyCode::Char('e') => {
@@ -39,7 +39,7 @@ pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()
                 KeyCode::Enter => {
                     app.consolidate_edit_config();
                     app.config.save_patch_hub_config()?;
-                    app.reset_edit_config_state();
+                    app.reset_edit_config();
                     app.set_current_screen(CurrentScreen::MailingListSelection);
                 }
                 _ => {}

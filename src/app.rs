@@ -7,11 +7,11 @@ use patch_hub::lore::{lore_api_client::BlockingLoreAPIClient, lore_session, patc
 use patch_renderer::{render_patch_preview, PatchRenderer};
 use ratatui::text::Text;
 use screens::{
-    bookmarked::BookmarkedPatchsetsState,
-    details_actions::{PatchsetAction, PatchsetDetailsAndActionsState},
-    edit_config::EditConfigState,
-    latest::LatestPatchsetsState,
-    mail_list::MailingListSelectionState,
+    bookmarked::BookmarkedPatchsets,
+    details_actions::{DetailsActions, PatchsetAction},
+    edit_config::EditConfig,
+    latest::LatestPatchsets,
+    mail_list::MailingListSelection,
     CurrentScreen,
 };
 use std::collections::HashMap;
@@ -25,11 +25,11 @@ pub mod screens;
 
 pub struct App {
     pub current_screen: CurrentScreen,
-    pub mailing_list_selection_state: MailingListSelectionState,
-    pub bookmarked_patchsets_state: BookmarkedPatchsetsState,
-    pub latest_patchsets_state: Option<LatestPatchsetsState>,
-    pub patchset_details_and_actions_state: Option<PatchsetDetailsAndActionsState>,
-    pub edit_config_state: Option<EditConfigState>,
+    pub mailing_list_selection: MailingListSelection,
+    pub bookmarked_patchsets: BookmarkedPatchsets,
+    pub latest_patchsets: Option<LatestPatchsets>,
+    pub details_actions: Option<DetailsActions>,
+    pub edit_config: Option<EditConfig>,
     pub reviewed_patchsets: HashMap<String, Vec<usize>>,
     pub config: Config,
     pub lore_api_client: BlockingLoreAPIClient,
@@ -60,7 +60,7 @@ impl App {
 
         App {
             current_screen: CurrentScreen::MailingListSelection,
-            mailing_list_selection_state: MailingListSelectionState {
+            mailing_list_selection: MailingListSelection {
                 mailing_lists: mailing_lists.clone(),
                 target_list: String::new(),
                 possible_mailing_lists: mailing_lists,
@@ -68,10 +68,10 @@ impl App {
                 mailing_lists_path: config.mailing_lists_path().to_string(),
                 lore_api_client: lore_api_client.clone(),
             },
-            latest_patchsets_state: None,
-            patchset_details_and_actions_state: None,
-            edit_config_state: None,
-            bookmarked_patchsets_state: BookmarkedPatchsetsState {
+            latest_patchsets: None,
+            details_actions: None,
+            edit_config: None,
+            bookmarked_patchsets: BookmarkedPatchsets {
                 bookmarked_patchsets,
                 patchset_index: 0,
             },
@@ -81,25 +81,25 @@ impl App {
         }
     }
 
-    pub fn init_latest_patchsets_state(&mut self) {
+    pub fn init_latest_patchsets(&mut self) {
         // the target mailing list for "latest patchsets" is the highlighted
         // entry in the possible lists of "mailing list selection"
-        let list_index = self.mailing_list_selection_state.highlighted_list_index;
-        let target_list = self.mailing_list_selection_state.possible_mailing_lists[list_index]
+        let list_index = self.mailing_list_selection.highlighted_list_index;
+        let target_list = self.mailing_list_selection.possible_mailing_lists[list_index]
             .name()
             .to_string();
-        self.latest_patchsets_state = Some(LatestPatchsetsState::new(
+        self.latest_patchsets = Some(LatestPatchsets::new(
             target_list,
             self.config.page_size(),
             self.lore_api_client.clone(),
         ));
     }
 
-    pub fn reset_latest_patchsets_state(&mut self) {
-        self.latest_patchsets_state = None;
+    pub fn reset_latest_patchsets(&mut self) {
+        self.latest_patchsets = None;
     }
 
-    pub fn init_patchset_details_and_actions_state(
+    pub fn init_details_actions(
         &mut self,
         current_screen: CurrentScreen,
     ) -> color_eyre::Result<()> {
@@ -108,16 +108,16 @@ impl App {
 
         match current_screen {
             CurrentScreen::BookmarkedPatchsets => {
-                representative_patch = self.bookmarked_patchsets_state.get_selected_patchset();
+                representative_patch = self.bookmarked_patchsets.get_selected_patchset();
             }
             CurrentScreen::LatestPatchsets => {
                 representative_patch = self
-                    .latest_patchsets_state
+                    .latest_patchsets
                     .as_ref()
                     .unwrap()
                     .get_selected_patchset();
                 if !self
-                    .bookmarked_patchsets_state
+                    .bookmarked_patchsets
                     .bookmarked_patchsets
                     .contains(&representative_patch)
                 {
@@ -153,7 +153,7 @@ impl App {
                         .into_text()?;
                     patches_preview.push(patch_preview);
                 }
-                self.patchset_details_and_actions_state = Some(PatchsetDetailsAndActionsState {
+                self.details_actions = Some(DetailsActions {
                     representative_patch,
                     raw_patches,
                     patches_preview,
@@ -174,37 +174,37 @@ impl App {
         }
     }
 
-    pub fn reset_patchset_details_and_actions_state(&mut self) {
-        self.patchset_details_and_actions_state = None;
+    pub fn reset_details_actions(&mut self) {
+        self.details_actions = None;
     }
 
     /// Determines and consolidates all actions (if any) to take for the current
-    /// patchset stored in `patchset_details_and_actions_state`.
+    /// patchset stored in `details_actions`.
     ///
     /// # Panics
     ///
-    /// This function will panic if `patchset_details_and_actions_state` is
+    /// This function will panic if `details_actions` is
     /// `None`.
     pub fn consolidate_patchset_actions(&mut self) -> color_eyre::Result<()> {
-        let details_and_actions = self.patchset_details_and_actions_state.as_ref().unwrap();
-        let representative_patch = &details_and_actions.representative_patch;
-        let actions = &details_and_actions.patchset_actions;
+        let details_actions = self.details_actions.as_ref().unwrap();
+        let representative_patch = &details_actions.representative_patch;
+        let actions = &details_actions.patchset_actions;
 
         if *actions.get(&PatchsetAction::Bookmark).unwrap() {
-            self.bookmarked_patchsets_state
+            self.bookmarked_patchsets
                 .bookmark_selected_patch(representative_patch);
         } else {
-            self.bookmarked_patchsets_state
+            self.bookmarked_patchsets
                 .unbookmark_selected_patch(representative_patch);
         }
 
         lore_session::save_bookmarked_patchsets(
-            &self.bookmarked_patchsets_state.bookmarked_patchsets,
+            &self.bookmarked_patchsets.bookmarked_patchsets,
             self.config.bookmarked_patchsets_path(),
         )?;
 
         if *actions.get(&PatchsetAction::ReplyWithReviewedBy).unwrap() {
-            let successful_indexes = details_and_actions
+            let successful_indexes = details_actions
                 .reply_patchset_with_reviewed_by("all", self.config.git_send_email_options())?;
 
             if !successful_indexes.is_empty() {
@@ -219,7 +219,7 @@ impl App {
                 )?;
             }
 
-            self.patchset_details_and_actions_state
+            self.details_actions
                 .as_mut()
                 .unwrap()
                 .toggle_action(PatchsetAction::ReplyWithReviewedBy);
@@ -228,17 +228,17 @@ impl App {
         Ok(())
     }
 
-    pub fn init_edit_config_state(&mut self) {
-        self.edit_config_state = Some(EditConfigState::new(&self.config));
+    pub fn init_edit_config(&mut self) {
+        self.edit_config = Some(EditConfig::new(&self.config));
     }
 
-    pub fn reset_edit_config_state(&mut self) {
-        self.edit_config_state = None;
+    pub fn reset_edit_config(&mut self) {
+        self.edit_config = None;
     }
 
     pub fn consolidate_edit_config(&mut self) {
         // TODO: Handle invalid values!
-        if let Some(edit_config) = &mut self.edit_config_state {
+        if let Some(edit_config) = &mut self.edit_config {
             if let Ok(page_size) = edit_config.page_size() {
                 self.config.set_page_size(page_size)
             }

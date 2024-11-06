@@ -30,7 +30,7 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
     match app.current_screen {
         CurrentScreen::MailingListSelection => mail_list::render_main(f, app, chunks[1]),
         CurrentScreen::BookmarkedPatchsets => {
-            bookmarked::render_main(f, &app.bookmarked_patchsets_state, chunks[1])
+            bookmarked::render_main(f, &app.bookmarked_patchsets, chunks[1])
         }
         CurrentScreen::LatestPatchsets => latest::render_main(f, app, chunks[1]),
         CurrentScreen::PatchsetDetails => details_actions::render_main(f, app, chunks[1]),

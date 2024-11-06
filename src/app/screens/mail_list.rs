@@ -3,7 +3,7 @@ use patch_hub::lore::{
     lore_api_client::BlockingLoreAPIClient, lore_session, mailing_list::MailingList,
 };
 
-pub struct MailingListSelectionState {
+pub struct MailingListSelection {
     pub mailing_lists: Vec<MailingList>,
     pub target_list: String,
     pub possible_mailing_lists: Vec<MailingList>,
@@ -12,7 +12,7 @@ pub struct MailingListSelectionState {
     pub lore_api_client: BlockingLoreAPIClient,
 }
 
-impl MailingListSelectionState {
+impl MailingListSelection {
     pub fn refresh_available_mailing_lists(&mut self) -> color_eyre::Result<()> {
         match lore_session::fetch_available_lists(&self.lore_api_client) {
             Ok(available_mailing_lists) => {
