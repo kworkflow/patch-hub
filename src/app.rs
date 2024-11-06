@@ -153,12 +153,14 @@ impl App {
                         .into_text()?;
                     patches_preview.push(patch_preview);
                 }
+                let has_cover_letter = representative_patch.number_in_series() == 0;
                 let patches_to_reply = vec![false; raw_patches.len()];
                 self.patchset_details_and_actions_state = Some(PatchsetDetailsAndActionsState {
                     representative_patch,
                     raw_patches,
                     patches_preview,
                     patches_to_reply,
+                    has_cover_letter,
                     preview_index: 0,
                     preview_scroll_offset: 0,
                     preview_pan: 0,
