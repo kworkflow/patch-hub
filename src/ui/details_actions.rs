@@ -66,6 +66,7 @@ fn render_details_and_actions(f: &mut Frame, app: &App, details_chunk: Rect, act
     f.render_widget(patchset_details, details_chunk);
 
     let patchset_actions = &patchset_details_and_actions.patchset_actions;
+    // TODO: Create a function to produce new action lines
     let patchset_actions = vec![
         Line::from(vec![
             if *patchset_actions.get(&PatchsetAction::Bookmark).unwrap() {
@@ -99,6 +100,24 @@ fn render_details_and_actions(f: &mut Frame, app: &App, details_chunk: Rect, act
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled("eviewed-by", Style::default().fg(Color::Cyan)),
+        ]),
+        Line::from(vec![
+            if *patchset_actions
+                .get(&PatchsetAction::Apply)
+                .unwrap()
+            {
+                Span::styled("[x] ", Style::default().fg(Color::Green))
+            } else {
+                Span::styled("[ ] ", Style::default().fg(Color::Cyan))
+            },
+            Span::styled(
+                "a",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::UNDERLINED)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("pply patchset", Style::default().fg(Color::Cyan)),
         ]),
     ];
     let patchset_actions = Paragraph::new(patchset_actions)

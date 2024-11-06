@@ -54,7 +54,8 @@ pub fn handle_patchset_details<B: Backend>(
             app.reset_patchset_details_and_actions_state();
         }
         KeyCode::Char('a') => {
-            patchset_details_and_actions.apply_patchset(&app.config);
+            patchset_details_and_actions.toggle_apply_action();
+            //TODO: patchset_details_and_actions.apply_patchset(&app.config);
         }
         KeyCode::Char('j') | KeyCode::Down => {
             patchset_details_and_actions.preview_scroll_down(1);

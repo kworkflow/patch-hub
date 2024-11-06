@@ -27,6 +27,7 @@ const LAST_LINE_PADDING: usize = 10;
 pub enum PatchsetAction {
     Bookmark,
     ReplyWithReviewedBy,
+    Apply,
 }
 
 impl PatchsetDetailsAndActionsState {
@@ -100,6 +101,10 @@ impl PatchsetDetailsAndActionsState {
         self.toggle_action(PatchsetAction::Bookmark);
     }
 
+    pub fn toggle_apply_action(&mut self) {
+        self.toggle_action(PatchsetAction::Apply);
+    }
+
     pub fn toggle_reply_with_reviewed_by_action(&mut self) {
         self.toggle_action(PatchsetAction::ReplyWithReviewedBy);
     }
@@ -160,7 +165,7 @@ impl PatchsetDetailsAndActionsState {
 
     /// Apply the patchset to the current selected kernel tree
     pub fn apply_patchset(&self, config: &Config) {
-        let tree = config.current_tree().as_ref().unwrap();
+        let tree: &String = config.current_tree().as_ref().unwrap();
         let tree_path = config.kernel_tree_path(tree).unwrap();
         let am_options = config.git_am_options();
         let branch_prefix = config.git_am_branch_prefix();

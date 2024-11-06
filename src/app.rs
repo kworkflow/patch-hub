@@ -145,6 +145,7 @@ impl App {
                     patchset_actions: HashMap::from([
                         (PatchsetAction::Bookmark, is_patchset_bookmarked),
                         (PatchsetAction::ReplyWithReviewedBy, false),
+                        (PatchsetAction::Apply, false),
                     ]),
                     last_screen: current_screen,
                     lore_api_client: self.lore_api_client.clone(),
@@ -217,6 +218,18 @@ impl App {
                 .as_mut()
                 .unwrap()
                 .toggle_action(PatchsetAction::ReplyWithReviewedBy);
+        }
+
+        if let Some(true) = self.patchset_details_and_actions_state.as_ref().unwrap().patchset_actions.get(&PatchsetAction::Apply) {
+            self.patchset_details_and_actions_state
+                .as_ref()
+                .unwrap()
+                .apply_patchset(&self.config);
+
+            self.patchset_details_and_actions_state
+                .as_mut()
+                .unwrap()
+                .toggle_apply_action();
         }
 
         Ok(())
