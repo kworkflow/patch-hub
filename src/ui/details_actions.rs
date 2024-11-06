@@ -11,8 +11,32 @@ use crate::app::{screens::details_actions::PatchsetAction, App};
 fn render_details_and_actions(f: &mut Frame, app: &App, details_chunk: Rect, actions_chunk: Rect) {
     let patchset_details_and_actions = app.details_actions.as_ref().unwrap();
 
+    let mut staged_to_reply = String::new();
+    if let Some(true) = patchset_details_and_actions
+        .patchset_actions
+        .get(&PatchsetAction::ReplyWithReviewedBy)
+    {
+        staged_to_reply.push('(');
+        let number_offset = if patchset_details_and_actions.has_cover_letter {
+            0
+        } else {
+            1
+        };
+        let patches_to_reply_numbers: Vec<usize> = patchset_details_and_actions
+            .patches_to_reply
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &val)| if val { Some(i + number_offset) } else { None })
+            .collect();
+        for number in patches_to_reply_numbers {
+            staged_to_reply.push_str(&format!("{number}, "));
+        }
+        staged_to_reply.pop();
+        staged_to_reply = format!("{})", &staged_to_reply[..staged_to_reply.len() - 1]);
+    }
+
     let patchset_details = &patchset_details_and_actions.representative_patch;
-    let patchset_details = vec![
+    let mut patchset_details = vec![
         Line::from(vec![
             Span::styled(r#"  Title: "#, Style::default().fg(Color::Cyan)),
             Span::styled(
@@ -49,6 +73,12 @@ fn render_details_and_actions(f: &mut Frame, app: &App, details_chunk: Rect, act
             ),
         ]),
     ];
+    if !staged_to_reply.is_empty() {
+        patchset_details.push(Line::from(vec![
+            Span::styled("Staged to reply: ", Style::default().fg(Color::Cyan)),
+            Span::styled(staged_to_reply, Style::default().fg(Color::White)),
+        ]));
+    }
 
     let patchset_details = Paragraph::new(patchset_details)
         .block(
@@ -81,8 +111,9 @@ fn render_details_and_actions(f: &mut Frame, app: &App, details_chunk: Rect, act
             Span::styled("ookmark", Style::default().fg(Color::Cyan)),
         ]),
         Line::from(vec![
-            if *patchset_actions
-                .get(&PatchsetAction::ReplyWithReviewedBy)
+            if *patchset_details_and_actions
+                .patches_to_reply
+                .get(patchset_details_and_actions.preview_index)
                 .unwrap()
             {
                 Span::styled("[x] ", Style::default().fg(Color::Green))
@@ -122,10 +153,17 @@ fn render_preview(f: &mut Frame, app: &App, chunk: Rect) {
         .message_id()
         .href;
     let mut preview_title = String::from(" Preview ");
-    if let Some(successful_indexes) = app.reviewed_patchsets.get(representative_patch_message_id) {
-        if successful_indexes.contains(&preview_index) {
-            preview_title = " Preview [REVIEWED] ".to_string();
-        }
+    if matches!(
+        app.reviewed_patchsets.get(representative_patch_message_id),
+        Some(successful_indexes) if successful_indexes.contains(&preview_index)
+    ) {
+        preview_title = " Preview [REVIEWED-BY] ".to_string();
+    } else if *patchset_details_and_actions
+        .patches_to_reply
+        .get(preview_index)
+        .unwrap()
+    {
+        preview_title = " Preview [REVIEWED-BY]* ".to_string();
     };
 
     let preview_offset = patchset_details_and_actions.preview_scroll_offset;

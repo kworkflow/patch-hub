@@ -14,6 +14,8 @@ pub struct DetailsActions {
     pub raw_patches: Vec<String>,
     /// Patches in the format to be displayed as preview
     pub patches_preview: Vec<Text<'static>>,
+    /// Indicates if patchset has a cover letter
+    pub has_cover_letter: bool,
     /// Which patches to reply
     pub patches_to_reply: Vec<bool>,
     pub preview_index: usize,
