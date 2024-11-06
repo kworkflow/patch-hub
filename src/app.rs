@@ -14,7 +14,7 @@ use screens::{
     mail_list::MailingListSelectionState,
     CurrentScreen,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::utils;
 
@@ -30,7 +30,7 @@ pub struct App {
     pub latest_patchsets_state: Option<LatestPatchsetsState>,
     pub patchset_details_and_actions_state: Option<PatchsetDetailsAndActionsState>,
     pub edit_config_state: Option<EditConfigState>,
-    pub reviewed_patchsets: HashMap<String, Vec<usize>>,
+    pub reviewed_patchsets: HashMap<String, HashSet<usize>>,
     pub config: Config,
     pub lore_api_client: BlockingLoreAPIClient,
 }
@@ -153,10 +153,12 @@ impl App {
                         .into_text()?;
                     patches_preview.push(patch_preview);
                 }
+                let patches_to_reply = vec![false; raw_patches.len()];
                 self.patchset_details_and_actions_state = Some(PatchsetDetailsAndActionsState {
                     representative_patch,
                     raw_patches,
                     patches_preview,
+                    patches_to_reply,
                     preview_index: 0,
                     preview_scroll_offset: 0,
                     preview_pan: 0,
@@ -203,26 +205,33 @@ impl App {
             self.config.bookmarked_patchsets_path(),
         )?;
 
-        if *actions.get(&PatchsetAction::ReplyWithReviewedBy).unwrap() {
-            let successful_indexes = details_and_actions
-                .reply_patchset_with_reviewed_by("all", self.config.git_send_email_options())?;
+        if let Some(true) = details_and_actions
+            .patchset_actions
+            .get(&PatchsetAction::ReplyWithReviewedBy)
+        {
+            let mut successful_indexes = self
+                .reviewed_patchsets
+                .remove(&representative_patch.message_id().href)
+                .unwrap_or_default();
+            details_and_actions.reply_patchset_with_reviewed_by(
+                "all",
+                self.config.git_send_email_options(),
+                &mut successful_indexes,
+            )?;
+            self.reviewed_patchsets.insert(
+                representative_patch.message_id().href.clone(),
+                successful_indexes,
+            );
 
-            if !successful_indexes.is_empty() {
-                self.reviewed_patchsets.insert(
-                    representative_patch.message_id().href.clone(),
-                    successful_indexes,
-                );
-
-                lore_session::save_reviewed_patchsets(
-                    &self.reviewed_patchsets,
-                    self.config.reviewed_patchsets_path(),
-                )?;
-            }
+            lore_session::save_reviewed_patchsets(
+                &self.reviewed_patchsets,
+                self.config.reviewed_patchsets_path(),
+            )?;
 
             self.patchset_details_and_actions_state
                 .as_mut()
                 .unwrap()
-                .toggle_action(PatchsetAction::ReplyWithReviewedBy);
+                .reset_reply_with_reviewed_by_action();
         }
 
         Ok(())
