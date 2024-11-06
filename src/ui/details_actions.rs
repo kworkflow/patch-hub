@@ -102,10 +102,7 @@ fn render_details_and_actions(f: &mut Frame, app: &App, details_chunk: Rect, act
             Span::styled("eviewed-by", Style::default().fg(Color::Cyan)),
         ]),
         Line::from(vec![
-            if *patchset_actions
-                .get(&PatchsetAction::Apply)
-                .unwrap()
-            {
+            if *patchset_actions.get(&PatchsetAction::Apply).unwrap() {
                 Span::styled("[x] ", Style::default().fg(Color::Green))
             } else {
                 Span::styled("[ ] ", Style::default().fg(Color::Cyan))

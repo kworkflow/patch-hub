@@ -1,7 +1,11 @@
 use derive_getters::Getters;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap, env, fs::{self, File}, io, path::Path
+    collections::HashMap,
+    env,
+    fs::{self, File},
+    io,
+    path::Path,
 };
 
 use super::patch_renderer::PatchRenderer;

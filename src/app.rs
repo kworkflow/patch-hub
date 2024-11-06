@@ -220,7 +220,13 @@ impl App {
                 .toggle_action(PatchsetAction::ReplyWithReviewedBy);
         }
 
-        if let Some(true) = self.patchset_details_and_actions_state.as_ref().unwrap().patchset_actions.get(&PatchsetAction::Apply) {
+        if let Some(true) = self
+            .patchset_details_and_actions_state
+            .as_ref()
+            .unwrap()
+            .patchset_actions
+            .get(&PatchsetAction::Apply)
+        {
             self.patchset_details_and_actions_state
                 .as_ref()
                 .unwrap()

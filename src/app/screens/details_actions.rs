@@ -5,7 +5,6 @@ use ::patch_hub::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::P
 use color_eyre::eyre::bail;
 use std::{collections::HashMap, path::Path, process::Command};
 
-
 pub struct PatchsetDetailsAndActionsState {
     pub representative_patch: Patch,
     pub path: String,
@@ -202,7 +201,10 @@ impl PatchsetDetailsAndActionsState {
         let out = cmd.output().unwrap();
 
         if !out.status.success() {
-            Logger::error(format!("Failed to apply the patchset `{}`", self.representative_patch.title()));
+            Logger::error(format!(
+                "Failed to apply the patchset `{}`",
+                self.representative_patch.title()
+            ));
             Logger::error(String::from_utf8_lossy(&out.stderr));
             let _ = Command::new("git")
                 .arg("am")
@@ -224,7 +226,7 @@ impl PatchsetDetailsAndActionsState {
             .arg("-")
             .output()
             .unwrap();
-        
+
         if !out.status.success() {
             let _ = Command::new("git")
                 .arg("branch")
