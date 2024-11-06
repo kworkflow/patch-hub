@@ -534,11 +534,14 @@ fn should_prepare_reply_patchset_with_reviewed_by() {
             .unwrap(),
     ];
 
+    let patches_to_reply = vec![true; patches.len()];
+
     let git_reply_commands = prepare_reply_patchset_with_reviewed_by(
         &lore_api_client,
         tmp_dir,
         target_list,
         &patches,
+        &patches_to_reply,
         "Bar Foo <bar@foo.bar.foo>",
         "--dry-run --suppress-cc=all",
     )

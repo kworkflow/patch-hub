@@ -2,7 +2,11 @@ use super::CurrentScreen;
 use ::patch_hub::lore::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
 use color_eyre::eyre::bail;
 use ratatui::text::Text;
-use std::{collections::HashMap, path::Path, process::Command};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    process::Command,
+};
 
 pub struct DetailsActions {
     pub representative_patch: Patch,
@@ -10,6 +14,8 @@ pub struct DetailsActions {
     pub raw_patches: Vec<String>,
     /// Patches in the format to be displayed as preview
     pub patches_preview: Vec<Text<'static>>,
+    /// Which patches to reply
+    pub patches_to_reply: Vec<bool>,
     pub preview_index: usize,
     pub preview_scroll_offset: usize,
     /// Horizontal offset
@@ -101,7 +107,23 @@ impl DetailsActions {
     }
 
     pub fn toggle_reply_with_reviewed_by_action(&mut self) {
-        self.toggle_action(PatchsetAction::ReplyWithReviewedBy);
+        if let Some(entry) = self.patches_to_reply.get_mut(self.preview_index) {
+            *entry = !*entry;
+        }
+
+        if self.patches_to_reply.contains(&true) {
+            self.patchset_actions
+                .insert(PatchsetAction::ReplyWithReviewedBy, true);
+        } else {
+            self.patchset_actions
+                .insert(PatchsetAction::ReplyWithReviewedBy, false);
+        }
+    }
+
+    pub fn reset_reply_with_reviewed_by_action(&mut self) {
+        self.patches_to_reply = vec![false; self.patches_to_reply.len()];
+        self.patchset_actions
+            .insert(PatchsetAction::ReplyWithReviewedBy, false);
     }
 
     pub fn toggle_action(&mut self, patchset_action: PatchsetAction) {
@@ -111,23 +133,20 @@ impl DetailsActions {
     }
 
     pub fn actions_require_user_io(&self) -> bool {
-        *self
-            .patchset_actions
-            .get(&PatchsetAction::ReplyWithReviewedBy)
-            .unwrap()
+        self.patches_to_reply.contains(&true)
     }
 
     pub fn reply_patchset_with_reviewed_by(
         &self,
         target_list: &str,
         git_send_email_options: &str,
-    ) -> color_eyre::Result<Vec<usize>> {
+        successful_indexes: &mut HashSet<usize>,
+    ) -> color_eyre::Result<()> {
         let (git_user_name, git_user_email) = lore_session::get_git_signature("");
-        let mut successful_indexes = Vec::new();
 
         if git_user_name.is_empty() || git_user_email.is_empty() {
             println!("`git config user.name` or `git config user.email` not set\nAborting...");
-            return Ok(successful_indexes);
+            return Ok(());
         }
 
         let tmp_dir = Command::new("mktemp").arg("--directory").output().unwrap();
@@ -138,6 +157,7 @@ impl DetailsActions {
             tmp_dir,
             target_list,
             &self.raw_patches,
+            &self.patches_to_reply,
             &format!("{git_user_name} <{git_user_email}>"),
             git_send_email_options,
         ) {
@@ -147,14 +167,20 @@ impl DetailsActions {
             }
         };
 
-        for (index, mut command) in git_reply_commands.into_iter().enumerate() {
+        let reply_indexes: Vec<usize> = self
+            .patches_to_reply
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &val)| if val { Some(i) } else { None })
+            .collect();
+        for (i, mut command) in git_reply_commands.into_iter().enumerate() {
             let mut child = command.spawn().unwrap();
             let exit_status = child.wait().unwrap();
             if exit_status.success() {
-                successful_indexes.push(index);
+                successful_indexes.insert(reply_indexes[i]);
             }
         }
 
-        Ok(successful_indexes)
+        Ok(())
     }
 }

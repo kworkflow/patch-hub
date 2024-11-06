@@ -6,7 +6,7 @@ use crate::lore::patch::{Patch, PatchFeed, PatchRegex};
 use derive_getters::Getters;
 use regex::Regex;
 use serde_xml_rs::from_str;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader};
 use std::mem::swap;
 use std::path::Path;
@@ -387,6 +387,7 @@ pub fn prepare_reply_patchset_with_reviewed_by<T>(
     tmp_dir: &Path,
     target_list: &str,
     patches: &[String],
+    patches_to_reply: &[bool],
     git_signature: &str,
     git_send_email_options: &str,
 ) -> Result<Vec<Command>, LoreSessionError>
@@ -398,7 +399,11 @@ where
     static RE_MESSAGE_ID: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r#"(?m)^Message-Id: <(.*?)>"#).unwrap());
 
-    for patch in patches.iter() {
+    for (i, patch) in patches.iter().enumerate() {
+        if !patches_to_reply[i] {
+            continue;
+        }
+
         let message_id = RE_MESSAGE_ID
             .captures(patch)
             .unwrap()
@@ -514,7 +519,7 @@ pub fn get_git_signature(git_repo_path: &str) -> (String, String) {
 }
 
 pub fn save_reviewed_patchsets(
-    reviewed_patchsets: &HashMap<String, Vec<usize>>,
+    reviewed_patchsets: &HashMap<String, HashSet<usize>>,
     filepath: &str,
 ) -> io::Result<()> {
     if let Some(parent) = Path::new(filepath).parent() {
@@ -530,7 +535,7 @@ pub fn save_reviewed_patchsets(
     Ok(())
 }
 
-pub fn load_reviewed_patchsets(filepath: &str) -> io::Result<HashMap<String, Vec<usize>>> {
+pub fn load_reviewed_patchsets(filepath: &str) -> io::Result<HashMap<String, HashSet<usize>>> {
     let reviewed_patchsets_file = File::open(filepath)?;
     let reviewed_patchsets = serde_json::from_reader(reviewed_patchsets_file)?;
     Ok(reviewed_patchsets)

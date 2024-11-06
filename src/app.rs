@@ -15,7 +15,7 @@ use screens::{
     mail_list::MailingListSelection,
     CurrentScreen,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::utils;
 
@@ -41,7 +41,7 @@ pub struct App {
     /// Screen to edit configurations of the app
     pub edit_config: Option<EditConfig>,
     /// Database to track patchsets `Reviewed-by` state
-    pub reviewed_patchsets: HashMap<String, Vec<usize>>,
+    pub reviewed_patchsets: HashMap<String, HashSet<usize>>,
     /// Configurations of the app
     pub config: Config,
     /// Client to handle Lore API requests and responses
@@ -192,10 +192,12 @@ impl App {
                     patches_preview
                         .push(format!("{}---\n{}", rendered_cover, rendered_patch).into_text()?);
                 }
+                let patches_to_reply = vec![false; raw_patches.len()];
                 self.details_actions = Some(DetailsActions {
                     representative_patch,
                     raw_patches,
                     patches_preview,
+                    patches_to_reply,
                     preview_index: 0,
                     preview_scroll_offset: 0,
                     preview_pan: 0,
@@ -230,7 +232,7 @@ impl App {
         let representative_patch = &details_actions.representative_patch;
         let actions = &details_actions.patchset_actions;
 
-        if *actions.get(&PatchsetAction::Bookmark).unwrap() {
+        if let Some(true) = actions.get(&PatchsetAction::Bookmark) {
             self.bookmarked_patchsets
                 .bookmark_selected_patch(representative_patch);
         } else {
@@ -243,26 +245,30 @@ impl App {
             self.config.bookmarked_patchsets_path(),
         )?;
 
-        if *actions.get(&PatchsetAction::ReplyWithReviewedBy).unwrap() {
-            let successful_indexes = details_actions
-                .reply_patchset_with_reviewed_by("all", self.config.git_send_email_options())?;
+        if let Some(true) = actions.get(&PatchsetAction::ReplyWithReviewedBy) {
+            let mut successful_indexes = self
+                .reviewed_patchsets
+                .remove(&representative_patch.message_id().href)
+                .unwrap_or_default();
+            details_actions.reply_patchset_with_reviewed_by(
+                "all",
+                self.config.git_send_email_options(),
+                &mut successful_indexes,
+            )?;
+            self.reviewed_patchsets.insert(
+                representative_patch.message_id().href.clone(),
+                successful_indexes,
+            );
 
-            if !successful_indexes.is_empty() {
-                self.reviewed_patchsets.insert(
-                    representative_patch.message_id().href.clone(),
-                    successful_indexes,
-                );
-
-                lore_session::save_reviewed_patchsets(
-                    &self.reviewed_patchsets,
-                    self.config.reviewed_patchsets_path(),
-                )?;
-            }
+            lore_session::save_reviewed_patchsets(
+                &self.reviewed_patchsets,
+                self.config.reviewed_patchsets_path(),
+            )?;
 
             self.details_actions
                 .as_mut()
                 .unwrap()
-                .toggle_action(PatchsetAction::ReplyWithReviewedBy);
+                .reset_reply_with_reviewed_by_action();
         }
 
         Ok(())
