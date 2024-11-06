@@ -1,4 +1,7 @@
-use crate::{log_on_error, ui::popup::PopUp};
+use crate::{
+    log_on_error,
+    ui::popup::{info_popup::InfoPopUp, PopUp},
+};
 use ansi_to_tui::IntoText;
 use color_eyre::eyre::bail;
 use config::Config;
@@ -241,6 +244,7 @@ impl App {
                     patchset_actions: HashMap::from([
                         (PatchsetAction::Bookmark, is_patchset_bookmarked),
                         (PatchsetAction::ReplyWithReviewedBy, false),
+                        (PatchsetAction::Apply, false),
                     ]),
                     reviewed_by,
                     tested_by,
@@ -309,6 +313,28 @@ impl App {
                 .as_mut()
                 .unwrap()
                 .reset_reply_with_reviewed_by_action();
+        }
+
+        if let Some(true) = self
+            .details_actions
+            .as_ref()
+            .unwrap()
+            .patchset_actions
+            .get(&PatchsetAction::Apply)
+        {
+            let popup = match self
+                .details_actions
+                .as_ref()
+                .unwrap()
+                .apply_patchset(&self.config)
+            {
+                Ok(msg) => InfoPopUp::generate_info_popup("Patchset Apply Success", &msg),
+                Err(msg) => InfoPopUp::generate_info_popup("Patchset Apply Fail", &msg),
+            };
+
+            self.popup = Some(popup);
+
+            self.details_actions.as_mut().unwrap().toggle_apply_action();
         }
 
         Ok(())

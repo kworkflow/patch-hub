@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::{
-    app::{logging::Logger, screens::CurrentScreen, App},
+    app::{screens::CurrentScreen, App},
     ui::popup::{help::HelpPopUpBuilder, review_trailers::ReviewTrailersPopUp, PopUp},
     utils,
 };
@@ -67,10 +67,9 @@ pub fn handle_patchset_details<B: Backend>(
             app.set_current_screen(ps_da_clone);
             app.reset_details_actions();
         }
-        KeyCode::Char('a') => match patchset_details_and_actions.apply_patchset(&app.config) {
-            Ok(msg) => Logger::info(msg),
-            Err(msg) => Logger::error(msg),
-        },
+        KeyCode::Char('a') => {
+            patchset_details_and_actions.toggle_apply_action();
+        }
         KeyCode::Char('j') | KeyCode::Down => {
             patchset_details_and_actions.preview_scroll_down(1);
         }

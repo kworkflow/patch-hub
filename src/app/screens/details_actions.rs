@@ -47,6 +47,7 @@ const LAST_LINE_PADDING: usize = 10;
 pub enum PatchsetAction {
     Bookmark,
     ReplyWithReviewedBy,
+    Apply,
 }
 
 impl DetailsActions {
@@ -140,6 +141,10 @@ impl DetailsActions {
             self.patchset_actions
                 .insert(PatchsetAction::ReplyWithReviewedBy, false);
         }
+    }
+
+    pub fn toggle_apply_action(&mut self) {
+        self.toggle_action(PatchsetAction::Apply);
     }
 
     pub fn reset_reply_with_reviewed_by_action(&mut self) {
