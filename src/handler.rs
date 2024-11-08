@@ -108,9 +108,9 @@ where
     }
 
     loop {
-        terminal.draw(|f| draw_ui(f, &app))?;
-
         terminal = logic_handling(terminal, &mut app)?;
+
+        terminal.draw(|f| draw_ui(f, &app))?;
 
         // *IMPORTANT*: Uncommenting the if below makes `patch-hub` not block
         // until an event is captured.  We should only do it when (if ever) we
