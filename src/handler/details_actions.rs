@@ -20,8 +20,12 @@ pub fn handle_patchset_details<B: Backend>(
     let patchset_details_and_actions = app.patchset_details_and_actions_state.as_mut().unwrap();
 
     if key.modifiers.contains(KeyModifiers::SHIFT) {
-        if let KeyCode::Char('G') = key.code {
-            patchset_details_and_actions.go_to_last_line()
+        match key.code {
+            KeyCode::Char('G') => patchset_details_and_actions.go_to_last_line(),
+            KeyCode::Char('R') => {
+                patchset_details_and_actions.toggle_reply_with_reviewed_by_action(true);
+            }
+            _ => {}
         }
         return Ok(());
     }
@@ -86,7 +90,7 @@ pub fn handle_patchset_details<B: Backend>(
             patchset_details_and_actions.toggle_bookmark_action();
         }
         KeyCode::Char('r') => {
-            patchset_details_and_actions.toggle_reply_with_reviewed_by_action();
+            patchset_details_and_actions.toggle_reply_with_reviewed_by_action(false);
         }
         KeyCode::Enter => {
             if patchset_details_and_actions.actions_require_user_io() {
