@@ -14,6 +14,7 @@ mod latest;
 pub mod loading_screen;
 mod mail_list;
 mod navigation_bar;
+pub mod popup;
 
 pub fn draw_ui(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
@@ -38,6 +39,12 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
     }
 
     navigation_bar::render(f, app, chunks[2]);
+
+    app.popup.as_ref().inspect(|p| {
+        let (x, y) = p.dimensions();
+        let rect = centered_rect(x, y, f.area());
+        p.render(f, rect);
+    });
 }
 
 fn render_title(f: &mut Frame, chunk: Rect) {

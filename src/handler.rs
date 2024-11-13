@@ -35,21 +35,29 @@ fn key_handling<B>(
 where
     B: Backend + Send + 'static,
 {
-    match app.current_screen {
-        CurrentScreen::MailingListSelection => {
-            return handle_mailing_list_selection(app, key, terminal);
+    if let Some(popup) = app.popup.as_mut() {
+        if key.code == KeyCode::Esc {
+            app.popup = None;
+        } else {
+            popup.handle(key)?;
         }
-        CurrentScreen::BookmarkedPatchsets => {
-            return handle_bookmarked_patchsets(app, key, terminal);
-        }
-        CurrentScreen::PatchsetDetails => {
-            handle_patchset_details(app, key, &mut terminal)?;
-        }
-        CurrentScreen::EditConfig => {
-            handle_edit_config(app, key)?;
-        }
-        CurrentScreen::LatestPatchsets => {
-            return handle_latest_patchsets(app, key, terminal);
+    } else {
+        match app.current_screen {
+            CurrentScreen::MailingListSelection => {
+                return handle_mailing_list_selection(app, key, terminal);
+            }
+            CurrentScreen::BookmarkedPatchsets => {
+                return handle_bookmarked_patchsets(app, key, terminal);
+            }
+            CurrentScreen::PatchsetDetails => {
+                handle_patchset_details(app, key, &mut terminal)?;
+            }
+            CurrentScreen::EditConfig => {
+                handle_edit_config(app, key)?;
+            }
+            CurrentScreen::LatestPatchsets => {
+                return handle_latest_patchsets(app, key, terminal);
+            }
         }
     }
     Ok(ControlFlow::Continue(terminal))

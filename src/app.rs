@@ -1,4 +1,4 @@
-use crate::log_on_error;
+use crate::{log_on_error, ui::popup::PopUp};
 use ansi_to_tui::IntoText;
 use color_eyre::eyre::bail;
 use config::Config;
@@ -44,6 +44,7 @@ pub struct App {
     pub config: Config,
     /// Client to handle Lore API requests and responses
     pub lore_api_client: BlockingLoreAPIClient,
+    pub popup: Option<Box<dyn PopUp>>,
 }
 
 impl App {
@@ -97,6 +98,7 @@ impl App {
             reviewed_patchsets,
             config,
             lore_api_client,
+            popup: None,
         }
     }
 
