@@ -92,7 +92,7 @@ pub fn mode_footer_text(app: &App) -> Vec<Span> {
 
 pub fn keys_hint() -> Span<'static> {
     Span::styled(
-        "(ESC) to quit | (ENTER) to confirm | (🡇 ) down | (🡅 ) up | (F1) to bookmarked patchsets | (F2) edit config | (F5) refresh lists",
+        "(ESC) to quit | (ENTER) to confirm | (?) help",
         Style::default().fg(Color::Red),
     )
 }
