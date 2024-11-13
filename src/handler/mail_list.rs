@@ -3,6 +3,7 @@ use std::ops::ControlFlow;
 use crate::{
     app::{screens::CurrentScreen, App},
     loading_screen,
+    ui::popup::{help::HelpPopUpBuilder, PopUp},
 };
 use ratatui::{
     crossterm::event::{KeyCode, KeyEvent},
@@ -19,6 +20,10 @@ where
     B: Backend + Send + 'static,
 {
     match key.code {
+        KeyCode::Char('?') => {
+            let popup = generate_help_popup();
+            app.popup = Some(popup);
+        }
         KeyCode::Enter => {
             if app.mailing_list_selection.has_valid_target_list() {
                 app.init_latest_patchsets();
@@ -76,4 +81,22 @@ where
         _ => {}
     }
     Ok(ControlFlow::Continue(terminal))
+}
+
+// TODO: Move this to a more appropriate place
+pub fn generate_help_popup() -> Box<dyn PopUp> {
+    let popup = HelpPopUpBuilder::new()
+        .title("Mailing List Selection")
+        .description("This is the mailing list selection screen.\nYou can select a mailing list by typing the name of the list.")
+        .keybind("ESC", "Exit")
+        .keybind("ENTER", "Open the selected mailing list")
+        .keybind("?", "Show this help screen")
+        .keybind("🡇", "Down")
+        .keybind("🡅", "Up")
+        .keybind("F1", "Show bookmarked patchsets")
+        .keybind("F2", "Edit config options")
+        .keybind("F5", "Refresh lists")
+        .build();
+
+    Box::new(popup)
 }
