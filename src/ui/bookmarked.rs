@@ -64,7 +64,7 @@ pub fn mode_footer_text() -> Vec<Span<'static>> {
 
 pub fn keys_hint() -> Span<'static> {
     Span::styled(
-        "(ESC) to return | (ENTER) to select | ( j / 🡇 ) down | ( k / 🡅 ) up",
+        "(ESC) to return | (ENTER) to select | (?) help",
         Style::default().fg(Color::Red),
     )
 }
