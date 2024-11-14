@@ -40,7 +40,6 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
 
     navigation_bar::render(f, app, chunks[2]);
 
-
     app.popup.back().inspect(|p| {
         let (x, y) = p.dimensions();
         let rect = centered_rect(x, y, f.area());

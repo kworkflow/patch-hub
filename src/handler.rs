@@ -42,8 +42,6 @@ where
             popup.handle(key)?;
         }
     } else {
-
-        
         match app.current_screen {
             CurrentScreen::MailingListSelection => {
                 return handle_mailing_list_selection(app, key, terminal);
