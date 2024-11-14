@@ -183,7 +183,7 @@ pub fn mode_footer_text() -> Vec<Span<'static>> {
 
 pub fn keys_hint() -> Span<'static> {
     Span::styled(
-        "(ESC) to return | (ENTER) run actions | (jkhl / 🡇 🡅 🡄 🡆 ) | (n) next patch | (p) previous patch | (f) fullscreen",
+        "(ESC) to return | (ENTER) run actions | (?) help",
         Style::default().fg(Color::Red),
     )
 }

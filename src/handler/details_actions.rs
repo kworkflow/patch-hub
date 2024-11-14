@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use crate::{
     app::{screens::CurrentScreen, App},
+    ui::popup::{help::HelpPopUpBuilder, PopUp},
     utils,
 };
 use ratatui::{
@@ -48,6 +49,10 @@ pub fn handle_patchset_details<B: Backend>(
     }
 
     match key.code {
+        KeyCode::Char('?') => {
+            let popup = generate_help_popup();
+            app.popup = Some(popup);
+        }
         KeyCode::Esc => {
             let ps_da_clone = patchset_details_and_actions.last_screen.clone();
             app.set_current_screen(ps_da_clone);
@@ -109,4 +114,28 @@ pub fn handle_patchset_details<B: Backend>(
         _ => {}
     }
     Ok(())
+}
+
+pub fn generate_help_popup() -> Box<dyn PopUp> {
+    let popup = HelpPopUpBuilder::new()
+        .title("Patchset Details and Actions")
+        .description("This screen displays the details of a patchset and allows you to perform actions on it.\nA series of actions are available to you, they are:\n - Bookmark: Save the patchset for later\n - Reply with Reviewed-by: Reply to the patchset with a Reviewed-by tag")
+        .keybind("ESC", "Exit")
+        .keybind("ENTER", "Consolidate marked actions")
+        .keybind("?", "Show this help screen")
+        .keybind("j/🡇", "Scroll down")
+        .keybind("k/🡅", "Scroll up")
+        .keybind("h/🡄", "Pan left")
+        .keybind("l/🡆", "Pan right")
+        .keybind("0", "Go to start of line")
+        .keybind("g", "Go to first line")
+        .keybind("G", "Go to last line")
+        .keybind("f", "Toggle fullscreen")
+        .keybind("n", "Preview next patch")
+        .keybind("p", "Preview previous patch")
+        .keybind("b", "Toggle bookmark action")
+        .keybind("r", "Toggle reply with Reviewed-by action")
+        .build();
+
+    Box::new(popup)
 }
