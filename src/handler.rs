@@ -35,9 +35,9 @@ fn key_handling<B>(
 where
     B: Backend + Send + 'static,
 {
-    if let Some(popup) = app.popup.as_mut() {
+    if let Some(popup) = app.popup.back_mut() {
         if key.code == KeyCode::Esc {
-            app.popup = None;
+            app.popup.pop_back();
         } else {
             popup.handle(key)?;
         }

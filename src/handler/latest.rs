@@ -24,7 +24,7 @@ where
     match key.code {
         KeyCode::Char('?') => {
             let popup = generate_help_popup();
-            app.popup = Some(popup);
+            app.popup.push_back(popup);
         }
         KeyCode::Esc => {
             app.reset_latest_patchsets_state();

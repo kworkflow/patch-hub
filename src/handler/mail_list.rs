@@ -22,7 +22,7 @@ where
     match key.code {
         KeyCode::Char('?') => {
             let popup = generate_help_popup();
-            app.popup = Some(popup);
+            app.popup.push_back(popup);
         }
         KeyCode::Enter => {
             if app.mailing_list_selection_state.has_valid_target_list() {

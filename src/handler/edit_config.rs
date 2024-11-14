@@ -28,7 +28,7 @@ pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()
             false => match key.code {
                 KeyCode::Char('?') => {
                     let popup = generate_help_popup();
-                    app.popup = Some(popup);
+                    app.popup.push_back(popup);
                 }
                 KeyCode::Esc => {
                     app.reset_edit_config_state();

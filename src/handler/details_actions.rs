@@ -51,7 +51,7 @@ pub fn handle_patchset_details<B: Backend>(
     match key.code {
         KeyCode::Char('?') => {
             let popup = generate_help_popup();
-            app.popup = Some(popup);
+            app.popup.push_back(popup);
         }
         KeyCode::Esc => {
             let ps_da_clone = patchset_details_and_actions.last_screen.clone();

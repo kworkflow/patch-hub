@@ -14,7 +14,7 @@ use screens::{
     mail_list::MailingListSelectionState,
     CurrentScreen,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, LinkedList};
 
 use crate::utils;
 
@@ -33,7 +33,7 @@ pub struct App {
     pub reviewed_patchsets: HashMap<String, Vec<usize>>,
     pub config: Config,
     pub lore_api_client: BlockingLoreAPIClient,
-    pub popup: Option<Box<dyn PopUp>>,
+    pub popup: LinkedList<Box<dyn PopUp>>,
 }
 
 impl App {
@@ -79,7 +79,7 @@ impl App {
             reviewed_patchsets,
             config,
             lore_api_client,
-            popup: None,
+            popup: LinkedList::new(),
         }
     }
 

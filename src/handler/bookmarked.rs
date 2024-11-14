@@ -22,7 +22,7 @@ where
     match key.code {
         KeyCode::Char('?') => {
             let popup = generate_help_popup();
-            app.popup = Some(popup);
+            app.popup.push_back(popup);
         }
         KeyCode::Esc => {
             app.bookmarked_patchsets_state.patchset_index = 0;
