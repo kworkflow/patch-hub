@@ -3,6 +3,7 @@ use std::ops::ControlFlow;
 use crate::{
     app::{screens::CurrentScreen, App},
     loading_screen,
+    ui::popup::{help::HelpPopUpBuilder, PopUp},
 };
 use ratatui::{
     crossterm::event::{KeyCode, KeyEvent},
@@ -21,6 +22,10 @@ where
     let latest_patchsets = app.latest_patchsets_state.as_mut().unwrap();
 
     match key.code {
+        KeyCode::Char('?') => {
+            let popup = generate_help_popup();
+            app.popup = Some(popup);
+        }
         KeyCode::Esc => {
             app.reset_latest_patchsets_state();
             app.set_current_screen(CurrentScreen::MailingListSelection);
@@ -56,4 +61,19 @@ where
         _ => {}
     }
     Ok(ControlFlow::Continue(terminal))
+}
+
+pub fn generate_help_popup() -> Box<dyn PopUp> {
+    let popup = HelpPopUpBuilder::new()
+        .title("Latest Patchsets")
+        .description("This screen allows you to see a list of the latest patchsets from a mailing list.\nYou might also be able to view the details of a patchset.")
+        .keybind("ESC", "Exit")
+        .keybind("ENTER", "See details of the selected patchset")
+        .keybind("?", "Show this help screen")
+        .keybind("j/🡇", "Down")
+        .keybind("k/🡅", "Up")
+        .keybind("l/🡆", "Next page")
+        .keybind("h/🡄", "Previous page")
+        .build();
+    Box::new(popup)
 }
