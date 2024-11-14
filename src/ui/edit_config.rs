@@ -77,7 +77,7 @@ pub fn keys_hint(app: &App) -> Span {
             Style::default().fg(Color::Red),
         ),
         false => Span::styled(
-            "(ESC) cancel | (ENTER) save | (e) edit | (jk| 🡇 🡅 ) down up",
+            "(ESC) cancel | (ENTER) save | (e) edit | (?) help",
             Style::default().fg(Color::Red),
         ),
     }

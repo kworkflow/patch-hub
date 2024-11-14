@@ -1,4 +1,7 @@
-use crate::app::{screens::CurrentScreen, App};
+use crate::{
+    app::{screens::CurrentScreen, App},
+    ui::popup::{help::HelpPopUpBuilder, PopUp},
+};
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
 pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()> {
@@ -23,6 +26,10 @@ pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()
                 _ => {}
             },
             false => match key.code {
+                KeyCode::Char('?') => {
+                    let popup = generate_help_popup();
+                    app.popup = Some(popup);
+                }
                 KeyCode::Esc => {
                     app.reset_edit_config_state();
                     app.set_current_screen(CurrentScreen::MailingListSelection);
@@ -47,4 +54,20 @@ pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()
         }
     }
     Ok(())
+}
+
+// TODO: Move this to a more appropriate place
+pub fn generate_help_popup() -> Box<dyn PopUp> {
+    let popup = HelpPopUpBuilder::new()
+        .title("Edit Config")
+        .description("This screen allows you to edit the configuration options for Patch Hub.\nMore configurations may be available in the configuration file.")
+        .keybind("ESC", "Exit")
+        .keybind("ENTER", "Save changes")
+        .keybind("?", "Show this help screen")
+        .keybind("j/🡇", "Down")
+        .keybind("k/🡅", "Up")
+        .keybind("e", "Toggle editing for a configuration option")
+        .build();
+
+    Box::new(popup)
 }
