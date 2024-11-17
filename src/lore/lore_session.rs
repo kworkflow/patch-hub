@@ -216,6 +216,21 @@ pub fn split_patchset(patchset_path_str: &str) -> Result<Vec<String>, String> {
     Ok(patches)
 }
 
+/// Takes the string that represents a patch and splits it into the cover and the actual diff.
+///
+/// The cover is everything before the first "---" line.
+pub fn split_cover(patch: &str) -> (&str, &str) {
+    let mut cover: &str = patch;
+    let mut diff: &str = "";
+
+    if let Some(cover_end) = patch.find("\n---\n") {
+        cover = &patch[..cover_end + 1];
+        diff = &patch[cover_end + 5..];
+    }
+
+    (cover, diff)
+}
+
 fn extract_patches(mbox_path: &Path, patches: &mut Vec<String>) {
     let mut current_patch: String = String::new();
     let mut is_reading_patch: bool = false;
