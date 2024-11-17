@@ -7,7 +7,7 @@ use std::{
     path::Path,
 };
 
-use super::patch_renderer::PatchRenderer;
+use super::{cover_renderer::CoverRenderer, patch_renderer::PatchRenderer};
 
 #[cfg(test)]
 mod tests;
@@ -29,6 +29,8 @@ pub struct Config {
     data_dir: String,
     /// Renderer to use for patch previews
     patch_renderer: PatchRenderer,
+    /// Renderer to use for patchset covers
+    cover_renderer: CoverRenderer,
     /// Maximum age of a log file in days
     max_log_age: usize,
 }
@@ -47,6 +49,7 @@ impl Config {
             logs_path: format!("{data_dir}/logs"),
             git_send_email_options: "--dry-run --suppress-cc=all".to_string(),
             patch_renderer: Default::default(),
+            cover_renderer: Default::default(),
             cache_dir,
             data_dir,
             max_log_age: 30,
@@ -142,6 +145,10 @@ impl Config {
 
     pub fn set_patch_renderer(&mut self, patch_renderer: PatchRenderer) {
         self.patch_renderer = patch_renderer;
+    }
+
+    pub fn set_cover_renderer(&mut self, cover_renderer: CoverRenderer) {
+        self.cover_renderer = cover_renderer;
     }
 
     pub fn set_max_log_age(&mut self, max_log_age: usize) {

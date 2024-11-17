@@ -2,6 +2,7 @@ use crate::log_on_error;
 use ansi_to_tui::IntoText;
 use color_eyre::eyre::bail;
 use config::Config;
+use cover_renderer::render_cover;
 use logging::Logger;
 use patch_hub::lore::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
 use patch_renderer::{render_patch_preview, PatchRenderer};
@@ -19,6 +20,7 @@ use std::collections::HashMap;
 use crate::utils;
 
 mod config;
+pub mod cover_renderer;
 pub mod logging;
 pub mod patch_renderer;
 pub mod screens;
@@ -140,18 +142,31 @@ impl App {
                 let mut patches_preview: Vec<Text> = Vec::new();
                 for raw_patch in &raw_patches {
                     let raw_patch = raw_patch.replace('\t', "        ");
-                    let patch_preview =
-                        match render_patch_preview(&raw_patch, self.config.patch_renderer()) {
+
+                    let (raw_cover, raw_patch) = lore_session::split_cover(&raw_patch);
+
+                    let rendered_cover = match render_cover(raw_cover, self.config.cover_renderer())
+                    {
+                        Ok(render) => render,
+                        Err(_) => {
+                            Logger::error("Failed to render cover preview with external program");
+                            raw_cover.to_string()
+                        }
+                    };
+
+                    let rendered_patch =
+                        match render_patch_preview(raw_patch, self.config.patch_renderer()) {
                             Ok(render) => render,
                             Err(_) => {
                                 Logger::error(
                                     "Failed to render patch preview with external program",
                                 );
-                                raw_patch
+                                raw_patch.to_string()
                             }
-                        }
-                        .into_text()?;
-                    patches_preview.push(patch_preview);
+                        };
+
+                    patches_preview
+                        .push(format!("{}---\n{}", rendered_cover, rendered_patch).into_text()?);
                 }
                 self.patchset_details_and_actions_state = Some(PatchsetDetailsAndActionsState {
                     representative_patch,
@@ -253,6 +268,9 @@ impl App {
             }
             if let Ok(patch_renderer) = edit_config.extract_patch_renderer() {
                 self.config.set_patch_renderer(patch_renderer.into())
+            }
+            if let Ok(cover_renderer) = edit_config.extract_cover_renderer() {
+                self.config.set_cover_renderer(cover_renderer.into())
             }
             if let Ok(max_log_age) = edit_config.max_log_age() {
                 self.config.set_max_log_age(max_log_age)

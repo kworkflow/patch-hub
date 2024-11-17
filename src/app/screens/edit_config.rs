@@ -27,6 +27,10 @@ impl EditConfigState {
             EditableConfig::PatchRenderer,
             config.patch_renderer().to_string(),
         );
+        config_buffer.insert(
+            EditableConfig::CoverRenderer,
+            config.cover_renderer().to_string(),
+        );
         config_buffer.insert(EditableConfig::MaxLogAge, config.max_log_age().to_string());
 
         EditConfigState {
@@ -172,6 +176,11 @@ impl EditConfigState {
         Ok(patch_renderer)
     }
 
+    pub fn extract_cover_renderer(&mut self) -> Result<String, ()> {
+        let cover_renderer = self.extract_config_buffer_val(&EditableConfig::CoverRenderer);
+        Ok(cover_renderer)
+    }
+
     /// Extracts the max log age from the config
     ///
     /// # Errors
@@ -195,6 +204,7 @@ enum EditableConfig {
     DataDir,
     GitSendEmailOpt,
     PatchRenderer,
+    CoverRenderer,
     MaxLogAge,
 }
 
@@ -208,7 +218,8 @@ impl TryFrom<usize> for EditableConfig {
             2 => Ok(EditableConfig::DataDir),
             3 => Ok(EditableConfig::GitSendEmailOpt),
             4 => Ok(EditableConfig::PatchRenderer),
-            5 => Ok(EditableConfig::MaxLogAge),
+            5 => Ok(EditableConfig::CoverRenderer),
+            6 => Ok(EditableConfig::MaxLogAge),
             _ => bail!("Invalid index {} for EditableConfig", value), // Handle out of bounds
         }
     }
@@ -222,6 +233,9 @@ impl Display for EditableConfig {
             EditableConfig::DataDir => write!(f, "Data Directory"),
             EditableConfig::PatchRenderer => {
                 write!(f, "Patch Renderer (bat, delta, diff-so-fancy)")
+            }
+            EditableConfig::CoverRenderer => {
+                write!(f, "Cover Renderer (bat)")
             }
             EditableConfig::GitSendEmailOpt => write!(f, "`git send email` option"),
             EditableConfig::MaxLogAge => write!(f, "Max Log Age (0 = forever)"),
