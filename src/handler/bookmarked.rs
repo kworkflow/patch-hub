@@ -33,7 +33,7 @@ where
             terminal = loading_screen! {
                 terminal,
                 "Loading patchset" => {
-                    app.init_details_actions(CurrentScreen::BookmarkedPatchsets)?;
+                    app.init_details_actions()?;
                     app.set_current_screen(CurrentScreen::PatchsetDetails);
                 }
             };

@@ -124,14 +124,11 @@ impl App {
     /// Initializes field [App::details_actions], from currently selected
     /// patchset in [App::bookmarked_patchsets] or [App::latest_patchsets],
     /// depending on the value of [App::current_screen].
-    pub fn init_details_actions(
-        &mut self,
-        current_screen: CurrentScreen,
-    ) -> color_eyre::Result<()> {
+    pub fn init_details_actions(&mut self) -> color_eyre::Result<()> {
         let representative_patch: Patch;
         let mut is_patchset_bookmarked = true;
 
-        match current_screen {
+        match &self.current_screen {
             CurrentScreen::BookmarkedPatchsets => {
                 representative_patch = self.bookmarked_patchsets.get_selected_patchset();
             }
@@ -190,7 +187,7 @@ impl App {
                         (PatchsetAction::Bookmark, is_patchset_bookmarked),
                         (PatchsetAction::ReplyWithReviewedBy, false),
                     ]),
-                    last_screen: current_screen,
+                    last_screen: self.current_screen.clone(),
                     lore_api_client: self.lore_api_client.clone(),
                 });
                 Ok(())
