@@ -23,19 +23,38 @@ pub mod logging;
 pub mod patch_renderer;
 pub mod screens;
 
+/// Type that represents the overall state of the application. It can be viewed
+/// as the **Model** component of `patch-hub`.
 pub struct App {
+    /// The current active screen
     pub current_screen: CurrentScreen,
+    /// Screen to navigate and select the mailing lists archived on Lore
     pub mailing_list_selection: MailingListSelection,
+    /// Screen with listing patchsets that were previously bookmarked
     pub bookmarked_patchsets: BookmarkedPatchsets,
+    /// Screen with paginated listing of latest patchsets from a target list
     pub latest_patchsets: Option<LatestPatchsets>,
+    /// Screen with details (metadata and previewing) and runnable actions of individual patchset
     pub details_actions: Option<DetailsActions>,
+    /// Screen to edit configurations of the app
     pub edit_config: Option<EditConfig>,
+    /// Database to track patchsets `Reviewed-by` state
     pub reviewed_patchsets: HashMap<String, Vec<usize>>,
+    /// Configurations of the app
     pub config: Config,
+    /// Client to handle Lore API requests and responses
     pub lore_api_client: BlockingLoreAPIClient,
 }
 
 impl App {
+    /// Creates a new instance of `App`. It dynamically loads configurations
+    /// based on precedence (see [crate::app::Config::build]), app data
+    /// (available mailing lists, bookmarked patchsets, reviewed patchsets), and
+    /// initializes the Logger (see [crate::app::logging::Logger])
+    ///
+    /// # Returns
+    ///
+    /// `App` instance with loading configurations and app data.
     pub fn new() -> App {
         let config: Config = Config::build();
         config.create_dirs();
@@ -81,6 +100,8 @@ impl App {
         }
     }
 
+    /// Initializes field [App::latest_patchsets], from currently selected
+    /// mailing list in [App::mailing_list_selection].
     pub fn init_latest_patchsets(&mut self) {
         // the target mailing list for "latest patchsets" is the highlighted
         // entry in the possible lists of "mailing list selection"
@@ -95,10 +116,14 @@ impl App {
         ));
     }
 
+    /// Sets field [App::latest_patchsets] to `None`.
     pub fn reset_latest_patchsets(&mut self) {
         self.latest_patchsets = None;
     }
 
+    /// Initializes field [App::details_actions], from currently selected
+    /// patchset in [App::bookmarked_patchsets] or [App::latest_patchsets],
+    /// depending on the value of [App::current_screen].
     pub fn init_details_actions(
         &mut self,
         current_screen: CurrentScreen,
@@ -174,6 +199,7 @@ impl App {
         }
     }
 
+    /// Sets field [App::details_actions] to `None`.
     pub fn reset_details_actions(&mut self) {
         self.details_actions = None;
     }
@@ -228,14 +254,18 @@ impl App {
         Ok(())
     }
 
+    /// Initializes field [App::edit_config], using values from [App::config].
     pub fn init_edit_config(&mut self) {
         self.edit_config = Some(EditConfig::new(&self.config));
     }
 
+    /// Sets field [App::edit_config] to `None`.
     pub fn reset_edit_config(&mut self) {
         self.edit_config = None;
     }
 
+    /// Based on the edited config values from [App::edit_config], commit them
+    /// to field [App::config].
     pub fn consolidate_edit_config(&mut self) {
         // TODO: Handle invalid values!
         if let Some(edit_config) = &mut self.edit_config {
@@ -260,6 +290,7 @@ impl App {
         }
     }
 
+    /// Change the current active screen in [App::current_screen].
     pub fn set_current_screen(&mut self, new_current_screen: CurrentScreen) {
         self.current_screen = new_current_screen;
     }
