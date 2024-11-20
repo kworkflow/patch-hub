@@ -1,3 +1,24 @@
+# Version 0.1.4 (2024-11-19)
+
+It has become a staple of the project at this point, but this release took a long time to be done (longer than v0.1.2 to v.0.1.3). As like in v0.1.3, this release consists of a mix of new features, refactorings and some fixes. Another cycle with great contributions from @OJarrisonn, @th-duvanel, and @lorenzoberts. Many thanks and welcome for the new contributors @auyer and @gabrielsrd. There are major new changes already on the oven as opened Pull-Requests, but I found it worth to make a new release, both to mark the progress done and to not have a huge time gap between releases.
+
+### New Functionalities and Changes Highlight
+
+1. Add motions for patch previewing, allowing user to scroll half/full pages, go to start/end, and pan horizontally. Also in this context, add fullscreen preview.
+2. Add dynamic loading screen with spinner for delayed actions.
+3. Add new CLI option `-c | --show-configs` to display current configuration JSON.
+4. Finish extraction refactoring of UI module.
+5. Create lib crate `lore` to house all domain specific implementation and make codebase more organized.
+6. Fix annoying and mysterious flakyness of Lore API requests by replacing `reqwest` client for a `ureq` one.
+7. Fix poor performance of patch previews by pre-rendering them when opening patchsets.
+8. Fix overall unreasonable high CPU usage by disabling auto-refresh of UI.
+
+### Problems and Future Changes
+
+Mostly, there were developments in many diverse fronts so (I think) the technical debt is being paid, whilst new developments are being introduced.
+
+Besides that, as previously mentioned, there are 3 major changes opened as PRs that are closer to merging than not. However, there are still some polishing and validating of those (understanble, due to their impact), so these will likely enter in the next release. On this note, the next release might be the last one before v.0.2.0, i.e., a beta version of `patch-hub` :eyes:.
+
 # Version 0.1.3 (2024-10-09)
 
 Following the trend of v.0.1.2, this release took a long time to be done, and even more commits (forty!). These consisted of a mix of new features, refactorings and some fixes. This cycle was mostly done by @OJarrisonn, @th-duvanel, and @lorezonberts. My work was predominantly about solving merge conflicts and bugging on them (sorry guys :grimacing:). There are many optimazations and advances that aren't covered in the section below, but the highlights are described.
