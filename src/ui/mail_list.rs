@@ -2,7 +2,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState},
+    widgets::{Block, Borders, Clear, HighlightSpacing, List, ListItem, ListState},
     Frame,
 };
 
@@ -47,6 +47,7 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
     let mut list_state = ListState::default();
     list_state.select(Some(highlighted_list_index));
 
+    f.render_widget(Clear, chunk);
     f.render_stateful_widget(list, chunk, &mut list_state);
 }
 
