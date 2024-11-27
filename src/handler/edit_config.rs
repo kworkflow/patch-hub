@@ -23,7 +23,7 @@ pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()
                 _ => {}
             },
             false => match key.code {
-                KeyCode::Esc => {
+                KeyCode::Esc | KeyCode::Char('q') => {
                     app.reset_edit_config();
                     app.set_current_screen(CurrentScreen::MailingListSelection);
                 }

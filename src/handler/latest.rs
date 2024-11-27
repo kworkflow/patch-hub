@@ -21,7 +21,7 @@ where
     let latest_patchsets = app.latest_patchsets.as_mut().unwrap();
 
     match key.code {
-        KeyCode::Esc => {
+        KeyCode::Esc | KeyCode::Char('q') => {
             app.reset_latest_patchsets();
             app.set_current_screen(CurrentScreen::MailingListSelection);
         }

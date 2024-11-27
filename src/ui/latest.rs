@@ -80,7 +80,7 @@ pub fn mode_footer_text(app: &App) -> Vec<Span> {
 
 pub fn keys_hint() -> Span<'static> {
     Span::styled(
-        "(ESC) to return | (ENTER) to select | ( j / 🡇 ) down | ( k / 🡅 ) up | ( h / 🡄 ) previous page | ( l / 🡆 ) next page",
+        "(ESC / q) to return | (ENTER) to select | ( j / 🡇 ) down | ( k / 🡅 ) up | ( h / 🡄 ) previous page | ( l / 🡆 ) next page",
         Style::default().fg(Color::Red),
     )
 }

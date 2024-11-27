@@ -19,7 +19,7 @@ where
     B: Backend + Send + 'static,
 {
     match key.code {
-        KeyCode::Esc => {
+        KeyCode::Esc | KeyCode::Char('q') => {
             app.bookmarked_patchsets.patchset_index = 0;
             app.set_current_screen(CurrentScreen::MailingListSelection);
         }
