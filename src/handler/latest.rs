@@ -26,7 +26,7 @@ where
             let popup = generate_help_popup();
             app.popup = Some(popup);
         }
-        KeyCode::Esc => {
+        KeyCode::Esc | KeyCode::Char('q') => {
             app.reset_latest_patchsets();
             app.set_current_screen(CurrentScreen::MailingListSelection);
         }

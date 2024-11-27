@@ -62,7 +62,7 @@ pub fn handle_patchset_details<B: Backend>(
             let popup = generate_help_popup();
             app.popup = Some(popup);
         }
-        KeyCode::Esc => {
+        KeyCode::Esc | KeyCode::Char('q') => {
             let ps_da_clone = patchset_details_and_actions.last_screen.clone();
             app.set_current_screen(ps_da_clone);
             app.reset_details_actions();

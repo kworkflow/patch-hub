@@ -112,7 +112,7 @@ impl PopUp for ReviewTrailersPopUp {
             .title("Code-Review Trailers")
             .title_alignment(Alignment::Center)
             .title_style(ratatui::style::Style::default().bold().blue())
-            .title_bottom(Line::styled("(ESC) Close", Style::default().bold().blue()))
+            .title_bottom(Line::styled("(ESC / q) Close", Style::default().bold().blue()))
             .borders(ratatui::widgets::Borders::ALL)
             .border_type(ratatui::widgets::BorderType::Double)
             .style(ratatui::style::Style::default());

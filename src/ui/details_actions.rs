@@ -261,7 +261,7 @@ pub fn mode_footer_text() -> Vec<Span<'static>> {
 
 pub fn keys_hint() -> Span<'static> {
     Span::styled(
-        "(ESC) to return | (ENTER) run actions | (?) help",
+        "(ESC / q) to return | (ENTER) run actions | (?) help",
         Style::default().fg(Color::Red),
     )
 }

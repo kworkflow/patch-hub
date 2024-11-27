@@ -36,7 +36,7 @@ where
     B: Backend + Send + 'static,
 {
     if let Some(popup) = app.popup.as_mut() {
-        if key.code == KeyCode::Esc {
+        if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
             app.popup = None;
         } else {
             popup.handle(key)?;
