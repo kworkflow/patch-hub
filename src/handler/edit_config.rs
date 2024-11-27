@@ -24,10 +24,12 @@ pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()
             },
             false => match key.code {
                 KeyCode::Esc | KeyCode::Char('q') => {
+                    app.consolidate_edit_config();
+                    app.config.save_patch_hub_config()?;
                     app.reset_edit_config();
                     app.set_current_screen(CurrentScreen::MailingListSelection);
                 }
-                KeyCode::Char('e') => {
+                KeyCode::Enter => {
                     edit_config_state.toggle_editing();
                 }
                 KeyCode::Char('j') | KeyCode::Down => {
@@ -35,12 +37,6 @@ pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
                     edit_config_state.highlight_prev();
-                }
-                KeyCode::Enter => {
-                    app.consolidate_edit_config();
-                    app.config.save_patch_hub_config()?;
-                    app.reset_edit_config();
-                    app.set_current_screen(CurrentScreen::MailingListSelection);
                 }
                 _ => {}
             },
