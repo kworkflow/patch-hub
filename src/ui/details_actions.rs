@@ -6,7 +6,46 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{screens::details_actions::PatchsetAction, App};
+use crate::app::{
+    screens::details_actions::{DetailsActions, PatchsetAction},
+    App,
+};
+
+/// Returns a `Line` type that represents a line containing stats about reply
+/// trailers. It currently considers the _Reviewed-by_, _Tested-by_, and
+/// _Acked-by_ trailers and colors them depending if they are 0 or not.  Example
+/// of line returned:
+///
+/// _**Reviewed-by: 1 | Tested-by: 0 | Acked-by: 2**_
+fn review_trailers_details(details_actions: &DetailsActions) -> Line<'static> {
+    let i = details_actions.preview_index;
+
+    let resolve_color = |n_trailers: usize| -> Style {
+        if n_trailers == 0 {
+            Style::default().fg(Color::White)
+        } else {
+            Style::default().fg(Color::Green)
+        }
+    };
+
+    Line::from(vec![
+        Span::styled("Reviewed-by: ", Style::default().fg(Color::Cyan)),
+        Span::styled(
+            details_actions.reviewed_by[i].len().to_string(),
+            resolve_color(details_actions.reviewed_by[i].len()),
+        ),
+        Span::styled(" | Tested-by: ", Style::default().fg(Color::Cyan)),
+        Span::styled(
+            details_actions.tested_by[i].len().to_string(),
+            resolve_color(details_actions.tested_by[i].len()),
+        ),
+        Span::styled(" | Acked-by: ", Style::default().fg(Color::Cyan)),
+        Span::styled(
+            details_actions.acked_by[i].len().to_string(),
+            resolve_color(details_actions.acked_by[i].len()),
+        ),
+    ])
+}
 
 fn render_details_and_actions(f: &mut Frame, app: &App, details_chunk: Rect, actions_chunk: Rect) {
     let patchset_details_and_actions = app.details_actions.as_ref().unwrap();
@@ -72,6 +111,7 @@ fn render_details_and_actions(f: &mut Frame, app: &App, details_chunk: Rect, act
                 Style::default().fg(Color::White),
             ),
         ]),
+        review_trailers_details(patchset_details_and_actions),
     ];
     if !staged_to_reply.is_empty() {
         patchset_details.push(Line::from(vec![

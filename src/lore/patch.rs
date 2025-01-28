@@ -31,7 +31,7 @@ pub struct Patch {
     updated: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
 pub struct Author {
     pub name: String,
     pub email: String,

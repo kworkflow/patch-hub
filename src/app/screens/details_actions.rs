@@ -1,6 +1,7 @@
 use super::CurrentScreen;
 use ::patch_hub::lore::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
 use color_eyre::eyre::bail;
+use patch_hub::lore::patch::Author;
 use ratatui::text::Text;
 use std::{
     collections::{HashMap, HashSet},
@@ -25,6 +26,12 @@ pub struct DetailsActions {
     /// If true, display the preview in full screen
     pub preview_fullscreen: bool,
     pub patchset_actions: HashMap<PatchsetAction, bool>,
+    /// For each patch, a set of `Authors` that appear in `Reviewed-by` trailers
+    pub reviewed_by: Vec<HashSet<Author>>,
+    /// For each patch, a set of `Authors` that appear in `Tested-by` trailers
+    pub tested_by: Vec<HashSet<Author>>,
+    /// For each patch, a set of `Authors` that appear in `Acked-by` trailers
+    pub acked_by: Vec<HashSet<Author>>,
     pub last_screen: CurrentScreen,
     pub lore_api_client: BlockingLoreAPIClient,
 }

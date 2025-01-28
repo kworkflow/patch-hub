@@ -4,7 +4,11 @@ use color_eyre::eyre::bail;
 use config::Config;
 use cover_renderer::render_cover;
 use logging::Logger;
-use patch_hub::lore::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
+use patch_hub::lore::{
+    lore_api_client::BlockingLoreAPIClient,
+    lore_session,
+    patch::{Author, Patch},
+};
 use patch_renderer::{render_patch_preview, PatchRenderer};
 use ratatui::text::Text;
 use screens::{
@@ -131,6 +135,9 @@ impl App {
     pub fn init_details_actions(&mut self) -> color_eyre::Result<()> {
         let representative_patch: Patch;
         let mut is_patchset_bookmarked = true;
+        let mut reviewed_by = Vec::new();
+        let mut tested_by = Vec::new();
+        let mut acked_by = Vec::new();
 
         match &self.current_screen {
             CurrentScreen::BookmarkedPatchsets => {
@@ -168,6 +175,33 @@ impl App {
                     let raw_patch = raw_patch.replace('\t', "        ");
 
                     let (raw_cover, raw_patch) = lore_session::split_cover(&raw_patch);
+
+                    let mut authors_reviewed_by = HashSet::new();
+                    let mut authors_tested_by = HashSet::new();
+                    let mut authors_acked_by = HashSet::new();
+
+                    let mut map = [
+                        ("Reviewed-by:", &mut authors_reviewed_by),
+                        ("Tested-by:", &mut authors_tested_by),
+                        ("Acked-by:", &mut authors_acked_by),
+                    ];
+
+                    for line in raw_cover.lines() {
+                        for (prefix, authors) in map.iter_mut() {
+                            if let Some(stripped) = line.trim_start().strip_prefix(*prefix) {
+                                let parts: Vec<&str> = stripped.trim().split('<').collect();
+                                if parts.len() == 2 {
+                                    let name = parts[0].trim().to_string();
+                                    let email = parts[1].trim_end_matches('>').trim().to_string();
+                                    authors.insert(Author { name, email });
+                                }
+                                break; // Avoid unnecessary checks once a match is found
+                            }
+                        }
+                    }
+                    reviewed_by.push(authors_reviewed_by);
+                    tested_by.push(authors_tested_by);
+                    acked_by.push(authors_acked_by);
 
                     let rendered_cover = match render_cover(raw_cover, self.config.cover_renderer())
                     {
@@ -208,6 +242,9 @@ impl App {
                         (PatchsetAction::Bookmark, is_patchset_bookmarked),
                         (PatchsetAction::ReplyWithReviewedBy, false),
                     ]),
+                    reviewed_by,
+                    tested_by,
+                    acked_by,
                     last_screen: self.current_screen.clone(),
                     lore_api_client: self.lore_api_client.clone(),
                 });
