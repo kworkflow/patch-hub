@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::{
     app::{screens::CurrentScreen, App},
-    ui::popup::{help::HelpPopUpBuilder, PopUp},
+    ui::popup::{help::HelpPopUpBuilder, review_trailers::ReviewTrailersPopUp, PopUp},
     utils,
 };
 use ratatui::{
@@ -46,6 +46,11 @@ pub fn handle_patchset_details<B: Backend>(
             }
             KeyCode::Char('d') => {
                 patchset_details_and_actions.preview_scroll_down(terminal_height / 2);
+            }
+            KeyCode::Char('t') => {
+                let popup =
+                    ReviewTrailersPopUp::generate_trailers_popup(patchset_details_and_actions);
+                app.popup = Some(popup);
             }
             _ => {}
         }
@@ -140,6 +145,7 @@ pub fn generate_help_popup() -> Box<dyn PopUp> {
         .keybind("b", "Toggle bookmark action")
         .keybind("r", "Toggle reply with Reviewed-by action")
         .keybind("Shift+r", "Toggle reply with Reviewed-by action for all patches")
+        .keybind("Ctrl+t", "Show code-review trailers details")
         .build();
 
     Box::new(popup)

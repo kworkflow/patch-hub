@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use derive_getters::Getters;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -35,6 +37,13 @@ pub struct Patch {
 pub struct Author {
     pub name: String,
     pub email: String,
+}
+
+impl Display for Author {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} <{}>", self.name, self.email)?;
+        Ok(())
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
