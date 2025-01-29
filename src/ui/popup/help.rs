@@ -1,7 +1,8 @@
 use ratatui::{
     crossterm::event::KeyCode,
     layout::Alignment,
-    style::Stylize,
+    style::{Style, Stylize},
+    text::Line,
     widgets::{Clear, Paragraph},
 };
 use std::fmt::Display;
@@ -123,6 +124,10 @@ impl PopUp for HelpPopUp {
             .title(self.to_string())
             .title_alignment(Alignment::Center)
             .title_style(ratatui::style::Style::default().bold().blue())
+            .title_bottom(Line::styled(
+                "(ESC / q) Close",
+                Style::default().bold().blue(),
+            ))
             .borders(ratatui::widgets::Borders::ALL)
             .border_type(ratatui::widgets::BorderType::Double)
             .style(ratatui::style::Style::default());
