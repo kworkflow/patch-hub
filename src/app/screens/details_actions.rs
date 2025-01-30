@@ -1,4 +1,4 @@
-use crate::app::{config::Config, logging::Logger};
+use crate::app::config::Config;
 
 use super::CurrentScreen;
 use ::patch_hub::lore::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
@@ -206,80 +206,161 @@ impl DetailsActions {
         Ok(())
     }
 
-    /// Apply the patchset to the current selected kernel tree
-    pub fn apply_patchset(&self, config: &Config) {
-        let tree = config.current_tree().as_ref().unwrap();
-        let tree_path = config.kernel_tree_path(tree).unwrap();
-        let am_options = config.git_am_options();
-        let branch_prefix = config.git_am_branch_prefix();
-        // TODO: Select a kernel tree
+    /// Try to apply the patchset to a target kernel tree and returns a `String`
+    /// informing if the apply succeeded or failed and why.
+    ///
+    /// # TODO:
+    /// - Break down this function
+    /// - Add unit tests
+    pub fn apply_patchset(&self, config: &Config) -> Result<String, String> {
+        // 1. Check if target kernel tree is set
+        let kernel_tree_id = if let Some(target) = config.target_kernel_tree() {
+            target
+        } else {
+            return Err("target kernel tree unset".to_string());
+        };
 
-        // Change the current working directory to the tree_path
-        // Save the old working directory
-        let oldwd = std::env::current_dir().unwrap();
+        // 2. Check if target kernel tree exists
+        let kernel_tree = if let Some(tree) = config.get_kernel_tree(kernel_tree_id) {
+            tree
+        } else {
+            return Err(format!("invalid target kernel tree '{}'", kernel_tree_id));
+        };
 
-        std::env::set_current_dir(tree_path).unwrap();
-        // TODO: Select a branch
-        // 3. Create a new branch
-        let branch_name = format!(
+        // 3. Check if path to kernel tree is valid
+        let kernel_tree_path = Path::new(kernel_tree.path());
+        if !kernel_tree_path.is_dir() {
+            return Err(format!("{} isn't a directory", kernel_tree.path()));
+        } else if !kernel_tree_path.join(".git").is_dir() {
+            return Err(format!("{} isn't a git repository", kernel_tree.path()));
+        }
+
+        // 4. Check if there are any `git rebase`, `git merge`, `git bisect`, or
+        // `git am` already happening
+        if kernel_tree_path.join(".git/rebase-merge").is_dir() {
+            return Err(
+                "rebase in progress. \nrun `git rebase --abort` before continuing".to_string(),
+            );
+        } else if kernel_tree_path.join(".git/MERGE_HEAD").is_file() {
+            return Err(
+                "merge in progress. \nrun `git rebase --abort` before continuing".to_string(),
+            );
+        } else if kernel_tree_path.join(".git/BISECT_LOG").is_file() {
+            return Err(
+                "bisect in progress. \nrun `git bisect reset` before continuing".to_string(),
+            );
+        } else if kernel_tree_path.join(".git/rebase-apply").is_dir() {
+            return Err(
+                "`git am` already in progress. \nrun `git am --abort` before continuing"
+                    .to_string(),
+            );
+        }
+
+        // 5. Check if there are any staged or unstaged changes
+        let git_status_out = Command::new("git")
+            .arg("-C")
+            .arg(kernel_tree.path())
+            .arg("status")
+            .arg("--porcelain")
+            .output()
+            .unwrap();
+        let git_status_out = String::from_utf8_lossy(&git_status_out.stdout);
+        if !git_status_out.is_empty() {
+            return Err(format!(
+                "there are staged and/or unstaged changes\n{}",
+                git_status_out
+            ));
+        }
+
+        // 6. Check if base branch is valid
+        let git_show_ref_out = Command::new("git")
+            .arg("-C")
+            .arg(kernel_tree.path())
+            .arg("show-ref")
+            .arg("--verify")
+            .arg("--quiet")
+            .arg(format!("refs/heads/{}", kernel_tree.branch()))
+            .output()
+            .unwrap();
+        if !git_show_ref_out.status.success() {
+            return Err(format!(
+                "invalid branch '{}' for '{}'",
+                kernel_tree.branch(),
+                kernel_tree.path()
+            ));
+        }
+
+        // 7. Save original branch, switch to base branch, and checkout to target
+        // branch
+        let original_branch = Command::new("git")
+            .arg("-C")
+            .arg(kernel_tree.path())
+            .arg("rev-parse")
+            .arg("--abbrev-ref")
+            .arg("HEAD")
+            .output()
+            .unwrap();
+        let mut original_branch = String::from_utf8_lossy(&original_branch.stdout).to_string();
+        original_branch.pop();
+        let _ = Command::new("git")
+            .arg("-C")
+            .arg(kernel_tree.path())
+            .arg("switch")
+            .arg(kernel_tree.branch())
+            .output()
+            .unwrap();
+        let target_branch_name = format!(
             "{}{}",
-            branch_prefix,
+            config.git_am_branch_prefix(),
             chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S")
         );
         let _ = Command::new("git")
+            .arg("-C")
+            .arg(kernel_tree.path())
             .arg("checkout")
             .arg("-b")
-            .arg(&branch_name)
+            .arg(&target_branch_name)
             .output()
             .unwrap();
 
-        // 3. Apply the patchset
-        let mut cmd = Command::new("git");
-
-        cmd.arg("am").arg(&self.path);
-
-        am_options.split_whitespace().for_each(|opt| {
-            cmd.arg(opt);
+        // 8. Apply the patchset
+        let mut git_am_out = Command::new("git");
+        git_am_out
+            .arg("-C")
+            .arg(kernel_tree.path())
+            .arg("am")
+            .arg(&self.patchset_path);
+        config.git_am_options().split_whitespace().for_each(|opt| {
+            git_am_out.arg(opt);
         });
-
-        let out = cmd.output().unwrap();
-
-        if !out.status.success() {
-            Logger::error(format!(
-                "Failed to apply the patchset `{}`",
-                self.representative_patch.title()
-            ));
-            Logger::error(String::from_utf8_lossy(&out.stderr));
+        let git_am_out = git_am_out.output().unwrap();
+        if !git_am_out.status.success() {
             let _ = Command::new("git")
+                .arg("-C")
+                .arg(kernel_tree.path())
                 .arg("am")
                 .arg("--abort")
                 .output()
                 .unwrap();
-        } else {
-            Logger::info(format!(
-                "Patchset `{}` applied successfully to `{}` tree at branch `{}`",
-                self.representative_patch.title(),
-                tree,
-                branch_name
-            ));
         }
 
-        // 4. git checkout -
+        // 9. Return back to original branch
         let _ = Command::new("git")
-            .arg("checkout")
-            .arg("-")
+            .arg("-C")
+            .arg(kernel_tree.path())
+            .arg("switch")
+            .arg(&original_branch)
             .output()
             .unwrap();
 
-        if !out.status.success() {
-            let _ = Command::new("git")
-                .arg("branch")
-                .arg("-D")
-                .arg(&branch_name)
-                .output()
-                .unwrap();
+        if git_am_out.status.success() {
+            Ok(format!(" Patchset '{}' applied successfully!\n\n - Kernel Tree: '{}'\n\n - Base Branch: '{}'\n\n - Applied branch: '{}'", self.representative_patch.title(), kernel_tree.path(), kernel_tree.branch(), &target_branch_name, ))
+        } else {
+            Err(format!(
+                "`git am` failed\n{}{}",
+                &original_branch,
+                String::from_utf8_lossy(&git_am_out.stderr)
+            ))
         }
-        // 5. CD back
-        std::env::set_current_dir(&oldwd).unwrap();
     }
 }
