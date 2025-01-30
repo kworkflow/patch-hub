@@ -1,7 +1,7 @@
 use derive_getters::Getters;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     env,
     fs::{self, File},
     io,
@@ -34,14 +34,22 @@ pub struct Config {
     cover_renderer: CoverRenderer,
     /// Maximum age of a log file in days
     max_log_age: usize,
+    #[getter(skip)]
+    /// Map of tracked kernel trees
+    kernel_trees: HashMap<String, KernelTree>,
+    /// Target kernel tree to run actions
+    target_kernel_tree: Option<String>,
     /// Flags to be use with `git am` command when applying patches
     git_am_options: String,
-    #[getter(skip)]
-    /// List of kernel trees
-    kernel_trees: HashMap<String, String>,
-    /// The current kernel tree being used
-    current_tree: Option<String>,
     git_am_branch_prefix: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Getters, Eq, PartialEq)]
+pub struct KernelTree {
+    /// Path to kernel tree in the filesystem
+    path: String,
+    /// Target branch
+    branch: String,
 }
 
 impl Config {
@@ -62,10 +70,10 @@ impl Config {
             cache_dir,
             data_dir,
             max_log_age: 30,
-            git_am_options: "".to_string(),
             kernel_trees: HashMap::new(),
-            current_tree: None,
-            git_am_branch_prefix: "patchset-".to_string(),
+            target_kernel_tree: None,
+            git_am_options: String::new(),
+            git_am_branch_prefix: String::from("patchset-"),
         }
     }
 
@@ -162,13 +170,19 @@ impl Config {
 
     #[allow(dead_code)]
     /// Returns the list of names of the registered kernel trees
-    pub fn kernel_trees(&self) -> Vec<&String> {
-        self.kernel_trees.keys().collect::<Vec<&String>>()
+    pub fn kernel_trees(&self) -> HashSet<&String> {
+        self.kernel_trees.keys().collect::<HashSet<&String>>()
     }
 
-    /// Returns the path of the kernel tree with the given name if it exists
-    pub fn kernel_tree_path(&self, kernel_tree: &str) -> Option<&String> {
-        self.kernel_trees.get(kernel_tree)
+    /// Returns a reference to the `KernelTree` mapped by `@kernel_tree_id`, if
+    /// it exists.
+    #[allow(dead_code)]
+    pub fn get_kernel_tree(&self, kernel_tree_id: &str) -> Option<&KernelTree> {
+        if let Some(kernel_tree) = self.kernel_trees.get(kernel_tree_id) {
+            Some(kernel_tree)
+        } else {
+            None
+        }
     }
 
     pub fn set_patch_renderer(&mut self, patch_renderer: PatchRenderer) {

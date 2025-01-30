@@ -37,6 +37,10 @@ fn can_build_with_default_values() {
         config.git_send_email_options()
     );
     assert_eq!(30, config.max_log_age());
+    assert_eq!(HashSet::<&String>::new(), config.kernel_trees());
+    assert!(config.target_kernel_tree().is_none());
+    assert_eq!("", config.git_am_options());
+    assert_eq!("patchset-", config.git_am_branch_prefix());
 }
 
 #[test]
@@ -64,6 +68,24 @@ fn can_build_with_config_file() {
         config.git_send_email_options()
     );
     assert_eq!(42, config.max_log_age());
+    assert_eq!(
+        HashSet::from([&"linux".to_string(), &"amd-gfx".to_string()]),
+        config.kernel_trees()
+    );
+    assert_eq!(
+        &KernelTree {
+            path: "/home/user/linux".to_string(),
+            branch: "master".to_string()
+        },
+        config.get_kernel_tree("linux").unwrap()
+    );
+    assert!(config.get_kernel_tree("invalid-id").is_none());
+    assert_eq!("linux", config.target_kernel_tree().as_ref().unwrap());
+    assert_eq!(
+        "--foo-bar foobar -s -n -o -r -l -a -x",
+        config.git_am_options()
+    );
+    assert_eq!("really-creative-prefix-", config.git_am_branch_prefix());
 }
 
 #[test]

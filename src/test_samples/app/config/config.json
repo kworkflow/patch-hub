@@ -11,9 +11,17 @@
   "patch_renderer": "default",
   "cover_renderer": "default",
   "max_log_age": 42,
-  "git_am_options": "--long-option value -s -h -o -r -t",
   "kernel_trees": {
-    "linux": "/home/user/linux"
+    "linux": {
+      "path": "/home/user/linux",
+      "branch": "master"
+    },
+    "amd-gfx": {
+      "path": "/home/user/amd-gfx",
+      "branch": "amd-staging-drm-next"
+    }
   },
-  "git_am_branch_prefix": "patchset-"
+  "target_kernel_tree": "linux",
+  "git_am_options": "--foo-bar foobar -s -n -o -r -l -a -x",
+  "git_am_branch_prefix": "really-creative-prefix-"
 }
