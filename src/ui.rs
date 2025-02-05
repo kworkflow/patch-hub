@@ -1,7 +1,7 @@
 use crate::app::{screens::CurrentScreen, App};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Style, Stylize},
     text::Text,
     widgets::{Block, Borders, Clear, Paragraph},
     Frame,
@@ -56,13 +56,11 @@ fn render_title(f: &mut Frame, chunk: Rect) {
         .style(Style::default())
         .title_alignment(Alignment::Center);
 
-    let title_content: String = "Patch Hub".to_string();
+    let title_content: String = "patch-hub".to_string();
 
     let title = Paragraph::new(Text::styled(
         title_content,
-        Style::default()
-            .fg(Color::Green)
-            .add_modifier(Modifier::ITALIC),
+        Style::default().fg(Color::Green).bold(),
     ))
     .centered()
     .block(title_block);

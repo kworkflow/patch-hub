@@ -56,7 +56,7 @@ pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()
 pub fn generate_help_popup() -> Box<dyn PopUp> {
     let popup = HelpPopUpBuilder::new()
         .title("Edit Config")
-        .description("This screen allows you to edit the configuration options for Patch Hub.\nMore configurations may be available in the configuration file.")
+        .description("This screen allows you to edit the configuration options for patch-hub.\nMore configurations may be available in the configuration file.")
         .keybind("ESC", "Exit")
         .keybind("ENTER", "Save changes")
         .keybind("?", "Show this help screen")
