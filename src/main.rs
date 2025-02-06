@@ -12,7 +12,8 @@ mod handler;
 mod ui;
 mod utils;
 
-fn main() -> color_eyre::Result<()> {
+#[actix::main]
+async fn main() -> color_eyre::Result<()> {
     let args = Cli::parse();
 
     utils::install_hooks()?;
