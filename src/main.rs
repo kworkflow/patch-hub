@@ -1,14 +1,16 @@
 use std::ops::ControlFlow;
 
 use crate::app::App;
-use app::logging::Logger;
+use actix::Actor;
 use clap::Parser;
 use cli::Cli;
 use handler::run_app;
+use logger::{LogLevel, Logger, LoggerActor};
 
 mod app;
 mod cli;
 mod handler;
+mod logger;
 mod ui;
 mod utils;
 
@@ -16,20 +18,23 @@ mod utils;
 async fn main() -> color_eyre::Result<()> {
     let args = Cli::parse();
 
-    utils::install_hooks()?;
-    let mut terminal = utils::init()?;
-    let mut app = App::new();
+    let logger = Logger::new("/tmp", LogLevel::Info)?.start();
+    logger.collect_garbage(30).await;
 
-    match args.resolve(terminal, &mut app) {
+    utils::install_hooks(logger.clone())?;
+    let mut terminal = utils::init()?;
+    let mut app = App::new(logger.clone());
+
+    match args.resolve(logger.clone(), terminal, &mut app).await {
         ControlFlow::Break(b) => return b,
         ControlFlow::Continue(t) => terminal = t,
     }
 
-    run_app(terminal, app)?;
+    run_app(logger.clone(), terminal, app).await?;
     utils::restore()?;
 
-    Logger::info("patch-hub finished");
-    Logger::flush();
+    logger.info("patch-hub stopped").await;
+    logger.flush().await;
 
     Ok(())
 }

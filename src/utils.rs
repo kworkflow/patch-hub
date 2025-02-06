@@ -1,3 +1,4 @@
+use actix::Addr;
 use color_eyre::{config::HookBuilder, eyre};
 use ratatui::layout::Position;
 use std::io::{self, stdout, Stdout};
@@ -13,7 +14,7 @@ use ratatui::{
     Terminal,
 };
 
-use crate::app::logging::Logger;
+use crate::logger::{Logger, LoggerActor};
 
 /// A type alias for the terminal type used in this application
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
@@ -34,14 +35,14 @@ pub fn restore() -> io::Result<()> {
 
 /// This replaces the standard color_eyre panic and error hooks with hooks that
 /// restore the terminal before printing the panic or error.
-pub fn install_hooks() -> color_eyre::Result<()> {
+pub fn install_hooks(logger: Addr<Logger>) -> color_eyre::Result<()> {
     let (panic_hook, eyre_hook) = HookBuilder::default().into_hooks();
 
     // convert from a color_eyre PanicHook to a standard panic hook
     let panic_hook = panic_hook.into_panic_hook();
     panic::set_hook(Box::new(move |panic_info| {
         restore().unwrap();
-        Logger::flush();
+        drop(logger.flush()); // TODO: Handle this
         panic_hook(panic_info);
     }));
 

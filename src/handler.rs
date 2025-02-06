@@ -10,11 +10,13 @@ use std::{
 };
 
 use crate::{
-    app::{logging::Logger, screens::CurrentScreen, App},
+    app::{screens::CurrentScreen, App},
     loading_screen,
+    logger::{Logger, LoggerActor},
     ui::draw_ui,
 };
 
+use actix::Addr;
 use bookmarked::handle_bookmarked_patchsets;
 use color_eyre::eyre::bail;
 use details_actions::handle_patchset_details;
@@ -27,7 +29,7 @@ use ratatui::{
     Terminal,
 };
 
-fn key_handling<B>(
+async fn key_handling<B>(
     mut terminal: Terminal<B>,
     app: &mut App,
     key: KeyEvent,
@@ -47,7 +49,7 @@ where
                 return handle_mailing_list_selection(app, key, terminal);
             }
             CurrentScreen::BookmarkedPatchsets => {
-                return handle_bookmarked_patchsets(app, key, terminal);
+                return handle_bookmarked_patchsets(app, key, terminal).await;
             }
             CurrentScreen::PatchsetDetails => {
                 handle_patchset_details(app, key, &mut terminal)?;
@@ -56,7 +58,7 @@ where
                 handle_edit_config(app, key)?;
             }
             CurrentScreen::LatestPatchsets => {
-                return handle_latest_patchsets(app, key, terminal);
+                return handle_latest_patchsets(app, key, terminal).await;
             }
         }
     }
@@ -102,12 +104,18 @@ where
     Ok(terminal)
 }
 
-pub fn run_app<B>(mut terminal: Terminal<B>, mut app: App) -> color_eyre::Result<()>
+pub async fn run_app<B>(
+    logger: Addr<Logger>,
+    mut terminal: Terminal<B>,
+    mut app: App,
+) -> color_eyre::Result<()>
 where
     B: Backend + Send + 'static,
 {
-    if !app.check_external_deps() {
-        Logger::error("patch-hub cannot be executed because some dependencies are missing");
+    if !app.check_external_deps().await {
+        logger
+            .error("patch-hub cannot be executed because some dependencies are missing")
+            .await;
         bail!("patch-hub cannot be executed because some dependencies are missing, check logs for more information");
     }
 
@@ -125,7 +133,7 @@ where
             if key.kind == KeyEventKind::Release {
                 continue;
             }
-            match key_handling(terminal, &mut app, key)? {
+            match key_handling(terminal, &mut app, key).await? {
                 ControlFlow::Continue(t) => terminal = t,
                 ControlFlow::Break(_) => return Ok(()),
             }
