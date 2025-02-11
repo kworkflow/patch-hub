@@ -13,7 +13,7 @@ use ratatui::{
     Terminal,
 };
 
-use crate::app::logging::Logger;
+use crate::logger::{LoggerActor, LoggerTx};
 
 /// A type alias for the terminal type used in this application
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
@@ -34,14 +34,20 @@ pub fn restore() -> io::Result<()> {
 
 /// This replaces the standard color_eyre panic and error hooks with hooks that
 /// restore the terminal before printing the panic or error.
-pub fn install_hooks() -> color_eyre::Result<()> {
+pub fn install_hooks(logger: LoggerTx) -> color_eyre::Result<()> {
     let (panic_hook, eyre_hook) = HookBuilder::default().into_hooks();
 
     // convert from a color_eyre PanicHook to a standard panic hook
     let panic_hook = panic_hook.into_panic_hook();
     panic::set_hook(Box::new(move |panic_info| {
         restore().unwrap();
-        Logger::flush();
+        let handle = <LoggerTx as Clone>::clone(&logger).flush();
+
+        // Force the logger to flush before panicking
+        if let Err(err) = tokio::runtime::Handle::current().block_on(handle) {
+            eprintln!("{}", err);
+        }
+
         panic_hook(panic_info);
     }));
 
