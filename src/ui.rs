@@ -1,4 +1,7 @@
-use crate::app::{screens::CurrentScreen, App};
+use crate::{
+    app::{screens::CurrentScreen, App},
+    logger::LoggerActor,
+};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
@@ -16,7 +19,7 @@ mod mail_list;
 mod navigation_bar;
 pub mod popup;
 
-pub fn draw_ui(f: &mut Frame, app: &App) {
+pub fn draw_ui(f: &mut Frame, app: &App<impl LoggerActor>) {
     // Clear the whole screen for sanitizing reasons
     f.render_widget(Clear, f.area());
 
