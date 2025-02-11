@@ -4,10 +4,7 @@ use clap::Parser;
 use color_eyre::eyre::eyre;
 use ratatui::{prelude::Backend, Terminal};
 
-use crate::{
-    app::{logging::Logger, App},
-    utils,
-};
+use crate::{app::App, logger::LoggerTx, utils};
 
 #[derive(Debug, Parser)]
 #[command(version, about)]
@@ -25,9 +22,10 @@ impl Cli {
         &self,
         terminal: Terminal<B>,
         app: &mut App,
+        logger: LoggerTx,
     ) -> ControlFlow<color_eyre::Result<()>, Terminal<B>> {
         if self.show_configs {
-            Logger::info("Printing current configurations");
+            logger.info("Printing current configurations");
             drop(terminal);
             if let Err(err) = utils::restore() {
                 return ControlFlow::Break(Err(eyre!(err)));

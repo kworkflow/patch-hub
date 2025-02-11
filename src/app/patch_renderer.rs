@@ -4,9 +4,8 @@ use std::{
     process::{Command, Stdio},
 };
 
+use color_eyre::eyre::Context;
 use serde::{Deserialize, Serialize};
-
-use super::logging::Logger;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]
 pub enum PatchRenderer {
@@ -79,10 +78,7 @@ fn bat_patch_renderer(patch: &str) -> color_eyre::Result<String> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
-        .map_err(|e| {
-            Logger::error(format!("Failed to spawn bat for patch preview: {}", e));
-            e
-        })?;
+        .context("Failed to spawn bat for patch preview")?;
 
     bat.stdin.as_mut().unwrap().write_all(patch.as_bytes())?;
     let output = bat.wait_with_output()?;
@@ -103,10 +99,7 @@ fn delta_patch_renderer(patch: &str) -> color_eyre::Result<String> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
-        .map_err(|e| {
-            Logger::error(format!("Failed to spawn delta for patch preview: {}", e));
-            e
-        })?;
+        .context("Failed to spawn delta for patch preview")?;
 
     delta.stdin.as_mut().unwrap().write_all(patch.as_bytes())?;
     let output = delta.wait_with_output()?;
@@ -123,13 +116,7 @@ fn diff_so_fancy_renderer(patch: &str) -> color_eyre::Result<String> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
-        .map_err(|e| {
-            Logger::error(format!(
-                "Failed to spawn diff-so-fancy for patch preview: {}",
-                e
-            ));
-            e
-        })?;
+        .context("Failed to spawn diff-so-fancy for patch preview")?;
 
     dsf.stdin.as_mut().unwrap().write_all(patch.as_bytes())?;
     let output = dsf.wait_with_output()?;
