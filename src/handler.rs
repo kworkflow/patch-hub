@@ -10,8 +10,9 @@ use std::{
 };
 
 use crate::{
-    app::{logging::Logger, screens::CurrentScreen, App},
+    app::{screens::CurrentScreen, App},
     loading_screen,
+    logger::LoggerActor,
     ui::draw_ui,
 };
 
@@ -29,7 +30,7 @@ use ratatui::{
 
 fn key_handling<B>(
     mut terminal: Terminal<B>,
-    app: &mut App,
+    app: &mut App<impl LoggerActor>,
     key: KeyEvent,
 ) -> color_eyre::Result<ControlFlow<(), Terminal<B>>>
 where
@@ -63,7 +64,10 @@ where
     Ok(ControlFlow::Continue(terminal))
 }
 
-fn logic_handling<B>(mut terminal: Terminal<B>, app: &mut App) -> color_eyre::Result<Terminal<B>>
+fn logic_handling<B>(
+    mut terminal: Terminal<B>,
+    app: &mut App<impl LoggerActor>,
+) -> color_eyre::Result<Terminal<B>>
 where
     B: Backend + Send + 'static,
 {
@@ -102,12 +106,16 @@ where
     Ok(terminal)
 }
 
-pub fn run_app<B>(mut terminal: Terminal<B>, mut app: App) -> color_eyre::Result<()>
+pub fn run_app<B>(
+    mut terminal: Terminal<B>,
+    mut app: App<impl LoggerActor>,
+    logger: impl LoggerActor,
+) -> color_eyre::Result<()>
 where
     B: Backend + Send + 'static,
 {
     if !app.check_external_deps() {
-        Logger::error("patch-hub cannot be executed because some dependencies are missing");
+        logger.error("patch-hub cannot be executed because some dependencies are missing");
         bail!("patch-hub cannot be executed because some dependencies are missing, check logs for more information");
     }
 

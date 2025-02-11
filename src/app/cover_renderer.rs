@@ -4,9 +4,8 @@ use std::{
     process::{Command, Stdio},
 };
 
+use color_eyre::eyre::Context;
 use serde::{Deserialize, Serialize};
-
-use super::logging::Logger;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]
 pub enum CoverRenderer {
@@ -67,10 +66,7 @@ fn bat_cover_renderer(patch: &str) -> color_eyre::Result<String> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
-        .map_err(|e| {
-            Logger::error(format!("Failed to spawn bat for cover preview: {}", e));
-            e
-        })?;
+        .context("Failed to spawn bat for cover preview")?;
 
     bat.stdin.as_mut().unwrap().write_all(patch.as_bytes())?;
     let output = bat.wait_with_output()?;
