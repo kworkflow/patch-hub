@@ -11,7 +11,7 @@ use ratatui::{
     Terminal,
 };
 
-pub fn handle_bookmarked_patchsets<B>(
+pub async fn handle_bookmarked_patchsets<B>(
     app: &mut App,
     key: KeyEvent,
     mut terminal: Terminal<B>,
@@ -38,7 +38,7 @@ where
             terminal = loading_screen! {
                 terminal,
                 "Loading patchset" => {
-                    app.init_details_actions()?;
+                    app.init_details_actions().await?;
                     app.set_current_screen(CurrentScreen::PatchsetDetails);
                 }
             };

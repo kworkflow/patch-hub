@@ -1,12 +1,12 @@
 use crate::{
-    log_on_error,
+    logger::{Logger, LoggerActor},
     ui::popup::{info_popup::InfoPopUp, PopUp},
 };
+use actix::Addr;
 use ansi_to_tui::IntoText;
 use color_eyre::eyre::bail;
 use config::Config;
 use cover_renderer::render_cover;
-use logging::Logger;
 use patch_hub::lore::{
     lore_api_client::BlockingLoreAPIClient,
     lore_session,
@@ -28,7 +28,6 @@ use crate::utils;
 
 mod config;
 pub mod cover_renderer;
-pub mod logging;
 pub mod patch_renderer;
 pub mod screens;
 
@@ -54,6 +53,7 @@ pub struct App {
     /// Client to handle Lore API requests and responses
     pub lore_api_client: BlockingLoreAPIClient,
     pub popup: Option<Box<dyn PopUp>>,
+    pub logger: Addr<Logger>,
 }
 
 impl App {
@@ -65,7 +65,7 @@ impl App {
     /// # Returns
     ///
     /// `App` instance with loading configurations and app data.
-    pub fn new() -> App {
+    pub fn new(logger: Addr<Logger>) -> App {
         let config: Config = Config::build();
         config.create_dirs();
 
@@ -83,9 +83,6 @@ impl App {
         let lore_api_client = BlockingLoreAPIClient::default();
 
         // Initialize the logger before the app starts
-        Logger::init_log_file(&config);
-        Logger::info("patch-hub started");
-        logging::garbage_collector::collect_garbage(&config);
 
         App {
             current_screen: CurrentScreen::MailingListSelection,
@@ -108,6 +105,7 @@ impl App {
             config,
             lore_api_client,
             popup: None,
+            logger,
         }
     }
 
@@ -135,7 +133,7 @@ impl App {
     /// Initializes field [App::details_actions], from currently selected
     /// patchset in [App::bookmarked_patchsets] or [App::latest_patchsets],
     /// depending on the value of [App::current_screen].
-    pub fn init_details_actions(&mut self) -> color_eyre::Result<()> {
+    pub async fn init_details_actions(&mut self) -> color_eyre::Result<()> {
         let representative_patch: Patch;
         let mut is_patchset_bookmarked = true;
         let mut reviewed_by = Vec::new();
@@ -163,15 +161,23 @@ impl App {
             screen => bail!(format!("Invalid screen passed as argument {screen:?}")),
         };
 
-        let patchset_path: String = match log_on_error!(lore_session::download_patchset(
-            self.config.patchsets_cache_dir(),
-            &representative_patch,
-        )) {
+        let patchset_path: String = match self
+            .logger
+            .error_on_error(lore_session::download_patchset(
+                self.config.patchsets_cache_dir(),
+                &representative_patch,
+            ))
+            .await
+        {
             Ok(result) => result,
             Err(io_error) => bail!("{io_error}"),
         };
 
-        match log_on_error!(lore_session::split_patchset(&patchset_path)) {
+        match self
+            .logger
+            .error_on_error(lore_session::split_patchset(&patchset_path))
+            .await
+        {
             Ok(raw_patches) => {
                 let mut patches_preview: Vec<Text> = Vec::new();
                 for raw_patch in &raw_patches {
@@ -206,25 +212,26 @@ impl App {
                     tested_by.push(authors_tested_by);
                     acked_by.push(authors_acked_by);
 
-                    let rendered_cover = match render_cover(raw_cover, self.config.cover_renderer())
+                    let rendered_cover = match self
+                        .logger
+                        .error_on_error(render_cover(raw_cover, self.config.cover_renderer()))
+                        .await
                     {
                         Ok(render) => render,
-                        Err(_) => {
-                            Logger::error("Failed to render cover preview with external program");
-                            raw_cover.to_string()
-                        }
+                        Err(_) => raw_cover.to_string(),
                     };
 
-                    let rendered_patch =
-                        match render_patch_preview(raw_patch, self.config.patch_renderer()) {
-                            Ok(render) => render,
-                            Err(_) => {
-                                Logger::error(
-                                    "Failed to render patch preview with external program",
-                                );
-                                raw_patch.to_string()
-                            }
-                        };
+                    let rendered_patch = match self
+                        .logger
+                        .error_on_error(render_patch_preview(
+                            raw_patch,
+                            self.config.patch_renderer(),
+                        ))
+                        .await
+                    {
+                        Ok(render) => render,
+                        Err(_) => raw_patch.to_string(),
+                    };
 
                     patches_preview
                         .push(format!("{}---\n{}", rendered_cover, rendered_patch).into_text()?);
@@ -391,36 +398,44 @@ impl App {
     ///
     /// If soft dependencies are missing, the application can still run and
     /// their absence will only be logged
-    pub fn check_external_deps(&self) -> bool {
+    pub async fn check_external_deps(&self) -> bool {
         let mut app_can_run = true;
 
         if !utils::binary_exists("b4") {
-            Logger::error("b4 is not installed, patchsets cannot be downloaded");
+            self.logger
+                .error("b4 is not installed, patchsets cannot be downloaded")
+                .await;
             app_can_run = false;
         }
 
         if !utils::binary_exists("git") {
-            Logger::warn("git is not installed, send-email won't work");
+            self.logger
+                .warn("git is not installed, send-email won't work")
+                .await;
         }
 
         match self.config.patch_renderer() {
             PatchRenderer::Bat => {
                 if !utils::binary_exists("bat") {
-                    Logger::warn("bat is not installed, patch rendering will fallback to default");
+                    self.logger
+                        .warn("bat is not installed, patch rendering will fallback to default")
+                        .await;
                 }
             }
             PatchRenderer::Delta => {
                 if !utils::binary_exists("delta") {
-                    Logger::warn(
-                        "delta is not installed, patch rendering will fallback to default",
-                    );
+                    self.logger
+                        .warn("delta is not installed, patch rendering will fallback to default")
+                        .await;
                 }
             }
             PatchRenderer::DiffSoFancy => {
                 if !utils::binary_exists("diff-so-fancy") {
-                    Logger::warn(
+                    self.logger
+                        .warn(
                         "diff-so-fancy is not installed, patch rendering will fallback to default",
-                    );
+                        )
+                        .await;
                 }
             }
             _ => {}
