@@ -1,3 +1,18 @@
+# Version 0.1.5 (2025-02-19)
+
+The time between releases grows, and the number of changes per release decreases... This is true, but it is also true that version 0.1.5 comes with long-awaited features!
+
+### New Functionalities and Changes Highlight
+
+1. Sending replies with `Reviewed-by` for a subset of patches.
+2. Easily consult the number of `Reviewed-by`, `Acked-by`, and `Tested-by`.
+3. Patchset application with configurations for multiple kernel trees (great job from @OJarrisonn).
+4. Pop-ups for help screens, info messages, and much more (another great one from @OJarrisonn).
+
+### Problems and Future Changes
+
+Now the idea is to stop the adding of features and stabilize the project. We still have poor unit-test coverage and the architecture is showing signs of turning into a big ball of mud... In this respect, we are planning a major redesign of `patch-hub` to make it better for developers and users alike!
+
 # Version 0.1.4 (2024-11-19)
 
 It has become a staple of the project at this point, but this release took a long time to be done (longer than v0.1.2 to v.0.1.3). As like in v0.1.3, this release consists of a mix of new features, refactorings and some fixes. Another cycle with great contributions from @OJarrisonn, @th-duvanel, and @lorenzoberts. Many thanks and welcome for the new contributors @auyer and @gabrielsrd. There are major new changes already on the oven as opened Pull-Requests, but I found it worth to make a new release, both to mark the progress done and to not have a huge time gap between releases.
