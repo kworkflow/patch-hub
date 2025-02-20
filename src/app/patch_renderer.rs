@@ -4,6 +4,7 @@ use std::{
     process::{Command, Stdio},
 };
 
+use color_eyre::eyre::eyre;
 use serde::{Deserialize, Serialize};
 
 use super::logging::Logger;
@@ -101,7 +102,7 @@ fn bat_patch_renderer(patch: &str) -> color_eyre::Result<String> {
 
     bat.stdin
         .as_mut()
-        .unwrap()
+        .ok_or_else(|| eyre!("Failed to get stdin handle"))?
         .write_all(cleaned_patch.as_bytes())?;
     let output = bat.wait_with_output()?;
     Ok(String::from_utf8(output.stdout)?)
@@ -134,7 +135,7 @@ fn delta_patch_renderer(patch: &str) -> color_eyre::Result<String> {
     delta
         .stdin
         .as_mut()
-        .unwrap()
+        .ok_or_else(|| eyre!("Failed to get stdin handle"))?
         .write_all(cleaned_patch.as_bytes())?;
     let output = delta.wait_with_output()?;
     Ok(String::from_utf8(output.stdout)?)
@@ -162,7 +163,7 @@ fn diff_so_fancy_renderer(patch: &str) -> color_eyre::Result<String> {
 
     dsf.stdin
         .as_mut()
-        .unwrap()
+        .ok_or_else(|| eyre!("Failed to get stdin handle"))?
         .write_all(cleaned_patch.as_bytes())?;
     let output = dsf.wait_with_output()?;
     Ok(String::from_utf8(output.stdout)?)
