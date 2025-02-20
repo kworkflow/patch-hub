@@ -154,7 +154,10 @@ impl DetailsActions {
     }
 
     pub fn toggle_action(&mut self, patchset_action: PatchsetAction) {
-        let current_value = *self.patchset_actions.get(&patchset_action).unwrap();
+        let current_value = *self
+            .patchset_actions
+            .get(&patchset_action)
+            .expect("DetailsActions::Patchset_actions must be initialized properly");
         self.patchset_actions
             .insert(patchset_action, !current_value);
     }
