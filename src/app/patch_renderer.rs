@@ -65,12 +65,26 @@ pub fn render_patch_preview(raw: &str, renderer: &PatchRenderer) -> color_eyre::
     Ok(text)
 }
 
+/// Find the signature delimiter if it exists. Return everything before the signature delimiter
+/// If no signature delimiter found, return original patch.
+fn clean_patch_for_preview(patch: &str) -> String {
+    let lines: Vec<&str> = patch.lines().collect();
+    
+    if let Some(sig_pos) = lines.iter().position(|&line| line.trim() == "--") {
+        lines[..sig_pos].join("\n")
+    } else {
+        patch.to_string()
+    }
+}
+
 /// Renders a patch using the `bat` command line tool.
 ///
 /// # Errors
 ///
 /// If bat isn't installed or if the command fails, an error will be returned.
 fn bat_patch_renderer(patch: &str) -> color_eyre::Result<String> {
+    let cleaned_patch = clean_patch_for_preview(patch);
+    
     let mut bat = Command::new("bat")
         .arg("-pp")
         .arg("-f")
@@ -84,7 +98,7 @@ fn bat_patch_renderer(patch: &str) -> color_eyre::Result<String> {
             e
         })?;
 
-    bat.stdin.as_mut().unwrap().write_all(patch.as_bytes())?;
+    bat.stdin.as_mut().unwrap().write_all(cleaned_patch.as_bytes())?;
     let output = bat.wait_with_output()?;
     Ok(String::from_utf8(output.stdout)?)
 }
@@ -95,6 +109,8 @@ fn bat_patch_renderer(patch: &str) -> color_eyre::Result<String> {
 ///
 /// If delta isn't installed or if the command fails, an error will be returned.
 fn delta_patch_renderer(patch: &str) -> color_eyre::Result<String> {
+    let cleaned_patch = clean_patch_for_preview(patch);
+    
     let mut delta = Command::new("delta")
         .arg("--pager")
         .arg("less")
@@ -108,7 +124,7 @@ fn delta_patch_renderer(patch: &str) -> color_eyre::Result<String> {
             e
         })?;
 
-    delta.stdin.as_mut().unwrap().write_all(patch.as_bytes())?;
+    delta.stdin.as_mut().unwrap().write_all(cleaned_patch.as_bytes())?;
     let output = delta.wait_with_output()?;
     Ok(String::from_utf8(output.stdout)?)
 }
@@ -119,6 +135,8 @@ fn delta_patch_renderer(patch: &str) -> color_eyre::Result<String> {
 ///
 /// If diff-so-fancy isn't installed or if the command fails, an error will be returned.
 fn diff_so_fancy_renderer(patch: &str) -> color_eyre::Result<String> {
+    let cleaned_patch = clean_patch_for_preview(patch);
+    
     let mut dsf = Command::new("diff-so-fancy")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -131,7 +149,7 @@ fn diff_so_fancy_renderer(patch: &str) -> color_eyre::Result<String> {
             e
         })?;
 
-    dsf.stdin.as_mut().unwrap().write_all(patch.as_bytes())?;
+    dsf.stdin.as_mut().unwrap().write_all(cleaned_patch.as_bytes())?;
     let output = dsf.wait_with_output()?;
     Ok(String::from_utf8(output.stdout)?)
 }
