@@ -1,4 +1,4 @@
-use crate::app::config::Config;
+use crate::app::config::{Config, KernelTree};
 
 use super::CurrentScreen;
 use ::patch_hub::lore::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
@@ -211,28 +211,23 @@ impl DetailsActions {
         Ok(())
     }
 
-    /// Try to apply the patchset to a target kernel tree and returns a `String`
-    /// informing if the apply succeeded or failed and why.
+    /// Checks if there is a `target_kernel_tree` and if it is in `Config::kernel_trees` and if
+    /// that kernel tree is a valid git directory.
     ///
-    /// # TODO:
-    /// - Break down this function
-    /// - Add unit tests
-    pub fn apply_patchset(&self, config: &Config) -> Result<String, String> {
-        // 1. Check if target kernel tree is set
+    /// Returns the a valid `KernelTree` or a `String` with the error message on failure.
+    fn validate_kernel_tree<'a>(&self, config: &'a Config) -> Result<&'a KernelTree, String> {
         let kernel_tree_id = if let Some(target) = config.target_kernel_tree() {
             target
         } else {
             return Err("target kernel tree unset".to_string());
         };
 
-        // 2. Check if target kernel tree exists
         let kernel_tree = if let Some(tree) = config.get_kernel_tree(kernel_tree_id) {
             tree
         } else {
             return Err(format!("invalid target kernel tree '{}'", kernel_tree_id));
         };
 
-        // 3. Check if path to kernel tree is valid
         let kernel_tree_path = Path::new(kernel_tree.path());
         if !kernel_tree_path.is_dir() {
             return Err(format!("{} isn't a directory", kernel_tree.path()));
@@ -240,15 +235,24 @@ impl DetailsActions {
             return Err(format!("{} isn't a git repository", kernel_tree.path()));
         }
 
-        // 4. Check if there are any `git rebase`, `git merge`, `git bisect`, or
-        // `git am` already happening
+        Ok(kernel_tree)
+    }
+
+    // Ensures the kernel directory is not currently in another git operation,
+    // that it does not have unstaged or uncommited changes, and that the base branch
+    // is valid.
+    //
+    // Returns `()` on success and a `String` with an error message on failure.
+    fn check_git_state(&self, kernel_tree: &KernelTree) -> Result<(), String> {
+        let kernel_tree_path = Path::new(kernel_tree.path());
+
         if kernel_tree_path.join(".git/rebase-merge").is_dir() {
             return Err(
                 "rebase in progress. \nrun `git rebase --abort` before continuing".to_string(),
             );
         } else if kernel_tree_path.join(".git/MERGE_HEAD").is_file() {
             return Err(
-                "merge in progress. \nrun `git rebase --abort` before continuing".to_string(),
+                "merge in progress. \nrun `git merge --abort` before continuing".to_string(),
             );
         } else if kernel_tree_path.join(".git/BISECT_LOG").is_file() {
             return Err(
@@ -261,23 +265,22 @@ impl DetailsActions {
             );
         }
 
-        // 5. Check if there are any staged or unstaged changes
         let git_status_out = Command::new("git")
             .arg("-C")
             .arg(kernel_tree.path())
             .arg("status")
             .arg("--porcelain")
             .output()
-            .unwrap();
-        let git_status_out = String::from_utf8_lossy(&git_status_out.stdout);
-        if !git_status_out.is_empty() {
+            .map_err(|e| format!("failed to check git status {}", e))?;
+
+        let status_output = String::from_utf8_lossy(&git_status_out.stdout);
+        if !status_output.is_empty() {
             return Err(format!(
                 "there are staged and/or unstaged changes\n{}",
-                git_status_out
+                status_output
             ));
         }
 
-        // 6. Check if base branch is valid
         let git_show_ref_out = Command::new("git")
             .arg("-C")
             .arg(kernel_tree.path())
@@ -286,7 +289,8 @@ impl DetailsActions {
             .arg("--quiet")
             .arg(format!("refs/heads/{}", kernel_tree.branch()))
             .output()
-            .unwrap();
+            .map_err(|e| format!("failed to verify branch: {}", e))?;
+
         if !git_show_ref_out.status.success() {
             return Err(format!(
                 "invalid branch '{}' for '{}'",
@@ -295,8 +299,13 @@ impl DetailsActions {
             ));
         }
 
-        // 7. Save original branch, switch to base branch, and checkout to target
-        // branch
+        Ok(())
+    }
+
+    /// Get the current branch of the supplied kernel tree
+    ///
+    /// Returns the branch name as a `String` or a `String` with the error message on failure
+    fn get_current_branch(&self, kernel_tree: &KernelTree) -> Result<String, String> {
         let original_branch = Command::new("git")
             .arg("-C")
             .arg(kernel_tree.path())
@@ -304,31 +313,77 @@ impl DetailsActions {
             .arg("--abbrev-ref")
             .arg("HEAD")
             .output()
-            .unwrap();
-        let mut original_branch = String::from_utf8_lossy(&original_branch.stdout).to_string();
-        original_branch.pop();
-        let _ = Command::new("git")
+            .map_err(|e| format!("failed to get current branch: {}", e))?;
+
+        let mut branch = String::from_utf8_lossy(&original_branch.stdout).to_string();
+        branch.pop();
+        Ok(branch)
+    }
+
+    /// Switch the supplied kernel tree to the supplied branch, if it exists.
+    ///
+    /// Returns `()` on sucess and a `String` with the error message on failure.
+    fn switch_to_branch(&self, kernel_tree: &KernelTree, branch: &str) -> Result<(), String> {
+        let output = Command::new("git")
             .arg("-C")
             .arg(kernel_tree.path())
             .arg("switch")
-            .arg(kernel_tree.branch())
+            .arg(branch)
             .output()
-            .unwrap();
+            .map_err(|e| format!("failed to switch branch: {}", e))?;
+
+        if !output.status.success() {
+            return Err(format!(
+                "failed to switch to branch '{}': {}",
+                branch,
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Create a new branch suffixed with the current timestamp.
+    ///
+    /// Returns a `String` with the branch name on success or the
+    /// error message on failure.
+    fn create_target_branch(
+        &self,
+        kernel_tree: &KernelTree,
+        config: &Config,
+    ) -> Result<String, String> {
+        self.switch_to_branch(kernel_tree, kernel_tree.branch())?;
+
         let target_branch_name = format!(
             "{}{}",
             config.git_am_branch_prefix(),
             chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S")
         );
-        let _ = Command::new("git")
+
+        let output = Command::new("git")
             .arg("-C")
             .arg(kernel_tree.path())
             .arg("checkout")
             .arg("-b")
             .arg(&target_branch_name)
             .output()
-            .unwrap();
+            .map_err(|e| format!("failed to create target branch: {}", e))?;
 
-        // 8. Apply the patchset
+        if !output.status.success() {
+            return Err(format!(
+                "failed to create branch '{}': {}",
+                target_branch_name,
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        Ok(target_branch_name)
+    }
+
+    /// Apply the selected patchset on the given `kernel_tree` with arguments from `Config`
+    ///
+    /// Returns `()` on sucess and a `String` containing the error message on failure.
+    fn run_git_am(&self, kernel_tree: &KernelTree, config: &Config) -> Result<(), String> {
         let mut git_am_out = Command::new("git");
         git_am_out
             .arg("-C")
@@ -338,7 +393,11 @@ impl DetailsActions {
         config.git_am_options().split_whitespace().for_each(|opt| {
             git_am_out.arg(opt);
         });
-        let git_am_out = git_am_out.output().unwrap();
+
+        let git_am_out = git_am_out
+            .output()
+            .map_err(|e| format!("failed to execute git-am: {}", e))?;
+
         if !git_am_out.status.success() {
             let _ = Command::new("git")
                 .arg("-C")
@@ -346,26 +405,35 @@ impl DetailsActions {
                 .arg("am")
                 .arg("--abort")
                 .output()
-                .unwrap();
+                .map_err(|e| format!("failed to abort git-am: {}", e));
+
+            return Err(String::from_utf8_lossy(&git_am_out.stderr).to_string());
         }
 
-        // 9. Return back to original branch
-        let _ = Command::new("git")
-            .arg("-C")
-            .arg(kernel_tree.path())
-            .arg("switch")
-            .arg(&original_branch)
-            .output()
-            .unwrap();
+        Ok(())
+    }
 
-        if git_am_out.status.success() {
-            Ok(format!(" Patchset '{}' applied successfully!\n\n - Kernel Tree: '{}'\n\n - Base Branch: '{}'\n\n - Applied branch: '{}'", self.representative_patch.title(), kernel_tree.path(), kernel_tree.branch(), &target_branch_name, ))
-        } else {
-            Err(format!(
-                "`git am` failed\n{}{}",
-                &original_branch,
-                String::from_utf8_lossy(&git_am_out.stderr)
-            ))
+    /// Try to apply the patchset to a target kernel tree and returns a `String`
+    /// informing if the apply succeeded or failed and why.
+    ///
+    /// Returns a `Result<String, String>` containing either the success or the error message.
+    /// # TODO:
+    /// - Add unit tests
+    pub fn apply_patchset(&self, config: &Config) -> Result<String, String> {
+        let kernel_tree = self.validate_kernel_tree(config)?;
+        self.check_git_state(kernel_tree)?;
+
+        let original_branch = self.get_current_branch(kernel_tree)?;
+        let target_branch = self.create_target_branch(kernel_tree, config)?;
+
+        let git_am_result = self.run_git_am(kernel_tree, config);
+        self.switch_to_branch(kernel_tree, &original_branch)?;
+
+        match git_am_result {
+            Ok(_) => {
+                Ok(format!(" Patchset '{}' applied successfully!\n\n - Kernel Tree: '{}'\n\n - Base Branch: '{}'\n\n - Applied branch: '{}'", self.representative_patch.title(), kernel_tree.path(), kernel_tree.branch(), &target_branch))
+        },
+            Err(e) => Err(format!( "`git am` failed\n{}{}", &original_branch, e))
         }
     }
 }
