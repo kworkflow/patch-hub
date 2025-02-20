@@ -154,9 +154,12 @@ impl DetailsActions {
     }
 
     pub fn toggle_action(&mut self, patchset_action: PatchsetAction) {
-        let current_value = *self.patchset_actions.get(&patchset_action).unwrap();
-        self.patchset_actions
-            .insert(patchset_action, !current_value);
+        if let Some(&current_value) = self.patchset_actions.get(&patchset_action) {
+            self.patchset_actions
+                .insert(patchset_action, !current_value);
+        } else {
+            eprintln!("failed to get patchset_actions.");
+        }
     }
 
     pub fn actions_require_user_io(&self) -> bool {
