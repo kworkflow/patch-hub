@@ -65,7 +65,7 @@ impl App {
     /// # Returns
     ///
     /// `App` instance with loading configurations and app data.
-    pub fn new() -> App {
+    pub fn new() -> color_eyre::Result<Self> {
         let config: Config = Config::build();
         config.create_dirs();
 
@@ -83,11 +83,11 @@ impl App {
         let lore_api_client = BlockingLoreAPIClient::default();
 
         // Initialize the logger before the app starts
-        Logger::init_log_file(&config);
+        Logger::init_log_file(&config)?;
         Logger::info("patch-hub started");
         logging::garbage_collector::collect_garbage(&config);
 
-        App {
+        Ok(App {
             current_screen: CurrentScreen::MailingListSelection,
             mailing_list_selection: MailingListSelection {
                 mailing_lists: mailing_lists.clone(),
@@ -108,7 +108,7 @@ impl App {
             config,
             lore_api_client,
             popup: None,
-        }
+        })
     }
 
     /// Initializes field [App::latest_patchsets], from currently selected

@@ -244,31 +244,24 @@ impl Logger {
     /// // ... initialize the log file
     /// Logger::init_log_file(&config);
     /// ```
-    pub fn init_log_file(config: &Config) {
+    pub fn init_log_file(config: &Config) -> Result<(), std::io::Error> {
         let logger = Logger::get_logger();
 
-        let logs_path = &config.logs_path();
-        fs::create_dir_all(logs_path)
-            .unwrap_or_else(|_| panic!("Failed to create the logs folder at {}", logs_path));
+        let logs_path = config.logs_path();
+        fs::create_dir_all(logs_path)?;
 
         if logger.latest_log_file.is_none() {
             let latest_log_filename = LATEST_LOG_FILENAME.to_string();
             let latest_log_filepath = format!("{}/{}", logs_path, latest_log_filename);
 
-            File::create(&latest_log_filepath).expect("To clear latest.log file successfully");
+            File::create(&latest_log_filepath)?;
 
-            logger.latest_log_file = Some(
-                OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&latest_log_filepath)
-                    .unwrap_or_else(|_| {
-                        panic!(
-                            "Failed to create the latest.log file at {}",
-                            latest_log_filepath
-                        )
-                    }),
-            );
+            let log_file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&latest_log_filepath)?;
+
+            logger.latest_log_file = Some(log_file);
             logger.latest_log_filepath = Some(latest_log_filepath);
         }
 
@@ -279,17 +272,16 @@ impl Logger {
             );
             let log_filepath = format!("{}/{}", logs_path, log_filename);
 
-            logger.log_file = Some(
-                OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&log_filepath)
-                    .unwrap_or_else(|_| {
-                        panic!("Failed to create the log file at {}", log_filepath)
-                    }),
-            );
+            let log_file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_filepath)?;
+
+            logger.log_file = Some(log_file);
             logger.log_filepath = Some(log_filepath);
         }
+
+        Ok(())
     }
 }
 
