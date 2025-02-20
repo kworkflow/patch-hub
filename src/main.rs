@@ -17,7 +17,7 @@ fn main() -> color_eyre::Result<()> {
 
     utils::install_hooks()?;
     let mut terminal = utils::init()?;
-    let mut app = App::new();
+    let mut app = App::new()?;
 
     match args.resolve(terminal, &mut app) {
         ControlFlow::Break(b) => return b,
