@@ -142,11 +142,10 @@ impl LoreSession {
         }
 
         for i in lower_end..upper_end {
-            patch_feed_page.push(
-                self.processed_patches_map
-                    .get(&self.representative_patches_ids[i])
-                    .unwrap(),
-            )
+            let patch = self
+                .processed_patches_map
+                .get(&self.representative_patches_ids[i])?;
+            patch_feed_page.push(patch);
         }
 
         Some(patch_feed_page)
