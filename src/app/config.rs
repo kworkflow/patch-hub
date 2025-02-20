@@ -8,7 +8,7 @@ use std::{
     path::Path,
 };
 
-use super::{cover_renderer::CoverRenderer, patch_renderer::PatchRenderer};
+use super::{cover_renderer::CoverRenderer, patch_renderer::PatchRenderer, logging::Logger};
 
 #[cfg(test)]
 mod tests;
@@ -83,9 +83,17 @@ impl Config {
     fn load_file() -> Option<Config> {
         if let Ok(config_path) = env::var("PATCH_HUB_CONFIG_PATH") {
             if Path::new(&config_path).is_file() {
-                let file_contents = fs::read_to_string(&config_path).unwrap_or(String::new());
-                if let Ok(config) = serde_json::from_str(&file_contents) {
-                    return Some(config);
+                match fs::read_to_string(&config_path) {
+                    Ok(file_contents) => match serde_json::from_str(&file_contents) {
+                        Ok(config) => return Some(config),
+                        Err(e) => Logger::error(format!(
+                            "Failed to parse config file {}: {}",
+                            config_path, e
+                        )),
+                    },
+                    Err(e) => {
+                        Logger::error(format!("Failed to read config file {}: {}", config_path, e))
+                    }
                 }
             }
         }
@@ -95,9 +103,17 @@ impl Config {
             env::var("HOME").unwrap()
         );
         if Path::new(&config_path).is_file() {
-            let file_contents = fs::read_to_string(&config_path).unwrap_or(String::new());
-            if let Ok(config) = serde_json::from_str(&file_contents) {
-                return Some(config);
+            match fs::read_to_string(&config_path) {
+                Ok(file_contents) => match serde_json::from_str(&file_contents) {
+                    Ok(config) => return Some(config),
+                    Err(e) => Logger::error(format!(
+                        "Failed to parse config file {}: {}",
+                        config_path, e
+                    )),
+                },
+                Err(e) => {
+                    Logger::error(format!("Failed to read config file {}: {}", config_path, e))
+                }
             }
         }
 
@@ -128,9 +144,12 @@ impl Config {
 
     pub fn build() -> Self {
         let mut config = Self::load_file().unwrap_or_else(|| {
+            Logger::info("No valid config file found, using default configuration");
             let config = Self::default();
-            // TODO: Better handle this error
-            let _ = config.save_patch_hub_config();
+            match config.save_patch_hub_config() {
+                Ok(_) => Logger::info("Created default config file"),
+                Err(e) => Logger::error(format!("Failed to save default config: {}", e)),
+            }
             config
         });
 
