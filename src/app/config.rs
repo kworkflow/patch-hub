@@ -54,8 +54,12 @@ pub struct KernelTree {
 
 impl Config {
     fn default() -> Self {
-        let cache_dir = format!("{}/.cache/patch_hub", env::var("HOME").unwrap());
-        let data_dir = format!("{}/.local/share/patch_hub", env::var("HOME").unwrap());
+        let home = env::var("HOME").unwrap_or_else(|_| {
+            eprintln!("$HOME environment variable not set, using current directory");
+            ".".to_string()
+        });
+        let cache_dir = format!("{}/.cache/patch_hub", home);
+        let data_dir = format!("{}/.local/share/patch_hub", home);
 
         Config {
             page_size: 30,
