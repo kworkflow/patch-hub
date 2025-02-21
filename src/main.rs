@@ -8,6 +8,7 @@ use logger::{LogLevel, LoggerCore};
 
 mod app;
 mod cli;
+mod config;
 mod env;
 mod handler;
 mod logger;
