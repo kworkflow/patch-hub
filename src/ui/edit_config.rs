@@ -6,6 +6,7 @@ use ratatui::{
     Frame,
 };
 
+use crate::app::logging::Logger;
 use crate::app::App;
 
 pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
@@ -27,7 +28,14 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
             break;
         }
 
-        let (config, value) = edit_config.config(i);
+        let (config, value) = match edit_config.config(i) {
+            Some((cfg, val)) => (cfg, val),
+            None => {
+                Logger::error(format!("Invalid configuration index: {}", i));
+                return;
+            }
+        };
+
         let value = Line::from(if edit_config.is_editing() && i == highlighted_entry {
             vec![
                 Span::styled(edit_config.curr_edit().to_string(), Style::default()),
