@@ -51,18 +51,23 @@ impl EditConfig {
     }
 
     /// Get the config entry at the given index
-    pub fn config(&self, i: usize) -> (String, String) {
-        let editable_config = EditableConfig::try_from(i).unwrap();
-        let value = self.config_buffer.get(&editable_config).unwrap();
-        (editable_config.to_string(), value.clone())
+    pub fn config(&self, i: usize) -> Option<(String, String)> {
+        EditableConfig::try_from(i)
+            .ok()
+            .and_then(|editable_config| {
+                self.config_buffer
+                    .get(&editable_config)
+                    .map(|value| (editable_config.to_string(), value.clone()))
+            })
     }
 
     /// Toggle editing mode
     pub fn toggle_editing(&mut self) {
         if !self.is_editing {
-            let editable_config = EditableConfig::try_from(self.highlighted()).unwrap();
-            if let Some(value) = self.config_buffer.get(&editable_config) {
-                self.curr_edit = value.clone();
+            if let Ok(editable_config) = EditableConfig::try_from(self.highlighted()) {
+                if let Some(value) = self.config_buffer.get(&editable_config) {
+                    self.curr_edit = value.clone();
+                }
             }
         }
         self.is_editing = !self.is_editing;
@@ -101,9 +106,10 @@ impl EditConfig {
 
     /// Push the current edit value to the config buffer
     pub fn stage_edit(&mut self) {
-        let editable_config = EditableConfig::try_from(self.highlighted).unwrap();
-        self.config_buffer
-            .insert(editable_config, std::mem::take(&mut self.curr_edit));
+        if let Ok(editable_config) = EditableConfig::try_from(self.highlighted) {
+            self.config_buffer
+                .insert(editable_config, std::mem::take(&mut self.curr_edit));
+        }
     }
 }
 
