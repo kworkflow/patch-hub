@@ -10,8 +10,9 @@ use std::{
 };
 
 use crate::{
-    app::{logging::Logger, screens::CurrentScreen, App},
+    app::{screens::CurrentScreen, App},
     loading_screen,
+    logger::LoggerTx,
     ui::draw_ui,
 };
 
@@ -102,12 +103,16 @@ where
     Ok(terminal)
 }
 
-pub fn run_app<B>(mut terminal: Terminal<B>, mut app: App) -> color_eyre::Result<()>
+pub fn run_app<B>(
+    mut terminal: Terminal<B>,
+    mut app: App,
+    logger: LoggerTx,
+) -> color_eyre::Result<()>
 where
     B: Backend + Send + 'static,
 {
     if !app.check_external_deps() {
-        Logger::error("patch-hub cannot be executed because some dependencies are missing");
+        logger.error("patch-hub cannot be executed because some dependencies are missing");
         bail!("patch-hub cannot be executed because some dependencies are missing, check logs for more information");
     }
 
