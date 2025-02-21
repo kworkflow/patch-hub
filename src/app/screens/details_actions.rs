@@ -2,7 +2,7 @@ use crate::app::config::Config;
 
 use super::CurrentScreen;
 use ::patch_hub::lore::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
-use color_eyre::eyre::bail;
+use color_eyre::eyre::{bail, eyre};
 use patch_hub::lore::patch::Author;
 use ratatui::text::Text;
 use std::{
@@ -154,9 +154,12 @@ impl DetailsActions {
     }
 
     pub fn toggle_action(&mut self, patchset_action: PatchsetAction) {
-        let current_value = *self.patchset_actions.get(&patchset_action).unwrap();
-        self.patchset_actions
-            .insert(patchset_action, !current_value);
+        if let Some(&current_value) = self.patchset_actions.get(&patchset_action) {
+            self.patchset_actions
+                .insert(patchset_action, !current_value);
+        } else {
+            eprintln!("failed to get patchset_actions.");
+        }
     }
 
     pub fn actions_require_user_io(&self) -> bool {
@@ -176,8 +179,15 @@ impl DetailsActions {
             return Ok(());
         }
 
-        let tmp_dir = Command::new("mktemp").arg("--directory").output().unwrap();
-        let tmp_dir = Path::new(std::str::from_utf8(&tmp_dir.stdout).unwrap().trim());
+        let tmp_dir = Command::new("mktemp")
+            .arg("--directory")
+            .output()
+            .map_err(|e| eyre!("failed to create temp directory: {}", e))?;
+        let tmp_dir = Path::new(
+            std::str::from_utf8(&tmp_dir.stdout)
+                .map_err(|e| eyre!("invalid utf-8 in temp dir path: {}", e))?
+                .trim(),
+        );
 
         let git_reply_commands = match lore_session::prepare_reply_patchset_with_reviewed_by(
             &self.lore_api_client,
