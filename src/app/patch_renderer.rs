@@ -120,6 +120,8 @@ fn delta_patch_renderer(patch: &str) -> color_eyre::Result<String> {
         .arg("less")
         .arg("--paging")
         .arg("never")
+        .arg("-w")
+        .arg("130")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
