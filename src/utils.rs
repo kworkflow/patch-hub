@@ -118,12 +118,56 @@ macro_rules! loading_screen {
     };
 }
 
+#[cfg(test)]
 mod tests {
+    use std::sync::Once;
+
+    use super::*;
+
+    static INIT: Once = Once::new();
+
+    // Tests can be run in parallel, we don't want to override previously installed hooks
+    fn setup() {
+        INIT.call_once(|| {
+            install_hooks().expect("Failed to install hooks");
+        })
+    }
+
     #[test]
     fn test_binary_exists() {
         // cargo should always exist since we are running the tests with `cargo test`
         assert!(super::binary_exists("cargo"));
         // there is no way this binary exists
         assert!(!super::binary_exists("there_is_no_way_this_binary_exists"));
+    }
+
+    #[test]
+    fn test_install_hooks() {
+        setup();
+    }
+
+    #[test]
+    fn test_error_hook_works() {
+        setup();
+
+        let result: color_eyre::Result<()> = Err(eyre::eyre!("Test error"));
+
+        // We can't directly test the hook's formatting, but we can verify
+        // that handling an error doesn't cause unexpected panics
+        match result {
+            Ok(_) => panic!("Expected an error"),
+            Err(e) => {
+                let _ = format!("{:?}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn test_panic_hook() {
+        setup();
+
+        let result = std::panic::catch_unwind(|| std::panic!("Test panic"));
+
+        assert!(result.is_err());
     }
 }
