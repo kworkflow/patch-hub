@@ -1,0 +1,13 @@
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 10
+    target-branch: "unstable"
+    groups:
+      all-dependencies:
+        applies-to: [version-updates, security-updates]
+        patterns:
+          - "*"
