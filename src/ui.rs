@@ -16,7 +16,7 @@ mod mail_list;
 mod navigation_bar;
 pub mod popup;
 
-pub fn draw_ui(f: &mut Frame, app: &App) {
+pub fn draw_ui(f: &mut Frame, app: &App, page_size: usize) {
     // Clear the whole screen for sanitizing reasons
     f.render_widget(Clear, f.area());
 
@@ -36,7 +36,7 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
         CurrentScreen::BookmarkedPatchsets => {
             bookmarked::render_main(f, &app.bookmarked_patchsets, chunks[1])
         }
-        CurrentScreen::LatestPatchsets => latest::render_main(f, app, chunks[1]),
+        CurrentScreen::LatestPatchsets => latest::render_main(f, app, chunks[1], page_size),
         CurrentScreen::PatchsetDetails => details_actions::render_main(f, app, chunks[1]),
         CurrentScreen::EditConfig => edit_config::render_main(f, app, chunks[1]),
     }

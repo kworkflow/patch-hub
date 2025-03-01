@@ -43,7 +43,7 @@ impl Display for CoverRenderer {
     }
 }
 
-pub fn render_cover(raw: &str, renderer: &CoverRenderer) -> color_eyre::Result<String> {
+pub fn render_cover(raw: &str, renderer: CoverRenderer) -> color_eyre::Result<String> {
     let text = match renderer {
         CoverRenderer::Default => Ok(raw.to_string()),
         CoverRenderer::Bat => bat_cover_renderer(raw),

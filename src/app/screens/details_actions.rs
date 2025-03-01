@@ -1,4 +1,4 @@
-use crate::app::config::Config;
+use crate::config::{Config, StringOpt};
 
 use super::CurrentScreen;
 use ::patch_hub::lore::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
@@ -217,16 +217,16 @@ impl DetailsActions {
     /// # TODO:
     /// - Break down this function
     /// - Add unit tests
-    pub fn apply_patchset(&self, config: &Config) -> Result<String, String> {
+    pub async fn apply_patchset(&self, config: Config) -> Result<String, String> {
         // 1. Check if target kernel tree is set
-        let kernel_tree_id = if let Some(target) = config.target_kernel_tree() {
+        let kernel_tree_id = if let Some(target) = config.target_kernel_tree().await {
             target
         } else {
             return Err("target kernel tree unset".to_string());
         };
 
         // 2. Check if target kernel tree exists
-        let kernel_tree = if let Some(tree) = config.get_kernel_tree(kernel_tree_id) {
+        let kernel_tree = if let Some(tree) = config.kernel_tree(kernel_tree_id.clone()).await {
             tree
         } else {
             return Err(format!("invalid target kernel tree '{}'", kernel_tree_id));
@@ -316,7 +316,7 @@ impl DetailsActions {
             .unwrap();
         let target_branch_name = format!(
             "{}{}",
-            config.git_am_branch_prefix(),
+            config.string(StringOpt::GitAmBranchPrefix).await,
             chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S")
         );
         let _ = Command::new("git")
@@ -335,9 +335,13 @@ impl DetailsActions {
             .arg(kernel_tree.path())
             .arg("am")
             .arg(&self.patchset_path);
-        config.git_am_options().split_whitespace().for_each(|opt| {
-            git_am_out.arg(opt);
-        });
+        config
+            .string(StringOpt::GitAmOptions)
+            .await
+            .split_whitespace()
+            .for_each(|opt| {
+                git_am_out.arg(opt);
+            });
         let git_am_out = git_am_out.output().unwrap();
         if !git_am_out.status.success() {
             let _ = Command::new("git")

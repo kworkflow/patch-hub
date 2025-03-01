@@ -11,7 +11,7 @@ use ratatui::{
     Terminal,
 };
 
-pub fn handle_mailing_list_selection<B>(
+pub async fn handle_mailing_list_selection<B>(
     app: &mut App,
     key: KeyEvent,
     mut terminal: Terminal<B>,
@@ -26,7 +26,7 @@ where
         }
         KeyCode::Enter => {
             if app.mailing_list_selection.has_valid_target_list() {
-                app.init_latest_patchsets();
+                app.init_latest_patchsets().await;
                 let list_name = app
                     .latest_patchsets
                     .as_ref()
@@ -54,7 +54,7 @@ where
             };
         }
         KeyCode::F(2) => {
-            app.init_edit_config();
+            app.init_edit_config().await;
             app.set_current_screen(CurrentScreen::EditConfig);
         }
         KeyCode::F(1) => {

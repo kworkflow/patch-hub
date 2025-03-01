@@ -1,8 +1,9 @@
 use std::{collections::HashMap, fmt::Display, path::Path};
 
-use crate::app::config::Config;
 use color_eyre::eyre::bail;
 use derive_getters::Getters;
+
+use crate::config::{Config, StringOpt, USizeOpt};
 
 #[derive(Debug, Getters)]
 pub struct EditConfig {
@@ -14,28 +15,40 @@ pub struct EditConfig {
 }
 
 impl EditConfig {
-    pub fn new(config: &Config) -> Self {
+    pub async fn new(config: Config) -> Self {
         let mut config_buffer = HashMap::new();
-        config_buffer.insert(EditableConfig::PageSize, config.page_size().to_string());
-        config_buffer.insert(EditableConfig::CacheDir, config.cache_dir().to_string());
-        config_buffer.insert(EditableConfig::DataDir, config.data_dir().to_string());
+        config_buffer.insert(
+            EditableConfig::PageSize,
+            config.usize(USizeOpt::PageSize).await.to_string(),
+        );
+        config_buffer.insert(
+            EditableConfig::CacheDir,
+            config.string(StringOpt::CacheDir).await,
+        );
+        config_buffer.insert(
+            EditableConfig::DataDir,
+            config.string(StringOpt::DataDir).await,
+        );
         config_buffer.insert(
             EditableConfig::GitSendEmailOpt,
-            config.git_send_email_options().to_string(),
+            config.string(StringOpt::GitSendEmailOptions).await,
         );
         config_buffer.insert(
             EditableConfig::GitAmOpt,
-            config.git_am_options().to_string(),
+            config.string(StringOpt::GitAmOptions).await,
         );
         config_buffer.insert(
             EditableConfig::PatchRenderer,
-            config.patch_renderer().to_string(),
+            config.patch_renderer().await.to_string(),
         );
         config_buffer.insert(
             EditableConfig::CoverRenderer,
-            config.cover_renderer().to_string(),
+            config.cover_renderer().await.to_string(),
         );
-        config_buffer.insert(EditableConfig::MaxLogAge, config.max_log_age().to_string());
+        config_buffer.insert(
+            EditableConfig::MaxLogAge,
+            config.usize(USizeOpt::MaxLogAge).await.to_string(),
+        );
 
         EditConfig {
             config_buffer,

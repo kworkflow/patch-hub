@@ -18,7 +18,7 @@ impl Cli {
     /// Resolves the command line arguments and applies the necessary changes to the terminal and app
     ///
     /// Some arguments may finish the program early (returning `ControlFlow::Break`)
-    pub fn resolve<B: Backend>(
+    pub async fn resolve<B: Backend>(
         &self,
         terminal: Terminal<B>,
         app: &mut App,
@@ -30,7 +30,7 @@ impl Cli {
             if let Err(err) = utils::restore() {
                 return ControlFlow::Break(Err(eyre!(err)));
             }
-            match serde_json::to_string_pretty(&app.config) {
+            match app.config.serialize().await {
                 Err(err) => return ControlFlow::Break(Err(eyre!(err))),
                 Ok(config) => println!("patch-hub configurations:\n{}", config),
             }

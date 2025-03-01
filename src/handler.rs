@@ -11,6 +11,7 @@ use std::{
 
 use crate::{
     app::{screens::CurrentScreen, App},
+    config::USizeOpt,
     loading_screen,
     logger::Logger,
     ui::draw_ui,
@@ -28,7 +29,7 @@ use ratatui::{
     Terminal,
 };
 
-fn key_handling<B>(
+async fn key_handling<B>(
     mut terminal: Terminal<B>,
     app: &mut App,
     key: KeyEvent,
@@ -45,19 +46,19 @@ where
     } else {
         match app.current_screen {
             CurrentScreen::MailingListSelection => {
-                return handle_mailing_list_selection(app, key, terminal);
+                return handle_mailing_list_selection(app, key, terminal).await;
             }
             CurrentScreen::BookmarkedPatchsets => {
-                return handle_bookmarked_patchsets(app, key, terminal);
+                return handle_bookmarked_patchsets(app, key, terminal).await;
             }
             CurrentScreen::PatchsetDetails => {
-                handle_patchset_details(app, key, &mut terminal)?;
+                handle_patchset_details(app, key, &mut terminal).await?;
             }
             CurrentScreen::EditConfig => {
-                handle_edit_config(app, key)?;
+                handle_edit_config(app, key).await?;
             }
             CurrentScreen::LatestPatchsets => {
-                return handle_latest_patchsets(app, key, terminal);
+                return handle_latest_patchsets(app, key, terminal).await;
             }
         }
     }
@@ -103,19 +104,26 @@ where
     Ok(terminal)
 }
 
-pub fn run_app<B>(mut terminal: Terminal<B>, mut app: App, logger: Logger) -> color_eyre::Result<()>
+pub async fn run_app<B>(
+    mut terminal: Terminal<B>,
+    mut app: App,
+    logger: Logger,
+) -> color_eyre::Result<()>
 where
     B: Backend + Send + 'static,
 {
-    if !app.check_external_deps() {
+    if !app.check_external_deps().await {
         logger.error("patch-hub cannot be executed because some dependencies are missing");
-        bail!("patch-hub cannot be executed because some dependencies are missing, check logs for more information");
+        bail!(
+            "patch-hub cannot be executed because some dependencies are missing, check logs for more information"
+        );
     }
 
     loop {
         terminal = logic_handling(terminal, &mut app)?;
 
-        terminal.draw(|f| draw_ui(f, &app))?;
+        let page_size = app.config.usize(USizeOpt::PageSize).await;
+        terminal.draw(|f| draw_ui(f, &app, page_size))?;
 
         // *IMPORTANT*: Uncommenting the if below makes `patch-hub` not block
         // until an event is captured.  We should only do it when (if ever) we
@@ -126,7 +134,7 @@ where
             if key.kind == KeyEventKind::Release {
                 continue;
             }
-            match key_handling(terminal, &mut app, key)? {
+            match key_handling(terminal, &mut app, key).await? {
                 ControlFlow::Continue(t) => terminal = t,
                 ControlFlow::Break(_) => return Ok(()),
             }

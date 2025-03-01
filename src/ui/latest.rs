@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
+pub fn render_main(f: &mut Frame, app: &App, chunk: Rect, page_size: usize) {
     let page_number = app.latest_patchsets.as_ref().unwrap().page_number();
     let patchset_index = app.latest_patchsets.as_ref().unwrap().patchset_index();
     let mut list_items = Vec::<ListItem>::new();
@@ -20,7 +20,7 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
         .get_current_patch_feed_page()
         .unwrap();
 
-    let mut index: usize = (page_number - 1) * app.config.page_size();
+    let mut index: usize = (page_number - 1) * page_size;
     for patch in patch_feed_page {
         let patch_title = format!("{:width$}", patch.title(), width = 70);
         let patch_title = format!("{:.width$}", patch_title, width = 70);
@@ -60,9 +60,7 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
         .highlight_spacing(HighlightSpacing::Always);
 
     let mut list_state = ListState::default();
-    list_state.select(Some(
-        patchset_index - (page_number - 1) * app.config.page_size(),
-    ));
+    list_state.select(Some(patchset_index - (page_number - 1) * page_size));
 
     f.render_stateful_widget(list, chunk, &mut list_state);
 }

@@ -53,7 +53,7 @@ impl Display for PatchRenderer {
     }
 }
 
-pub fn render_patch_preview(raw: &str, renderer: &PatchRenderer) -> color_eyre::Result<String> {
+pub fn render_patch_preview(raw: &str, renderer: PatchRenderer) -> color_eyre::Result<String> {
     let text = match renderer {
         PatchRenderer::Default => Ok(raw.to_string()),
         PatchRenderer::Bat => bat_patch_renderer(raw),
