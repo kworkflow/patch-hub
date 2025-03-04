@@ -10,6 +10,9 @@ use tokio::{
     task::JoinHandle,
 };
 
+#[cfg(test)]
+mod tests;
+
 use crate::app::{cover_renderer::CoverRenderer, patch_renderer::PatchRenderer};
 
 /// Stores the whole configuration options set in patch-hub.
