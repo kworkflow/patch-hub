@@ -16,7 +16,6 @@ on:
     branches:
       - master
       - unstable
-      - feat-build-and-unit-test-ci
 
 env:
   CARGO_TERM_COLOR: always
