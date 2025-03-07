@@ -24,6 +24,8 @@ jobs:
     if: '!github.event.pull_request.draft'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Update rustup and install rustfmt
         shell: bash
@@ -43,6 +45,8 @@ jobs:
     if: '!github.event.pull_request.draft'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Update rustup and install clippy
         shell: bash
