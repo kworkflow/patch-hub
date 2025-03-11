@@ -98,6 +98,7 @@ fn delta_patch_renderer(patch: &str) -> color_eyre::Result<String> {
     let mut delta = Command::new("delta")
         .arg("--pager")
         .arg("less")
+        .arg("--no-gitconfig")
         .arg("--paging")
         .arg("never")
         .arg("-w")
