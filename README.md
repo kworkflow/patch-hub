@@ -19,7 +19,7 @@ suite. Check out the [`kw` repository](https://github.com/kworkflow/kworkflow).
 
 ## :star: Features
 
-<img src="assets/patch-hub-demo-v0.1.0.gif" width="100%" alt="patch-hub-demo-v0.1.0">
+<img src="assets/patch-hub-demo.gif" width="100%" alt="patch-hub-demo-v0.1.0">
 
 1. _Mailing List Selection_: Fetch the set of mailing lists archived on
 [lore.kernel.org](https://lore.kernel.org) and visualize it dynamically.
