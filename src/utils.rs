@@ -124,15 +124,21 @@ macro_rules! loading_screen {
 mod tests {
     use std::sync::Once;
 
+    use crate::logger::{LogLevel, Logger};
+
     use super::*;
 
     static INIT: Once = Once::new();
 
     // Tests can be run in parallel, we don't want to override previously installed hooks
-    fn setup() {
+    async fn setup() -> color_eyre::Result<()> {
+        let (logger, _) = Logger::build("/tmp", LogLevel::Info, 0).await?.spawn();
+
         INIT.call_once(|| {
-            install_hooks().expect("Failed to install hooks");
-        })
+            install_hooks(logger).expect("Failed to install hooks");
+        });
+
+        Ok(())
     }
 
     #[test]
@@ -143,14 +149,14 @@ mod tests {
         assert!(!super::binary_exists("there_is_no_way_this_binary_exists"));
     }
 
-    #[test]
-    fn test_install_hooks() {
-        setup();
+    #[tokio::test]
+    async fn test_install_hooks() -> color_eyre::Result<()> {
+        setup().await
     }
 
-    #[test]
-    fn test_error_hook_works() {
-        setup();
+    #[tokio::test]
+    async fn test_error_hook_works() -> color_eyre::Result<()> {
+        setup().await?;
 
         let result: color_eyre::Result<()> = Err(eyre::eyre!("Test error"));
 
@@ -162,14 +168,17 @@ mod tests {
                 let _ = format!("{:?}", e);
             }
         }
+
+        Ok(())
     }
 
-    #[test]
-    fn test_panic_hook() {
-        setup();
+    #[tokio::test]
+    async fn test_panic_hook() -> color_eyre::Result<()> {
+        setup().await?;
 
         let result = std::panic::catch_unwind(|| std::panic!("Test panic"));
 
         assert!(result.is_err());
+        Ok(())
     }
 }
