@@ -52,6 +52,7 @@ pub struct App<Logger: LoggerActor> {
     /// Client to handle Lore API requests and responses
     pub lore_api_client: BlockingLoreAPIClient,
     pub popup: Option<Box<dyn PopUp>>,
+    /// The logger actor instance that the application will use when logging
     pub logger: Logger,
 }
 
