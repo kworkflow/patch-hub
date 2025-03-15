@@ -6,12 +6,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::{
-    app::{
-        screens::details_actions::{DetailsActions, PatchsetAction},
-        App,
-    },
-    logger::LoggerActor,
+use crate::app::{
+    screens::details_actions::{DetailsActions, PatchsetAction},
+    App,
 };
 
 /// Returns a `Line` type that represents a line containing stats about reply
@@ -50,12 +47,7 @@ fn review_trailers_details(details_actions: &DetailsActions) -> Line<'static> {
     ])
 }
 
-fn render_details_and_actions(
-    f: &mut Frame,
-    app: &App<impl LoggerActor>,
-    details_chunk: Rect,
-    actions_chunk: Rect,
-) {
+fn render_details_and_actions(f: &mut Frame, app: &App, details_chunk: Rect, actions_chunk: Rect) {
     let patchset_details_and_actions = app.details_actions.as_ref().unwrap();
 
     let mut staged_to_reply = String::new();
@@ -207,7 +199,7 @@ fn render_details_and_actions(
     f.render_widget(patchset_actions, actions_chunk);
 }
 
-fn render_preview(f: &mut Frame, app: &App<impl LoggerActor>, chunk: Rect) {
+fn render_preview(f: &mut Frame, app: &App, chunk: Rect) {
     let patchset_details_and_actions = app.details_actions.as_ref().unwrap();
 
     let preview_index = patchset_details_and_actions.preview_index;
@@ -250,7 +242,7 @@ fn render_preview(f: &mut Frame, app: &App<impl LoggerActor>, chunk: Rect) {
     f.render_widget(patch_preview, chunk);
 }
 
-pub fn render_main(f: &mut Frame, app: &App<impl LoggerActor>, chunk: Rect) {
+pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
     let patchset_details_and_actions = app.details_actions.as_ref().unwrap();
 
     if patchset_details_and_actions.preview_fullscreen {

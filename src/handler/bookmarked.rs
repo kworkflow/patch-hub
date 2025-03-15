@@ -3,7 +3,6 @@ use std::ops::ControlFlow;
 use crate::{
     app::{screens::CurrentScreen, App},
     loading_screen,
-    logger::LoggerActor,
     ui::popup::{help::HelpPopUpBuilder, PopUp},
 };
 use ratatui::{
@@ -13,7 +12,7 @@ use ratatui::{
 };
 
 pub fn handle_bookmarked_patchsets<B>(
-    app: &mut App<impl LoggerActor>,
+    app: &mut App,
     key: KeyEvent,
     mut terminal: Terminal<B>,
 ) -> color_eyre::Result<ControlFlow<(), Terminal<B>>>

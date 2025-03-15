@@ -6,9 +6,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::{app::App, logger::LoggerActor};
+use crate::app::App;
 
-pub fn render_main(f: &mut Frame, app: &App<impl LoggerActor>, chunk: Rect) {
+pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
     let highlighted_list_index = app.mailing_list_selection.highlighted_list_index;
     let mut list_items = Vec::<ListItem>::new();
 
@@ -50,7 +50,7 @@ pub fn render_main(f: &mut Frame, app: &App<impl LoggerActor>, chunk: Rect) {
     f.render_stateful_widget(list, chunk, &mut list_state);
 }
 
-pub fn mode_footer_text(app: &App<impl LoggerActor>) -> Vec<Span> {
+pub fn mode_footer_text(app: &App) -> Vec<Span> {
     let mut text_area = Span::default();
 
     if app.mailing_list_selection.target_list.is_empty() {

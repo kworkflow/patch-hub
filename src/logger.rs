@@ -63,7 +63,7 @@ impl Display for LogMessage {
 /// to the log file.
 ///
 /// You're not supossed to use an instance of this directly, but use
-/// [`LoggerTx`] instead by calling [`spawn`] as soon as this struct is built.
+/// [`Logger`] instead by calling [`spawn`] as soon as this struct is built.
 ///
 /// The expected flow is:
 ///  - Instantiate the logger with [`build`]
@@ -72,15 +72,15 @@ impl Display for LogMessage {
 ///  - Flush the log buffer to the stderr and finish the logger with [`flush`]
 ///
 /// [`Config`]: super::config::Config
-/// [`info`]: LoggerTx::info
-/// [`warn`]: LoggerTx::warn
-/// [`error`]: LoggerTx::error
-/// [`flush`]: LoggerTx::flush
+/// [`info`]: Logger::info
+/// [`warn`]: Logger::warn
+/// [`error`]: Logger::error
+/// [`flush`]: Logger::flush
 /// [`stderr`]: std::io::stderr
-/// [`spawn`]: Logger::spawn
-/// [`build`]: Logger::build
+/// [`spawn`]: LoggerCore::spawn
+/// [`build`]: LoggerCore::build
 #[derive(Debug)]
-pub struct Logger {
+pub struct LoggerCore {
     log_dir: PathBuf,
     log_file_path: PathBuf,
     log_file: File,
@@ -90,7 +90,7 @@ pub struct Logger {
     max_age: usize,
 }
 
-impl Logger {
+impl LoggerCore {
     /// Creates a new logger instance. The parameters are the [dir] where the
     /// log files will be stored, [level] of log messages, and [max_age] of the
     /// log files in days.
@@ -137,16 +137,16 @@ impl Logger {
         })
     }
 
-    /// Transforms the logger instance into an actor. This method returns a
-    /// [`LoggerTx`] and a [`JoinHandle`] that can be used to send commands to
-    /// the logger or await for it to finish (when a [`flush`] is performed,
-    /// for instance).
+    /// Transforms the logger core instance into an actor. This method returns a
+    /// [`Logger`] and a [`JoinHandle`] that can be used to send commands to the
+    /// logger or await for it to finish (when a [`flush`] is performed, for
+    /// instance).
     ///
     /// The handling of the commandds received is done sequentially, so a
     /// command is only processed once the previous one is finished.
     ///
-    /// [`flush`]: LoggerTx::flush
-    pub fn spawn(mut self) -> (LoggerTx, JoinHandle<()>) {
+    /// [`flush`]: Logger::flush
+    pub fn spawn(mut self) -> (Logger, JoinHandle<()>) {
         let (tx, mut rx) = tokio::sync::mpsc::channel(100);
         let handle = tokio::spawn(async move {
             while let Some(command) = rx.recv().await {
@@ -166,7 +166,7 @@ impl Logger {
             }
         });
 
-        (LoggerTx(tx), handle)
+        (Logger::Default(tx), handle)
     }
 
     /// Given a [`LogMessage`] object, writes it to the current and latest log
@@ -174,7 +174,7 @@ impl Logger {
     /// buffer to be printed to [`stderr`] when a [`flush`] is performed.
     ///
     /// [`stderr`]: std::io::stderr
-    /// [`flush`]: LoggerTx::flush
+    /// [`flush`]: Logger::flush
     async fn log(&mut self, message: LogMessage) {
         self.log_file
             .write_all(format!("{}\n", &message).as_bytes())
@@ -222,8 +222,8 @@ impl Logger {
     /// A log file is a file in the [`log_dir`] and it will be deleted if its
     /// older than [`max_age`] days.
     ///
-    /// [`log_dir`]: Logger::log_dir
-    /// [`max_age`]: Logger::max_age
+    /// [`log_dir`]: LoggerCore::log_dir
+    /// [`max_age`]: LoggerCore::max_age
     async fn collect_garbage(&mut self) {
         if self.max_age == 0 {
             return;
@@ -284,7 +284,7 @@ impl Logger {
 /// executed synchronously in the same order that they were sent through the
 /// channel
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Command {
+pub enum Command {
     /// Logs the payload message
     Log(LogMessage),
     /// Flushes the logger by closing the log file, printing critical errors to
@@ -296,107 +296,50 @@ enum Command {
 }
 
 /// The transmitter that sends messages down to a logger actor. This is what
-/// you're supossed to use accross the code to log messages, instead of Logger.
+/// you're supossed to use accross the code to log messages, not LoggerCore.
 /// Cloning it is cheap so do not feel afraid to pass it around.
 ///
-/// The transmitter is obtained by calling [`spawn`] on a [`Logger`] instance,
-/// consuming it and creating a dedicated task for it. Use the methods of this
-/// struct to interact with the logger.
+/// The transmitter is obtained by calling [`spawn`] on a [`LoggerCore`]
+/// instance, consuming it and creating a dedicated task for it. Use the methods
+/// of this struct to interact with the logger.
 ///
 /// The intended usage is:
-/// - Instantiate the logger with [`Logger::build`]
-/// - Spawn the logger actor with [`Logger::spawn`]
+/// - Instantiate the logger with [`LoggerCore::build`]
+/// - Spawn the logger actor with [`LoggerCore::spawn`]
 /// - Use the methods of this struct to log messages
-/// - Use the method [`flush`] to print the log messages to [`stderr`] and
-///     finish the logger
+/// - Use the method [`flush`] to print the log messages to [`stderr`]
+///     and finish the logger
 ///
-/// [`spawn`]: Logger::spawn
-/// [`flush`]: LoggerTx::flush
+/// [`spawn`]: LoggerCore::spawn
+/// [`flush`]: Logger::flush
 /// [`stderr`]: std::io::stderr
 #[derive(Debug, Clone)]
-pub struct LoggerTx(Sender<Command>);
+pub enum Logger {
+    /// The default version (produced by [`LoggerCore::spawn`])
+    Default(Sender<Command>),
+    /// The mock version of this logger which won't do nothing at all
+    #[allow(dead_code)]
+    Mock,
+}
 
-/// A mock implementation of [`LoggerActor`]
-/// This is version of [`LoggerTx`] that does nothing at all
-#[derive(Debug, Clone, Copy)]
-pub struct MockLoggerTx;
+impl From<LoggerCore> for Logger {
+    fn from(value: LoggerCore) -> Self {
+        value.spawn().0
+    }
+}
 
-/// The logger actor trait. This is useful so multiple different implementations
-/// of the same actor can be used everywhere.
-///
-/// The idea is that one always use this `LoggerExt` trait where a Logger actor
-/// is needed
-pub trait LoggerActor: Sized {
+impl Logger {
     /// Helper to simplify the logging process. This method sends a
     /// [`LogMessage`] to the logger. Will send the message in a new task so it
     /// won't block the caller
     ///
     /// # Panics
     /// If the logger was flushed
-    fn log(&self, message: String, level: LogLevel);
-
-    /// Log a message with the `INFO` level
-    ///
-    /// # Panics
-    /// If the logger was flushed
-    fn info<M: Display>(&self, message: M);
-
-    /// Log a message with the `WARNING` level
-    ///
-    /// # Panics
-    /// If the logger was flushed
-    fn warn<M: Display>(&self, message: M);
-
-    /// Log a message with the `ERROR` level
-    fn error<M: Display>(&self, message: M);
-
-    /// Log an info message if the result is an error
-    /// and return the result as is
-    ///
-    /// # Panics
-    /// If the logger was flushed
-    #[allow(dead_code)]
-    fn info_on_error<T, E: Display>(&self, result: Result<T, E>) -> Result<T, E>;
-
-    /// Log an warning message if the result is an error
-    /// and return the result as is
-    ///
-    /// # Panics
-    /// If the logger was flushed
-    #[allow(dead_code)]
-    fn warn_on_error<T, E: Display>(&self, result: Result<T, E>) -> Result<T, E>;
-
-    /// Log an error message if the result is an error
-    /// and return the result as is
-    ///
-    /// # Panics
-    /// If the logger was flushed
-    fn error_on_error<T, E: Display>(&self, result: Result<T, E>) -> Result<T, E>;
-
-    /// Flushes the logger by printing its messages to [`stderr`] and closing
-    /// the log file. After this method is called, the logger is destroyed and
-    /// any attempt to use it will panic.
-    ///
-    /// # Panics
-    /// If called twice
-    ///
-    /// [`stderr`]: std::io::stderr
-    fn flush(self) -> JoinHandle<()>;
-
-    /// Collects the garbage from the logs directory. Garbage logs are the ones
-    /// older than the [`max_age`] set during the logger [`build`].
-    ///
-    /// # Panics
-    /// If called after a flush
-    ///
-    /// [`build`]: Logger::build
-    /// [`max_age`]: Logger::max_age
-    fn collect_garbage(&self) -> JoinHandle<()>;
-}
-
-impl LoggerActor for LoggerTx {
     fn log(&self, message: String, level: LogLevel) {
-        let sender = self.0.clone();
+        let sender = match self {
+            Logger::Mock => return,
+            Logger::Default(sender) => sender.clone(),
+        };
 
         tokio::spawn(async move {
             sender
@@ -409,19 +352,34 @@ impl LoggerActor for LoggerTx {
         });
     }
 
-    fn info<M: Display>(&self, message: M) {
+    /// Log a message with the `INFO` level
+    ///
+    /// # Panics
+    /// If the logger was flushed
+    pub fn info<M: Display>(&self, message: M) {
         self.log(message.to_string(), LogLevel::Info);
     }
 
-    fn warn<M: Display>(&self, message: M) {
+    /// Log a message with the `WARNING` level
+    ///
+    /// # Panics
+    /// If the logger was flushed
+    pub fn warn<M: Display>(&self, message: M) {
         self.log(message.to_string(), LogLevel::Warning);
     }
 
-    fn error<M: Display>(&self, message: M) {
+    /// Log a message with the `ERROR` level
+    pub fn error<M: Display>(&self, message: M) {
         self.log(message.to_string(), LogLevel::Error);
     }
 
-    fn info_on_error<T, E: Display>(&self, result: Result<T, E>) -> Result<T, E> {
+    /// Log an info message if the result is an error
+    /// and return the result as is
+    ///
+    /// # Panics
+    /// If the logger was flushed
+    #[allow(dead_code)]
+    pub fn info_on_error<T, E: Display>(&self, result: Result<T, E>) -> Result<T, E> {
         match result {
             Ok(value) => Ok(value),
             Err(err) => {
@@ -431,7 +389,13 @@ impl LoggerActor for LoggerTx {
         }
     }
 
-    fn warn_on_error<T, E: Display>(&self, result: Result<T, E>) -> Result<T, E> {
+    /// Log an warning message if the result is an error
+    /// and return the result as is
+    ///
+    /// # Panics
+    /// If the logger was flushed
+    #[allow(dead_code)]
+    pub fn warn_on_error<T, E: Display>(&self, result: Result<T, E>) -> Result<T, E> {
         match result {
             Ok(value) => Ok(value),
             Err(err) => {
@@ -441,7 +405,12 @@ impl LoggerActor for LoggerTx {
         }
     }
 
-    fn error_on_error<T, E: Display>(&self, result: Result<T, E>) -> Result<T, E> {
+    /// Log an error message if the result is an error
+    /// and return the result as is
+    ///
+    /// # Panics
+    /// If the logger was flushed
+    pub fn error_on_error<T, E: Display>(&self, result: Result<T, E>) -> Result<T, E> {
         match result {
             Ok(value) => Ok(value),
             Err(err) => {
@@ -451,53 +420,43 @@ impl LoggerActor for LoggerTx {
         }
     }
 
-    fn flush(self) -> JoinHandle<()> {
+    /// Flushes the logger by printing its messages to [`stderr`] and closing
+    /// the log file. After this method is called, the logger is destroyed and
+    /// any attempt to use it will panic.
+    ///
+    /// # Panics
+    /// If called twice
+    ///
+    /// [`stderr`]: std::io::stderr
+    pub fn flush(self) -> JoinHandle<()> {
+        let Self::Default(sender) = self else {
+            return tokio::spawn(async {});
+        };
+
         tokio::spawn(async move {
-            self.0
+            sender
                 .send(Command::Flush)
                 .await
                 .expect("Flushing a logger twice");
         })
     }
 
-    fn collect_garbage(&self) -> JoinHandle<()> {
-        let sender = self.0.clone();
+    /// Collects the garbage from the logs directory. Garbage logs are the ones
+    /// older than the [`max_age`] set during the logger [`build`].
+    ///
+    /// # Panics
+    /// If called after a flush
+    ///
+    /// [`build`]: Logger::build
+    /// [`max_age`]: Logger::max_age
+    pub async fn collect_garbage(&self) {
+        let Self::Default(sender) = self else {
+            return;
+        };
 
-        tokio::spawn(async move {
-            sender
-                .send(Command::CollectGarbage)
-                .await
-                .expect("Attemp to use logger after a flush");
-        })
-    }
-}
-
-impl LoggerActor for MockLoggerTx {
-    fn log(&self, _message: String, _level: LogLevel) {}
-
-    fn info<M: Display>(&self, _message: M) {}
-
-    fn warn<M: Display>(&self, _message: M) {}
-
-    fn error<M: Display>(&self, _message: M) {}
-
-    fn info_on_error<T, E: Display>(&self, result: Result<T, E>) -> Result<T, E> {
-        result
-    }
-
-    fn warn_on_error<T, E: Display>(&self, result: Result<T, E>) -> Result<T, E> {
-        result
-    }
-
-    fn error_on_error<T, E: Display>(&self, result: Result<T, E>) -> Result<T, E> {
-        result
-    }
-
-    fn flush(self) -> JoinHandle<()> {
-        tokio::spawn(async move {})
-    }
-
-    fn collect_garbage(&self) -> JoinHandle<()> {
-        tokio::spawn(async move {})
+        sender
+            .send(Command::CollectGarbage)
+            .await
+            .expect("Attemp to use logger after a flush")
     }
 }
