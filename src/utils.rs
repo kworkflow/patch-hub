@@ -85,7 +85,10 @@ pub fn binary_exists(binary: &str) -> bool {
 ///
 /// When the execution finishes, the macro will return the terminal.
 ///
-/// Important to notice that the code block will run in the same scope as the rest of the macro
+/// Important to notice that the code block will run in the same scope as the rest of the macro.
+/// Be aware that in Rust, when using `?` or `return` inside a closure, they apply to the outer function,
+/// not the closure itself. This can lead to unexpected behavior if you expect the closure to handle
+/// errors or return values independently of the enclosing function.
 ///
 /// # Example
 /// ```rust norun
@@ -109,11 +112,17 @@ macro_rules! loading_screen {
                 terminal
             });
 
-            $inst;
+            // we have to sleep so the loading thread completes at least one render
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let inst_result = $inst;
 
             loading.store(false, std::sync::atomic::Ordering::Relaxed);
 
-            handle.join().unwrap()
+            let terminal = handle.join().unwrap();
+
+            inst_result?;
+
+            terminal
         }
     };
 }

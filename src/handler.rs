@@ -72,7 +72,7 @@ where
             if app.mailing_list_selection.mailing_lists.is_empty() {
                 terminal = loading_screen! {
                     terminal, "Fetching mailing lists" => {
-                        app.mailing_list_selection.refresh_available_mailing_lists()?;
+                        app.mailing_list_selection.refresh_available_mailing_lists()
                     }
                 };
             }
@@ -84,7 +84,7 @@ where
                 terminal = loading_screen! {
                     terminal,
                     format!("Fetching patchsets from {}", target_list) => {
-                        patchsets_state.fetch_current_page()?;
+                        patchsets_state.fetch_current_page()
                     }
                 };
 
