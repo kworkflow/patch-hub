@@ -120,7 +120,11 @@ system: ```bash cargo install --path . ```
 
 ## :handshake: How To Contribute
 
-We are still structuring an organized contribution process, but we more than welcome proposed changes through Pull-Requests. For cataloged issues, you can check our [issues page](https://github.com/kworkflow/patch-hub/issues).
+We appreciate all contributions, whether it’s fixing bugs, adding features, improving documentation, or suggesting ideas! If you're looking for something to work on, check out our [issues page](https://github.com/kworkflow/patch-hub/issues).
 
+Since patch-hub is a sub-project of kw, some development workflows carry over — such as a similar branching strategy (master and unstable) — but keep in mind that patch-hub is written in Rust, while kw is Bash. For detailed guidelines on setting up your environment, coding standards, and submitting Pull Requests, please refer to our [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-In the meanwhile, you can check [`kw`'s contributor -guidelines](https://kworkflow.org/content/howtocontribute.html) for some -reference. Some things translate, due to `patch-hub` being a "child" of `kw`, -like the `master` and `unstable` branches scheme, but bear in mind that others -don't (e.g., `kw` is in Bash, while `patch-hub` is in Rust).
+### :pushpin: Quick Contribution Guide
+- **Report Issues:** Found a bug or have a feature request? Open an issue [here](https://github.com/kworkflow/patch-hub/issues).
+- **Submit a PR:** Fix an issue, improve code, or add a new feature—just follow the steps in [CONTRIBUTING.md](./CONTRIBUTING.md).
+- **Improve Documentation:** Enhancements to the README, guides, and comments are always welcome!
