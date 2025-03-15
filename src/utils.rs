@@ -13,7 +13,7 @@ use ratatui::{
     Terminal,
 };
 
-use crate::logger::{LoggerActor, LoggerTx};
+use crate::logger::Logger;
 
 /// A type alias for the terminal type used in this application
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
@@ -34,7 +34,7 @@ pub fn restore() -> io::Result<()> {
 
 /// This replaces the standard color_eyre panic and error hooks with hooks that
 /// restore the terminal before printing the panic or error.
-pub fn install_hooks(logger: LoggerTx) -> color_eyre::Result<()> {
+pub fn install_hooks(logger: Logger) -> color_eyre::Result<()> {
     let (panic_hook, eyre_hook) = HookBuilder::default().into_hooks();
 
     // convert from a color_eyre PanicHook to a standard panic hook
@@ -42,7 +42,7 @@ pub fn install_hooks(logger: LoggerTx) -> color_eyre::Result<()> {
     panic::set_hook(Box::new(move |panic_info| {
         restore().unwrap();
         // TODO: await for the flush to finish
-        <LoggerTx as Clone>::clone(&logger).flush();
+        <Logger as Clone>::clone(&logger).flush();
 
         panic_hook(panic_info);
     }));
@@ -124,7 +124,7 @@ macro_rules! loading_screen {
 mod tests {
     use std::sync::Once;
 
-    use crate::logger::{LogLevel, Logger};
+    use crate::logger::{LogLevel, LoggerCore};
 
     use super::*;
 
@@ -132,7 +132,7 @@ mod tests {
 
     // Tests can be run in parallel, we don't want to override previously installed hooks
     async fn setup() -> color_eyre::Result<()> {
-        let (logger, _) = Logger::build("/tmp", LogLevel::Info, 0).await?.spawn();
+        let (logger, _) = LoggerCore::build("/tmp", LogLevel::Info, 0).await?.spawn();
 
         INIT.call_once(|| {
             install_hooks(logger).expect("Failed to install hooks");

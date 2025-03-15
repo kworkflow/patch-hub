@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use crate::{
     app::{screens::CurrentScreen, App},
-    logger::LoggerActor,
     ui::popup::{help::HelpPopUpBuilder, review_trailers::ReviewTrailersPopUp, PopUp},
     utils,
 };
@@ -15,7 +14,7 @@ use ratatui::{
 use super::wait_key_press;
 
 pub fn handle_patchset_details<B: Backend>(
-    app: &mut App<impl LoggerActor>,
+    app: &mut App,
     key: KeyEvent,
     terminal: &mut Terminal<B>,
 ) -> color_eyre::Result<()> {

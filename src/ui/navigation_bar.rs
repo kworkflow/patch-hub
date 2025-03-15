@@ -1,8 +1,5 @@
 use super::{bookmarked, details_actions, edit_config, latest, mail_list};
-use crate::{
-    app::{self, App},
-    logger::LoggerActor,
-};
+use crate::app::{self, App};
 use app::screens::CurrentScreen;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -11,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-pub fn render(f: &mut Frame, app: &App<impl LoggerActor>, chunk: Rect) {
+pub fn render(f: &mut Frame, app: &App, chunk: Rect) {
     let mode_footer_text = match app.current_screen {
         CurrentScreen::MailingListSelection => mail_list::mode_footer_text(app),
         CurrentScreen::BookmarkedPatchsets => bookmarked::mode_footer_text(),

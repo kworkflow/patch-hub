@@ -6,9 +6,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::{app::App, logger::LoggerActor};
+use crate::app::App;
 
-pub fn render_main(f: &mut Frame, app: &App<impl LoggerActor>, chunk: Rect) {
+pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
     let edit_config = app.edit_config.as_ref().unwrap();
     let mut constraints = Vec::new();
 
@@ -63,7 +63,7 @@ pub fn render_main(f: &mut Frame, app: &App<impl LoggerActor>, chunk: Rect) {
     }
 }
 
-pub fn mode_footer_text(app: &App<impl LoggerActor>) -> Vec<Span> {
+pub fn mode_footer_text(app: &App) -> Vec<Span> {
     let edit_config_state = app.edit_config.as_ref().unwrap();
     vec![if edit_config_state.is_editing() {
         Span::styled("Editing...", Style::default().fg(Color::LightYellow))
@@ -72,7 +72,7 @@ pub fn mode_footer_text(app: &App<impl LoggerActor>) -> Vec<Span> {
     }]
 }
 
-pub fn keys_hint(app: &App<impl LoggerActor>) -> Span {
+pub fn keys_hint(app: &App) -> Span {
     let edit_config_state = app.edit_config.as_ref().unwrap();
     match edit_config_state.is_editing() {
         true => Span::styled(

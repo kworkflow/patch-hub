@@ -1,5 +1,5 @@
 use crate::{
-    logger::LoggerActor,
+    logger::Logger,
     ui::popup::{info_popup::InfoPopUp, PopUp},
 };
 use ansi_to_tui::IntoText;
@@ -32,7 +32,7 @@ pub mod screens;
 
 /// Type that represents the overall state of the application. It can be viewed
 /// as the **Model** component of `patch-hub`.
-pub struct App<Logger: LoggerActor> {
+pub struct App {
     /// The current active screen
     pub current_screen: CurrentScreen,
     /// Screen to navigate and select the mailing lists archived on Lore
@@ -56,7 +56,7 @@ pub struct App<Logger: LoggerActor> {
     pub logger: Logger,
 }
 
-impl<Logger: LoggerActor> App<Logger> {
+impl App {
     /// Creates a new instance of `App`. It dynamically loads configurations
     /// based on precedence (see [crate::app::Config::build]), app data
     /// (available mailing lists, bookmarked patchsets, reviewed patchsets), and
@@ -65,7 +65,7 @@ impl<Logger: LoggerActor> App<Logger> {
     /// # Returns
     ///
     /// `App` instance with loading configurations and app data.
-    pub fn new(logger: Logger) -> color_eyre::Result<Self> {
+    pub async fn new(logger: Logger) -> color_eyre::Result<Self> {
         let config: Config = Config::build();
         config.create_dirs();
 
@@ -84,7 +84,7 @@ impl<Logger: LoggerActor> App<Logger> {
 
         // Initialize the logger before the app starts
         logger.info("patch-hub started");
-        logger.collect_garbage();
+        logger.collect_garbage().await;
 
         Ok(App {
             current_screen: CurrentScreen::MailingListSelection,

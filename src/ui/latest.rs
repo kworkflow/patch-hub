@@ -1,4 +1,4 @@
-use crate::{app::App, logger::LoggerActor};
+use crate::app::App;
 use patch_hub::lore::patch::Patch;
 use ratatui::{
     layout::Rect,
@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-pub fn render_main(f: &mut Frame, app: &App<impl LoggerActor>, chunk: Rect) {
+pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
     let page_number = app.latest_patchsets.as_ref().unwrap().page_number();
     let patchset_index = app.latest_patchsets.as_ref().unwrap().patchset_index();
     let mut list_items = Vec::<ListItem>::new();
@@ -67,7 +67,7 @@ pub fn render_main(f: &mut Frame, app: &App<impl LoggerActor>, chunk: Rect) {
     f.render_stateful_widget(list, chunk, &mut list_state);
 }
 
-pub fn mode_footer_text(app: &App<impl LoggerActor>) -> Vec<Span> {
+pub fn mode_footer_text(app: &App) -> Vec<Span> {
     vec![Span::styled(
         format!(
             "Latest Patchsets from {} (page {})",

@@ -1,14 +1,10 @@
 use crate::{
     app::{screens::CurrentScreen, App},
-    logger::LoggerActor,
     ui::popup::{help::HelpPopUpBuilder, PopUp},
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
-pub fn handle_edit_config(
-    app: &mut App<impl LoggerActor>,
-    key: KeyEvent,
-) -> color_eyre::Result<()> {
+pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()> {
     if let Some(edit_config_state) = app.edit_config.as_mut() {
         match edit_config_state.is_editing() {
             true => match key.code {

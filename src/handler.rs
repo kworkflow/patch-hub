@@ -12,7 +12,7 @@ use std::{
 use crate::{
     app::{screens::CurrentScreen, App},
     loading_screen,
-    logger::LoggerActor,
+    logger::Logger,
     ui::draw_ui,
 };
 
@@ -30,7 +30,7 @@ use ratatui::{
 
 fn key_handling<B>(
     mut terminal: Terminal<B>,
-    app: &mut App<impl LoggerActor>,
+    app: &mut App,
     key: KeyEvent,
 ) -> color_eyre::Result<ControlFlow<(), Terminal<B>>>
 where
@@ -64,10 +64,7 @@ where
     Ok(ControlFlow::Continue(terminal))
 }
 
-fn logic_handling<B>(
-    mut terminal: Terminal<B>,
-    app: &mut App<impl LoggerActor>,
-) -> color_eyre::Result<Terminal<B>>
+fn logic_handling<B>(mut terminal: Terminal<B>, app: &mut App) -> color_eyre::Result<Terminal<B>>
 where
     B: Backend + Send + 'static,
 {
@@ -106,11 +103,7 @@ where
     Ok(terminal)
 }
 
-pub fn run_app<B>(
-    mut terminal: Terminal<B>,
-    mut app: App<impl LoggerActor>,
-    logger: impl LoggerActor,
-) -> color_eyre::Result<()>
+pub fn run_app<B>(mut terminal: Terminal<B>, mut app: App, logger: Logger) -> color_eyre::Result<()>
 where
     B: Backend + Send + 'static,
 {
