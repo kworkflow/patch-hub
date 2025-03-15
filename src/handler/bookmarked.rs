@@ -38,8 +38,11 @@ where
             terminal = loading_screen! {
                 terminal,
                 "Loading patchset" => {
-                    app.init_details_actions()?;
-                    app.set_current_screen(CurrentScreen::PatchsetDetails);
+                    let result = app.init_details_actions();
+                    if result.is_ok() {
+                        app.set_current_screen(CurrentScreen::PatchsetDetails);
+                    }
+                    result
                 }
             };
         }
