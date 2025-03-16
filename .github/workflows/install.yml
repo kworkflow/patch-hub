@@ -1,0 +1,28 @@
+name: Cargo Install
+
+on:
+  push:
+    branches: [ master, unstable ]
+  pull_request:
+    branches: [ master, unstable ]
+
+jobs:
+  check-local-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install crate
+        run: cargo install --path .
+
+      - name: Verify installed binary
+        run: patch-hub -c
+
+  check-install-from-crates-io:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install crate
+        run: cargo install patch-hub
+
+      - name: Verify installed binary
+        run: patch-hub -c
