@@ -26,7 +26,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::utils;
 
-mod config;
+pub mod config;
 pub mod cover_renderer;
 pub mod logging;
 pub mod patch_renderer;
@@ -65,10 +65,7 @@ impl App {
     /// # Returns
     ///
     /// `App` instance with loading configurations and app data.
-    pub fn new() -> color_eyre::Result<Self> {
-        let config: Config = Config::build();
-        config.create_dirs();
-
+    pub fn new(config: Config) -> color_eyre::Result<Self> {
         let mailing_lists =
             lore_session::load_available_lists(config.mailing_lists_path()).unwrap_or_default();
 
