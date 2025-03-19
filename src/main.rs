@@ -20,12 +20,13 @@ fn main() -> color_eyre::Result<()> {
 
     let config = Config::build();
     config.create_dirs();
-    let mut app = App::new(config)?;
 
-    match args.resolve(terminal, &mut app) {
+    match args.resolve(terminal, &config) {
         ControlFlow::Break(b) => return b,
         ControlFlow::Continue(t) => terminal = t,
     }
+
+    let app = App::new(config)?;
 
     run_app(terminal, app)?;
     utils::restore()?;

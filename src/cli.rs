@@ -4,10 +4,7 @@ use clap::Parser;
 use color_eyre::eyre::eyre;
 use ratatui::{prelude::Backend, Terminal};
 
-use crate::{
-    app::{logging::Logger, App},
-    utils,
-};
+use crate::{app::config::Config, utils};
 
 #[derive(Debug, Parser)]
 #[command(version, about)]
@@ -24,15 +21,14 @@ impl Cli {
     pub fn resolve<B: Backend>(
         &self,
         terminal: Terminal<B>,
-        app: &mut App,
+        config: &Config,
     ) -> ControlFlow<color_eyre::Result<()>, Terminal<B>> {
         if self.show_configs {
-            Logger::info("Printing current configurations");
             drop(terminal);
             if let Err(err) = utils::restore() {
                 return ControlFlow::Break(Err(eyre!(err)));
             }
-            match serde_json::to_string_pretty(&app.config) {
+            match serde_json::to_string_pretty(&config) {
                 Err(err) => return ControlFlow::Break(Err(eyre!(err))),
                 Ok(config) => println!("patch-hub configurations:\n{}", config),
             }
