@@ -1,7 +1,7 @@
 use std::ops::ControlFlow;
 
 use crate::app::App;
-use app::logging::Logger;
+use app::{config::Config, logging::Logger};
 use clap::Parser;
 use cli::Cli;
 use handler::run_app;
@@ -17,7 +17,10 @@ fn main() -> color_eyre::Result<()> {
 
     utils::install_hooks()?;
     let mut terminal = utils::init()?;
-    let mut app = App::new()?;
+
+    let config = Config::build();
+    config.create_dirs();
+    let mut app = App::new(config)?;
 
     match args.resolve(terminal, &mut app) {
         ControlFlow::Break(b) => return b,
