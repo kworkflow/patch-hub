@@ -142,11 +142,6 @@ mod tests {
     }
 
     #[test]
-    fn test_install_hooks() {
-        setup();
-    }
-
-    #[test]
     fn test_error_hook_works() {
         setup();
 
