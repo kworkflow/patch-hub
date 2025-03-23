@@ -44,7 +44,7 @@ jobs:
       - name: Run unit test suites
         shell: bash
         run: |
-          cargo test --all-targets --verbose && exit 0
+          cargo test --all --all-targets --verbose && exit 0
           printf '\e[1;33m\t==========================================\n\e[0m'
           printf '\e[1;33m\tUNIT TEST SUITE FAILED\n\e[0m'
           printf '\e[1;33m\tPLEASE, SOLVE THEM LOCALLY W/ `cargo test`\e[0m\n'
