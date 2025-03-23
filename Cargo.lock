@@ -764,6 +764,7 @@ dependencies = [
  "clap",
  "color-eyre",
  "derive-getters",
+ "lazy_static",
  "mockall",
  "ratatui",
  "regex",
