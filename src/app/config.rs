@@ -18,31 +18,47 @@ mod tests;
 #[derive(Serialize, Deserialize, Getters)]
 pub struct Config {
     #[getter(skip)]
+    #[serde(default = "default_page_size")]
     page_size: usize,
+    #[serde(default = "default_patchsets_cache_dir")]
     patchsets_cache_dir: String,
+    #[serde(default = "default_bookmarked_patchsets_path")]
     bookmarked_patchsets_path: String,
+    #[serde(default = "default_mailing_lists_path")]
     mailing_lists_path: String,
+    #[serde(default = "default_reviewed_patchsets_path")]
     reviewed_patchsets_path: String,
     /// Logs directory
+    #[serde(default = "default_logs_path")]
     logs_path: String,
+    #[serde(default = "default_git_send_email_options")]
     git_send_email_options: String,
     /// Base directory for all patch-hub cache
+    #[serde(default = "default_cache_dir")]
     cache_dir: String,
     /// Base directory for all patch-hub cache
+    #[serde(default = "default_data_dir")]
     data_dir: String,
     /// Renderer to use for patch previews
+    #[serde(default = "default_patch_renderer")]
     patch_renderer: PatchRenderer,
     /// Renderer to use for patchset covers
+    #[serde(default = "default_cover_renderer")]
     cover_renderer: CoverRenderer,
     /// Maximum age of a log file in days
+    #[serde(default = "default_max_log_age")]
     max_log_age: usize,
     #[getter(skip)]
     /// Map of tracked kernel trees
+    #[serde(default = "default_kernel_trees")]
     kernel_trees: HashMap<String, KernelTree>,
     /// Target kernel tree to run actions
+    #[serde(default = "default_target_kernel_tree")]
     target_kernel_tree: Option<String>,
-    /// Flags to be use with `git am` command when applying patches
+    /// Flags to be use with git am command when applying patches
+    #[serde(default = "default_git_am_options")]
     git_am_options: String,
+    #[serde(default = "default_git_am_branch_help")]
     git_am_branch_prefix: String,
 }
 
@@ -244,4 +260,68 @@ impl Config {
             }
         }
     }
+}
+
+fn default_page_size() -> usize {
+    Config::default().page_size
+}
+
+fn default_patchsets_cache_dir() -> String {
+    Config::default().patchsets_cache_dir
+}
+
+fn default_bookmarked_patchsets_path() -> String {
+    Config::default().bookmarked_patchsets_path
+}
+
+fn default_mailing_lists_path() -> String {
+    Config::default().mailing_lists_path
+}
+
+fn default_reviewed_patchsets_path() -> String {
+    Config::default().reviewed_patchsets_path
+}
+
+fn default_logs_path() -> String {
+    Config::default().logs_path
+}
+
+fn default_git_send_email_options() -> String {
+    Config::default().git_send_email_options
+}
+
+fn default_cache_dir() -> String {
+    Config::default().cache_dir
+}
+
+fn default_data_dir() -> String {
+    Config::default().data_dir
+}
+
+fn default_patch_renderer() -> PatchRenderer {
+    Config::default().patch_renderer
+}
+
+fn default_cover_renderer() -> CoverRenderer {
+    Config::default().cover_renderer
+}
+
+fn default_max_log_age() -> usize {
+    Config::default().max_log_age
+}
+
+fn default_kernel_trees() -> HashMap<String, KernelTree> {
+    Config::default().kernel_trees
+}
+
+fn default_target_kernel_tree() -> Option<String> {
+    Config::default().target_kernel_tree
+}
+
+fn default_git_am_options() -> String {
+    Config::default().git_am_options
+}
+
+fn default_git_am_branch_help() -> String {
+    Config::default().git_am_branch_prefix
 }
