@@ -1,5 +1,5 @@
 use derive_getters::Getters;
-use lazy_static::lazy_static;
+use proc_macros::serde_individual_default;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -9,11 +9,6 @@ use std::{
     path::Path,
 };
 
-// store only one Config::default object in memory
-lazy_static! {
-    static ref DEFAULT_CONFIG: Config = Config::default();
-}
-
 pub const DEFAULT_CONFIG_PATH_SUFFIX: &str = ".config/patch-hub/config.json";
 
 use super::{cover_renderer::CoverRenderer, patch_renderer::PatchRenderer};
@@ -21,50 +16,35 @@ use super::{cover_renderer::CoverRenderer, patch_renderer::PatchRenderer};
 #[cfg(test)]
 mod tests;
 
-#[derive(Serialize, Deserialize, Getters)]
+#[derive(Serialize, Getters)]
+#[serde_individual_default]
 pub struct Config {
     #[getter(skip)]
-    #[serde(default = "default_page_size")]
     page_size: usize,
-    #[serde(default = "default_patchsets_cache_dir")]
     patchsets_cache_dir: String,
-    #[serde(default = "default_bookmarked_patchsets_path")]
     bookmarked_patchsets_path: String,
-    #[serde(default = "default_mailing_lists_path")]
     mailing_lists_path: String,
-    #[serde(default = "default_reviewed_patchsets_path")]
     reviewed_patchsets_path: String,
     /// Logs directory
-    #[serde(default = "default_logs_path")]
     logs_path: String,
-    #[serde(default = "default_git_send_email_options")]
     git_send_email_options: String,
     /// Base directory for all patch-hub cache
-    #[serde(default = "default_cache_dir")]
     cache_dir: String,
     /// Base directory for all patch-hub cache
-    #[serde(default = "default_data_dir")]
     data_dir: String,
     /// Renderer to use for patch previews
-    #[serde(default = "default_patch_renderer")]
     patch_renderer: PatchRenderer,
     /// Renderer to use for patchset covers
-    #[serde(default = "default_cover_renderer")]
     cover_renderer: CoverRenderer,
     /// Maximum age of a log file in days
-    #[serde(default = "default_max_log_age")]
     max_log_age: usize,
     #[getter(skip)]
     /// Map of tracked kernel trees
-    #[serde(default = "default_kernel_trees")]
     kernel_trees: HashMap<String, KernelTree>,
     /// Target kernel tree to run actions
-    #[serde(default = "default_target_kernel_tree")]
     target_kernel_tree: Option<String>,
     /// Flags to be use with git am command when applying patches
-    #[serde(default = "default_git_am_options")]
     git_am_options: String,
-    #[serde(default = "default_git_am_branch_help")]
     git_am_branch_prefix: String,
 }
 
@@ -266,68 +246,4 @@ impl Config {
             }
         }
     }
-}
-
-fn default_page_size() -> usize {
-    DEFAULT_CONFIG.page_size
-}
-
-fn default_patchsets_cache_dir() -> String {
-    DEFAULT_CONFIG.patchsets_cache_dir.clone()
-}
-
-fn default_bookmarked_patchsets_path() -> String {
-    DEFAULT_CONFIG.bookmarked_patchsets_path.clone()
-}
-
-fn default_mailing_lists_path() -> String {
-    DEFAULT_CONFIG.mailing_lists_path.clone()
-}
-
-fn default_reviewed_patchsets_path() -> String {
-    DEFAULT_CONFIG.reviewed_patchsets_path.clone()
-}
-
-fn default_logs_path() -> String {
-    DEFAULT_CONFIG.logs_path.clone()
-}
-
-fn default_git_send_email_options() -> String {
-    DEFAULT_CONFIG.git_send_email_options.clone()
-}
-
-fn default_cache_dir() -> String {
-    DEFAULT_CONFIG.cache_dir.clone()
-}
-
-fn default_data_dir() -> String {
-    DEFAULT_CONFIG.data_dir.clone()
-}
-
-fn default_patch_renderer() -> PatchRenderer {
-    DEFAULT_CONFIG.patch_renderer
-}
-
-fn default_cover_renderer() -> CoverRenderer {
-    DEFAULT_CONFIG.cover_renderer
-}
-
-fn default_max_log_age() -> usize {
-    DEFAULT_CONFIG.max_log_age
-}
-
-fn default_kernel_trees() -> HashMap<String, KernelTree> {
-    DEFAULT_CONFIG.kernel_trees.clone()
-}
-
-fn default_target_kernel_tree() -> Option<String> {
-    DEFAULT_CONFIG.target_kernel_tree.clone()
-}
-
-fn default_git_am_options() -> String {
-    DEFAULT_CONFIG.git_am_options.clone()
-}
-
-fn default_git_am_branch_help() -> String {
-    DEFAULT_CONFIG.git_am_branch_prefix.clone()
 }
