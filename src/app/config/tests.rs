@@ -1,3 +1,5 @@
+use serde_json::json;
+
 use super::*;
 
 use std::sync::Mutex;
@@ -147,4 +149,20 @@ fn test_config_precedence() {
 
     env::remove_var("PATCH_HUB_CONFIG_PATH");
     env::remove_var("PATCH_HUB_PAGE_SIZE");
+}
+
+#[test]
+fn test_deserialize_config_with_missing_field() {
+    // Example JSON string that doesn't contain `page_size` but has `max_log_age` set to 500.
+    let json_data = json!({
+        "max_log_age": 500
+    });
+
+    let config: Config = serde_json::from_value(json_data).unwrap();
+
+    // Assert that `page_size` is set to the default value (25)
+    assert_eq!(config.page_size, 30);
+
+    // Assert that `max_log_age` is set to the custom value
+    assert_eq!(config.max_log_age, 500);
 }
