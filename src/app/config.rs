@@ -8,6 +8,8 @@ use std::{
     path::Path,
 };
 
+pub const DEFAULT_CONFIG_PATH_SUFFIX: &str = ".config/patch-hub/config.json";
+
 use super::{cover_renderer::CoverRenderer, patch_renderer::PatchRenderer};
 
 #[cfg(test)]
@@ -52,7 +54,7 @@ pub struct KernelTree {
     branch: String,
 }
 
-impl Config {
+impl Default for Config {
     fn default() -> Self {
         let home = env::var("HOME").unwrap_or_else(|_| {
             eprintln!("$HOME environment variable not set, using current directory");
@@ -80,33 +82,19 @@ impl Config {
             git_am_branch_prefix: String::from("patchset-"),
         }
     }
+}
 
+impl Config {
     /// Loads the configuration for patch-hub from the config file.
     ///
-    /// Returns `None` if the config file is not found or if it's not a valid JSON.
-    fn load_file() -> Option<Config> {
-        if let Ok(config_path) = env::var("PATCH_HUB_CONFIG_PATH") {
-            if Path::new(&config_path).is_file() {
-                match fs::read_to_string(&config_path) {
-                    Ok(file_contents) => match serde_json::from_str(&file_contents) {
-                        Ok(config) => return Some(config),
-                        Err(e) => eprintln!("Failed to parse config file {}: {}", config_path, e),
-                    },
-                    Err(e) => {
-                        eprintln!("Failed to read config file {}: {}", config_path, e)
-                    }
-                }
-            }
-        }
+    /// Returns the default config if the config file is not found or if it's not a valid JSON.
+    fn load_file() -> Config {
+        let config_path = Config::get_config_path();
 
-        let config_path = format!(
-            "{}/.config/patch-hub/config.json",
-            env::var("HOME").unwrap()
-        );
         if Path::new(&config_path).is_file() {
             match fs::read_to_string(&config_path) {
                 Ok(file_contents) => match serde_json::from_str(&file_contents) {
-                    Ok(config) => return Some(config),
+                    Ok(config) => return config,
                     Err(e) => eprintln!("Failed to parse config file {}: {}", config_path, e),
                 },
                 Err(e) => {
@@ -115,7 +103,7 @@ impl Config {
             }
         }
 
-        None
+        Config::default()
     }
 
     fn override_with_env_vars(&mut self) {
@@ -141,15 +129,10 @@ impl Config {
     }
 
     pub fn build() -> Self {
-        let mut config = Self::load_file().unwrap_or_else(|| {
-            eprintln!("No valid config file found, using default configuration");
-            let config = Self::default();
-            config.save_patch_hub_config().unwrap_or_else(|e| {
-                eprintln!("Failed to save default config: {}", e);
-            });
-            config
+        let mut config = Self::load_file();
+        config.save_patch_hub_config().unwrap_or_else(|e| {
+            eprintln!("Failed to save default config: {}", e);
         });
-
         config.override_with_env_vars();
 
         config
@@ -214,14 +197,7 @@ impl Config {
     }
 
     pub fn save_patch_hub_config(&self) -> io::Result<()> {
-        let config_path = if let Ok(path) = env::var("PATCH_HUB_CONFIG_PATH") {
-            path
-        } else {
-            format!(
-                "{}/.config/patch-hub/config.json",
-                env::var("HOME").unwrap()
-            )
-        };
+        let config_path = Config::get_config_path();
 
         let config_path = Path::new(&config_path);
         // We need to assure that the parent dir of `config_path` exists
@@ -236,6 +212,18 @@ impl Config {
         }
         fs::rename(tmp_filename, config_path)?;
         Ok(())
+    }
+
+    /// Returns the current Config path
+    ///
+    /// It tries to get direct config path from env var PATCH_HUB_CONFIG_PATH,
+    /// otherwise it uses $HOME + suffix
+    fn get_config_path() -> String {
+        env::var("PATCH_HUB_CONFIG_PATH").unwrap_or(format!(
+            "{}/{}",
+            env::var("HOME").unwrap(),
+            DEFAULT_CONFIG_PATH_SUFFIX
+        ))
     }
 
     /// Creates the needed directories if they don't exist.
