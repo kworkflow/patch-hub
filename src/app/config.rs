@@ -1,4 +1,5 @@
 use derive_getters::Getters;
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -7,6 +8,11 @@ use std::{
     io,
     path::Path,
 };
+
+// store only one Config::default object in memory
+lazy_static! {
+    static ref DEFAULT_CONFIG: Config = Config::default();
+}
 
 pub const DEFAULT_CONFIG_PATH_SUFFIX: &str = ".config/patch-hub/config.json";
 
@@ -62,7 +68,7 @@ pub struct Config {
     git_am_branch_prefix: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Getters, Eq, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Getters, Eq, PartialEq, Clone)]
 pub struct KernelTree {
     /// Path to kernel tree in the filesystem
     path: String,
@@ -263,65 +269,65 @@ impl Config {
 }
 
 fn default_page_size() -> usize {
-    Config::default().page_size
+    DEFAULT_CONFIG.page_size
 }
 
 fn default_patchsets_cache_dir() -> String {
-    Config::default().patchsets_cache_dir
+    DEFAULT_CONFIG.patchsets_cache_dir.clone()
 }
 
 fn default_bookmarked_patchsets_path() -> String {
-    Config::default().bookmarked_patchsets_path
+    DEFAULT_CONFIG.bookmarked_patchsets_path.clone()
 }
 
 fn default_mailing_lists_path() -> String {
-    Config::default().mailing_lists_path
+    DEFAULT_CONFIG.mailing_lists_path.clone()
 }
 
 fn default_reviewed_patchsets_path() -> String {
-    Config::default().reviewed_patchsets_path
+    DEFAULT_CONFIG.reviewed_patchsets_path.clone()
 }
 
 fn default_logs_path() -> String {
-    Config::default().logs_path
+    DEFAULT_CONFIG.logs_path.clone()
 }
 
 fn default_git_send_email_options() -> String {
-    Config::default().git_send_email_options
+    DEFAULT_CONFIG.git_send_email_options.clone()
 }
 
 fn default_cache_dir() -> String {
-    Config::default().cache_dir
+    DEFAULT_CONFIG.cache_dir.clone()
 }
 
 fn default_data_dir() -> String {
-    Config::default().data_dir
+    DEFAULT_CONFIG.data_dir.clone()
 }
 
 fn default_patch_renderer() -> PatchRenderer {
-    Config::default().patch_renderer
+    DEFAULT_CONFIG.patch_renderer
 }
 
 fn default_cover_renderer() -> CoverRenderer {
-    Config::default().cover_renderer
+    DEFAULT_CONFIG.cover_renderer
 }
 
 fn default_max_log_age() -> usize {
-    Config::default().max_log_age
+    DEFAULT_CONFIG.max_log_age
 }
 
 fn default_kernel_trees() -> HashMap<String, KernelTree> {
-    Config::default().kernel_trees
+    DEFAULT_CONFIG.kernel_trees.clone()
 }
 
 fn default_target_kernel_tree() -> Option<String> {
-    Config::default().target_kernel_tree
+    DEFAULT_CONFIG.target_kernel_tree.clone()
 }
 
 fn default_git_am_options() -> String {
-    Config::default().git_am_options
+    DEFAULT_CONFIG.git_am_options.clone()
 }
 
 fn default_git_am_branch_help() -> String {
-    Config::default().git_am_branch_prefix
+    DEFAULT_CONFIG.git_am_branch_prefix.clone()
 }
