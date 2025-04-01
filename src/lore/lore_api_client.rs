@@ -27,11 +27,10 @@ pub struct BlockingLoreAPIClient {
 }
 impl Default for BlockingLoreAPIClient {
     fn default() -> Self {
+        let kw_agent: String = format!("kworkflow/patch-hub/{}", env!("CARGO_PKG_VERSION"));
+
         let agent: Agent = Agent::config_builder()
-            .user_agent(Some(format!(
-                "kworkflow/patch-hub/{}",
-                env!("CARGO_PKG_VERSION")
-            )))
+            .user_agent(ureq::config::AutoHeaderValue::from(kw_agent))
             .timeout_per_call(Some(Duration::from_secs(120)))
             .tls_config(TlsConfig::builder().build())
             .build()

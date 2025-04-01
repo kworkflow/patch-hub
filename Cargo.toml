@@ -7,21 +7,21 @@ description = "patch-hub is a TUI that streamlines the interaction of Linux deve
 
 [dependencies]
 color-eyre = "0.6.3"
-mockall = "0.13.0"
+mockall = "0.13.1"
 derive-getters = { version = "0.5.0", features = ["auto_copy_getters"] }
 lazy_static = "1.5.0"
 proc_macros = { path = "./proc_macros" }
-ratatui = "0.28.1"
-regex = "1.10.5"
-serde = { version = "1.0.203", features = ["derive"] }
+ratatui = "0.29.0"
+regex = "1.11.1"
+serde = { version = "1.0.219", features = ["derive"] }
 serde-xml-rs = "0.6.0"
-serde_json = "1.0.120"
-thiserror = "1.0.37"
-clap = { version = "4.5.13", features = ["derive"] }
-chrono = "0.4.38"
-ansi-to-tui = "6.0.0"
-which = "6.0.3"
-ureq = { version = "=3.0.0-rc2", features = ["rustls"] }
+serde_json = "1.0.140"
+thiserror = "2.0.12"
+clap = { version = "4.5.35", features = ["derive"] }
+chrono = "0.4.40"
+ansi-to-tui = "7.0.0"
+which = "7.0.2"
+ureq = { version = "3.0.10", features = ["rustls"] }
 
 # The profile that 'cargo dist' will build with
 [profile.dist]
