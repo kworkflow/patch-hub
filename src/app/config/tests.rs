@@ -1,8 +1,47 @@
 use super::*;
 
-use std::sync::Mutex;
+use std::{process::Command, sync::Mutex};
 
 static TEST_LOCK: Mutex<()> = Mutex::new(());
+static mut TMP_CONFIG_SAMPLE_FILE_PATH: String = String::new();
+
+fn setup_tmp_config_sample_file() {
+    #[allow(static_mut_refs)]
+    unsafe {
+        // Create temporary file
+        TMP_CONFIG_SAMPLE_FILE_PATH = String::from_utf8(
+            Command::new("mktemp")
+                .output()
+                .expect("Failed to create temporary file!")
+                .stdout,
+        )
+        .expect("Couldn't convert `mktemp` output to String!");
+
+        // Copy contents from sample config file to temporary file
+        fs::copy(
+            "src/test_samples/app/config/config.json",
+            &TMP_CONFIG_SAMPLE_FILE_PATH,
+        )
+        .expect("Couldn't copy config sample file contents to temporary file!");
+
+        // Set temporary config file to be used instead of the git tracked sample file
+        env::set_var("PATCH_HUB_CONFIG_PATH", &TMP_CONFIG_SAMPLE_FILE_PATH);
+    };
+}
+
+fn teardown_tmp_config_sample_file() {
+    #[allow(static_mut_refs)]
+    unsafe {
+        // Sanitizing temporary file
+        let _ = Command::new("rm")
+            .arg(&TMP_CONFIG_SAMPLE_FILE_PATH)
+            .output()
+            .expect("Couldn't remove temporary config sample file!");
+
+        // Unset config file to used
+        env::remove_var("PATCH_HUB_CONFIG_PATH");
+    }
+}
 
 #[test]
 fn can_build_with_default_values() {
@@ -47,12 +86,9 @@ fn can_build_with_default_values() {
 fn can_build_with_config_file() {
     let _lock = TEST_LOCK.lock().unwrap();
 
-    env::set_var(
-        "PATCH_HUB_CONFIG_PATH",
-        "src/test_samples/app/config/config.json",
-    );
+    setup_tmp_config_sample_file();
     let config = Config::build();
-    env::remove_var("PATCH_HUB_CONFIG_PATH");
+    teardown_tmp_config_sample_file();
 
     assert_eq!(1234, config.page_size());
     assert_eq!("/cachedir/path", config.patchsets_cache_dir());
@@ -133,10 +169,7 @@ fn test_config_precedence() {
     assert_eq!(30, config.page_size());
 
     // Config file should have precedence over default values
-    env::set_var(
-        "PATCH_HUB_CONFIG_PATH",
-        "src/test_samples/app/config/config.json",
-    );
+    setup_tmp_config_sample_file();
     let config = Config::build();
     assert_eq!(1234, config.page_size());
 
@@ -145,6 +178,6 @@ fn test_config_precedence() {
     let config = Config::build();
     assert_eq!(42, config.page_size());
 
-    env::remove_var("PATCH_HUB_CONFIG_PATH");
+    teardown_tmp_config_sample_file();
     env::remove_var("PATCH_HUB_PAGE_SIZE");
 }
