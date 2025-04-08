@@ -121,6 +121,12 @@ Common prefixes:
 - `refactor`: Code that neither fixes a bug nor adds a feature.
 - `style`: Changes that do not affect the meaning of the code (white-space, formatting, missing semi-colons, etc).
 
+### Scope and Breaking Changes
+
+To specify which part of the project a commit affects, you can include a **scope** in paranthesis after the type. If the commit introduces a **breaking change**, add an exclamation mark `!` before the colon.
+
+**Example:**
+
 ### Sign your work - the Developer's Certificate of Origin
 
 `patch-hub` adopts the [Developer's Certificate of Origin](#developers-certificate-of-origin) practice from the Linux kernel. All commits must include the following line at the bottom to certify that you wrote it or otherwise have the right to pass it on as an open-source patch.
