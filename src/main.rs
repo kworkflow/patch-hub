@@ -18,7 +18,10 @@ mod utils;
 fn main() -> color_eyre::Result<()> {
     // file writer guards should be propagated to main() so the logging thread lives enough
     let InitMonitoringProduct {
-        file_writer_guards: _file_writer_guards,
+        logging_guards_by_file_name,
+        mut multi_log_file_writer,
+        logging_reload_handle,
+        ..
     } = init_monitoring();
 
     let args = Cli::parse();
@@ -28,6 +31,13 @@ fn main() -> color_eyre::Result<()> {
 
     let config = Config::build();
     config.create_dirs();
+
+    // with the config we can update log directory
+    let _guards = multi_log_file_writer.update_log_writer_with_config(
+        &config,
+        logging_guards_by_file_name,
+        logging_reload_handle,
+    );
 
     match args.resolve(terminal, &config) {
         ControlFlow::Break(b) => return b,
