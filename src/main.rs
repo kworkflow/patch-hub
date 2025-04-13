@@ -13,11 +13,18 @@ use color_eyre::eyre::bail;
 use handler::run_app;
 use infrastructure::{
     logging::Logger,
+    monitoring::{init_monitoring, InitMonitoringProduct},
     terminal::{init, restore},
 };
 use std::ops::ControlFlow;
+use tracing::{event, Level};
 
 fn main() -> color_eyre::Result<()> {
+    // file writer guards should be propagated to main() so the logging thread lives enough
+    let InitMonitoringProduct {
+        file_writer_guards: _file_writer_guards,
+    } = init_monitoring();
+
     let args = Cli::parse();
 
     infrastructure::errors::install_hooks()?;
@@ -41,6 +48,9 @@ fn main() -> color_eyre::Result<()> {
     restore()?;
 
     Logger::info("patch-hub finished");
+    // event! usage example as an alternative for Logger module
+    event!(Level::INFO, "patch-hub finished");
+
     Logger::flush();
 
     Ok(())
