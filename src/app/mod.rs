@@ -11,7 +11,7 @@ use tracing::{event, Level};
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    infrastructure::{garbage_collector, logging::Logger},
+    infrastructure::{logging::Logger, monitoring::logging::garbage_collector::collect_garbage},
     log_on_error,
     lore::{
         lore_api_client::BlockingLoreAPIClient,
@@ -84,7 +84,7 @@ impl App {
         Logger::init_log_file(&config)?;
 
         event!(Level::INFO, "patch-hub started");
-        garbage_collector::collect_garbage(&config);
+        collect_garbage(&config);
 
         Ok(App {
             current_screen: CurrentScreen::MailingListSelection,
