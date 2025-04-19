@@ -16,6 +16,11 @@ mod ui;
 mod utils;
 
 fn main() -> color_eyre::Result<()> {
+    event!(
+        Level::INFO,
+        "log before logging initialization (should not appear anywhere)"
+    );
+
     // file writer guards should be propagated to main() so the logging thread lives enough
     let InitMonitoringProduct {
         logging_guards_by_file_name,
@@ -23,6 +28,8 @@ fn main() -> color_eyre::Result<()> {
         logging_reload_handle,
         ..
     } = init_monitoring();
+
+    event!(Level::INFO, "log before config initialization");
 
     let args = Cli::parse();
 
@@ -32,12 +39,19 @@ fn main() -> color_eyre::Result<()> {
     let config = Config::build();
     config.create_dirs();
 
+    event!(
+        Level::INFO,
+        "log after config initialization but before logging layer reload"
+    );
+
     // with the config we can update log directory
     let _guards = multi_log_file_writer.update_log_writer_with_config(
         &config,
         logging_guards_by_file_name,
         logging_reload_handle,
     );
+
+    event!(Level::INFO, "log after logging layer reload");
 
     match args.resolve(terminal, &config) {
         ControlFlow::Break(b) => return b,
