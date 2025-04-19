@@ -12,7 +12,6 @@ use cli::Cli;
 use color_eyre::eyre::bail;
 use handler::run_app;
 use infrastructure::{
-    logging::Logger,
     monitoring::{init_monitoring, InitMonitoringProduct},
     terminal::{init, restore},
 };
@@ -61,8 +60,6 @@ fn main() -> color_eyre::Result<()> {
     restore()?;
 
     event!(Level::INFO, "patch-hub finished");
-
-    Logger::flush();
 
     Ok(())
 }

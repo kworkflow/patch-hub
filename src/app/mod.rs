@@ -11,7 +11,7 @@ use tracing::{event, Level};
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    infrastructure::{logging::Logger, monitoring::logging::garbage_collector::collect_garbage},
+    infrastructure::monitoring::logging::garbage_collector::collect_garbage,
     log_on_error,
     lore::{
         lore_api_client::BlockingLoreAPIClient,
@@ -60,8 +60,7 @@ pub struct App {
 impl App {
     /// Creates a new instance of `App`. It dynamically loads configurations
     /// based on precedence (see [crate::app::Config::build]), app data
-    /// (available mailing lists, bookmarked patchsets, reviewed patchsets), and
-    /// initializes the Logger (see [crate::app::logging::Logger])
+    /// (available mailing lists, bookmarked patchsets, reviewed patchsets)
     ///
     /// # Returns
     ///
@@ -79,9 +78,6 @@ impl App {
                 .unwrap_or_default();
 
         let lore_api_client = BlockingLoreAPIClient::default();
-
-        // Initialize the logger before the app starts
-        Logger::init_log_file(&config)?;
 
         event!(Level::INFO, "patch-hub started");
         collect_garbage(&config);
