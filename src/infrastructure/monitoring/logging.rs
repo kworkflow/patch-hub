@@ -10,7 +10,7 @@ use tracing_subscriber::{reload::Handle, Layer, Registry};
 pub mod multi_log_file_writer;
 
 const LATEST_LOG_FILENAME: &str = "latest.tracing.log";
-const TEMP_LOG_DIR: &str = "/tmp/temporary-patch-hub-logs";
+const TEMP_LOG_DIR: &str = "./temporary-logs-test/temporary-patch-hub-logs/";
 
 pub struct InitLoggingLayerProduct {
     pub logging_layer: Box<dyn Layer<Registry> + Send + Sync>,
