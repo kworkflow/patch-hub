@@ -1,5 +1,3 @@
-pub mod garbage_collector;
-
 use chrono::Local;
 
 use std::{
