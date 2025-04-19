@@ -1,5 +1,6 @@
 use crate::{
     log_on_error,
+    monitoring::logging::garbage_collector::collect_garbage,
     ui::popup::{info_popup::InfoPopUp, PopUp},
 };
 use ansi_to_tui::IntoText;
@@ -83,7 +84,7 @@ impl App {
         // Initialize the logger before the app starts
         Logger::init_log_file(&config)?;
         event!(Level::INFO, "patch-hub started");
-        logging::garbage_collector::collect_garbage(&config);
+        collect_garbage(&config);
 
         Ok(App {
             current_screen: CurrentScreen::MailingListSelection,

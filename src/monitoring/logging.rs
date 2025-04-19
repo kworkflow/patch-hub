@@ -7,6 +7,8 @@ use multi_log_file_writer::{create_non_blocking_writer, get_fmt_layer, MultiLogF
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{reload::Handle, Layer, Registry};
 
+pub mod garbage_collector;
+pub mod log_on_error;
 pub mod multi_log_file_writer;
 
 const LATEST_LOG_FILENAME: &str = "latest.log";
