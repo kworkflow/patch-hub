@@ -49,8 +49,6 @@ fn main() -> color_eyre::Result<()> {
     run_app(terminal, app)?;
     utils::restore()?;
 
-    Logger::info("patch-hub finished");
-    // event! usage example as an alternative for Logger module
     event!(Level::INFO, "patch-hub finished");
 
     Logger::flush();

@@ -9,7 +9,7 @@ use tracing_subscriber::{reload::Handle, Layer, Registry};
 
 pub mod multi_log_file_writer;
 
-const LATEST_LOG_FILENAME: &str = "latest.tracing.log";
+const LATEST_LOG_FILENAME: &str = "latest.log";
 const TEMP_LOG_DIR: &str = "/tmp/temporary-patch-hub-logs";
 
 pub struct InitLoggingLayerProduct {
@@ -43,7 +43,7 @@ pub fn init_logging_layer() -> InitLoggingLayerProduct {
 
 fn init_logging_file_writers() -> InitLoggingFileWritersProduct {
     let timestamp_log_file_name = format!(
-        "patch-hub_{}.tracing.log",
+        "patch-hub_{}.log",
         chrono::Local::now().format("%Y%m%d-%H%M%S")
     );
 

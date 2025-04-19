@@ -23,6 +23,7 @@ use screens::{
     CurrentScreen,
 };
 use std::collections::{HashMap, HashSet};
+use tracing::{event, Level};
 
 use crate::utils;
 
@@ -81,7 +82,7 @@ impl App {
 
         // Initialize the logger before the app starts
         Logger::init_log_file(&config)?;
-        Logger::info("patch-hub started");
+        event!(Level::INFO, "patch-hub started");
         logging::garbage_collector::collect_garbage(&config);
 
         Ok(App {
@@ -207,7 +208,10 @@ impl App {
                     {
                         Ok(render) => render,
                         Err(_) => {
-                            Logger::error("Failed to render cover preview with external program");
+                            event!(
+                                Level::ERROR,
+                                "Failed to render cover preview with external program"
+                            );
                             raw_cover.to_string()
                         }
                     };
@@ -216,7 +220,8 @@ impl App {
                         match render_patch_preview(raw_patch, self.config.patch_renderer()) {
                             Ok(render) => render,
                             Err(_) => {
-                                Logger::error(
+                                event!(
+                                    Level::ERROR,
                                     "Failed to render patch preview with external program",
                                 );
                                 raw_patch.to_string()
@@ -392,30 +397,38 @@ impl App {
         let mut app_can_run = true;
 
         if !utils::binary_exists("b4") {
-            Logger::error("b4 is not installed, patchsets cannot be downloaded");
+            event!(
+                Level::ERROR,
+                "b4 is not installed, patchsets cannot be downloaded"
+            );
             app_can_run = false;
         }
 
         if !utils::binary_exists("git") {
-            Logger::warn("git is not installed, send-email won't work");
+            event!(Level::WARN, "git is not installed, send-email won't work");
         }
 
         match self.config.patch_renderer() {
             PatchRenderer::Bat => {
                 if !utils::binary_exists("bat") {
-                    Logger::warn("bat is not installed, patch rendering will fallback to default");
+                    event!(
+                        Level::WARN,
+                        "bat is not installed, patch rendering will fallback to default"
+                    );
                 }
             }
             PatchRenderer::Delta => {
                 if !utils::binary_exists("delta") {
-                    Logger::warn(
+                    event!(
+                        Level::WARN,
                         "delta is not installed, patch rendering will fallback to default",
                     );
                 }
             }
             PatchRenderer::DiffSoFancy => {
                 if !utils::binary_exists("diff-so-fancy") {
-                    Logger::warn(
+                    event!(
+                        Level::WARN,
                         "diff-so-fancy is not installed, patch rendering will fallback to default",
                     );
                 }

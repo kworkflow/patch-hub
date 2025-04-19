@@ -5,8 +5,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-
-use super::logging::Logger;
+use tracing::{event, Level};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]
 pub enum CoverRenderer {
@@ -68,7 +67,7 @@ fn bat_cover_renderer(patch: &str) -> color_eyre::Result<String> {
         .stdout(Stdio::piped())
         .spawn()
         .map_err(|e| {
-            Logger::error(format!("Failed to spawn bat for cover preview: {}", e));
+            event!(Level::ERROR, "Failed to spawn bat for cover preview: {}", e);
             e
         })?;
 

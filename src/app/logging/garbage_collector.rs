@@ -2,9 +2,9 @@
 //!
 //! This module is responsible for cleaning up the log files.
 
-use crate::app::config::Config;
+use tracing::{event, Level};
 
-use super::Logger;
+use crate::app::config::Config;
 
 /// Collects the garbage from the logs directory.
 /// Will check for log files `patch-hub_*.log` and remove them if they are older than the `max_log_age` in the config.
@@ -16,7 +16,10 @@ pub fn collect_garbage(config: &Config) {
     let now = std::time::SystemTime::now();
     let logs_path = config.logs_path();
     let Ok(logs) = std::fs::read_dir(logs_path) else {
-        Logger::error("Failed to read the logs directory during garbage collection");
+        event!(
+            Level::ERROR,
+            "Failed to read the logs directory during garbage collection"
+        );
         return;
     };
 
@@ -41,10 +44,11 @@ pub fn collect_garbage(config: &Config) {
         let age = age.as_secs() / 60 / 60 / 24;
 
         if age as usize > config.max_log_age() && std::fs::remove_file(log.path()).is_err() {
-            Logger::warn(format!(
+            event!(
+                Level::WARN,
                 "Failed to remove the log file: {}",
                 log.path().to_string_lossy()
-            ));
+            );
         }
     }
 }

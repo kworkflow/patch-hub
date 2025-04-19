@@ -8,9 +8,10 @@ use std::{
     ops::ControlFlow,
     time::{Duration, Instant},
 };
+use tracing::{event, Level};
 
 use crate::{
-    app::{logging::Logger, screens::CurrentScreen, App},
+    app::{screens::CurrentScreen, App},
     loading_screen,
     ui::draw_ui,
 };
@@ -22,7 +23,7 @@ use edit_config::handle_edit_config;
 use latest::handle_latest_patchsets;
 use mail_list::handle_mailing_list_selection;
 use ratatui::{
-    crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
+    crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind},
     prelude::Backend,
     Terminal,
 };
@@ -107,7 +108,10 @@ where
     B: Backend + Send + 'static,
 {
     if !app.check_external_deps() {
-        Logger::error("patch-hub cannot be executed because some dependencies are missing");
+        event!(
+            Level::WARN,
+            "patch-hub cannot be executed because some dependencies are missing"
+        );
         bail!("patch-hub cannot be executed because some dependencies are missing, check logs for more information");
     }
 
@@ -121,7 +125,7 @@ where
         // need to refresh the UI independently of any event as doing so gravely
         // hinders the performance to below acceptable.
         // if event::poll(Duration::from_millis(16))? {
-        if let Event::Key(key) = event::read()? {
+        if let Event::Key(key) = ratatui::crossterm::event::read()? {
             if key.kind == KeyEventKind::Release {
                 continue;
             }
@@ -138,8 +142,8 @@ fn wait_key_press(ch: char, wait_time: Duration) -> color_eyre::Result<bool> {
     let start = Instant::now();
 
     while Instant::now() - start < wait_time {
-        if event::poll(Duration::from_millis(16))? {
-            if let Event::Key(key) = event::read()? {
+        if ratatui::crossterm::event::poll(Duration::from_millis(16))? {
+            if let Event::Key(key) = ratatui::crossterm::event::read()? {
                 if key.kind == KeyEventKind::Release {
                     continue;
                 }
