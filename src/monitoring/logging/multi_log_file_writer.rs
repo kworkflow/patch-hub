@@ -31,11 +31,11 @@ impl MultiLogFileWriter {
 
     pub fn update_log_writer_with_config(
         &mut self,
-        _config: &Config,
+        config: &Config,
         current_guards_by_file_name: HashMap<String, WorkerGuard>,
         reload_handle: Handle<Box<dyn Layer<Registry> + Send + Sync>, Registry>,
     ) -> Vec<WorkerGuard> {
-        let new_log_directory = "./temporary-logs-test/config-dir-logs-test/";
+        let new_log_directory = config.logs_path();
         let guards = self.update_logging_dir(
             new_log_directory,
             current_guards_by_file_name,
