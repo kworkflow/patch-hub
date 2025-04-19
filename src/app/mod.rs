@@ -6,6 +6,7 @@ pub mod screens;
 use ansi_to_tui::IntoText;
 use color_eyre::eyre::bail;
 use ratatui::text::Text;
+use tracing::{event, Level};
 
 use std::collections::{HashMap, HashSet};
 
@@ -81,7 +82,8 @@ impl App {
 
         // Initialize the logger before the app starts
         Logger::init_log_file(&config)?;
-        Logger::info("patch-hub started");
+
+        event!(Level::INFO, "patch-hub started");
         garbage_collector::collect_garbage(&config);
 
         Ok(App {
@@ -216,7 +218,10 @@ impl App {
                     {
                         Ok(render) => render,
                         Err(_) => {
-                            Logger::error("Failed to render cover preview with external program");
+                            event!(
+                                Level::ERROR,
+                                "Failed to render cover preview with external program"
+                            );
                             raw_cover.to_string()
                         }
                     };
@@ -225,7 +230,8 @@ impl App {
                         match render_patch_preview(raw_patch, self.config.patch_renderer()) {
                             Ok(render) => render,
                             Err(_) => {
-                                Logger::error(
+                                event!(
+                                    Level::ERROR,
                                     "Failed to render patch preview with external program",
                                 );
                                 raw_patch.to_string()
@@ -404,30 +410,38 @@ impl App {
         let mut app_can_run = true;
 
         if which::which("b4").is_err() {
-            Logger::error("b4 is not installed, patchsets cannot be downloaded");
+            event!(
+                Level::ERROR,
+                "b4 is not installed, patchsets cannot be downloaded"
+            );
             app_can_run = false;
         }
 
         if which::which("git").is_err() {
-            Logger::warn("git is not installed, send-email won't work");
+            event!(Level::WARN, "git is not installed, send-email won't work");
         }
 
         match self.config.patch_renderer() {
             PatchRenderer::Bat => {
                 if which::which("bat").is_err() {
-                    Logger::warn("bat is not installed, patch rendering will fallback to default");
+                    event!(
+                        Level::WARN,
+                        "bat is not installed, patch rendering will fallback to default"
+                    );
                 }
             }
             PatchRenderer::Delta => {
                 if which::which("delta").is_err() {
-                    Logger::warn(
+                    event!(
+                        Level::WARN,
                         "delta is not installed, patch rendering will fallback to default",
                     );
                 }
             }
             PatchRenderer::DiffSoFancy => {
                 if which::which("diff-so-fancy").is_err() {
-                    Logger::warn(
+                    event!(
+                        Level::WARN,
                         "diff-so-fancy is not installed, patch rendering will fallback to default",
                     );
                 }

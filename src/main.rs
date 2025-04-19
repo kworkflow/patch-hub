@@ -50,15 +50,16 @@ fn main() -> color_eyre::Result<()> {
 
     let app = App::new(config)?;
     if !app.check_external_deps() {
-        Logger::error("patch-hub cannot be executed because some dependencies are missing");
+        event!(
+            Level::WARN,
+            "patch-hub cannot be executed because some dependencies are missing"
+        );
         bail!("patch-hub cannot be executed because some dependencies are missing, check logs for more information");
     }
 
     run_app(terminal, app)?;
     restore()?;
 
-    Logger::info("patch-hub finished");
-    // event! usage example as an alternative for Logger module
     event!(Level::INFO, "patch-hub finished");
 
     Logger::flush();

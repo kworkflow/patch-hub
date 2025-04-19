@@ -51,7 +51,7 @@ macro_rules! loading_screen {
 #[macro_export]
 macro_rules! log_on_error {
     ($result:expr) => {
-        log_on_error!($crate::infrastructure::logging::LogLevel::Error, $result)
+        log_on_error!(tracing::Level::ERROR, $result)
     };
     ($level:expr, $result:expr) => {
         match $result {
@@ -59,17 +59,7 @@ macro_rules! log_on_error {
             Err(ref error) => {
                 let error_message =
                     format!("Error executing {:?}: {}", stringify!($result), &error);
-                match $level {
-                    $crate::infrastructure::logging::LogLevel::Info => {
-                        Logger::info(error_message);
-                    }
-                    $crate::infrastructure::logging::LogLevel::Warning => {
-                        Logger::warn(error_message);
-                    }
-                    $crate::infrastructure::logging::LogLevel::Error => {
-                        Logger::error(error_message);
-                    }
-                }
+                tracing::event!($level, error_message);
                 $result
             }
         }
