@@ -1,6 +1,6 @@
 use std::panic;
 
-use super::{logging::Logger, terminal::restore};
+use super::terminal::restore;
 
 /// This replaces the standard color_eyre panic and error hooks with hooks that
 /// restore the terminal before printing the panic or error.
@@ -11,7 +11,6 @@ pub fn install_hooks() -> color_eyre::Result<()> {
     let panic_hook = panic_hook.into_panic_hook();
     panic::set_hook(Box::new(move |panic_info| {
         restore().unwrap();
-        Logger::flush();
         panic_hook(panic_info);
     }));
 
