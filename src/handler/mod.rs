@@ -5,7 +5,7 @@ mod latest;
 mod mail_list;
 
 use ratatui::{
-    crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
+    crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind},
     prelude::Backend,
     Terminal,
 };
@@ -116,7 +116,7 @@ where
         // need to refresh the UI independently of any event as doing so gravely
         // hinders the performance to below acceptable.
         // if event::poll(Duration::from_millis(16))? {
-        if let Event::Key(key) = event::read()? {
+        if let Event::Key(key) = ratatui::crossterm::event::read()? {
             if key.kind == KeyEventKind::Release {
                 continue;
             }
@@ -133,8 +133,8 @@ fn wait_key_press(ch: char, wait_time: Duration) -> color_eyre::Result<bool> {
     let start = Instant::now();
 
     while Instant::now() - start < wait_time {
-        if event::poll(Duration::from_millis(16))? {
-            if let Event::Key(key) = event::read()? {
+        if ratatui::crossterm::event::poll(Duration::from_millis(16))? {
+            if let Event::Key(key) = ratatui::crossterm::event::read()? {
                 if key.kind == KeyEventKind::Release {
                     continue;
                 }

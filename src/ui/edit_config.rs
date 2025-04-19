@@ -5,8 +5,9 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
+use tracing::{event, Level};
 
-use crate::{app::App, infrastructure::logging::Logger};
+use crate::app::App;
 
 pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
     let edit_config = app.edit_config.as_ref().unwrap();
@@ -30,7 +31,7 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
         let (config, value) = match edit_config.config(i) {
             Some((cfg, val)) => (cfg, val),
             None => {
-                Logger::error(format!("Invalid configuration index: {i}"));
+                event!(Level::ERROR, "Invalid configuration index: {}", i);
                 return;
             }
         };
