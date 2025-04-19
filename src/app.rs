@@ -7,7 +7,6 @@ use ansi_to_tui::IntoText;
 use color_eyre::eyre::bail;
 use config::Config;
 use cover_renderer::render_cover;
-use logging::Logger;
 use patch_hub::lore::{
     lore_api_client::BlockingLoreAPIClient,
     lore_session,
@@ -30,7 +29,6 @@ use crate::utils;
 
 pub mod config;
 pub mod cover_renderer;
-pub mod logging;
 pub mod patch_renderer;
 pub mod screens;
 
@@ -61,8 +59,7 @@ pub struct App {
 impl App {
     /// Creates a new instance of `App`. It dynamically loads configurations
     /// based on precedence (see [crate::app::Config::build]), app data
-    /// (available mailing lists, bookmarked patchsets, reviewed patchsets), and
-    /// initializes the Logger (see [crate::app::logging::Logger])
+    /// (available mailing lists, bookmarked patchsets, reviewed patchsets)
     ///
     /// # Returns
     ///
@@ -81,8 +78,6 @@ impl App {
 
         let lore_api_client = BlockingLoreAPIClient::default();
 
-        // Initialize the logger before the app starts
-        Logger::init_log_file(&config)?;
         event!(Level::INFO, "patch-hub started");
         collect_garbage(&config);
 

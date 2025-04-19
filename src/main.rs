@@ -1,7 +1,7 @@
 use std::ops::ControlFlow;
 
 use crate::app::App;
-use app::{config::Config, logging::Logger};
+use app::config::Config;
 use clap::Parser;
 use cli::Cli;
 use handler::run_app;
@@ -50,8 +50,6 @@ fn main() -> color_eyre::Result<()> {
     utils::restore()?;
 
     event!(Level::INFO, "patch-hub finished");
-
-    Logger::flush();
 
     Ok(())
 }
