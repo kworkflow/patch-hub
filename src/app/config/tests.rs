@@ -21,7 +21,7 @@ fn setup_tmp_config_sample_file() {
 
         // Copy contents from sample config file to temporary file
         fs::copy(
-            "src/test_samples/app/config/config.json",
+            "test_samples/app/config/config.json",
             &TMP_CONFIG_SAMPLE_FILE_PATH,
         )
         .expect("Couldn't copy config sample file contents to temporary file!");

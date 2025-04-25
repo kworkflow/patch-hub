@@ -191,7 +191,7 @@ index 83db48f..e3b0c44 100644
         assert!(result.is_ok());
         let rendered_patch = result.unwrap();
         assert_eq!(
-            fs::read_to_string("src/test_samples/ui/render_patchset/expected_bat.diff").unwrap(),
+            fs::read_to_string("test_samples/ui/render_patchset/expected_bat.diff").unwrap(),
             rendered_patch,
             "Wrong rendering of bat"
         );
@@ -204,7 +204,7 @@ index 83db48f..e3b0c44 100644
         assert!(result.is_ok());
         let rendered_patch = result.unwrap();
         assert_eq!(
-            fs::read_to_string("src/test_samples/ui/render_patchset/expected_delta.diff").unwrap(),
+            fs::read_to_string("test_samples/ui/render_patchset/expected_delta.diff").unwrap(),
             rendered_patch,
             "Wrong rendering of delta"
         );
@@ -217,7 +217,7 @@ index 83db48f..e3b0c44 100644
         assert!(result.is_ok());
         let rendered_patch = result.unwrap();
         assert_eq!(
-            fs::read_to_string("src/test_samples/ui/render_patchset/expected_diff-so-fancy.diff")
+            fs::read_to_string("test_samples/ui/render_patchset/expected_diff-so-fancy.diff")
                 .unwrap(),
             rendered_patch,
             "Wrong rendering of diff-so-fancy"

@@ -42,8 +42,7 @@ fn can_initialize_fresh_lore_session() {
 
 #[test]
 fn should_process_one_representative_patch() {
-    let src_path =
-        "src/test_samples/lore_session/process_representative_patch/patch_feed_sample_1.xml";
+    let src_path = "test_samples/lore_session/process_representative_patch/patch_feed_sample_1.xml";
     let target_list = "some-list";
 
     let mut lore_api_client = MockBlockingLoreAPIClient::new();
@@ -107,8 +106,7 @@ fn should_process_one_representative_patch() {
 
 #[test]
 fn should_process_multiple_representative_patches() {
-    let src_path =
-        "src/test_samples/lore_session/process_representative_patch/patch_feed_sample_2.xml";
+    let src_path = "test_samples/lore_session/process_representative_patch/patch_feed_sample_2.xml";
     let target_list = "some-list";
 
     let mut lore_api_client = MockBlockingLoreAPIClient::new();
@@ -162,9 +160,9 @@ fn test_split_patchset_invalid_cases() {
     assert_eq!(Err("invalid/path: Path doesn't exist".to_string()), ret);
 
     let ret: Result<Vec<String>, String> =
-        split_patchset("src/test_samples/lore_session/split_patchset/not_a_file");
+        split_patchset("test_samples/lore_session/split_patchset/not_a_file");
     assert_eq!(
-        Err("src/test_samples/lore_session/split_patchset/not_a_file: Not a file".to_string()),
+        Err("test_samples/lore_session/split_patchset/not_a_file: Not a file".to_string()),
         ret
     );
 }
@@ -172,7 +170,7 @@ fn test_split_patchset_invalid_cases() {
 #[test]
 fn should_split_patchset_without_cover_letter() {
     let ret: Result<Vec<String>, String> = split_patchset(
-        "src/test_samples/lore_session/split_patchset/patchset_sample_without_cover_letter.mbx",
+        "test_samples/lore_session/split_patchset/patchset_sample_without_cover_letter.mbx",
     );
 
     if ret.is_err() {
@@ -184,21 +182,21 @@ fn should_split_patchset_without_cover_letter() {
     assert_eq!(3, patches.len(), "Wrong number of patches");
 
     assert_eq!(
-        fs::read_to_string("src/test_samples/lore_session/split_patchset/expected_patch_1.mbx")
+        fs::read_to_string("test_samples/lore_session/split_patchset/expected_patch_1.mbx")
             .unwrap(),
         patches[0],
         "Wrong patch number 1"
     );
 
     assert_eq!(
-        fs::read_to_string("src/test_samples/lore_session/split_patchset/expected_patch_2.mbx")
+        fs::read_to_string("test_samples/lore_session/split_patchset/expected_patch_2.mbx")
             .unwrap(),
         patches[1],
         "Wrong patch number 2"
     );
 
     assert_eq!(
-        fs::read_to_string("src/test_samples/lore_session/split_patchset/expected_patch_3.mbx")
+        fs::read_to_string("test_samples/lore_session/split_patchset/expected_patch_3.mbx")
             .unwrap(),
         patches[2],
         "Wrong patch number 3"
@@ -208,7 +206,7 @@ fn should_split_patchset_without_cover_letter() {
 #[test]
 fn should_split_patchset_complete() {
     let ret: Result<Vec<String>, String> =
-        split_patchset("src/test_samples/lore_session/split_patchset/patchset_sample_complete.mbx");
+        split_patchset("test_samples/lore_session/split_patchset/patchset_sample_complete.mbx");
 
     if ret.is_err() {
         panic!("Should return a `Vec<String>` type");
@@ -219,30 +217,28 @@ fn should_split_patchset_complete() {
     assert_eq!(4, patches.len(), "Wrong number of patches");
 
     assert_eq!(
-        fs::read_to_string(
-            "src/test_samples/lore_session/split_patchset/expected_cover_letter.cover"
-        )
-        .unwrap(),
+        fs::read_to_string("test_samples/lore_session/split_patchset/expected_cover_letter.cover")
+            .unwrap(),
         patches[0],
         "Wrong cover letter"
     );
 
     assert_eq!(
-        fs::read_to_string("src/test_samples/lore_session/split_patchset/expected_patch_1.mbx")
+        fs::read_to_string("test_samples/lore_session/split_patchset/expected_patch_1.mbx")
             .unwrap(),
         patches[1],
         "Wrong patch number 1"
     );
 
     assert_eq!(
-        fs::read_to_string("src/test_samples/lore_session/split_patchset/expected_patch_2.mbx")
+        fs::read_to_string("test_samples/lore_session/split_patchset/expected_patch_2.mbx")
             .unwrap(),
         patches[2],
         "Wrong patch number 2"
     );
 
     assert_eq!(
-        fs::read_to_string("src/test_samples/lore_session/split_patchset/expected_patch_3.mbx")
+        fs::read_to_string("test_samples/lore_session/split_patchset/expected_patch_3.mbx")
             .unwrap(),
         patches[3],
         "Wrong patch number 3"
@@ -252,7 +248,7 @@ fn should_split_patchset_complete() {
 #[test]
 fn should_process_available_lists() {
     let available_lists_response = fs::read_to_string(
-        "src/test_samples/lore_session/process_available_lists/available_lists_response-1.html",
+        "test_samples/lore_session/process_available_lists/available_lists_response-1.html",
     )
     .unwrap();
     let available_lists = process_available_lists(available_lists_response);
@@ -325,32 +321,38 @@ fn should_process_available_lists() {
 fn should_fetch_all_available_lists() {
     let mut lore_api_client = MockBlockingLoreAPIClient::new();
 
-    lore_api_client.expect_request_available_lists()
-    .withf(|min_index_args| {
-        *min_index_args == 0
-    })
-    .times(1)
-    .returning(|_| {
-        Ok(fs::read_to_string("src/test_samples/lore_session/process_available_lists/available_lists_response-1.html").unwrap())
-    });
+    lore_api_client
+        .expect_request_available_lists()
+        .withf(|min_index_args| *min_index_args == 0)
+        .times(1)
+        .returning(|_| {
+            Ok(fs::read_to_string(
+                "test_samples/lore_session/process_available_lists/available_lists_response-1.html",
+            )
+            .unwrap())
+        });
 
-    lore_api_client.expect_request_available_lists()
-    .withf(|min_index_args| {
-        *min_index_args == 200
-    })
-    .times(1)
-    .returning(|_| {
-        Ok(fs::read_to_string("src/test_samples/lore_session/process_available_lists/available_lists_response-2.html").unwrap())
-    });
+    lore_api_client
+        .expect_request_available_lists()
+        .withf(|min_index_args| *min_index_args == 200)
+        .times(1)
+        .returning(|_| {
+            Ok(fs::read_to_string(
+                "test_samples/lore_session/process_available_lists/available_lists_response-2.html",
+            )
+            .unwrap())
+        });
 
-    lore_api_client.expect_request_available_lists()
-    .withf(|min_index_args| {
-        *min_index_args == 400
-    })
-    .times(1)
-    .returning(|_| {
-        Ok(fs::read_to_string("src/test_samples/lore_session/process_available_lists/available_lists_response-3.html").unwrap())
-    });
+    lore_api_client
+        .expect_request_available_lists()
+        .withf(|min_index_args| *min_index_args == 400)
+        .times(1)
+        .returning(|_| {
+            Ok(fs::read_to_string(
+                "test_samples/lore_session/process_available_lists/available_lists_response-3.html",
+            )
+            .unwrap())
+        });
 
     let sorted_available_lists = fetch_available_lists(&lore_api_client).unwrap();
 
@@ -391,11 +393,11 @@ fn should_fetch_all_available_lists() {
 #[test]
 fn should_generate_patch_reply_template() {
     let patch_sample = fs::read_to_string(
-        "src/test_samples/lore_session/generate_patch_reply_template/patch_sample.mbx",
+        "test_samples/lore_session/generate_patch_reply_template/patch_sample.mbx",
     )
     .unwrap();
     let expected_reply_template = fs::read_to_string(
-        "src/test_samples/lore_session/generate_patch_reply_template/expected_reply_template.mbx",
+        "test_samples/lore_session/generate_patch_reply_template/expected_reply_template.mbx",
     )
     .unwrap();
 
@@ -415,7 +417,7 @@ fn commands_eq(cmd1: &Command, cmd2: &Command) -> bool {
 #[test]
 fn should_extract_git_reply_command_from_patch_html() {
     let patch_html = fs::read_to_string(
-        "src/test_samples/lore_session/extract_git_reply_command/patch_lore_sample.html",
+        "test_samples/lore_session/extract_git_reply_command/patch_lore_sample.html",
     )
     .unwrap();
     let mut expected_git_reply_command = Command::new("git");
@@ -523,14 +525,14 @@ fn should_prepare_reply_patchset_with_reviewed_by() {
 
     let patches = vec![
         fs::read_to_string(
-            "src/test_samples/lore_session/prepare_reply_w_reviewed_by/cover_letter.cover",
+            "test_samples/lore_session/prepare_reply_w_reviewed_by/cover_letter.cover",
         )
         .unwrap(),
-        fs::read_to_string("src/test_samples/lore_session/prepare_reply_w_reviewed_by/patch_1.mbx")
+        fs::read_to_string("test_samples/lore_session/prepare_reply_w_reviewed_by/patch_1.mbx")
             .unwrap(),
-        fs::read_to_string("src/test_samples/lore_session/prepare_reply_w_reviewed_by/patch_2.mbx")
+        fs::read_to_string("test_samples/lore_session/prepare_reply_w_reviewed_by/patch_2.mbx")
             .unwrap(),
-        fs::read_to_string("src/test_samples/lore_session/prepare_reply_w_reviewed_by/patch_3.mbx")
+        fs::read_to_string("test_samples/lore_session/prepare_reply_w_reviewed_by/patch_3.mbx")
             .unwrap(),
     ];
 
@@ -561,7 +563,7 @@ fn should_prepare_reply_patchset_with_reviewed_by() {
 
     for i in 0..=3 {
         let expected_path = format!(
-            "src/test_samples/lore_session/prepare_reply_w_reviewed_by/expected_patch_{}-reply.mbx",
+            "test_samples/lore_session/prepare_reply_w_reviewed_by/expected_patch_{}-reply.mbx",
             i
         );
         let actual_path = format!(
