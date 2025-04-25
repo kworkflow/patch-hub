@@ -1,9 +1,9 @@
-use std::time::Duration;
-
 use mockall::automock;
 use thiserror::Error;
 use ureq::tls::TlsConfig;
 use ureq::Agent;
+
+use std::time::Duration;
 
 #[cfg(test)]
 mod tests;

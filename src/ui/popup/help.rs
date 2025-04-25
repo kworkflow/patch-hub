@@ -5,6 +5,7 @@ use ratatui::{
     text::Line,
     widgets::{Clear, Paragraph},
 };
+
 use std::fmt::Display;
 
 use super::PopUp;

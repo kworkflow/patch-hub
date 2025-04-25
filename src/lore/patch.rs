@@ -1,8 +1,8 @@
-use std::fmt::Display;
-
 use derive_getters::Getters;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+
+use std::fmt::Display;
 
 #[cfg(test)]
 mod tests;

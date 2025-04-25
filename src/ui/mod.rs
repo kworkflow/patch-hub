@@ -1,12 +1,3 @@
-use crate::app::{screens::CurrentScreen, App};
-use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Style, Stylize},
-    text::Text,
-    widgets::{Block, Borders, Clear, Paragraph},
-    Frame,
-};
-
 mod bookmarked;
 mod details_actions;
 mod edit_config;
@@ -15,6 +6,16 @@ pub mod loading_screen;
 mod mail_list;
 mod navigation_bar;
 pub mod popup;
+
+use ratatui::{
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Color, Style, Stylize},
+    text::Text,
+    widgets::{Block, Borders, Clear, Paragraph},
+    Frame,
+};
+
+use crate::app::{screens::CurrentScreen, App};
 
 pub fn draw_ui(f: &mut Frame, app: &App) {
     // Clear the whole screen for sanitizing reasons

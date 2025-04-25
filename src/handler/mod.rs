@@ -1,8 +1,14 @@
-pub mod bookmarked;
-pub mod details_actions;
-pub mod edit_config;
-pub mod latest;
-pub mod mail_list;
+mod bookmarked;
+mod details_actions;
+mod edit_config;
+mod latest;
+mod mail_list;
+
+use ratatui::{
+    crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
+    prelude::Backend,
+    Terminal,
+};
 
 use std::{
     ops::ControlFlow,
@@ -10,7 +16,10 @@ use std::{
 };
 
 use crate::{
-    app::screens::CurrentScreen, infrastructure::logging::Logger, loading_screen, ui::draw_ui, App,
+    app::{screens::CurrentScreen, App},
+    infrastructure::logging::Logger,
+    loading_screen,
+    ui::draw_ui,
 };
 
 use bookmarked::handle_bookmarked_patchsets;
@@ -19,11 +28,6 @@ use details_actions::handle_patchset_details;
 use edit_config::handle_edit_config;
 use latest::handle_latest_patchsets;
 use mail_list::handle_mailing_list_selection;
-use ratatui::{
-    crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
-    prelude::Backend,
-    Terminal,
-};
 
 fn key_handling<B>(
     mut terminal: Terminal<B>,

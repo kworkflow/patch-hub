@@ -1,14 +1,15 @@
+use ratatui::{
+    crossterm::event::{KeyCode, KeyEvent},
+    prelude::Backend,
+    Terminal,
+};
+
 use std::ops::ControlFlow;
 
 use crate::{
     app::{screens::CurrentScreen, App},
     loading_screen,
     ui::popup::{help::HelpPopUpBuilder, PopUp},
-};
-use ratatui::{
-    crossterm::event::{KeyCode, KeyEvent},
-    prelude::Backend,
-    Terminal,
 };
 
 pub fn handle_mailing_list_selection<B>(

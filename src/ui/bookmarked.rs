@@ -1,5 +1,3 @@
-use crate::app;
-use app::screens::bookmarked::BookmarkedPatchsets;
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
@@ -7,6 +5,8 @@ use ratatui::{
     widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState},
     Frame,
 };
+
+use crate::app::screens::bookmarked::BookmarkedPatchsets;
 
 pub fn render_main(f: &mut Frame, bookmarked_patchsets: &BookmarkedPatchsets, chunk: Rect) {
     let patchset_index = bookmarked_patchsets.patchset_index;

@@ -1,5 +1,6 @@
-use super::*;
 use serde_xml_rs::from_str;
+
+use super::*;
 
 #[test]
 fn can_deserialize_patch_without_in_reply_to() {

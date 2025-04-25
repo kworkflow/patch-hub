@@ -1,20 +1,28 @@
-use crate::infrastructure::logging::Logger;
-use crate::lore::{
-    lore_api_client::BlockingLoreAPIClient,
-    lore_session,
-    patch::{Author, Patch},
-};
-use crate::{
-    infrastructure::logging,
-    log_on_error,
-    ui::popup::{info_popup::InfoPopUp, PopUp},
-};
+pub mod config;
+mod cover_renderer;
+mod patch_renderer;
+pub mod screens;
+
 use ansi_to_tui::IntoText;
 use color_eyre::eyre::bail;
+use ratatui::text::Text;
+
+use std::collections::{HashMap, HashSet};
+
+use crate::{
+    infrastructure::{garbage_collector, logging::Logger},
+    log_on_error,
+    lore::{
+        lore_api_client::BlockingLoreAPIClient,
+        lore_session,
+        patch::{Author, Patch},
+    },
+    ui::popup::{info_popup::InfoPopUp, PopUp},
+};
+
 use config::Config;
 use cover_renderer::render_cover;
 use patch_renderer::{render_patch_preview, PatchRenderer};
-use ratatui::text::Text;
 use screens::{
     bookmarked::BookmarkedPatchsets,
     details_actions::{DetailsActions, PatchsetAction},
@@ -23,12 +31,6 @@ use screens::{
     mail_list::MailingListSelection,
     CurrentScreen,
 };
-use std::collections::{HashMap, HashSet};
-
-pub mod config;
-pub mod cover_renderer;
-pub mod patch_renderer;
-pub mod screens;
 
 /// Type that represents the overall state of the application. It can be viewed
 /// as the **Model** component of `patch-hub`.
@@ -80,7 +82,7 @@ impl App {
         // Initialize the logger before the app starts
         Logger::init_log_file(&config)?;
         Logger::info("patch-hub started");
-        logging::garbage_collector::collect_garbage(&config);
+        garbage_collector::collect_garbage(&config);
 
         Ok(App {
             current_screen: CurrentScreen::MailingListSelection,

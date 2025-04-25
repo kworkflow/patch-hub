@@ -1,10 +1,10 @@
-use std::fmt::Debug;
-
-use ratatui::{crossterm::event::KeyEvent, layout::Rect, Frame};
-
 pub mod help;
 pub mod info_popup;
 pub mod review_trailers;
+
+use ratatui::{crossterm::event::KeyEvent, layout::Rect, Frame};
+
+use std::fmt::Debug;
 
 /// A trait that represents a popup that can be rendered on top of a screen
 pub trait PopUp: Debug {
