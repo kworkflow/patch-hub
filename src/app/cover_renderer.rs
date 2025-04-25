@@ -1,12 +1,12 @@
+use serde::{Deserialize, Serialize};
+
 use std::{
     fmt::Display,
     io::Write,
     process::{Command, Stdio},
 };
 
-use serde::{Deserialize, Serialize};
-
-use super::logging::Logger;
+use crate::infrastructure::logging::Logger;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]
 pub enum CoverRenderer {

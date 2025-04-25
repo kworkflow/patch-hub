@@ -10,9 +10,7 @@ use std::{
 };
 
 use crate::{
-    app::{logging::Logger, screens::CurrentScreen, App},
-    loading_screen,
-    ui::draw_ui,
+    app::screens::CurrentScreen, infrastructure::logging::Logger, loading_screen, ui::draw_ui, App,
 };
 
 use bookmarked::handle_bookmarked_patchsets;

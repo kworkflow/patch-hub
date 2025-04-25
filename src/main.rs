@@ -1,22 +1,26 @@
-use std::ops::ControlFlow;
-
-use crate::app::App;
-use app::{config::Config, logging::Logger};
-use clap::Parser;
-use cli::Cli;
-use handler::run_app;
-
 mod app;
 mod cli;
 mod handler;
+mod infrastructure;
+mod macros;
 mod ui;
-mod utils;
+
+use std::ops::ControlFlow;
+
+use app::{config::Config, App};
+use clap::Parser;
+use cli::Cli;
+use handler::run_app;
+use infrastructure::{
+    logging::Logger,
+    terminal::{init, restore},
+};
 
 fn main() -> color_eyre::Result<()> {
     let args = Cli::parse();
 
-    utils::install_hooks()?;
-    let mut terminal = utils::init()?;
+    infrastructure::errors::install_hooks()?;
+    let mut terminal = init()?;
 
     let config = Config::build();
     config.create_dirs();
@@ -29,7 +33,7 @@ fn main() -> color_eyre::Result<()> {
     let app = App::new(config)?;
 
     run_app(terminal, app)?;
-    utils::restore()?;
+    restore()?;
 
     Logger::info("patch-hub finished");
     Logger::flush();

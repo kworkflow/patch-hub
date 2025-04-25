@@ -1,15 +1,14 @@
+pub mod garbage_collector;
+
+use chrono::Local;
+
 use std::{
     fmt::Display,
     fs::{self, File, OpenOptions},
     io::Write,
 };
 
-use chrono::Local;
-
 use crate::app::config::Config;
-
-pub mod garbage_collector;
-pub mod log_on_error;
 
 const LATEST_LOG_FILENAME: &str = "latest.log";
 

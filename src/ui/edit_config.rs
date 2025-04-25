@@ -6,8 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::logging::Logger;
-use crate::app::App;
+use crate::{app::App, infrastructure::logging::Logger};
 
 pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
     let edit_config = app.edit_config.as_ref().unwrap();
