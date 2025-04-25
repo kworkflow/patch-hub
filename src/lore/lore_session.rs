@@ -1,22 +1,23 @@
-use crate::lore::lore_api_client::{
-    AvailableListsRequest, ClientError, PatchFeedRequest, PatchHTMLRequest,
-};
-use crate::lore::mailing_list::MailingList;
-use crate::lore::patch::{Patch, PatchFeed, PatchRegex};
 use derive_getters::Getters;
 use regex::Regex;
 use serde_xml_rs::from_str;
-use std::collections::{HashMap, HashSet};
-use std::io::{BufRead, BufReader};
-use std::mem::swap;
-use std::path::Path;
-use std::process::{Command, Stdio};
-use std::sync::LazyLock;
-use std::{
-    fs::{self, File},
-    io,
-};
 use thiserror::Error;
+
+use std::{
+    collections::{HashMap, HashSet},
+    fs::{self, File},
+    io::{self, BufRead, BufReader},
+    mem::swap,
+    path::Path,
+    process::{Command, Stdio},
+    sync::LazyLock,
+};
+
+use crate::lore::{
+    lore_api_client::{AvailableListsRequest, ClientError, PatchFeedRequest, PatchHTMLRequest},
+    mailing_list::MailingList,
+    patch::{Patch, PatchFeed, PatchRegex},
+};
 
 #[cfg(test)]
 mod tests;

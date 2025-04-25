@@ -1,5 +1,6 @@
 use color_eyre::eyre::bail;
-use patch_hub::lore::{
+
+use crate::lore::{
     lore_api_client::BlockingLoreAPIClient, lore_session, mailing_list::MailingList,
 };
 

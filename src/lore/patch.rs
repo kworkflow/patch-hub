@@ -62,25 +62,6 @@ fn default_total_in_series() -> usize {
 }
 
 impl Patch {
-    pub fn new(
-        title: String,
-        author: Author,
-        message_id: MessageID,
-        in_reply_to: Option<MessageID>,
-        updated: String,
-    ) -> Patch {
-        Patch {
-            title,
-            author,
-            version: 1,
-            number_in_series: 1,
-            total_in_series: 1,
-            message_id,
-            in_reply_to,
-            updated,
-        }
-    }
-
     pub fn version(&self) -> usize {
         self.version
     }

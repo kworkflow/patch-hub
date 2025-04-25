@@ -1,4 +1,9 @@
 use crate::infrastructure::logging::Logger;
+use crate::lore::{
+    lore_api_client::BlockingLoreAPIClient,
+    lore_session,
+    patch::{Author, Patch},
+};
 use crate::{
     infrastructure::logging,
     log_on_error,
@@ -8,11 +13,6 @@ use ansi_to_tui::IntoText;
 use color_eyre::eyre::bail;
 use config::Config;
 use cover_renderer::render_cover;
-use patch_hub::lore::{
-    lore_api_client::BlockingLoreAPIClient,
-    lore_session,
-    patch::{Author, Patch},
-};
 use patch_renderer::{render_patch_preview, PatchRenderer};
 use ratatui::text::Text;
 use screens::{

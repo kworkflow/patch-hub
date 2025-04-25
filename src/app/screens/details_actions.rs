@@ -1,15 +1,22 @@
-use crate::app::config::{Config, KernelTree};
-
-use super::CurrentScreen;
-use ::patch_hub::lore::{lore_api_client::BlockingLoreAPIClient, lore_session, patch::Patch};
 use color_eyre::eyre::{bail, eyre};
-use patch_hub::lore::patch::Author;
 use ratatui::text::Text;
+
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
     process::Command,
 };
+
+use crate::{
+    app::config::{Config, KernelTree},
+    lore::{
+        lore_api_client::BlockingLoreAPIClient,
+        lore_session,
+        patch::{Author, Patch},
+    },
+};
+
+use super::CurrentScreen;
 
 pub struct DetailsActions {
     pub representative_patch: Patch,
