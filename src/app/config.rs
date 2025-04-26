@@ -130,6 +130,12 @@ impl Config {
         };
     }
 
+    /// # Tests
+    ///
+    /// [tests::can_build_with_default_values]
+    /// [tests::can_build_with_config_file]
+    /// [tests::can_build_with_env_vars]
+    /// [tests::test_config_precedence]
     pub fn build() -> Self {
         let mut config = Self::load_file();
         config.save_patch_hub_config().unwrap_or_else(|e| {
