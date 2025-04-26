@@ -46,6 +46,7 @@ fn teardown_tmp_config_sample_file() {
 }
 
 #[test]
+/// Tests [`Config::build`]
 fn can_build_with_default_values() {
     let _lock = TEST_LOCK.lock().unwrap();
 
@@ -85,6 +86,7 @@ fn can_build_with_default_values() {
 }
 
 #[test]
+/// Tests [`Config::build`]
 fn can_build_with_config_file() {
     let _lock = TEST_LOCK.lock().unwrap();
 
@@ -127,6 +129,7 @@ fn can_build_with_config_file() {
 }
 
 #[test]
+/// Tests [`Config::build`]
 fn can_build_with_env_vars() {
     let _lock = TEST_LOCK.lock().unwrap();
 
@@ -162,6 +165,7 @@ fn can_build_with_env_vars() {
 }
 
 #[test]
+/// Tests [`Config::build`]
 fn test_config_precedence() {
     let _lock = TEST_LOCK.lock().unwrap();
 
