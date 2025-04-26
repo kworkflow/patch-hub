@@ -84,6 +84,10 @@ fn clean_patch_for_preview(patch: &str) -> String {
 /// # Errors
 ///
 /// If bat isn't installed or if the command fails, an error will be returned.
+///
+/// # Tests
+///
+/// [tests::test_bat_patch_renderer]
 fn bat_patch_renderer(patch: &str) -> color_eyre::Result<String> {
     let cleaned_patch = clean_patch_for_preview(patch);
 
@@ -113,6 +117,10 @@ fn bat_patch_renderer(patch: &str) -> color_eyre::Result<String> {
 /// # Errors
 ///
 /// If delta isn't installed or if the command fails, an error will be returned.
+///
+/// # Tests
+///
+/// [tests::test_delta_patch_renderer]
 fn delta_patch_renderer(patch: &str) -> color_eyre::Result<String> {
     let cleaned_patch = clean_patch_for_preview(patch);
 
@@ -146,6 +154,10 @@ fn delta_patch_renderer(patch: &str) -> color_eyre::Result<String> {
 /// # Errors
 ///
 /// If diff-so-fancy isn't installed or if the command fails, an error will be returned.
+///
+/// # Tests
+///
+/// [tests::test_diff_so_fancy_renderer]
 fn diff_so_fancy_renderer(patch: &str) -> color_eyre::Result<String> {
     let cleaned_patch = clean_patch_for_preview(patch);
 
@@ -186,6 +198,7 @@ index 83db48f..e3b0c44 100644
 
     #[test]
     #[ignore = "optional-dependency"]
+    /// Tests [bat_patch_renderer]
     fn test_bat_patch_renderer() {
         let result = bat_patch_renderer(PATCH_SAMPLE);
         assert!(result.is_ok());
@@ -199,6 +212,7 @@ index 83db48f..e3b0c44 100644
 
     #[test]
     #[ignore = "optional-dependency"]
+    /// Tests [delta_patch_renderer]
     fn test_delta_patch_renderer() {
         let result = delta_patch_renderer(PATCH_SAMPLE);
         assert!(result.is_ok());
@@ -212,6 +226,7 @@ index 83db48f..e3b0c44 100644
 
     #[test]
     #[ignore = "optional-dependency"]
+    /// Tests [diff_so_fancy_renderer]
     fn test_diff_so_fancy_renderer() {
         let result = diff_so_fancy_renderer(PATCH_SAMPLE);
         assert!(result.is_ok());
