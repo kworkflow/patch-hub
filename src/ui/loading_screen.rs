@@ -63,6 +63,9 @@ fn draw_loading_screen(f: &mut Frame, title: impl Display) {
     f.render_widget(loading_par, loading_area);
 }
 
+/// # Tests
+///
+/// [tests::test_calculate_loading_percentages]
 fn calculate_loading_percentages(
     loading_text_len: usize,
     frame_area_width: u16,
@@ -85,6 +88,7 @@ mod tests {
     use super::*;
 
     #[test]
+    /// Tests [calculate_loading_percentages]
     fn test_calculate_loading_percentages() {
         // Test case 1: standard case with reasonable frame size
         let (width_pct, height_pct) = calculate_loading_percentages(10, 40, 20);
