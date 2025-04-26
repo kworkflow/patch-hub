@@ -151,7 +151,7 @@ mod tests {
     }
 
     #[test]
-    fn test_error_hook_works() {
+    fn test_error_hook() {
         setup();
 
         let result: color_eyre::Result<()> = Err(eyre::eyre!("Test error"));
