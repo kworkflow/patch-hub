@@ -34,6 +34,11 @@ pub fn restore() -> io::Result<()> {
 
 /// This replaces the standard color_eyre panic and error hooks with hooks that
 /// restore the terminal before printing the panic or error.
+///
+/// # Tests
+///
+/// [tests::test_error_hook]
+/// [tests::test_panic_hook]
 pub fn install_hooks() -> color_eyre::Result<()> {
     let (panic_hook, eyre_hook) = HookBuilder::default().into_hooks();
 
@@ -73,6 +78,10 @@ pub fn teardown_user_io<B: Backend>(terminal: &mut Terminal<B>) -> color_eyre::R
 
 #[inline]
 /// Simply calls `which` to check if a binary exists
+///
+/// # Tests
+///
+/// [tests::test_binary_exists]
 pub fn binary_exists(binary: &str) -> bool {
     which::which(binary).is_ok()
 }
@@ -143,6 +152,7 @@ mod tests {
     }
 
     #[test]
+    /// Tests [binary_exists]
     fn test_binary_exists() {
         // cargo should always exist since we are running the tests with `cargo test`
         assert!(super::binary_exists("cargo"));
@@ -151,6 +161,7 @@ mod tests {
     }
 
     #[test]
+    /// Tests [install_hooks]
     fn test_error_hook() {
         setup();
 
@@ -167,6 +178,7 @@ mod tests {
     }
 
     #[test]
+    /// Tests [install_hooks]
     fn test_panic_hook() {
         setup();
 
