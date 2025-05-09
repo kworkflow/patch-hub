@@ -1,0 +1,24 @@
+name: Code Coverage
+
+on:
+  push:
+    branches: [ master, unstable ]
+  pull_request:
+    branches: [ master, unstable ]
+
+jobs:
+  test-coverage-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin
+
+      - name: Generate coverage report
+        run: cargo tarpaulin --verbose --out lcov
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
