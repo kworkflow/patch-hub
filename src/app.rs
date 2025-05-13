@@ -3,7 +3,7 @@ use crate::{
     ui::popup::{info_popup::InfoPopUp, PopUp},
 };
 use ansi_to_tui::IntoText;
-use color_eyre::eyre::bail;
+use color_eyre::eyre::{bail, Report};
 use config::Config;
 use cover_renderer::render_cover;
 use logging::Logger;
@@ -23,6 +23,8 @@ use screens::{
     CurrentScreen,
 };
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsStr;
+use std::path::Path;
 
 use crate::utils;
 
@@ -164,7 +166,15 @@ impl App {
             self.config.patchsets_cache_dir(),
             &representative_patch,
         )) {
-            Ok(result) => result,
+            Ok(result) => {
+				let path = Path::new(OsStr::new(&result));
+
+				if ! path.exists() {
+					return Err(Report::msg(format!("No patch found at path {}",&result)));
+				}
+
+				result
+			} 
             Err(io_error) => bail!("{io_error}"),
         };
 

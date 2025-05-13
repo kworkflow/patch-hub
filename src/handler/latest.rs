@@ -3,8 +3,9 @@ use std::ops::ControlFlow;
 use crate::{
     app::{screens::CurrentScreen, App},
     loading_screen,
-    ui::popup::{help::HelpPopUpBuilder, PopUp},
+    ui::popup::{help::HelpPopUpBuilder, info_popup::InfoPopUp, PopUp},
 };
+use color_eyre::eyre::Ok;
 use ratatui::{
     crossterm::event::{KeyCode, KeyEvent},
     prelude::Backend,
@@ -56,9 +57,13 @@ where
                     let result = app.init_details_actions();
                     if result.is_ok() {
                         app.set_current_screen(CurrentScreen::PatchsetDetails);
-                    }
-                    result
-                }
+						result
+                    } else {
+						app.popup = Some(InfoPopUp::generate_info_popup("Error","The selected patchset couldn't be retrieved.\nPlease choose another patchset."));
+						app.set_current_screen(CurrentScreen::LatestPatchsets);
+						Ok(())
+					}
+				}
             };
         }
         _ => {}
