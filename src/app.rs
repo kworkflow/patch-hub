@@ -9,7 +9,7 @@ use cover_renderer::render_cover;
 use logging::Logger;
 use patch_hub::lore::{
     lore_api_client::BlockingLoreAPIClient,
-    lore_session,
+    lore_session::{self, B4Result},
     patch::{Author, Patch},
 };
 use patch_renderer::{render_patch_preview, PatchRenderer};
@@ -132,7 +132,7 @@ impl App {
     /// Initializes field [App::details_actions], from currently selected
     /// patchset in [App::bookmarked_patchsets] or [App::latest_patchsets],
     /// depending on the value of [App::current_screen].
-    pub fn init_details_actions(&mut self) -> color_eyre::Result<()> {
+    pub fn init_details_actions(&mut self) -> color_eyre::Result<B4Result> {
         let representative_patch: Patch;
         let mut is_patchset_bookmarked = true;
         let mut reviewed_by = Vec::new();
@@ -160,12 +160,14 @@ impl App {
             screen => bail!(format!("Invalid screen passed as argument {screen:?}")),
         };
 
-        let patchset_path: String = match log_on_error!(lore_session::download_patchset(
+        let patchset_path: String = match lore_session::download_patchset(
             self.config.patchsets_cache_dir(),
             &representative_patch,
-        )) {
-            Ok(result) => result,
-            Err(io_error) => bail!("{io_error}"),
+        ) {
+            lore_session::B4Result::PatchFound(path) => path,
+            lore_session::B4Result::PatchNotFound(error) => {
+                return Ok(lore_session::B4Result::PatchNotFound(error))
+            }
         };
 
         match log_on_error!(lore_session::split_patchset(&patchset_path)) {
@@ -250,7 +252,7 @@ impl App {
                     lore_api_client: self.lore_api_client.clone(),
                     patchset_path,
                 });
-                Ok(())
+                Ok(B4Result::PatchFound("Patch found".to_string()))
             }
             Err(message) => bail!(message),
         }

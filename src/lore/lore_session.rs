@@ -7,6 +7,7 @@ use derive_getters::Getters;
 use regex::Regex;
 use serde_xml_rs::from_str;
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsStr;
 use std::io::{BufRead, BufReader};
 use std::mem::swap;
 use std::path::Path;
@@ -17,6 +18,11 @@ use std::{
     io,
 };
 use thiserror::Error;
+
+pub enum B4Result {
+    PatchFound(String),
+    PatchNotFound(String),
+}
 
 #[cfg(test)]
 mod tests;
@@ -152,17 +158,20 @@ impl LoreSession {
     }
 }
 
-pub fn download_patchset(output_dir: &str, patch: &Patch) -> io::Result<String> {
+pub fn download_patchset(output_dir: &str, patch: &Patch) -> B4Result {
     let message_id: &str = &patch.message_id().href;
     let mbox_name: String = extract_mbox_name_from_message_id(message_id);
 
     if !Path::new(output_dir).exists() {
-        fs::create_dir_all(output_dir)?;
+        match fs::create_dir_all(output_dir) {
+            Ok(_) => {}
+            Err(_) => return B4Result::PatchNotFound("Couldn't create patches dir.".to_string()),
+        };
     }
 
     let filepath: String = format!("{output_dir}/{mbox_name}");
     if !Path::new(&filepath).exists() {
-        Command::new("b4")
+        match Command::new("b4")
             .arg("--quiet")
             .arg("am")
             .arg("--use-version")
@@ -174,10 +183,20 @@ pub fn download_patchset(output_dir: &str, patch: &Patch) -> io::Result<String> 
             .arg(&mbox_name)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .status()?;
+            .status()
+        {
+            Ok(_) => {}
+            Err(_) => return B4Result::PatchNotFound("Couldn't create patch file.".to_string()),
+        };
     }
 
-    Ok(filepath)
+    let path = Path::new(OsStr::new(&filepath));
+
+    if !path.exists() {
+        return B4Result::PatchNotFound("Couldn't create patch file.".to_string());
+    }
+
+    B4Result::PatchFound(filepath)
 }
 
 fn extract_mbox_name_from_message_id(message_id: &str) -> String {
