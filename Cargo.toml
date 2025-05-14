@@ -1,6 +1,6 @@
 [package]
 name = "patch-hub"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 repository = "https://github.com/kworkflow/patch-hub"
 description = "patch-hub is a TUI that streamlines the interaction of Linux developers with patches archived on lore.kernel.org"
