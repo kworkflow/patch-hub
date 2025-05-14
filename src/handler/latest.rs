@@ -1,7 +1,7 @@
 use std::ops::ControlFlow;
 
 use crate::{
-    app::{screens::CurrentScreen, App},
+    app::{screens::CurrentScreen, App, PatchFound},
     loading_screen,
     ui::popup::{help::HelpPopUpBuilder, info_popup::InfoPopUp, PopUp},
 };
@@ -56,13 +56,18 @@ where
                 "Loading patchset" => {
                     let result = app.init_details_actions();
                     if result.is_ok() {
-                        app.set_current_screen(CurrentScreen::PatchsetDetails);
-						result
-                    } else {
-						app.popup = Some(InfoPopUp::generate_info_popup("Error","The selected patchset couldn't be retrieved.\nPlease choose another patchset."));
-						app.set_current_screen(CurrentScreen::LatestPatchsets);
-						Ok(())
-					}
+                        match result.unwrap() {
+                            PatchFound::Found => {
+                                app.set_current_screen(CurrentScreen::PatchsetDetails);
+                            }
+
+                            PatchFound::NotFound => {
+                                app.popup = Some(InfoPopUp::generate_info_popup("Error","The selected patchset couldn't be retrieved.\nPlease choose another patchset."));
+						        app.set_current_screen(CurrentScreen::LatestPatchsets);
+                            }
+                        }   
+                    }
+                    Ok(())
 				}
             };
         }

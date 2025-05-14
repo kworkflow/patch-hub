@@ -3,7 +3,7 @@ use crate::{
     ui::popup::{info_popup::InfoPopUp, PopUp},
 };
 use ansi_to_tui::IntoText;
-use color_eyre::eyre::{bail, Report};
+use color_eyre::eyre::{bail};
 use config::Config;
 use cover_renderer::render_cover;
 use logging::Logger;
@@ -33,6 +33,11 @@ pub mod cover_renderer;
 pub mod logging;
 pub mod patch_renderer;
 pub mod screens;
+
+pub enum PatchFound {
+    Found,
+    NotFound
+} 
 
 /// Type that represents the overall state of the application. It can be viewed
 /// as the **Model** component of `patch-hub`.
@@ -134,7 +139,7 @@ impl App {
     /// Initializes field [App::details_actions], from currently selected
     /// patchset in [App::bookmarked_patchsets] or [App::latest_patchsets],
     /// depending on the value of [App::current_screen].
-    pub fn init_details_actions(&mut self) -> color_eyre::Result<()> {
+    pub fn init_details_actions(&mut self) -> color_eyre::Result<PatchFound> {
         let representative_patch: Patch;
         let mut is_patchset_bookmarked = true;
         let mut reviewed_by = Vec::new();
@@ -170,7 +175,7 @@ impl App {
 				let path = Path::new(OsStr::new(&result));
 
 				if ! path.exists() {
-					return Err(Report::msg(format!("No patch found at path {}",&result)));
+					return Ok(PatchFound::NotFound);
 				}
 
 				result
@@ -260,7 +265,7 @@ impl App {
                     lore_api_client: self.lore_api_client.clone(),
                     patchset_path,
                 });
-                Ok(())
+                Ok(PatchFound::Found)
             }
             Err(message) => bail!(message),
         }
