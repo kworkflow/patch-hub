@@ -1,12 +1,12 @@
 use crate::{
     log_on_error,
+    monitoring::logging::garbage_collector::collect_garbage,
     ui::popup::{info_popup::InfoPopUp, PopUp},
 };
 use ansi_to_tui::IntoText;
 use color_eyre::eyre::bail;
 use config::Config;
 use cover_renderer::render_cover;
-use logging::Logger;
 use patch_hub::lore::{
     lore_api_client::BlockingLoreAPIClient,
     lore_session,
@@ -23,12 +23,12 @@ use screens::{
     CurrentScreen,
 };
 use std::collections::{HashMap, HashSet};
+use tracing::{event, Level};
 
 use crate::utils;
 
 pub mod config;
 pub mod cover_renderer;
-pub mod logging;
 pub mod patch_renderer;
 pub mod screens;
 
@@ -59,8 +59,7 @@ pub struct App {
 impl App {
     /// Creates a new instance of `App`. It dynamically loads configurations
     /// based on precedence (see [crate::app::Config::build]), app data
-    /// (available mailing lists, bookmarked patchsets, reviewed patchsets), and
-    /// initializes the Logger (see [crate::app::logging::Logger])
+    /// (available mailing lists, bookmarked patchsets, reviewed patchsets)
     ///
     /// # Returns
     ///
@@ -79,10 +78,8 @@ impl App {
 
         let lore_api_client = BlockingLoreAPIClient::default();
 
-        // Initialize the logger before the app starts
-        Logger::init_log_file(&config)?;
-        Logger::info("patch-hub started");
-        logging::garbage_collector::collect_garbage(&config);
+        event!(Level::INFO, "patch-hub started");
+        collect_garbage(&config);
 
         Ok(App {
             current_screen: CurrentScreen::MailingListSelection,
@@ -207,7 +204,10 @@ impl App {
                     {
                         Ok(render) => render,
                         Err(_) => {
-                            Logger::error("Failed to render cover preview with external program");
+                            event!(
+                                Level::ERROR,
+                                "Failed to render cover preview with external program"
+                            );
                             raw_cover.to_string()
                         }
                     };
@@ -216,7 +216,8 @@ impl App {
                         match render_patch_preview(raw_patch, self.config.patch_renderer()) {
                             Ok(render) => render,
                             Err(_) => {
-                                Logger::error(
+                                event!(
+                                    Level::ERROR,
                                     "Failed to render patch preview with external program",
                                 );
                                 raw_patch.to_string()
@@ -392,30 +393,38 @@ impl App {
         let mut app_can_run = true;
 
         if !utils::binary_exists("b4") {
-            Logger::error("b4 is not installed, patchsets cannot be downloaded");
+            event!(
+                Level::ERROR,
+                "b4 is not installed, patchsets cannot be downloaded"
+            );
             app_can_run = false;
         }
 
         if !utils::binary_exists("git") {
-            Logger::warn("git is not installed, send-email won't work");
+            event!(Level::WARN, "git is not installed, send-email won't work");
         }
 
         match self.config.patch_renderer() {
             PatchRenderer::Bat => {
                 if !utils::binary_exists("bat") {
-                    Logger::warn("bat is not installed, patch rendering will fallback to default");
+                    event!(
+                        Level::WARN,
+                        "bat is not installed, patch rendering will fallback to default"
+                    );
                 }
             }
             PatchRenderer::Delta => {
                 if !utils::binary_exists("delta") {
-                    Logger::warn(
+                    event!(
+                        Level::WARN,
                         "delta is not installed, patch rendering will fallback to default",
                     );
                 }
             }
             PatchRenderer::DiffSoFancy => {
                 if !utils::binary_exists("diff-so-fancy") {
-                    Logger::warn(
+                    event!(
+                        Level::WARN,
                         "diff-so-fancy is not installed, patch rendering will fallback to default",
                     );
                 }
