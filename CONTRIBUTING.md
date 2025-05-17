@@ -106,11 +106,12 @@ Commit contents, in other words, the changes the commit introduce should:
 
 ### Use Conventional Commits
 
-`patch-hub` follows the use of [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) wherein you indicate the type of change you're making at the start with a label, followed by a scope (optional, since the project is still small), and then the commit message after a colon.
+`patch-hub` follows the use of [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) wherein you indicate the type of change you're making at the start with a label, followed by a scope (optional, since the project is still small), and then the commit message after a colon. In case the commit is a breaking change, i.e it disrupts existing functionality, please use the `!` symbol before the `:` to indicate as such.
 
 Example Commits:
-- `feat: allow provided config object to extend other configs`
-- `docs: correct spelling of CHANGELOG`
+- Breaking change that introduces a feature to `config`: `feat(config)!: allow provided config object to extend other configs`
+- Bug fix to patch parsing logic: `fix(patch): fix incorrect title in patches`
+- Simple change to documentation: `docs: correct spelling of CHANGELOG`
 
 Common prefixes:
 - `feat`: A new feature.
