@@ -1,8 +1,9 @@
+use ratatui::crossterm::event::{KeyCode, KeyEvent};
+
 use crate::{
     app::{screens::CurrentScreen, App},
     ui::popup::{help::HelpPopUpBuilder, PopUp},
 };
-use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
 pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()> {
     if let Some(edit_config_state) = app.edit_config.as_mut() {

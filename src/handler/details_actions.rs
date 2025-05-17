@@ -1,14 +1,15 @@
-use std::time::Duration;
-
-use crate::{
-    app::{screens::CurrentScreen, App},
-    ui::popup::{help::HelpPopUpBuilder, review_trailers::ReviewTrailersPopUp, PopUp},
-    utils,
-};
 use ratatui::{
     backend::Backend,
     crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     Terminal,
+};
+
+use std::time::Duration;
+
+use crate::{
+    app::{screens::CurrentScreen, App},
+    infrastructure::terminal::{setup_user_io, teardown_user_io},
+    ui::popup::{help::HelpPopUpBuilder, review_trailers::ReviewTrailersPopUp, PopUp},
 };
 
 use super::wait_key_press;
@@ -107,7 +108,7 @@ pub fn handle_patchset_details<B: Backend>(
         }
         KeyCode::Enter => {
             if patchset_details_and_actions.actions_require_user_io() {
-                utils::setup_user_io(terminal)?;
+                setup_user_io(terminal)?;
                 app.consolidate_patchset_actions()?;
                 println!("\nPress ENTER continue...");
                 loop {
@@ -117,7 +118,7 @@ pub fn handle_patchset_details<B: Backend>(
                         }
                     }
                 }
-                utils::teardown_user_io(terminal)?;
+                teardown_user_io(terminal)?;
             } else {
                 app.consolidate_patchset_actions()?;
             }

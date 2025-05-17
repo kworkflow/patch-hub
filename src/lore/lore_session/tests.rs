@@ -1,10 +1,11 @@
-use io::Read;
+use mockall::mock;
 
-use super::*;
+use io::Read;
+use std::fs;
+
 use crate::lore::patch::Author;
 
-use mockall::mock;
-use std::fs;
+use super::*;
 
 mock! {
     BlockingLoreAPIClient {}

@@ -1,5 +1,3 @@
-use crate::app::App;
-use patch_hub::lore::patch::Patch;
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
@@ -7,6 +5,8 @@ use ratatui::{
     widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState},
     Frame,
 };
+
+use crate::{app::App, lore::patch::Patch};
 
 pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
     let page_number = app.latest_patchsets.as_ref().unwrap().page_number();

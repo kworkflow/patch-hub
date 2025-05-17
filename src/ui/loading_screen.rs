@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use ratatui::{
     prelude::Backend,
     style::{Color, Style},
@@ -7,6 +5,8 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame, Terminal,
 };
+
+use std::fmt::Display;
 
 use super::centered_rect;
 

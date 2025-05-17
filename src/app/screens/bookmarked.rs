@@ -1,4 +1,4 @@
-use patch_hub::lore::patch::Patch;
+use crate::lore::patch::Patch;
 
 pub struct BookmarkedPatchsets {
     pub bookmarked_patchsets: Vec<Patch>,

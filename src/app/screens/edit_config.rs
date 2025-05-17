@@ -1,8 +1,9 @@
+use color_eyre::eyre::bail;
+use derive_getters::Getters;
+
 use std::{collections::HashMap, fmt::Display, path::Path};
 
 use crate::app::config::Config;
-use color_eyre::eyre::bail;
-use derive_getters::Getters;
 
 #[derive(Debug, Getters)]
 pub struct EditConfig {

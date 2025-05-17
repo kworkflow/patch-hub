@@ -1,12 +1,13 @@
-use super::{bookmarked, details_actions, edit_config, latest, mail_list};
-use crate::app::{self, App};
-use app::screens::CurrentScreen;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     text::Line,
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
+
+use crate::app::{screens::CurrentScreen, App};
+
+use super::{bookmarked, details_actions, edit_config, latest, mail_list};
 
 pub fn render(f: &mut Frame, app: &App, chunk: Rect) {
     let mode_footer_text = match app.current_screen {

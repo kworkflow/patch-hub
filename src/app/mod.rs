@@ -1,19 +1,28 @@
-use crate::{
-    log_on_error,
-    ui::popup::{info_popup::InfoPopUp, PopUp},
-};
+pub mod config;
+mod cover_renderer;
+mod patch_renderer;
+pub mod screens;
+
 use ansi_to_tui::IntoText;
 use color_eyre::eyre::bail;
+use ratatui::text::Text;
+
+use std::collections::{HashMap, HashSet};
+
+use crate::{
+    infrastructure::{garbage_collector, logging::Logger},
+    log_on_error,
+    lore::{
+        lore_api_client::BlockingLoreAPIClient,
+        lore_session,
+        patch::{Author, Patch},
+    },
+    ui::popup::{info_popup::InfoPopUp, PopUp},
+};
+
 use config::Config;
 use cover_renderer::render_cover;
-use logging::Logger;
-use patch_hub::lore::{
-    lore_api_client::BlockingLoreAPIClient,
-    lore_session,
-    patch::{Author, Patch},
-};
 use patch_renderer::{render_patch_preview, PatchRenderer};
-use ratatui::text::Text;
 use screens::{
     bookmarked::BookmarkedPatchsets,
     details_actions::{DetailsActions, PatchsetAction},
@@ -22,15 +31,6 @@ use screens::{
     mail_list::MailingListSelection,
     CurrentScreen,
 };
-use std::collections::{HashMap, HashSet};
-
-use crate::utils;
-
-pub mod config;
-pub mod cover_renderer;
-pub mod logging;
-pub mod patch_renderer;
-pub mod screens;
 
 /// Type that represents the overall state of the application. It can be viewed
 /// as the **Model** component of `patch-hub`.
@@ -82,7 +82,7 @@ impl App {
         // Initialize the logger before the app starts
         Logger::init_log_file(&config)?;
         Logger::info("patch-hub started");
-        logging::garbage_collector::collect_garbage(&config);
+        garbage_collector::collect_garbage(&config);
 
         Ok(App {
             current_screen: CurrentScreen::MailingListSelection,
@@ -391,30 +391,30 @@ impl App {
     pub fn check_external_deps(&self) -> bool {
         let mut app_can_run = true;
 
-        if !utils::binary_exists("b4") {
+        if which::which("b4").is_err() {
             Logger::error("b4 is not installed, patchsets cannot be downloaded");
             app_can_run = false;
         }
 
-        if !utils::binary_exists("git") {
+        if which::which("git").is_err() {
             Logger::warn("git is not installed, send-email won't work");
         }
 
         match self.config.patch_renderer() {
             PatchRenderer::Bat => {
-                if !utils::binary_exists("bat") {
+                if which::which("bat").is_err() {
                     Logger::warn("bat is not installed, patch rendering will fallback to default");
                 }
             }
             PatchRenderer::Delta => {
-                if !utils::binary_exists("delta") {
+                if which::which("delta").is_err() {
                     Logger::warn(
                         "delta is not installed, patch rendering will fallback to default",
                     );
                 }
             }
             PatchRenderer::DiffSoFancy => {
-                if !utils::binary_exists("diff-so-fancy") {
+                if which::which("diff-so-fancy").is_err() {
                     Logger::warn(
                         "diff-so-fancy is not installed, patch rendering will fallback to default",
                     );

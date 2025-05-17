@@ -1,10 +1,10 @@
-use std::ops::ControlFlow;
-
 use clap::Parser;
 use color_eyre::eyre::eyre;
 use ratatui::{prelude::Backend, Terminal};
 
-use crate::{app::config::Config, utils};
+use std::ops::ControlFlow;
+
+use crate::{app::config::Config, infrastructure::terminal::restore};
 
 #[derive(Debug, Parser)]
 #[command(version, about)]
@@ -25,7 +25,7 @@ impl Cli {
     ) -> ControlFlow<color_eyre::Result<()>, Terminal<B>> {
         if self.show_configs {
             drop(terminal);
-            if let Err(err) = utils::restore() {
+            if let Err(err) = restore() {
                 return ControlFlow::Break(Err(eyre!(err)));
             }
             match serde_json::to_string_pretty(&config) {

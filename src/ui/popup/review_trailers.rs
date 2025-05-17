@@ -1,6 +1,3 @@
-use std::collections::HashSet;
-
-use patch_hub::lore::patch::Author;
 use ratatui::{
     crossterm::event::KeyCode,
     layout::Alignment,
@@ -9,7 +6,9 @@ use ratatui::{
     widgets::{Clear, Paragraph},
 };
 
-use crate::app::screens::details_actions::DetailsActions;
+use std::collections::HashSet;
+
+use crate::{app::screens::details_actions::DetailsActions, lore::patch::Author};
 
 use super::PopUp;
 
