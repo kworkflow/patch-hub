@@ -6,7 +6,7 @@ repository = "https://github.com/kworkflow/patch-hub"
 description = "patch-hub is a TUI that streamlines the interaction of Linux developers with patches archived on lore.kernel.org"
 
 [dependencies]
-color-eyre = "0.6.4"
+color-eyre = "0.6.5"
 mockall = "0.13.1"
 derive-getters = { version = "0.5.0", features = ["auto_copy_getters"] }
 lazy_static = "1.5.0"
