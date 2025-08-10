@@ -17,7 +17,10 @@ use crate::{
         lore_session::{self, B4Result},
         patch::{Author, Patch},
     },
-    ui::popup::{info_popup::InfoPopUp, PopUp},
+    views::{
+        popup::{info_popup::InfoPopUp, PopUp},
+        View,
+    },
 };
 
 use config::Config;
@@ -29,14 +32,13 @@ use screens::{
     edit_config::EditConfig,
     latest::LatestPatchsets,
     mail_list::MailingListSelection,
-    CurrentScreen,
 };
 
 /// Type that represents the overall state of the application. It can be viewed
 /// as the **Model** component of `patch-hub`.
-pub struct App {
+pub struct Model {
     /// The current active screen
-    pub current_screen: CurrentScreen,
+    pub current_screen: View,
     /// Screen to navigate and select the mailing lists archived on Lore
     pub mailing_list_selection: MailingListSelection,
     /// Screen with listing patchsets that were previously bookmarked
@@ -56,7 +58,7 @@ pub struct App {
     pub popup: Option<Box<dyn PopUp>>,
 }
 
-impl App {
+impl Model {
     /// Creates a new instance of `App`. It dynamically loads configurations
     /// based on precedence (see [crate::app::Config::build]), app data
     /// (available mailing lists, bookmarked patchsets, reviewed patchsets), and
@@ -84,8 +86,8 @@ impl App {
         Logger::info("patch-hub started");
         garbage_collector::collect_garbage(&config);
 
-        Ok(App {
-            current_screen: CurrentScreen::MailingListSelection,
+        Ok(Model {
+            current_screen: View::MailingLists,
             mailing_list_selection: MailingListSelection {
                 mailing_lists: mailing_lists.clone(),
                 target_list: String::new(),
@@ -147,10 +149,10 @@ impl App {
         let mut acked_by = Vec::new();
 
         match &self.current_screen {
-            CurrentScreen::BookmarkedPatchsets => {
+            View::BookmarkedPatchsets => {
                 representative_patch = self.bookmarked_patchsets.get_selected_patchset();
             }
-            CurrentScreen::LatestPatchsets => {
+            View::LatestPatchsets => {
                 representative_patch = self
                     .latest_patchsets
                     .as_ref()
@@ -255,7 +257,7 @@ impl App {
                     reviewed_by,
                     tested_by,
                     acked_by,
-                    last_screen: self.current_screen.clone(),
+                    last_screen: self.current_screen,
                     lore_api_client: self.lore_api_client.clone(),
                     patchset_path,
                 });
@@ -392,7 +394,7 @@ impl App {
     }
 
     /// Change the current active screen in [App::current_screen].
-    pub fn set_current_screen(&mut self, new_current_screen: CurrentScreen) {
+    pub fn set_current_screen(&mut self, new_current_screen: View) {
         self.current_screen = new_current_screen;
     }
 

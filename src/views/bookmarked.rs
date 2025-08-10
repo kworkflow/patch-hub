@@ -6,22 +6,13 @@ use ratatui::{
     Frame,
 };
 
-use crate::{app::App, lore::patch::Patch};
+use crate::model::screens::bookmarked::BookmarkedPatchsets;
 
-pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
-    let page_number = app.latest_patchsets.as_ref().unwrap().page_number();
-    let patchset_index = app.latest_patchsets.as_ref().unwrap().patchset_index();
+pub fn render_main(f: &mut Frame, bookmarked_patchsets: &BookmarkedPatchsets, chunk: Rect) {
+    let patchset_index = bookmarked_patchsets.patchset_index;
     let mut list_items = Vec::<ListItem>::new();
 
-    let patch_feed_page: Vec<&Patch> = app
-        .latest_patchsets
-        .as_ref()
-        .unwrap()
-        .get_current_patch_feed_page()
-        .unwrap();
-
-    let mut index: usize = (page_number - 1) * app.config.page_size();
-    for patch in patch_feed_page {
+    for (index, patch) in bookmarked_patchsets.bookmarked_patchsets.iter().enumerate() {
         let patch_title = format!("{:width$}", patch.title(), width = 70);
         let patch_title = format!("{:.width$}", patch_title, width = 70);
         let patch_author = format!("{:width$}", patch.author().name, width = 30);
@@ -40,7 +31,6 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
             ))
             .centered(),
         ));
-        index += 1;
     }
 
     let list_block = Block::default()
@@ -60,27 +50,21 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
         .highlight_spacing(HighlightSpacing::Always);
 
     let mut list_state = ListState::default();
-    list_state.select(Some(
-        patchset_index - (page_number - 1) * app.config.page_size(),
-    ));
+    list_state.select(Some(patchset_index));
 
     f.render_stateful_widget(list, chunk, &mut list_state);
 }
 
-pub fn mode_footer_text(app: &App) -> Vec<Span> {
+pub fn mode_footer_text() -> Vec<Span<'static>> {
     vec![Span::styled(
-        format!(
-            "Latest Patchsets from {} (page {})",
-            &app.latest_patchsets.as_ref().unwrap().target_list(),
-            &app.latest_patchsets.as_ref().unwrap().page_number()
-        ),
+        "Bookmarked Patchsets",
         Style::default().fg(Color::Green),
     )]
 }
 
 pub fn keys_hint() -> Span<'static> {
     Span::styled(
-        "(ESC / q) to return | (ENTER) to select | ( h / 🡄 ) previous page | ( l / 🡆 ) next page | (?) help",
+        "(ESC / q) to return | (ENTER) to select | (?) help",
         Style::default().fg(Color::Red),
     )
 }

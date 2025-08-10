@@ -4,7 +4,7 @@ use ratatui::{prelude::Backend, Terminal};
 
 use std::ops::ControlFlow;
 
-use crate::{app::config::Config, infrastructure::terminal::restore};
+use crate::{infrastructure::terminal::restore, model::config::Config};
 
 #[derive(Debug, Parser)]
 #[command(version, about)]

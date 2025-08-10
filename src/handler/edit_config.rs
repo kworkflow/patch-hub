@@ -1,12 +1,15 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
 use crate::{
-    app::{screens::CurrentScreen, App},
-    ui::popup::{help::HelpPopUpBuilder, PopUp},
+    model::Model,
+    views::{
+        popup::{help::HelpPopUpBuilder, PopUp},
+        View,
+    },
 };
 
-pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()> {
-    if let Some(edit_config_state) = app.edit_config.as_mut() {
+pub fn handle_edit_config(model: &mut Model, key: KeyEvent) -> color_eyre::Result<()> {
+    if let Some(edit_config_state) = model.edit_config.as_mut() {
         match edit_config_state.is_editing() {
             true => match key.code {
                 KeyCode::Esc => {
@@ -29,13 +32,13 @@ pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()
             false => match key.code {
                 KeyCode::Char('?') => {
                     let popup = generate_help_popup();
-                    app.popup = Some(popup);
+                    model.popup = Some(popup);
                 }
                 KeyCode::Esc | KeyCode::Char('q') => {
-                    app.consolidate_edit_config();
-                    app.config.save_patch_hub_config()?;
-                    app.reset_edit_config();
-                    app.set_current_screen(CurrentScreen::MailingListSelection);
+                    model.consolidate_edit_config();
+                    model.config.save_patch_hub_config()?;
+                    model.reset_edit_config();
+                    model.set_current_screen(View::MailingLists);
                 }
                 KeyCode::Enter => {
                     edit_config_state.toggle_editing();

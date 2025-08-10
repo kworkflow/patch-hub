@@ -2,7 +2,7 @@
 //!
 //! This module is responsible for cleaning up the log files.
 
-use crate::app::config::Config;
+use crate::model::config::Config;
 
 use super::Logger;
 

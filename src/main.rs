@@ -4,9 +4,10 @@ mod handler;
 mod infrastructure;
 mod lore;
 mod macros;
-mod ui;
+mod model;
+mod viewmodels;
+mod views;
 
-use app::{config::Config, App};
 use clap::Parser;
 use cli::Cli;
 use color_eyre::eyre::bail;
@@ -15,6 +16,7 @@ use infrastructure::{
     logging::Logger,
     terminal::{init, restore},
 };
+use model::{config::Config, Model};
 use std::ops::ControlFlow;
 
 fn main() -> color_eyre::Result<()> {
@@ -31,13 +33,13 @@ fn main() -> color_eyre::Result<()> {
         ControlFlow::Continue(t) => terminal = t,
     }
 
-    let app = App::new(config)?;
-    if !app.check_external_deps() {
+    let model = Model::new(config)?;
+    if !model.check_external_deps() {
         Logger::error("patch-hub cannot be executed because some dependencies are missing");
         bail!("patch-hub cannot be executed because some dependencies are missing, check logs for more information");
     }
 
-    run_app(terminal, app)?;
+    run_app(terminal, model)?;
     restore()?;
 
     Logger::info("patch-hub finished");

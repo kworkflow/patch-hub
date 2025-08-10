@@ -8,15 +8,14 @@ use std::{
 };
 
 use crate::{
-    app::config::{Config, KernelTree},
     lore::{
         lore_api_client::BlockingLoreAPIClient,
         lore_session,
         patch::{Author, Patch},
     },
+    model::config::{Config, KernelTree},
+    views::View,
 };
-
-use super::CurrentScreen;
 
 pub struct DetailsActions {
     pub representative_patch: Patch,
@@ -44,7 +43,7 @@ pub struct DetailsActions {
     pub tested_by: Vec<HashSet<Author>>,
     /// For each patch, a set of `Authors` that appear in `Acked-by` trailers
     pub acked_by: Vec<HashSet<Author>>,
-    pub last_screen: CurrentScreen,
+    pub last_screen: View,
     pub lore_api_client: BlockingLoreAPIClient,
 }
 

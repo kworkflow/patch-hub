@@ -16,9 +16,9 @@ use std::{
 };
 
 use crate::{
-    app::{screens::CurrentScreen, App},
     loading_screen,
-    ui::draw_ui,
+    model::Model,
+    views::{draw_ui, View},
 };
 
 use bookmarked::handle_bookmarked_patchsets;
@@ -29,56 +29,59 @@ use mail_list::handle_mailing_list_selection;
 
 fn key_handling<B>(
     mut terminal: Terminal<B>,
-    app: &mut App,
+    model: &mut Model,
     key: KeyEvent,
 ) -> color_eyre::Result<ControlFlow<(), Terminal<B>>>
 where
     B: Backend + Send + 'static,
 {
-    if let Some(popup) = app.popup.as_mut() {
+    if let Some(popup) = model.popup.as_mut() {
         if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
-            app.popup = None;
+            model.popup = None;
         } else {
             popup.handle(key)?;
         }
     } else {
-        match app.current_screen {
-            CurrentScreen::MailingListSelection => {
-                return handle_mailing_list_selection(app, key, terminal);
+        match model.current_screen {
+            View::MailingLists => {
+                return handle_mailing_list_selection(model, key, terminal);
             }
-            CurrentScreen::BookmarkedPatchsets => {
-                return handle_bookmarked_patchsets(app, key, terminal);
+            View::BookmarkedPatchsets => {
+                return handle_bookmarked_patchsets(model, key, terminal);
             }
-            CurrentScreen::PatchsetDetails => {
-                handle_patchset_details(app, key, &mut terminal)?;
+            View::PatchsetDetails => {
+                handle_patchset_details(model, key, &mut terminal)?;
             }
-            CurrentScreen::EditConfig => {
-                handle_edit_config(app, key)?;
+            View::EditConfig => {
+                handle_edit_config(model, key)?;
             }
-            CurrentScreen::LatestPatchsets => {
-                return handle_latest_patchsets(app, key, terminal);
+            View::LatestPatchsets => {
+                return handle_latest_patchsets(model, key, terminal);
             }
         }
     }
     Ok(ControlFlow::Continue(terminal))
 }
 
-fn logic_handling<B>(mut terminal: Terminal<B>, app: &mut App) -> color_eyre::Result<Terminal<B>>
+fn logic_handling<B>(
+    mut terminal: Terminal<B>,
+    model: &mut Model,
+) -> color_eyre::Result<Terminal<B>>
 where
     B: Backend + Send + 'static,
 {
-    match app.current_screen {
-        CurrentScreen::MailingListSelection => {
-            if app.mailing_list_selection.mailing_lists.is_empty() {
+    match model.current_screen {
+        View::MailingLists => {
+            if model.mailing_list_selection.mailing_lists.is_empty() {
                 terminal = loading_screen! {
                     terminal, "Fetching mailing lists" => {
-                        app.mailing_list_selection.refresh_available_mailing_lists()
+                        model.mailing_list_selection.refresh_available_mailing_lists()
                     }
                 };
             }
         }
-        CurrentScreen::LatestPatchsets => {
-            let patchsets_state = app.latest_patchsets.as_mut().unwrap();
+        View::LatestPatchsets => {
+            let patchsets_state = model.latest_patchsets.as_mut().unwrap();
             let target_list = patchsets_state.target_list().to_string();
             if patchsets_state.processed_patchsets_count() == 0 {
                 terminal = loading_screen! {
@@ -88,12 +91,12 @@ where
                     }
                 };
 
-                app.mailing_list_selection.clear_target_list();
+                model.mailing_list_selection.clear_target_list();
             }
         }
-        CurrentScreen::BookmarkedPatchsets => {
-            if app.bookmarked_patchsets.bookmarked_patchsets.is_empty() {
-                app.set_current_screen(CurrentScreen::MailingListSelection);
+        View::BookmarkedPatchsets => {
+            if model.bookmarked_patchsets.bookmarked_patchsets.is_empty() {
+                model.set_current_screen(View::MailingLists);
             }
         }
         _ => {}
@@ -102,14 +105,14 @@ where
     Ok(terminal)
 }
 
-pub fn run_app<B>(mut terminal: Terminal<B>, mut app: App) -> color_eyre::Result<()>
+pub fn run_app<B>(mut terminal: Terminal<B>, mut model: Model) -> color_eyre::Result<()>
 where
     B: Backend + Send + 'static,
 {
     loop {
-        terminal = logic_handling(terminal, &mut app)?;
+        terminal = logic_handling(terminal, &mut model)?;
 
-        terminal.draw(|f| draw_ui(f, &app))?;
+        terminal.draw(|f| draw_ui(f, &model))?;
 
         // *IMPORTANT*: Uncommenting the if below makes `patch-hub` not block
         // until an event is captured.  We should only do it when (if ever) we
@@ -120,7 +123,7 @@ where
             if key.kind == KeyEventKind::Release {
                 continue;
             }
-            match key_handling(terminal, &mut app, key)? {
+            match key_handling(terminal, &mut model, key)? {
                 ControlFlow::Continue(t) => terminal = t,
                 ControlFlow::Break(_) => return Ok(()),
             }

@@ -6,10 +6,10 @@ use ratatui::{
     Frame,
 };
 
-use crate::{app::App, infrastructure::logging::Logger};
+use crate::{infrastructure::logging::Logger, model::Model};
 
-pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
-    let edit_config = app.edit_config.as_ref().unwrap();
+pub fn render_main(f: &mut Frame, model: &Model, chunk: Rect) {
+    let edit_config = model.edit_config.as_ref().unwrap();
     let mut constraints = Vec::new();
 
     for _ in 0..(chunk.height / 3) {
@@ -63,8 +63,8 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
     }
 }
 
-pub fn mode_footer_text(app: &App) -> Vec<Span> {
-    let edit_config_state = app.edit_config.as_ref().unwrap();
+pub fn mode_footer_text(model: &Model) -> Vec<Span> {
+    let edit_config_state = model.edit_config.as_ref().unwrap();
     vec![if edit_config_state.is_editing() {
         Span::styled("Editing...", Style::default().fg(Color::LightYellow))
     } else {
@@ -72,8 +72,8 @@ pub fn mode_footer_text(app: &App) -> Vec<Span> {
     }]
 }
 
-pub fn keys_hint(app: &App) -> Span {
-    let edit_config_state = app.edit_config.as_ref().unwrap();
+pub fn keys_hint(model: &Model) -> Span {
+    let edit_config_state = model.edit_config.as_ref().unwrap();
     match edit_config_state.is_editing() {
         true => Span::styled(
             "(ESC) cancel | (ENTER) confirm",

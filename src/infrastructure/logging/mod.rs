@@ -8,7 +8,7 @@ use std::{
     io::Write,
 };
 
-use crate::app::config::Config;
+use crate::model::config::Config;
 
 const LATEST_LOG_FILENAME: &str = "latest.log";
 

@@ -6,9 +6,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{
+use crate::model::{
     screens::details_actions::{DetailsActions, PatchsetAction},
-    App,
+    Model,
 };
 
 /// Returns a `Line` type that represents a line containing stats about reply
@@ -47,8 +47,13 @@ fn review_trailers_details(details_actions: &DetailsActions) -> Line<'static> {
     ])
 }
 
-fn render_details_and_actions(f: &mut Frame, app: &App, details_chunk: Rect, actions_chunk: Rect) {
-    let patchset_details_and_actions = app.details_actions.as_ref().unwrap();
+fn render_details_and_actions(
+    f: &mut Frame,
+    model: &Model,
+    details_chunk: Rect,
+    actions_chunk: Rect,
+) {
+    let patchset_details_and_actions = model.details_actions.as_ref().unwrap();
 
     let mut staged_to_reply = String::new();
     if let Some(true) = patchset_details_and_actions
@@ -199,8 +204,8 @@ fn render_details_and_actions(f: &mut Frame, app: &App, details_chunk: Rect, act
     f.render_widget(patchset_actions, actions_chunk);
 }
 
-fn render_preview(f: &mut Frame, app: &App, chunk: Rect) {
-    let patchset_details_and_actions = app.details_actions.as_ref().unwrap();
+fn render_preview(f: &mut Frame, model: &Model, chunk: Rect) {
+    let patchset_details_and_actions = model.details_actions.as_ref().unwrap();
 
     let preview_index = patchset_details_and_actions.preview_index;
 
@@ -210,7 +215,7 @@ fn render_preview(f: &mut Frame, app: &App, chunk: Rect) {
         .href;
     let mut preview_title = String::from(" Preview ");
     if matches!(
-        app.reviewed_patchsets.get(representative_patch_message_id),
+        model.reviewed_patchsets.get(representative_patch_message_id),
         Some(successful_indexes) if successful_indexes.contains(&preview_index)
     ) {
         preview_title = " Preview [REVIEWED-BY] ".to_string();
@@ -242,11 +247,11 @@ fn render_preview(f: &mut Frame, app: &App, chunk: Rect) {
     f.render_widget(patch_preview, chunk);
 }
 
-pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
-    let patchset_details_and_actions = app.details_actions.as_ref().unwrap();
+pub fn render_main(f: &mut Frame, model: &Model, chunk: Rect) {
+    let patchset_details_and_actions = model.details_actions.as_ref().unwrap();
 
     if patchset_details_and_actions.preview_fullscreen {
-        render_preview(f, app, chunk);
+        render_preview(f, model, chunk);
     } else {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
@@ -260,11 +265,11 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
 
         render_details_and_actions(
             f,
-            app,
+            model,
             details_and_actions_chunks[0],
             details_and_actions_chunks[1],
         );
-        render_preview(f, app, chunks[1]);
+        render_preview(f, model, chunks[1]);
     }
 }
 

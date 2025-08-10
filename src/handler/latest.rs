@@ -7,30 +7,33 @@ use ratatui::{
 use std::ops::ControlFlow;
 
 use crate::{
-    app::{screens::CurrentScreen, App},
     loading_screen,
     lore::lore_session::B4Result,
-    ui::popup::{help::HelpPopUpBuilder, info_popup::InfoPopUp, PopUp},
+    model::Model,
+    views::{
+        popup::{help::HelpPopUpBuilder, info_popup::InfoPopUp, PopUp},
+        View,
+    },
 };
 
 pub fn handle_latest_patchsets<B>(
-    app: &mut App,
+    model: &mut Model,
     key: KeyEvent,
     mut terminal: Terminal<B>,
 ) -> color_eyre::Result<ControlFlow<(), Terminal<B>>>
 where
     B: Backend + Send + 'static,
 {
-    let latest_patchsets = app.latest_patchsets.as_mut().unwrap();
+    let latest_patchsets = model.latest_patchsets.as_mut().unwrap();
 
     match key.code {
         KeyCode::Char('?') => {
             let popup = generate_help_popup();
-            app.popup = Some(popup);
+            model.popup = Some(popup);
         }
         KeyCode::Esc | KeyCode::Char('q') => {
-            app.reset_latest_patchsets();
-            app.set_current_screen(CurrentScreen::MailingListSelection);
+            model.reset_latest_patchsets();
+            model.set_current_screen(View::MailingLists);
         }
         KeyCode::Char('j') | KeyCode::Down => {
             latest_patchsets.select_below_patchset();
@@ -55,17 +58,17 @@ where
             terminal = loading_screen! {
                 terminal,
                 "Loading patchset" => {
-                    let result = app.init_details_actions();
+                    let result = model.init_details_actions();
                     if result.is_ok() {
                         match result.unwrap() {
                             B4Result::PatchFound(_) => {
-                                app.set_current_screen(CurrentScreen::PatchsetDetails);
+                                model.set_current_screen(View::PatchsetDetails);
                             }
                             B4Result::PatchNotFound(err_cause) => {
-                                app.popup = Some(InfoPopUp::generate_info_popup(
+                                model.popup = Some(InfoPopUp::generate_info_popup(
                                     "Error",&format!("The selected patchset couldn't be retrieved.\nReason: {err_cause}\nPlease choose another patchset.")
                                 ));
-                                app.set_current_screen(CurrentScreen::LatestPatchsets);
+                                model.set_current_screen(View::LatestPatchsets);
                             }
                         }
                     }

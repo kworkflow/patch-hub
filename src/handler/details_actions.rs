@@ -7,19 +7,22 @@ use ratatui::{
 use std::time::Duration;
 
 use crate::{
-    app::{screens::CurrentScreen, App},
     infrastructure::terminal::{setup_user_io, teardown_user_io},
-    ui::popup::{help::HelpPopUpBuilder, review_trailers::ReviewTrailersPopUp, PopUp},
+    model::Model,
+    views::{
+        popup::{help::HelpPopUpBuilder, review_trailers::ReviewTrailersPopUp, PopUp},
+        View,
+    },
 };
 
 use super::wait_key_press;
 
 pub fn handle_patchset_details<B: Backend>(
-    app: &mut App,
+    model: &mut Model,
     key: KeyEvent,
     terminal: &mut Terminal<B>,
 ) -> color_eyre::Result<()> {
-    let patchset_details_and_actions = app.details_actions.as_mut().unwrap();
+    let patchset_details_and_actions = model.details_actions.as_mut().unwrap();
 
     if key.modifiers.contains(KeyModifiers::SHIFT) {
         match key.code {
@@ -51,7 +54,7 @@ pub fn handle_patchset_details<B: Backend>(
             KeyCode::Char('t') => {
                 let popup =
                     ReviewTrailersPopUp::generate_trailers_popup(patchset_details_and_actions);
-                app.popup = Some(popup);
+                model.popup = Some(popup);
             }
             _ => {}
         }
@@ -61,12 +64,12 @@ pub fn handle_patchset_details<B: Backend>(
     match key.code {
         KeyCode::Char('?') => {
             let popup = generate_help_popup();
-            app.popup = Some(popup);
+            model.popup = Some(popup);
         }
         KeyCode::Esc | KeyCode::Char('q') => {
-            let ps_da_clone = patchset_details_and_actions.last_screen.clone();
-            app.set_current_screen(ps_da_clone);
-            app.reset_details_actions();
+            let ps_da_clone = patchset_details_and_actions.last_screen;
+            model.set_current_screen(ps_da_clone);
+            model.reset_details_actions();
         }
         KeyCode::Char('a') => {
             patchset_details_and_actions.toggle_apply_action();
@@ -109,7 +112,7 @@ pub fn handle_patchset_details<B: Backend>(
         KeyCode::Enter => {
             if patchset_details_and_actions.actions_require_user_io() {
                 setup_user_io(terminal)?;
-                app.consolidate_patchset_actions()?;
+                model.consolidate_patchset_actions()?;
                 println!("\nPress ENTER continue...");
                 loop {
                     if let Event::Key(key) = event::read()? {
@@ -120,9 +123,9 @@ pub fn handle_patchset_details<B: Backend>(
                 }
                 teardown_user_io(terminal)?;
             } else {
-                app.consolidate_patchset_actions()?;
+                model.consolidate_patchset_actions()?;
             }
-            app.set_current_screen(CurrentScreen::PatchsetDetails);
+            model.set_current_screen(View::PatchsetDetails);
         }
         _ => {}
     }
