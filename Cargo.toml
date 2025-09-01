@@ -14,16 +14,16 @@ derive-getters = { version = "0.5.0", features = ["auto_copy_getters"] }
 lazy_static = "1.5.0"
 patch-hub-proc-macros = "0.1.0"
 ratatui = "0.29.0"
-regex = "1.11.1"
+regex = "1.11.2"
 serde = { version = "1.0.219", features = ["derive"] }
 serde-xml-rs = "0.8.1"
-serde_json = "1.0.140"
-thiserror = "2.0.12"
-clap = { version = "4.5.40", features = ["derive"] }
+serde_json = "1.0.143"
+thiserror = "2.0.16"
+clap = { version = "4.5.46", features = ["derive"] }
 chrono = "0.4.41"
 ansi-to-tui = "7.0.0"
 which = "8.0.0"
-ureq = { version = "3.0.12", features = ["rustls"] }
+ureq = { version = "3.1.0", features = ["rustls"] }
 
 # The profile that 'cargo dist' will build with
 [profile.dist]
