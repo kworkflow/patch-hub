@@ -8,11 +8,11 @@ license = "GPL-2.0"
 [dependencies]
 derive-getters = { version = "0.5.0", features = ["auto_copy_getters"] }
 lazy_static = "1.5.0"
-serde = { version = "1.0.203", features = ["derive"] }
-serde_json = "1.0.120"
-syn = { version = "2.0.104", features = ["full"] }
+serde = { version = "1.0.225", features = ["derive"] }
+serde_json = "1.0.145"
+syn = { version = "2.0.106", features = ["full"] }
 quote = "1.0.4"
-proc-macro2 = "1.0.95"
+proc-macro2 = "1.0.101"
 
 [lib]
 proc-macro = true
