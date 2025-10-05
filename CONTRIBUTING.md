@@ -6,7 +6,7 @@ Thank you for your interest in contributing to `patch-hub`! This document outlin
 
 1. [Code of Conduct](#code-of-conduct)
 2. [Getting Started](#getting-started)
-3. [Development Workflow](#development-workflow)
+3. [Development Cycle and Branches](#development-cycle-and-branches)
 4. [Commit Guidelines](#commit-guidelines)
 5. [Pull Request Guidelines](#pull-request-guidelines)
 6. [Issue Reporting](#issue-reporting)
