@@ -10,6 +10,7 @@ Thank you for your interest in contributing to `patch-hub`! This document outlin
 4. [Commit Guidelines](#commit-guidelines)
 5. [Pull Request Guidelines](#pull-request-guidelines)
 6. [Issue Reporting](#issue-reporting)
+7. [License](#license)
 
 ## Code of Conduct
 
