@@ -167,6 +167,24 @@ Your PR will be merged once it:
 
 **Note**: PRs should always be opened using the branch `unstable` as a base.
 
+### Rewriting Branches
+
+An essential practice when preparing contributions to patch-hub is knowing how to rewrite commits with:
+
+- git rebase --interactive (a.k.a. git rebase -i)
+
+- git commit --amend
+
+You may find more about it at: [Git Tools: Rewriting History](https://git-scm.com/book/en/v2/Git-Tools-Rewriting-History)
+
+#### What are we talking about?
+
+When working on a pull request for patch-hub, you will often re-evaluate something you already committed: fix or refactor an implementation, split a commit into smaller, self-contained pieces, reorder commits for clarity, and more. In these cases, we strongly recommend rewriting the branch history (using interactive rebase git rebase -i and git commit --amend) rather than stacking new commits on top of your branch.
+
+#### Why is this important?
+
+Rewriting commits helps ensure the pull request shows only the final, intended changes. This improves reviewability and long-term maintainability by avoiding a noisy trail of intermediate fixes, making it easier for reviewers to understand the final result without tracking every small adjustment. It also benefits long-term maintainability by keeping the git history clean and meaningful, simplifying future debugging, version tracking, and change audits across the project’s lifecycle.
+
 ## Issue Reporting
 
 Use the preconfigured templates on GitHub to report issues and request features. If none of these fit your issue, you can use the "Blank" option.
