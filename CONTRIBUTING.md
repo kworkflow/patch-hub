@@ -184,6 +184,12 @@ When working on a pull request for patch-hub, you will often re-evaluate somethi
 
 Rewriting commits helps ensure the pull request shows only the final, intended changes. This improves reviewability and long-term maintainability by avoiding a noisy trail of intermediate fixes, making it easier for reviewers to understand the final result without tracking every small adjustment. It also benefits long-term maintainability by keeping the git history clean and meaningful, simplifying future debugging, version tracking, and change audits across the project’s lifecycle.
 
+### Issues Tracking
+
+It’s recommended that each Pull Request reference the issue it addresses (e.g., Closes #123 or Resolves #123). If there isn’t an existing issue, consider creating one before opening the PR.
+
+Following this practice helps improve project organization and traceability, makes it easier for maintainers and contributors to assess proposed changes, and enables GitHub’s automatic linking between issues and PRs. This also clarifies that work is already underway, helping to prevent duplicated efforts—even before the PR is reviewed or merged.
+
 ## Issue Reporting
 
 Use the preconfigured templates on GitHub to report issues and request features. If none of these fit your issue, you can use the "Blank" option.
