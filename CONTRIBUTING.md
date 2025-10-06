@@ -192,6 +192,10 @@ Following this practice helps improve project organization and traceability, mak
 
 ## Issue Reporting
 
+We suggest that all bugs, feature requests, and proposed changes be reported as issues. Contributors should create an issue describing the problem or proposal before starting work on a Pull Request.
+
+This approach ensures visibility, provides maintainers and contributors the opportunity to discuss the need and scope of the change, and helps others stay informed about ongoing work.
+
 Use the preconfigured templates on GitHub to report issues and request features. If none of these fit your issue, you can use the "Blank" option.
 
 ## License
