@@ -22,7 +22,7 @@ The development of the Linux kernel is one of the foremost examples of a large-s
 
 In general, the kernel development cycle is based on a repetition of tasks, both for contributors, who seek to have their code incorporated, and for maintainers, who must ensure that no issues are being introduced. In a simplified way, these tasks consist of compiling, running, and testing the Linux kernel, as well as organizing, sending, and responding to patches. In practice, this involves executing long sequences of verbose commands, which can take a significant amount of time to complete and must be repeated in every iteration of a contribution.
 
-[ADD PATCH LIFECYCLE FIGURE]
+![Diagram showing Linux development cycle](figures/patchset-lifecycle.png)
 
 Due to the repetitive nature of these tasks, it is common for kernel developers to create or adopt ad hoc scripts to automate such processes, in order to speed up execution and reduce the chance of errors. As a result, this tooling is generally decentralized. Such decentralization leads to duplicated efforts and may contribute to the lack of robust solutions for some of these tasks.
 
@@ -42,7 +42,7 @@ For end users of the tool, the most notable features are:
 
 Users can browse the mailing lists of each subsystem available on lore.kernel.org. For each list, they can navigate through the submitted patchsets — from the most recent to the oldest — and analyze each patchset individually.
 
-[ADD LIST OF PATCHSETS SCREEN FIGURE]
+![Patch-hub's mailing list screen](figures/mailing-lists-screen.png)
 
 ### Patchset rendering
 
@@ -63,7 +63,7 @@ Beyond simply viewing patchsets, users can actively interact with them. Three ma
 
 Another important feature is the ability to customize certain system settings. The main options include: selecting which tool will be used to render patchsets, configuring how many patchsets are displayed per page, defining directories for data and cache storage, and setting log retention periods. Users can also configure integration with Git commands: git send-email for replying to patchsets, and git am for applying a patchset to the local kernel tree. This ensures that the review and application workflow can be tailored to each user’s preferences.
 
-[ADD CONFIGURATION SCREEN FIGURE]
+![Patch-hub's configuration screen](figures/config-screen.png)
 
 ## Architecture
 
@@ -85,7 +85,21 @@ Practically speaking, patch-hub defines a struct named App, which implements the
 - A `Config` struct that stores the current configuration.
 - A `BlockingLoreAPIClient` struct that represents the HTTP client responsible for communicating with lore.kernel.org.
 
-[ADD APP CODE SNIPPET]
+```Rust
+pub struct App {
+    pub current_screen: CurrentScreen,
+    pub mailing_list_selection: MailingListSelection,
+    pub bookmarked_patchsets: BookmarkedPatchsets,
+    pub latest_patchsets: Option<LatestPatchsets>,
+    pub details_actions: Option<DetailsActions>,
+    pub edit_config: Option<EditConfig>,
+    pub config: Config,
+    pub lore_api_client: BlockingLoreAPIClient,
+
+	/// other less relevant attributes omitted
+}
+```
+Listing 1: App struct snippet
 
 As expected, the Model layer does not handle either end of the application — user interaction or terminal rendering — but only the core logic of the system. The `App` struct is responsible for storing each screen’s state, the loaded patchsets, configuration data, and for orchestrating transitions between states.
 However, it does not directly handle user input or screen rendering.
@@ -96,7 +110,37 @@ Since patch-hub is a TUI, the View layer focuses on rendering each screen in the
 
 Besides rendering individual screens, some UI components — such as loading screens and pop-up windows — can appear across multiple views. Their rendering behavior is also handled within the View layer.
 
-[ADD DRAW_UI CODE SNIPPET]
+```Rust
+pub fn draw_ui(f: &mut Frame, app: &App) {
+	// beggining of the function omitted
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(1),
+            Constraint::Length(3),
+        ])
+        .split(f.area());
+
+    render_title(f, chunks[0]);
+
+    match app.current_screen {
+        CurrentScreen::MailingListSelection => mail_list::render_main(f, app, chunks[1]),
+        CurrentScreen::BookmarkedPatchsets => {
+            bookmarked::render_main(f, &app.bookmarked_patchsets, chunks[1])
+        }
+        CurrentScreen::LatestPatchsets => latest::render_main(f, app, chunks[1]),
+        CurrentScreen::PatchsetDetails => details_actions::render_main(f, app, chunks[1]),
+        CurrentScreen::EditConfig => edit_config::render_main(f, app, chunks[1]),
+    }
+
+    navigation_bar::render(f, app, chunks[2]);
+
+    /// rest of the function omitted
+}
+```
+Listing 2: draw_ui() function snippet
 
 Notably, the View layer has no knowledge of how information is stored or which user interactions led to the current state. It only needs the current state to decide how to compose and display the interface elements.
 
@@ -107,7 +151,24 @@ In general, it captures keyboard events and routes them to their corresponding a
 
 Thus, the Controller directly interacts with both the Model and the View, orchestrating their operation at a high level.
 
-[ADD KEY -> ACTION ROUTING SNIPPET]
+```Rust
+match key.code {
+	KeyCode::Char('?') => {
+		let popup = generate_help_popup();
+		app.popup = Some(popup);
+	}
+	KeyCode::Esc | KeyCode::Char('q') => {
+		app.reset_latest_patchsets();
+		app.set_current_screen(CurrentScreen::MailingListSelection);
+	}
+	KeyCode::Char('j') | KeyCode::Down => {
+		latest_patchsets.select_below_patchset();
+	}
+	KeyCode::Char('k') | KeyCode::Up => {
+		latest_patchsets.select_above_patchset();
+	}
+```
+Listing 3: Example of Key-to-action routing
 
 [ADD INTERACTION BETWEEN MODULES DIAGRAM]
 
@@ -131,7 +192,19 @@ The integration module also includes another struct, LoreSession, which acts as 
 
 This design keeps the external data source decoupled from the core application logic, facilitating both testing and potential future replacement or extension of how patchsets are retrieved.
 
-[ADD REQUEST TO LORE FUNCTION SNIPPET]
+```Rust
+fn request_available_lists(&self, min_index: usize) -> Result<String, ClientError> {
+	let available_lists_url = format!("{}/?&o={min_index}", self.lore_domain);
+
+	let body: String = ureq::get(&available_lists_url)
+		.header("Accept", "text/html,application/xhtml+xml,application/xml")
+		.call()?
+		.body_mut()
+		.read_to_string()?;
+	Ok(body)
+}
+```
+Listing 4: Example of HTTP request to Lore
 
 ## Discussion
 
