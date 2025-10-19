@@ -30,8 +30,6 @@ A Free Software tool that aims to mitigate this issue is Kworkflow (kw). Written
 
 Within kw, another notable functionality — which has become an independent utility and is the central topic of this paper — is patch-hub. With its own dedicated repository and implemented in Rust, patch-hub is a Terminal User Interface (TUI) focused on the interaction between developers/maintainers and the patchsets (groups of related patches representing a single contribution) of kernel subsystems. Each command in kw targets one or more specific tasks, and in the case of patch-hub, its goal is to simplify user interaction with mailing lists and the patchsets of each subsystem. Its main features include browsing subsystem mailing lists, viewing all patchsets within a list, and interacting with individual patchsets — such as applying one to the local kernel tree or saving a patch for later analysis. Under the hood, patch-hub takes advantage of Lore (lore.kernel.org), the public archive of the Linux kernel's mailing lists, which allows you to search for messages and patchsets on demand, in contrast to the traditional model based on subscription to the lists.
 
-The remainder of this paper is organized as follows. First, we describe the tool in greater detail, covering its high-level functionality, architecture, and how it addresses certain kernel development bottlenecks. Next, we discuss the motivations and advantages of implementing it in Rust. Finally, we present the project’s next steps.
-
 # patch-hub
 
 ## Features
@@ -139,6 +137,16 @@ This design keeps the external data source decoupled from the core application l
 
 ### Rust
 
+There are two main motivations behind choosing Rust for the development of patch-hub. First, although patch-hub does not have strict constraints such as high performance or limited memory usage, Rust offers several characteristics that provide universal benefits to software projects. Notably:
+
+- Memory safety, enforced at compile time, which prevents a wide range of well-known programming bugs such as use-after-free, dangling pointers, and double free.
+
+- Idiomatic expressiveness, arising from Rust’s language design, which encourages clean code practices and enhances code readability. Key features include immutability by default and constructs such as Result, Option, and functional-style iterator combinators (map, filter, find, collect, etc.).
+
+The second motivation is more abstract, directly related to the context in which patch-hub is situated and reflects recent trends in the Linux kernel development community. The adoption of Rust in patch-hub aligns with one of the project’s implicit goals: the modernization of the Linux kernel development process. In recent years, there has been a significant movement within the kernel community, even endorsed by Linus Torvalds, toward introducing Rust into this ecosystem. Although the kernel has historically been written in C, which provides high performance and a great deal of developer freedom, the motivation for incorporating Rust primarily lies in its compile-time memory safety guarantees, as mentioned above.
+
+Thus, patch-hub follows this growing enthusiasm for the language and aligns itself with the community’s ongoing trends. Moreover, contributing to patch-hub — or to any other open-source projects written in Rust — can be seen as an opportunity to prepare for future contributions to the kernel itself, especially considering that one of the key challenges in adopting Rust is its relatively steep learning curve.
+
 ### Importance
 
 A recurring concern among Linux kernel developers in recent years has been the sustainability of the development cycle, especially considering the bottlenecks created by the project’s scale combined with outdated development processes. One possible way to address these challenges — as discussed in [CITATION] — is through the increasing use of development support tools, which can help reduce the cognitive and operational burden of tasks that are secondary to the system’s evolution itself.
@@ -150,6 +158,8 @@ Patch-hub is one such support tool that aims to directly improve this scenario. 
 The lore.kernel.org platform itself is an example of a tool designed to simplify how users interact with patchsets. patch-hub builds on this well-established system, extending its functionality and usability so that users need nothing beyond their terminal to work with patchsets.
 
 For these reasons, patch-hub can be viewed as a bridge between the traditional practices of kernel development — which depend on tools and technologies that are increasingly uncommon in modern software engineering — and more contemporary approaches that emphasize user experience as a means to boost productivity and reduce the likelihood of errors. Furthermore, when considered within the broader context of its integration with kw, patch-hub can significantly expand the potential for automation and, consequently, accelerate the entire development workflow.
+
+### Next steps
 
 # Acknowledgements
 
