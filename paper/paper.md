@@ -135,6 +135,22 @@ This design keeps the external data source decoupled from the core application l
 
 [ADD REQUEST TO LORE FUNCTION SNIPPET]
 
+## Discussion
+
+### Rust
+
+### Importance
+
+A recurring concern among Linux kernel developers in recent years has been the sustainability of the development cycle, especially considering the bottlenecks created by the project’s scale combined with outdated development processes. One possible way to address these challenges — as discussed in [CITATION] — is through the increasing use of development support tools, which can help reduce the cognitive and operational burden of tasks that are secondary to the system’s evolution itself.
+
+In the context of interacting with patches, users must understand the dynamics of mailing lists and learn the steps and conventions involved in patch submission and review. These factors can slow down the development cycle and make it harder to integrate new contributors, reviewers, and maintainers.
+
+Patch-hub is one such support tool that aims to directly improve this scenario. By allowing users to visualize, validate, and respond to patchsets more quickly, intuitively, and in a centralized manner, the tool eliminates or simplifies many of the steps traditionally required in the process.
+
+The lore.kernel.org platform itself is an example of a tool designed to simplify how users interact with patchsets. patch-hub builds on this well-established system, extending its functionality and usability so that users need nothing beyond their terminal to work with patchsets.
+
+For these reasons, patch-hub can be viewed as a bridge between the traditional practices of kernel development — which depend on tools and technologies that are increasingly uncommon in modern software engineering — and more contemporary approaches that emphasize user experience as a means to boost productivity and reduce the likelihood of errors. Furthermore, when considered within the broader context of its integration with kw, patch-hub can significantly expand the potential for automation and, consequently, accelerate the entire development workflow.
+
 # Acknowledgements
 
 # References
