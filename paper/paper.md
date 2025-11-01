@@ -28,7 +28,7 @@ Due to the repetitive nature of these tasks, it is common for kernel developers 
 
 A Free Software tool that aims to mitigate this issue is Kworkflow (kw). Written in Bash, the software helps Linux kernel developers perform various tasks through a unified Command Line Interface (CLI). Among many other features, users can compile and deploy the kernel, as well as manage multiple custom configurations for different environments and use cases. In this way, kw directly addresses the main bottlenecks arising from repetitive tasks, allowing developers to focus on reviewing and contributing patches themselves.
 
-Within kw, another notable functionality — which has become an independent utility and is the central topic of this paper — is patch-hub. With its own dedicated repository and implemented in Rust, patch-hub is a Terminal User Interface (TUI) focused on the interaction between developers/maintainers and the patchsets (groups of related patches representing a single contribution) of kernel subsystems. Each command in kw targets one or more specific tasks, and in the case of patch-hub, its goal is to simplify user interaction with mailing lists and the patchsets of each subsystem. Its main features include browsing subsystem mailing lists, viewing all patchsets within a list, and interacting with individual patchsets — such as applying one to the local kernel tree or saving a patch for later analysis. Under the hood, patch-hub takes advantage of Lore (lore.kernel.org), the public archive of the Linux kernel's mailing lists, which allows you to search for messages and patchsets on demand, in contrast to the traditional model based on subscription to the lists.
+Within kw, another notable functionality — which has become an independent utility and is the central topic of this paper — is patch-hub. With its own dedicated repository and implemented in Rust, patch-hub is a Terminal User Interface (TUI) focused on the interaction between developers/maintainers and the patchsets (groups of related patches representing a single contribution) of kernel subsystems. Each command in kw targets one or more specific tasks, and in the case of patch-hub, its goal is to simplify user interaction with mailing lists and the patchsets of each subsystem. Its main features include browsing subsystem mailing lists, viewing all patchsets within a list, and interacting with individual patchsets — such as applying one to the local kernel tree or saving a patch for later analysis. Under the hood, patch-hub takes advantage of Lore (lore.kernel.org), the public archive of the Linux kernel's mailing lists, which allows you to search for messages and patchsets on demand, in contrast to the traditional model based on subscription to the lists. Beyond its practical value, patch-hub can also serve as a source for empirical investigations into the kernel development process. With appropriate data collection, it could support studies in software engineering aimed at maintaining large-scale projects.
 
 # patch-hub
 
@@ -99,7 +99,7 @@ pub struct App {
 	/// other less relevant attributes omitted
 }
 ```
-Listing 1: App struct snippet
+Listing 1: App struct snippet.
 
 As expected, the Model layer does not handle either end of the application — user interaction or terminal rendering — but only the core logic of the system. The `App` struct is responsible for storing each screen’s state, the loaded patchsets, configuration data, and for orchestrating transitions between states.
 However, it does not directly handle user input or screen rendering.
@@ -140,7 +140,7 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
     /// rest of the function omitted
 }
 ```
-Listing 2: draw_ui() function snippet
+Listing 2: draw_ui() function snippet.
 
 Notably, the View layer has no knowledge of how information is stored or which user interactions led to the current state. It only needs the current state to decide how to compose and display the interface elements.
 
@@ -168,7 +168,7 @@ match key.code {
 		latest_patchsets.select_above_patchset();
 	}
 ```
-Listing 3: Example of Key-to-action routing
+Listing 3: Example of Key-to-action routing.
 
 [ADD INTERACTION BETWEEN MODULES DIAGRAM]
 
@@ -204,7 +204,7 @@ fn request_available_lists(&self, min_index: usize) -> Result<String, ClientErro
 	Ok(body)
 }
 ```
-Listing 4: Example of HTTP request to Lore
+Listing 4: Example of HTTP request to Lore.
 
 ## Discussion
 
@@ -232,7 +232,15 @@ The lore.kernel.org platform itself is an example of a tool designed to simplify
 
 For these reasons, patch-hub can be viewed as a bridge between the traditional practices of kernel development — which depend on tools and technologies that are increasingly uncommon in modern software engineering — and more contemporary approaches that emphasize user experience as a means to boost productivity and reduce the likelihood of errors. Furthermore, when considered within the broader context of its integration with kw, patch-hub can significantly expand the potential for automation and, consequently, accelerate the entire development workflow.
 
+Another point worth highlighting is the tool's potential to serve as a platform for experimentation and metrics collection regarding the kernel contribution process. The analysis of data and feedbacks generated during its use could enable investigations into different aspects of the patch review cycle — such as review time, volume and engagement in reviews, among other metrics related to reviewers' interactions with patches.
+
+In this way, patch-hub not only facilitates the daily work of contributors, but also creates opportunities for comparative studies between its use and the traditional patch review flow, fostering broader discussions about collaboration and efficiency in large-scale projects, and specifically how these factors can affect the future of kernel Linux development.
+
 ### Next steps
+
+There are two clear next steps for patch-hub. The first is to improve the tool’s integration with its predecessor, kw, so that it becomes possible, for example, to compile and deploy a patch or patchset under review in a more automated way, directly from patch-hub itself. Furthermore, given the strong relationship between the tools, additional initiatives can be undertaken to enhance this integration, making the overall development flow even more centralized and seamless.
+
+The second step involves instrumenting patch-hub to enable, with user consent, the collection of telemetry data during its execution. By anonymizing and sending this information to a server, it would be possible to consolidate user data and analyze it to identify bottlenecks, understand usage patterns, and propose improvements that reduce friction in the revision flow. The existence of this metrics collection infrastructure will facilitate the design and comparison of future experiments involving Linux kernel developers. The existence of this metrics collection infrastructure will also facilitate the design and comparison of future experiments involving Linux kernel developers. Finally, it can support broader reflections on tool usage and user behavior, as discussed in the previous section.
 
 # Acknowledgements
 
