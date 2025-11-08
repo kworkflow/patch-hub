@@ -36,7 +36,7 @@ Within kw, another notable functionality — which has become an independent uti
 
 In general, the main features of patch-hub are aligned with the goal presented in the previous section: to simplify the interaction between those involved in kernel development — contributors, reviewers, and maintainers — and the patchsets of each subsystem.
 
-For end users of the tool, the most notable features are:
+It is worth noting that the project remains in continuous development, and some upcoming features will be exposed in the **Next Steps** section. The following subsections present the most relevant features currently implemented and available to the tool’s end users.
 
 ### Integration with mailing lists
 
