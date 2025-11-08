@@ -22,7 +22,7 @@ The development of the Linux kernel is one of the foremost examples of a large-s
 
 In general, the kernel development cycle is based on a repetition of tasks, both for contributors, who seek to have their code incorporated, and for maintainers, who must ensure that no issues are being introduced. In a simplified way, these tasks consist of compiling, running, and testing the Linux kernel, as well as organizing, sending, and responding to patches. In practice, this involves executing long sequences of verbose commands, which can take a significant amount of time to complete and must be repeated in every iteration of a contribution.
 
-![Diagram showing Linux development cycle](figures/patchset-lifecycle.png)
+![Diagram showing Linux development cycle](figures/patchset-lifecycle.svg)
 
 Due to the repetitive nature of these tasks, it is common for kernel developers to create or adopt ad hoc scripts to automate such processes, in order to speed up execution and reduce the chance of errors. As a result, this tooling is generally decentralized. Such decentralization leads to duplicated efforts and may contribute to the lack of robust solutions for some of these tasks.
 
@@ -48,8 +48,7 @@ Users can browse the mailing lists of each subsystem available on lore.kernel.or
 
 For every patchset, users can first view its metadata, which includes the title, author, patchset version, and the number of reviews, tests, or acknowledgments (acks) it has received. They can also inspect each individual patch within the patchset, as well as the patchset’s cover letter. For each patch, the commit message and the code diff can be viewed. This allows users to follow the full flow of who submitted the patch and to review each change introduced by the patchset individually.
 
-
-[ADD COMPARISON OF RENDERS FIGURE]
+![Patch-hub's patch render screen](figures/patch-render-example.png)
 
 ### Patchset management
 
@@ -58,6 +57,8 @@ Beyond simply viewing patchsets, users can actively interact with them. Three ma
 1. Bookmarking a patchset to access it later.
 2. Applying the patchset to a local kernel tree, to validate and test the proposed changes.
 3. Replying to a patchset with a Reviewed-by trailer, to indicate that the patchset has been reviewed.
+
+![Patch-hub's code-review trailers screen](figures/code-review-trailers.png)
 
 ### Custom configuration
 
@@ -169,8 +170,6 @@ match key.code {
 	}
 ```
 Listing 3: Example of Key-to-action routing.
-
-[ADD INTERACTION BETWEEN MODULES DIAGRAM]
 
 ### Lore API
 
