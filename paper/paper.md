@@ -18,8 +18,11 @@ Patch-hub is a terminal-based software written in Rust that seeks to streamline 
 
 Beyond its practical value, patch-hub represents a broader effort to modernize kernel development workflows. By simplifying how reviewers and developers interact with patchsets, the tool not only reduces friction in the review process but also creates opportunities for empirical research on software engineering practices within this ecosystem.
 
-
 # Statement of need
+
+A recent area of ​​interest within the Linux kernel community is the long-term sustainability of its development process. One factor contributing to this concern is the existence of studies [CITATION] that support the hypothesis that the number of maintainers is not growing at the same pace as the number of contributors, creating a mismatch between the volume of submitted patches and the capacity to integrate them into the project. This scenario points to potential bottlenecks in the development cycle, which may affect the project's evolution in the future. In this context, several research initiatives are dedicated to mapping these challenges and proposing tools, metrics, and approaches to minimize or resolve them. [CITE MORE RELATED WORK]
+
+Patch-hub fits into this panorama, as it directly addresses the bottleneck associated with patch review. The tool focuses on optimizing a process that has traditionally involved fragmented, complex, and weekly standardized workflows. Furthermore, Patch-hub can also serve as a central platform for research on the review cycle, enabling both a deeper understanding of the relationships among the actors involved and empirical evaluations of strategies to optimize this part of the development flow.
 
 # Introduction
 
