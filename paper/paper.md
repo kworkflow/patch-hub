@@ -14,6 +14,11 @@ aas-journal:
 
 # Summary
 
+Patch-hub is a terminal-based software written in Rust that seeks to streamline one of the key processes of the Linux kernel development cycle: the review of contributions, known as patchsets. Its main features include browsing the patches of each subsystem, applying a contribution locally for validation and also the option of responding directly to a patchset, indicating that it has been reviewed.
+
+Beyond its practical value, patch-hub represents a broader effort to modernize kernel development workflows. By simplifying how reviewers and developers interact with patchsets, the tool not only reduces friction in the review process but also creates opportunities for empirical research on software engineering practices within this ecosystem.
+
+
 # Statement of need
 
 # Introduction
