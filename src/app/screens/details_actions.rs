@@ -92,7 +92,7 @@ impl DetailsActions {
     pub fn go_to_last_line(&mut self) {
         // TODO: Support for renderers (only considers base preview string)
         let number_of_lines = self.patches_preview[self.preview_index].height();
-        self.preview_scroll_offset = number_of_lines - LAST_LINE_PADDING;
+        self.preview_scroll_offset = number_of_lines.saturating_sub(LAST_LINE_PADDING);
     }
 
     /// Scroll to first line
