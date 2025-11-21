@@ -79,10 +79,12 @@ impl App {
 
         let lore_api_client = BlockingLoreAPIClient::default();
 
-        // Initialize the logger before the app starts
-        Logger::init_log_file(&config)?;
-        Logger::info("patch-hub started");
-        garbage_collector::collect_garbage(&config);
+        // Initialize the logger before the app starts if not in a test
+        if !cfg!(test) {
+            Logger::init_log_file(&config).ok();
+            Logger::info("patch-hub started");
+            garbage_collector::collect_garbage(&config);
+        }
 
         Ok(App {
             current_screen: CurrentScreen::MailingListSelection,
@@ -437,4 +439,95 @@ impl App {
 
         app_can_run
     }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::config::Config;
+    use std::sync::Once;
+    use crate::infrastructure::{garbage_collector};
+
+    static INIT_LOGGER: Once = Once::new();
+
+    fn create_test_app() -> App {
+        let config = Config::default();
+
+        INIT_LOGGER.call_once(|| {
+            let _ = std::panic::catch_unwind(|| {
+                Logger::init_log_file(&config).ok();
+                Logger::info("Test started");
+                garbage_collector::collect_garbage(&config);
+            });
+        });
+
+        App::new(config).unwrap()
+    }
+
+    #[test]
+    fn test_new_initial_state() {
+        let app = create_test_app();
+        
+        assert_eq!(app.current_screen, CurrentScreen::MailingListSelection);
+        assert!(app.popup.is_none());
+        assert!(app.latest_patchsets.is_none());
+        assert!(app.details_actions.is_none());
+        assert!(app.edit_config.is_none());
+    }
+
+    #[test]
+    fn test_set_current_screen() {
+        let mut app = create_test_app();
+        
+        assert_ne!(app.current_screen, CurrentScreen::EditConfig);
+        app.set_current_screen(CurrentScreen::EditConfig);
+        assert_eq!(app.current_screen, CurrentScreen::EditConfig);
+    }
+
+    #[test]
+    fn test_reset_latest_patchsets_when_none() {
+        let mut app = create_test_app();
+        
+        app.latest_patchsets = None;
+        app.reset_latest_patchsets();
+        assert!(app.latest_patchsets.is_none());
+    }
+
+    #[test]
+    fn test_reset_details_actions_when_none() {
+        let mut app = create_test_app();
+        
+        app.details_actions = None;
+        app.reset_details_actions();
+        assert!(app.details_actions.is_none());
+    }
+
+    #[test]
+    fn test_init_edit_config_sets_some() {
+        let mut app = create_test_app();
+        
+        assert!(app.edit_config.is_none());
+        app.init_edit_config();
+        assert!(app.edit_config.is_some());
+    }
+
+    #[test]
+    fn test_reset_edit_config_sets_none() {
+        let mut app = create_test_app();
+        
+        app.init_edit_config();
+        assert!(app.edit_config.is_some());
+        app.reset_edit_config();
+        assert!(app.edit_config.is_none());
+    }
+
+    #[test]
+    fn test_consolidate_edit_config_with_none_does_not_change_config() {
+        let mut app = create_test_app();
+        
+        let before = app.config.page_size();
+        app.edit_config = None;
+        app.consolidate_edit_config();
+        assert_eq!(app.config.page_size(), before);
+    }
+
 }
