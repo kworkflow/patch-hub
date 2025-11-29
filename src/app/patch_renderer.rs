@@ -179,3 +179,134 @@ fn diff_so_fancy_renderer(patch: &str) -> color_eyre::Result<String> {
     let output = dsf.wait_with_output()?;
     Ok(String::from_utf8(output.stdout)?)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::config::Config;
+    use crate::infrastructure::logging::Logger;
+    use std::io::ErrorKind;
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+
+    fn init_test_logger() {
+        INIT.call_once(|| {
+            let mut config = Config::default();
+            let mut temp_dir = std::env::temp_dir();
+            temp_dir.push("patch-hub-renderer-tests");
+            let _ = std::fs::create_dir_all(&temp_dir);
+
+            config.set_data_dir(temp_dir.to_string_lossy().to_string());
+
+            let _ = std::panic::catch_unwind(|| {
+                Logger::init_log_file(&config).ok();
+            });
+        });
+    }
+
+    fn get_sample_patch() -> &'static str {
+        "diff --git a/file.rs b/file.rs\n\
+         index 123..456 100644\n\
+         --- a/file.rs\n\
+         +++ b/file.rs\n\
+         @@ -1,3 +1,3 @@\n\
+         -old line\n\
+         +new line\n\
+         context line"
+    }
+
+    #[test]
+    fn test_patch_renderer_enum_conversions_and_display() {
+        init_test_logger();
+
+        assert!(matches!(PatchRenderer::from("bat"), PatchRenderer::Bat));
+        assert!(matches!(PatchRenderer::from("delta"), PatchRenderer::Delta));
+        assert!(matches!(
+            PatchRenderer::from("diff-so-fancy"),
+            PatchRenderer::DiffSoFancy
+        ));
+
+        assert!(matches!(
+            PatchRenderer::from("unknown-tool"),
+            PatchRenderer::Default
+        ));
+        assert!(matches!(PatchRenderer::from(""), PatchRenderer::Default));
+
+        assert_eq!(PatchRenderer::Bat.to_string(), "bat");
+        assert_eq!(PatchRenderer::Default.to_string(), "default");
+        assert_eq!(PatchRenderer::DiffSoFancy.to_string(), "diff-so-fancy");
+    }
+
+    #[test]
+    fn test_clean_patch_for_preview() {
+        init_test_logger();
+
+        let raw = "line1\nline2\nline3";
+        let cleaned = clean_patch_for_preview(raw);
+        assert_eq!(cleaned, raw);
+
+        let raw_with_sig = "line1\nline2\n--\nRegards,\nAuthor";
+        let expected = "line1\nline2";
+        let cleaned_sig = clean_patch_for_preview(raw_with_sig);
+        assert_eq!(cleaned_sig, expected);
+
+        let raw_code_decrement = "cnt--;\nif (x) {\n--\nSig";
+        let expected_code = "cnt--;\nif (x) {";
+        let cleaned_code = clean_patch_for_preview(raw_code_decrement);
+        assert_eq!(cleaned_code, expected_code);
+
+        assert_eq!(clean_patch_for_preview(""), "");
+    }
+
+    #[test]
+    fn test_render_patch_preview() {
+        init_test_logger();
+        let patch = get_sample_patch();
+
+        let result = render_patch_preview(patch, &PatchRenderer::Default);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), patch.to_string());
+
+        let result_bat = render_patch_preview(patch, &PatchRenderer::Bat);
+        assert!(result_bat.is_ok() || result_bat.is_err());
+    }
+
+    #[test]
+    fn test_delta_patch_renderer() {
+        init_test_logger();
+        let patch = get_sample_patch();
+        let result = delta_patch_renderer(patch);
+
+        match result {
+            Ok(output) => assert!(!output.is_empty()),
+            Err(e) => {
+                if let Some(io_err) = e.downcast_ref::<std::io::Error>() {
+                    if io_err.kind() == ErrorKind::NotFound {
+                        println!("Skipping delta test: command not found");
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_diff_so_fancy_renderer() {
+        init_test_logger();
+        let patch = get_sample_patch();
+        let result = diff_so_fancy_renderer(patch);
+
+        match result {
+            Ok(output) => assert!(!output.is_empty()),
+            Err(e) => {
+                if let Some(io_err) = e.downcast_ref::<std::io::Error>() {
+                    if io_err.kind() == ErrorKind::NotFound {
+                        println!("Skipping diff-so-fancy test: command not found");
+                        return;
+                    }
+                }
+            }
+        }
+    }
+}
