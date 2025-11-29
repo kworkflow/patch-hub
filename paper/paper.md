@@ -1,9 +1,16 @@
 ---
-title: ''
+title: 'patch-hub: A Terminal-Based Tool to Streamline Linux Kernel Patch Review'
 tags:
+  - Linux kernel
+  - Patch review
+  - Rust
+  - Terminal User Interface
 authors:
+  - name: Lorenzo Bertin Salvador
+  - name: David Tadokoro 
+  - name: Paulo Meirelles
 affiliations:
-date:
+date: 29 November 2025
 bibliography: paper.bib
 
 # Optional fields if submitting to a AAS journal too, see this blog post:
