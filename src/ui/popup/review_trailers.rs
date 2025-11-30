@@ -158,3 +158,121 @@ impl PopUp for ReviewTrailersPopUp {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    fn create_key_event(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    #[test]
+    fn test_dimensions_impl() {
+        let popup = ReviewTrailersPopUp {
+            reviewed_by_text: String::new(),
+            tested_by_text: String::new(),
+            acked_by_text: String::new(),
+            offset: (0, 0),
+            max_offset: (10, 10),
+            dimensions: (50, 40),
+        };
+
+        assert_eq!(popup.dimensions(), (50, 40));
+    }
+
+    #[test]
+    fn test_handle_vertical_navigation() {
+        let mut popup = ReviewTrailersPopUp {
+            reviewed_by_text: "A".to_string(),
+            tested_by_text: "B".to_string(),
+            acked_by_text: "C".to_string(),
+            offset: (0, 0),
+            max_offset: (5, 0),
+            dimensions: (50, 40),
+        };
+
+        popup.handle(create_key_event(KeyCode::Char('j'))).unwrap();
+        assert_eq!(popup.offset.0, 1);
+
+        popup.handle(create_key_event(KeyCode::Down)).unwrap();
+        assert_eq!(popup.offset.0, 2);
+
+        popup.handle(create_key_event(KeyCode::Char('k'))).unwrap();
+        assert_eq!(popup.offset.0, 1);
+
+        popup.handle(create_key_event(KeyCode::Up)).unwrap();
+        assert_eq!(popup.offset.0, 0);
+
+        popup.handle(create_key_event(KeyCode::Up)).unwrap();
+        assert_eq!(popup.offset.0, 0);
+    }
+
+    #[test]
+    fn test_handle_vertical_bounds() {
+        let max_lines = 3;
+        let mut popup = ReviewTrailersPopUp {
+            reviewed_by_text: String::new(),
+            tested_by_text: String::new(),
+            acked_by_text: String::new(),
+            offset: (2, 0),
+            max_offset: (max_lines, 0),
+            dimensions: (50, 40),
+        };
+
+        popup.handle(create_key_event(KeyCode::Down)).unwrap();
+        assert_eq!(popup.offset.0, 3);
+
+        popup.handle(create_key_event(KeyCode::Down)).unwrap();
+        assert_eq!(popup.offset.0, 3);
+    }
+
+    #[test]
+    fn test_handle_horizontal_navigation() {
+        let mut popup = ReviewTrailersPopUp {
+            reviewed_by_text: String::new(),
+            tested_by_text: String::new(),
+            acked_by_text: String::new(),
+            offset: (0, 0),
+            max_offset: (0, 10), // Permite scroll lateral
+            dimensions: (50, 40),
+        };
+
+        popup.handle(create_key_event(KeyCode::Char('l'))).unwrap();
+        assert_eq!(popup.offset.1, 1);
+
+        popup.handle(create_key_event(KeyCode::Right)).unwrap();
+        assert_eq!(popup.offset.1, 2);
+
+        popup.handle(create_key_event(KeyCode::Char('h'))).unwrap();
+        assert_eq!(popup.offset.1, 1);
+
+        popup.handle(create_key_event(KeyCode::Left)).unwrap();
+        assert_eq!(popup.offset.1, 0);
+    }
+
+    #[test]
+    fn test_handle_ignores_invalid_keys() {
+        let mut popup = ReviewTrailersPopUp {
+            reviewed_by_text: String::new(),
+            tested_by_text: String::new(),
+            acked_by_text: String::new(),
+            offset: (0, 0),
+            max_offset: (5, 5),
+            dimensions: (50, 40),
+        };
+
+        let result = popup.handle(create_key_event(KeyCode::Enter));
+        assert!(result.is_ok());
+        assert_eq!(popup.offset, (0, 0));
+
+        popup.handle(create_key_event(KeyCode::Char('z'))).unwrap();
+        assert_eq!(popup.offset, (0, 0));
+    }
+}
