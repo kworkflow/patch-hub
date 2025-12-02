@@ -7,7 +7,8 @@ tags:
   - Terminal User Interface
 authors:
   - name: Lorenzo Bertin Salvador
-  - name: David Tadokoro 
+  - name: David Tadokoro
+  - name: Hannah Harrisonn
   - name: Paulo Meirelles
 affiliations:
 date: 29 November 2025
