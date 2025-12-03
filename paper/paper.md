@@ -38,6 +38,9 @@ The development of the Linux kernel is one of the most prominent examples of a l
 
 In general, kernel development involves many repetitive tasks, both for contributors who seek to have their code incorporated and for maintainers who must ensure the high quality of the contribution. Among these tasks, we emphasize compiling, running, and testing the Linux kernel, as well as organizing, sending, and responding to patches. In practice, this translates to executing long sequences of verbose commands, which waste considerable time to type, are incredibly error-prone, and must be repeated multiple times throughout the development and review of contributions.
 
+<!--
+TODO: For some reason, the texts in the diagram do not seem to render. This may be a problem only on the draft version
+-->
 ![Lifecycle of a Linux patch from sending to merging into the upstream.](figures/patchset-lifecycle.svg)
 
 Due to the repetitive nature of these tasks, it is common for kernel developers to create or adopt _ad hoc_ scripts to automate such processes, in order to speed up execution and reduce the likelihood of errors. As a result, this tooling is generally decentralized, leading to duplicated efforts and contributing to the lack of robust standardized solutions for some of these tasks.
@@ -49,6 +52,10 @@ Within kw, another notable functionality, which has become an independent utilit
 Under the hood, `patch-hub` leverages _Lore_ (lore.kernel.org), the public archive of the Linux development mailing lists, which supports searching for messages and patchsets on demand, in contrast to the traditional model based on subscribing to the lists. Beyond its practical value, `patch-hub` enables empirical investigations into the workflows of maintainers. With appropriate data collection, it could even support studies in software engineering aimed at maintaining large-scale projects.
 
 # patch-hub
+
+<!--
+TODO: Fix section starting with subsection
+-->
 
 ## Features
 
@@ -225,6 +232,10 @@ Listing 4: Example of HTTP request to Lore.
 
 ## Discussion
 
+<!--
+TODO: Fix subsection starting with subsubsection
+-->
+
 ### Rust
 
 There are two main motivations behind choosing Rust for the development of `patch-hub`. First, although `patch-hub` does not have strict constraints such as high performance or limited memory usage, Rust offers several characteristics that provide universal benefits to software projects. Notably:
@@ -260,5 +271,9 @@ There are two clear next steps for patch-hub. The first is to improve the toolâ€
 The second step involves instrumenting `patch-hub` to enable, with user consent, the collection of telemetry data during its execution. By anonymizing and sending this information to a server, it would be possible to consolidate user data and analyze it to identify bottlenecks, understand usage patterns, and propose improvements that reduce friction in the revision flow. The existence of this metrics collection infrastructure will facilitate the design and comparison of future experiments involving Linux kernel developers. The existence of this metrics collection infrastructure will also facilitate the design and comparison of future experiments involving Linux kernel developers. Finally, it can support broader reflections on tool usage and user behavior, as discussed in the previous section.
 
 # Acknowledgements
+
+<!--
+TODO: Add acks
+-->
 
 # References
