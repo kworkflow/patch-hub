@@ -52,37 +52,39 @@ Under the hood, `patch-hub` leverages _Lore_ (lore.kernel.org), the public archi
 
 ## Features
 
-In general, the main features of patch-hub are aligned with the goal presented in the previous section: to simplify the interaction between those involved in kernel development — contributors, reviewers, and maintainers — and the patchsets of each subsystem.
+In general, the main features of `patch-hub` align with the goal presented in the previous section: to simplify the interaction between those involved in kernel development (specifically maintainers/reviewers) with the patchsets that represent this development.
 
-It is worth noting that the project remains in continuous development, and some upcoming features will be exposed in the **Next Steps** section. The following subsections present the most relevant features currently implemented and available to the tool’s end users.
+It is worth noting that the project remains in continuous development, and some upcoming features will be exposed in the **Next Steps** section. The following subsections present the most relevant features currently implemented and available to the tool's end users.
 
-### Integration with mailing lists
+### Integration with Linux development mailing lists
 
-Users can browse the mailing lists of each subsystem available on lore.kernel.org. For each list, they can navigate through the submitted patchsets — from the most recent to the oldest — and analyze each patchset individually.
+![Mailing list selection screen.](figures/mailing-lists-screen.png)
 
-![Patch-hub's mailing list screen](figures/mailing-lists-screen.png)
+Users can browse the mailing lists of each subsystem available on lore.kernel.org. For each list, users can navigate through the submitted patches, clustered in their respective patchsets, from most recent to oldest, and analyze each one individually.
+
+![Latest patchsets screen of the `rust-for-linux` list (redacted patchset authors).](figures/latest-patchsets.png)
 
 ### Patchset rendering
 
-For every patchset, users can first view its metadata, which includes the title, author, patchset version, and the number of reviews, tests, or acknowledgments (acks) it has received. They can also inspect each individual patch within the patchset, as well as the patchset’s cover letter. For each patch, the commit message and the code diff can be viewed. This allows users to follow the full flow of who submitted the patch and to review each change introduced by the patchset individually.
+For every patchset, users can view its metadata, which includes the title, author, patchset version, and the number of _Reviewed-by_, _Tested-by_, and _Acked-by_ tags it has received. Users can also inspect each individual patch within the patchset, as well as the patchset's cover letter. For each patch, the commit message and the _code diff_ can be viewed using different renderers for syntax highlighting and colorization. This allows users to track the current review state of each patch and conduct their own review efficiently without the need to set up tools like `mutt` and do manual integrations with Lore.
 
-![Patch-hub's patch render screen](figures/patch-render-example.png)
+![Patchset preview and management screen.](figures/patchset-preview.png)
 
 ### Patchset management
 
 Beyond simply viewing patchsets, users can actively interact with them. Three main actions are supported:
 
-1. Bookmarking a patchset to access it later.
-2. Applying the patchset to a local kernel tree, to validate and test the proposed changes.
-3. Replying to a patchset with a Reviewed-by trailer, to indicate that the patchset has been reviewed.
+1. Bookmark a patchset to access it later.
+2. Apply the patchset to a local kernel tree to validate and test the proposed changes.
+3. Reply to a patchset (or individual patches in a patchset) with a _Reviewed-by_ tag, to indicate endorsement of the contribution.
 
-![Patch-hub's code-review trailers screen](figures/code-review-trailers.png)
+![Pop-up after successfully applying patchset.](figures/patchset-apply.png)
 
 ### Custom configuration
 
-Another important feature is the ability to customize certain system settings. The main options include: selecting which tool will be used to render patchsets, configuring how many patchsets are displayed per page, defining directories for data and cache storage, and setting log retention periods. Users can also configure integration with Git commands: git send-email for replying to patchsets, and git am for applying a patchset to the local kernel tree. This ensures that the review and application workflow can be tailored to each user’s preferences.
+Another important feature is the ability to customize specific system settings. The main options include: selecting which tool will be used to render patchsets, configuring how many patchsets are displayed per page, defining directories for data and cache storage, and setting log retention periods. Users can also configure integration with Git commands, such as `git send-email` for replying to patchsets and `git am` for applying a patchset to the local kernel tree. This ensures that the review and application workflow can be tailored to each user's preferences.
 
-![Patch-hub's configuration screen](figures/config-screen.png)
+![Configuration screen](figures/config-screen.png)
 
 ## Architecture
 
