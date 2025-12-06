@@ -227,9 +227,7 @@ Listing 4: Example of HTTP request to Lore.
 
 # Discussion
 
-<!--
-TODO: Fix subsection starting with subsubsection
--->
+After detailing what `patch-hub` provides and how it is implemented, we next discuss less explicit aspects surrounding the project. First, we examine the motivation behind choosing Rust as the implementation language. Then, we discuss the importance of `patch-hub`, both for its users and for its potential contributions to software engineering research. Finally, we outline the project’s planned future directions.
 
 ## Rust
 
