@@ -38,10 +38,7 @@ The development of the Linux kernel is one of the most prominent examples of a l
 
 In general, kernel development involves many repetitive tasks, both for contributors who seek to have their code incorporated and for maintainers who must ensure the high quality of the contribution. Among these tasks, we emphasize compiling, running, and testing the Linux kernel, as well as organizing, sending, and responding to patches. In practice, this translates to executing long sequences of verbose commands, which waste considerable time to type, are incredibly error-prone, and must be repeated multiple times throughout the development and review of contributions.
 
-<!--
-TODO: For some reason, the texts in the diagram do not seem to render. This may be a problem only on the draft version
--->
-![Lifecycle of a Linux patch from sending to merging into the upstream.](figures/patchset-lifecycle.svg)
+![Lifecycle of a Linux patch from sending to merging into the upstream.](figures/patchset-lifecycle.png)
 
 Due to the repetitive nature of these tasks, it is common for kernel developers to create or adopt _ad hoc_ scripts to automate such processes, in order to speed up execution and reduce the likelihood of errors. As a result, this tooling is generally decentralized, leading to duplicated efforts and contributing to the lack of robust standardized solutions for some of these tasks.
 
