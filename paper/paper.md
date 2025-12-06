@@ -50,9 +50,7 @@ Under the hood, `patch-hub` leverages _Lore_ (lore.kernel.org), the public archi
 
 # patch-hub
 
-<!--
-TODO: Fix section starting with subsection
--->
+This section presents the core capabilities of `patch-hub`, highlighting how the software supports the patchset review workflow within kernel development. It then provideds an overview of the application's architecture, emphasizing both the design decisions adopted and the way the system integrates with Lore to retrieve and process patchsets.
 
 ## Features
 
@@ -227,13 +225,13 @@ fn request_available_lists(&self, min_index: usize) -> Result<String, ClientErro
 ```
 Listing 4: Example of HTTP request to Lore.
 
-## Discussion
+# Discussion
 
 <!--
 TODO: Fix subsection starting with subsubsection
 -->
 
-### Rust
+## Rust
 
 There are two main motivations behind choosing Rust for the development of `patch-hub`. First, although `patch-hub` does not have strict constraints such as high performance or limited memory usage, Rust offers several characteristics that provide universal benefits to software projects. Notably:
 
@@ -245,7 +243,7 @@ The second motivation is more abstract, directly related to the context in which
 
 Thus, `patch-hub` follows this growing enthusiasm for the language and aligns itself with the community's ongoing trends. Moreover, contributing to `patch-hub` (or to any other open-source projects written in Rust) can be seen as an opportunity to prepare for future contributions to the kernel itself, especially considering that one of the key challenges in adopting Rust is its relatively steep learning curve.
 
-### Importance
+## Importance
 
 A recurring concern among Linux kernel developers in recent years has been the sustainability of the development cycle, particularly given the bottlenecks created by the project's scale and outdated development processes. One possible way to address these challenges, as discussed in [@linux-sustainability-sbes-iier], is by increasing the use of development support tools, which can help reduce the cognitive and operational burden of tasks that are secondary to the system's evolution.
 
@@ -261,7 +259,7 @@ Another point worth highlighting is the tool's potential to serve as a platform 
 
 In this way, `patch-hub` not only facilitates the daily work of contributors but also creates opportunities for comparative studies between its use and the traditional patch review flow, fostering broader discussions about collaboration and efficiency in large-scale projects, and specifically how these factors can impact the future of Linux kernel development.
 
-### Next steps
+## Next steps
 
 There are two clear next steps for patch-hub. The first is to improve the tool’s integration with its predecessor, kw, so that it becomes possible, for example, to compile and deploy a patch or patchset under review in a more automated way, directly from patch-hub itself. Furthermore, given the strong relationship between the tools, additional initiatives can be undertaken to enhance this integration, making the overall development flow even more centralized and seamless.
 
