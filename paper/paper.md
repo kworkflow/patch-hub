@@ -265,8 +265,6 @@ The second step involves instrumenting `patch-hub` to enable, with user consent,
 
 # Acknowledgements
 
-<!--
-TODO: Add acks
--->
+This study was financed by CAPES (Finance Code 001), the São Paulo Research Foundation – FAPESP (Proc. 2025/05395-0) and the São Paulo State Data Analysis System Foundation – SEADE (FAPESP Proc. 2023/18026-8), Brazil.
 
 # References
