@@ -11,7 +11,7 @@ authors:
   - name: Hannah Harrisonn
   - name: Paulo Meirelles
 affiliations:
-date: 29 November 2025
+date: 12 December 2025
 bibliography: paper.bib
 
 # Optional fields if submitting to a AAS journal too, see this blog post:
@@ -24,7 +24,7 @@ aas-journal:
 
 `Patch-hub` is a terminal-based software written in Rust that aims to streamline one of the key workflows in the Linux kernel development model: reviewing patches. Its main features include browsing the patches of each Linux development mailing list, applying them locally for validation, and also the option to respond to them with a _Reviewed-by_ tag.
 
-Beyond its practical value, `patch-hub` is part of a broader effort to modernize Linux kernel development workflows and mitigate bottlenecks. By simplifying how reviewers and developers interact with patches, the tool not only reduces friction in the review process but also creates opportunities for empirical research on software engineering practices within this ecosystem.
+Beyond its practical value, `patch-hub` is part of a broader effort to modernize Linux kernel development workflows and mitigate bottlenecks. By simplifying the interaction between reviewers, developers, and patches, the tool not only reduces friction in the review process but also creates opportunities for empirical research on software engineering practices within this ecosystem.
 
 # Statement of need
 
@@ -34,29 +34,29 @@ On a broader scope, the Kworkflow (`kw`) project [@kw-sbes-tools] is a hub of to
 
 # Introduction
 
-The development of the Linux kernel is one of the most prominent examples of a large-scale Free Software project. Dozens of subsystems and thousands of contributors have allowed Linux to continue evolving for decades, making it the foundation of most modern computing systems. The project follows a rigorous review and integration process before a contribution, also known as a _patch_, can reach the software's end users.
+The development of the Linux kernel is a prominent example of a large-scale Free Software project. Dozens of subsystems and thousands of contributors have allowed Linux to continue evolving for decades, making it the foundation of most modern computing systems. The project follows a rigorous review and integration process before a contribution, also known as a _patch_, can reach the software's end users.
 
 In general, kernel development involves many repetitive tasks, both for contributors who seek to have their code incorporated and for maintainers who must ensure the high quality of the contribution. Among these tasks, we emphasize compiling, running, and testing the Linux kernel, as well as organizing, sending, and responding to patches. In practice, this translates to executing long sequences of verbose commands, which waste considerable time to type, are incredibly error-prone, and must be repeated multiple times throughout the development and review of contributions.
 
 ![Lifecycle of a Linux patch from sending to merging into the upstream.](figures/patchset-lifecycle.png)
 
-Due to the repetitive nature of these tasks, it is common for kernel developers to create or adopt _ad hoc_ scripts to automate such processes, in order to speed up execution and reduce the likelihood of errors. As a result, this tooling is generally decentralized, leading to duplicated efforts and contributing to the lack of robust standardized solutions for some of these tasks.
+Due to the repetitive nature of these tasks, it is common for kernel developers to create or adopt ad hoc scripts to automate such processes, thereby speeding up execution and reducing the likelihood of errors. As a result, this tooling is generally decentralized, leading to duplicated efforts and contributing to the lack of robust standardized solutions for some of these tasks.
 
-A Free Software project that aims to mitigate this issue is `kw`. Written in Bash, the software helps Linux kernel developers perform various tasks through a unified Command-Line Interface (CLI). Among many other features, users can seamlessly compile and deploy the kernel from source, as well as manage multiple custom configurations for different environments and use cases. In this way, `kw` directly addresses the main bottlenecks arising from repetitive tasks, allowing developers to focus on reviewing and contributing patches themselves.
+A Free Software project that aims to mitigate this issue is `kw`. Written in Bash, it is a tool that helps Linux kernel developers perform various tasks through a unified Command-Line Interface (CLI). Among many other features, users can seamlessly compile and deploy the kernel from source, as well as manage multiple custom configurations for different environments and use cases. In this way, `kw` directly addresses the main bottlenecks arising from repetitive tasks, allowing developers to focus on reviewing and contributing patches themselves.
 
-Within kw, another notable functionality, which has become an independent utility and is the central topic of this paper, is `patch-hub`. With its dedicated repository and implemented in Rust, `patch-hub` is a Terminal User Interface (TUI) focused on the interaction between developers/maintainers and the _patchsets_ (groups of related patches representing a single contribution) representing the development of Linux. Each command in `kw` targets one or more specific tasks, and in the case of `patch-hub`, its goal is to simplify user interaction with mailing lists and the patchsets of each subsystem. Its main features include browsing mailing lists, viewing all patchsets within a list, and interacting with individual patchsets, such as applying one to the local kernel tree or saving a patchset for later analysis.
+Within kw, another outstanding functionality, which has become an independent utility and is the central topic of this paper, is `patch-hub`. With its dedicated repository and implemented in Rust, `patch-hub` is a Terminal User Interface (TUI) focused on the interaction between developers/maintainers and the _patchsets_ (groups of related patches representing a single contribution) representing the development of Linux. Each command in `kw` targets one or more specific tasks, and in the case of `patch-hub`, its goal is to simplify user interaction with mailing lists and the patchsets of each subsystem. Its main features include browsing mailing lists, viewing all patchsets within a list, and interacting with individual patchsets, such as applying one to the local kernel tree or saving a patchset for later analysis.
 
-Under the hood, `patch-hub` leverages _Lore_ (lore.kernel.org), the public archive of the Linux development mailing lists, which supports searching for messages and patchsets on demand, in contrast to the traditional model based on subscribing to the lists. Beyond its practical value, `patch-hub` enables empirical investigations into the workflows of maintainers. With appropriate data collection, it could even support studies in software engineering aimed at maintaining large-scale projects.
+Under the hood, `patch-hub` leverages _Lore_ (lore.kernel.org), the public archive of the Linux development mailing lists, which supports searching for messages and patchsets on demand, in contrast to the traditional model based on subscribing to the lists. Beyond its practical value, `patch-hub` enables empirical investigations into the workflows of maintainers. With appropriate data collection, it could support studies in software engineering aimed at maintaining large-scale projects.
 
 # patch-hub
 
-This section presents the core capabilities of `patch-hub`, highlighting how the software supports the patchset review workflow within kernel development. It then provideds an overview of the application's architecture, emphasizing both the design decisions adopted and the way the system integrates with Lore to retrieve and process patchsets.
+This section presents the core capabilities of `patch-hub`, highlighting how the software supports the patchset review workflow within kernel development. It then provides an overview of the application's architecture, emphasizing both the design decisions adopted and the way the system integrates with Lore to retrieve and process patchsets.
 
 ## Features
 
 In general, the main features of `patch-hub` align with the goal presented in the previous section: to simplify the interaction between those involved in kernel development (specifically maintainers/reviewers) with the patchsets that represent this development.
 
-It is worth noting that the project remains in continuous development, and some upcoming features will be exposed in the **Next Steps** section. The following subsections present the most relevant features currently implemented and available to the tool's end users.
+It is worth noting that the project remains in continuous development, and some upcoming features will be exposed in the **Next Steps** section. The following subsections present the most relevant features currently implemented and available.
 
 ### Integration with Linux development mailing lists
 
@@ -68,7 +68,7 @@ Users can browse the mailing lists of each subsystem available on lore.kernel.or
 
 ### Patchset rendering
 
-For every patchset, users can view its metadata, which includes the title, author, patchset version, and the number of _Reviewed-by_, _Tested-by_, and _Acked-by_ tags it has received. Users can also inspect each individual patch within the patchset, as well as the patchset's cover letter. For each patch, the commit message and the _code diff_ can be viewed using different renderers for syntax highlighting and colorization. This allows users to track the current review state of each patch and conduct their own review efficiently without the need to set up tools like `mutt` and do manual integrations with Lore.
+For every patchset, users can view its metadata, which includes the title, author, patchset version, and the number of _Reviewed-by_, _Tested-by_, and _Acked-by_ tags it has received. Users can also inspect each individual patch within the patchset, as well as the patchset's cover letter. For each patch, the commit message and the _code diff_ can be viewed using different renderers for syntax highlighting and colorization. This approach enables users to track the current review state of each patch and conduct their own review efficiently, without the need to set up tools like `mutt` and perform manual integrations with Lore.
 
 ![Patchset preview and management screen.](figures/patchset-preview.png)
 
@@ -84,20 +84,20 @@ Beyond simply viewing patchsets, users can actively interact with them. Three ma
 
 ### Custom configuration
 
-Another important feature is the ability to customize specific system settings. The main options include: selecting which tool will be used to render patchsets, configuring how many patchsets are displayed per page, defining directories for data and cache storage, and setting log retention periods. Users can also configure integration with Git commands, such as `git send-email` for replying to patchsets and `git am` for applying a patchset to the local kernel tree. This ensures that the review and application workflow can be tailored to each user's preferences.
+Another important feature is the ability to customize specific system settings. The main options include (i) selecting the tool to be used for rendering patchsets, (ii) configuring the number of patchsets displayed per page, (iii) defining directories for data and cache storage, and (iv) setting log retention periods. Users can also configure integration with Git commands, such as `git send-email` for replying to patchsets and `git am` for applying a patchset to the local kernel tree. This strategy ensures that the review and application workflow can be tailored to each user's preferences.
 
 ![Configuration screen](figures/config-screen.png)
 
 ## Architecture
 
-The `patch-hub` architecture can be divided into two fundamental parts:
+The `patch-hub` architecture contains two fundamental parts:
 
 1. The core of the application, which handles all state changes triggered by user interaction.
 2. The integration with lore.kernel.org, which provides access to up-to-date patchsets.
 
 ### MVC (Model–View–Controller)
 
-The core of the application was developed following the _Model–View–Controller_ (MVC) design pattern, where the Model represents the aggregation of all application states, the View represents the abstraction of how those states are rendered to the user, and the Controller manages user interactions and requested actions.
+We developed the core of the application following the _Model–View–Controller_ (MVC) design pattern, where the Model represents the aggregation of all application states, the View represents the abstraction of how those states are rendered to the user, and the Controller manages user interactions and requested actions.
 
 #### Model
 
@@ -107,6 +107,7 @@ Practically speaking, `patch-hub` defines a struct named `App`, which implements
 - One struct for each possible screen the user can access (`MailingListSelection`, `BookmarkedPatchsets`, `LatestPatchsets`, `DetailsActions`, `EditConfig`).
 - A `Config` struct that stores the current configuration.
 - A `BlockingLoreAPIClient` struct that represents the HTTP client responsible for communicating with lore.kernel.org.
+
 
 ```Rust
 pub struct App {
@@ -164,7 +165,7 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
 ```
 Listing 2: `draw_ui()` function snippet.
 
-Notably, the View layer does not know how information is stored or which user interactions led to the current state. It only needs the current state to decide how to compose and display the interface elements.
+The View layer is unaware of how information is stored or which user interactions have led to the current state. It only needs the current state to decide how to compose and display the interface elements.
 
 #### Controller
 
@@ -193,13 +194,13 @@ Listing 3: Example of Key-to-action routing.
 
 ### Lore API
 
-With the MVC structure established, the other main pillar of `patch-hub` is its integration module with lore.kernel.org, which enables fetching patchsets. This module is not part of the MVC structure because it operates independently of the core business logic; it merely provides data to `patch-hub`, and could be replaced by another source without requiring changes elsewhere in the system.
+With the MVC structure established, the other central pillar of `patch-hub` is its integration module with lore.kernel.org, which enables fetching patchsets. This module is not part of the MVC structure because it operates independently of the core business logic; it merely provides data to `patch-hub`, and could be replaced by another source without requiring changes elsewhere in the system.
 
 The primary goal of this module is to communicate with lore.kernel.org via HTTP requests to retrieve the list and details of patchsets.
 
 The HTTP client is represented by the `BlockingLoreAPIClient` struct, which is responsible for managing requests, handling network communication (including headers, timeouts, etc.), and parsing XML responses from the site.
 
-Three primary endpoints were implemented to provide all the information patch-hub needs about patches from lore.kernel.org:
+We implemented three primary endpoints to provide all the information patch-hub needs about patches from lore.kernel.org:
 
 - **request_available_lists**: returns all mailing lists of kernel subsystems available on lore.kernel.org;
 
