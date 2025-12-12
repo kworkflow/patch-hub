@@ -34,11 +34,11 @@ On a broader scope, the Kworkflow (`kw`) project [@kw-sbes-tools] is a hub of to
 
 # Introduction
 
-The development of the Linux kernel is a prominent example of a large-scale Free Software project. Dozens of subsystems and thousands of contributors have allowed Linux to continue evolving for decades, making it the foundation of most modern computing systems. The project follows a rigorous review and integration process before a contribution, also known as a _patch_, can reach the software's end users.
+The development of the Linux kernel is a prominent example of a large-scale Free Software project. Dozens of subsystems interconnected in a complex _web of trust_ (Figure \ref{patchset-lifecycle}) and thousands of contributors have allowed Linux to continue evolving for decades, making it the foundation of most modern computing systems. The project follows a rigorous review and integration process before a contribution, also known as a _patch_, can reach the software's end users.
 
 In general, kernel development involves many repetitive tasks, both for contributors who seek to have their code incorporated and for maintainers who must ensure the high quality of the contribution. Among these tasks, we emphasize compiling, running, and testing the Linux kernel, as well as organizing, sending, and responding to patches. In practice, this translates to executing long sequences of verbose commands, which waste considerable time to type, are incredibly error-prone, and must be repeated multiple times throughout the development and review of contributions.
 
-![Lifecycle of a Linux patch from sending to merging into the upstream.](figures/patchset-lifecycle.png)
+![Lifecycle of a Linux patch from sending to merging into the upstream.\label{patchset-lifecycle}](figures/patchset-lifecycle.png)
 
 Due to the repetitive nature of these tasks, it is common for kernel developers to create or adopt ad hoc scripts to automate such processes, thereby speeding up execution and reducing the likelihood of errors. As a result, this tooling is generally decentralized, leading to duplicated efforts and contributing to the lack of robust standardized solutions for some of these tasks.
 
@@ -60,33 +60,33 @@ It is worth noting that the project remains in continuous development, and some 
 
 ### Integration with Linux development mailing lists
 
-![Mailing list selection screen.](figures/mailing-lists-screen.png)
+![Mailing list selection screen.\label{mailing-lists-screen}](figures/mailing-lists-screen.png)
 
-Users can browse the mailing lists of each subsystem available on lore.kernel.org. For each list, users can navigate through the submitted patches, clustered in their respective patchsets, from most recent to oldest, and analyze each one individually.
+Users can browse the mailing lists of each subsystem available on lore.kernel.org (Figure \ref{mailing-lists-screen}). For each list, users can navigate through the submitted patches, clustered in their respective patchsets, from most recent to oldest, as shown in Figure \ref{latest-screen}. Each patchset can be analyzed individually, as described in the next feature.
 
-![Latest patchsets screen of the `rust-for-linux` list (redacted patchset authors).](figures/latest-patchsets.png)
+![Latest patchsets screen of the `rust-for-linux` list (redacted patchset authors).\label{latest-screen}](figures/latest-patchsets.png)
 
 ### Patchset rendering
 
-For every patchset, users can view its metadata, which includes the title, author, patchset version, and the number of _Reviewed-by_, _Tested-by_, and _Acked-by_ tags it has received. Users can also inspect each individual patch within the patchset, as well as the patchset's cover letter. For each patch, the commit message and the _code diff_ can be viewed using different renderers for syntax highlighting and colorization. This approach enables users to track the current review state of each patch and conduct their own review efficiently, without the need to set up tools like `mutt` and perform manual integrations with Lore.
+For every patchset, users can view its metadata, which includes the title, author, patchset version, and the number of _Reviewed-by_, _Tested-by_, and _Acked-by_ tags it has received. Users can also inspect each individual patch within the patchset, as well as the patchset's cover letter. For each patch, the commit message and the _code diff_ can be viewed using different renderers for syntax highlighting and colorization. This approach enables users to track the current review state of each patch and conduct their own review efficiently, without the need to set up tools like `mutt` and perform manual integrations with Lore. This screen is shown in Figure \ref{patchset-rendering-screen}.
 
-![Patchset preview and management screen.](figures/patchset-preview.png)
+![Patchset preview and management screen\label{patchset-rendering-screen}.](figures/patchset-preview.png)
 
 ### Patchset management
 
 Beyond simply viewing patchsets, users can actively interact with them. Three main actions are supported:
 
 1. Bookmark a patchset to access it later.
-2. Apply the patchset to a local kernel tree to validate and test the proposed changes.
+2. Apply the patchset to a local kernel tree to validate and test the proposed changes (Figure \ref{apply-screen}).
 3. Reply to a patchset (or individual patches in a patchset) with a _Reviewed-by_ tag, to indicate endorsement of the contribution.
 
-![Pop-up after successfully applying patchset.](figures/patchset-apply.png)
+![Pop-up after successfully applying patchset.\label{apply-screen}](figures/patchset-apply.png)
 
 ### Custom configuration
 
-Another important feature is the ability to customize specific system settings. The main options include (i) selecting the tool to be used for rendering patchsets, (ii) configuring the number of patchsets displayed per page, (iii) defining directories for data and cache storage, and (iv) setting log retention periods. Users can also configure integration with Git commands, such as `git send-email` for replying to patchsets and `git am` for applying a patchset to the local kernel tree. This strategy ensures that the review and application workflow can be tailored to each user's preferences.
+Another important feature is the ability to customize specific system settings within `patch-hub` itself, as displayed in Figure \ref{config-screen}. The main options include (i) selecting the tool to be used for rendering patchsets, (ii) configuring the number of patchsets displayed per page, (iii) defining directories for data and cache storage, and (iv) setting log retention periods. Users can also configure integration with Git commands, such as `git send-email` for replying to patchsets and `git am` for applying a patchset to the local kernel tree. This strategy ensures that the review and application workflow can be tailored to each user's preferences.
 
-![Configuration screen](figures/config-screen.png)
+![Configuration screen.\label{config-screen}](figures/config-screen.png)
 
 ## Architecture
 
@@ -101,7 +101,7 @@ We developed the core of the application following the _Model–View–Controlle
 
 #### Model
 
-Practically speaking, `patch-hub` defines a struct named `App`, which implements the Model layer. In summary, it contains:
+Practically speaking, `patch-hub` defines a struct named `App` (Listing 1), which implements the Model layer. In summary, it contains:
 
 - A `CurrentScreen` attribute, indicating the application’s active screen.
 - One struct for each possible screen the user can access (`MailingListSelection`, `BookmarkedPatchsets`, `LatestPatchsets`, `DetailsActions`, `EditConfig`).
@@ -120,16 +120,19 @@ pub struct App {
     pub config: Config,
     pub lore_api_client: BlockingLoreAPIClient,
 
-	/// other less relevant attributes omitted
+    /// other less relevant attributes omitted
 }
 ```
-Listing 1: `App` struct snippet.
+
+\begin{center}
+\textbf{Listing 1:} `App` struct snippet.
+\end{center}
 
 As expected, the Model layer does not handle either end of the application, user interaction, or terminal rendering, but only the core logic of the system. The `App` struct is responsible for storing each screen’s state, the loaded patchsets, configuration data, and for orchestrating transitions between states. However, it does not directly handle user input or screen rendering.
 
 #### View
 
-Since `patch-hub` is a TUI, the View layer focuses on rendering each screen in the terminal. Concretely, whenever a state change occurs, the terminal is redrawn with the relevant information for the user, via the `draw_ui()` function. This function retrieves the current screen from the `App` and renders it according to its definition and current state. To draw widgets, `patch-hub` utilizes the Rust library Ratatui, which provides definitions for colors, alignments, geometric shapes, and other UI components.
+Since `patch-hub` is a TUI, the View layer focuses on rendering each screen in the terminal. Concretely, whenever a state change occurs, the terminal is redrawn with the relevant information for the user, via the `draw_ui()` function, as shown in Listing 2. This function retrieves the current screen from the `App` and renders it according to its definition and current state. To draw widgets, `patch-hub` utilizes the Rust library Ratatui, which provides definitions for colors, alignments, geometric shapes, and other UI components.
 
 Besides rendering individual screens, some UI components, such as loading screens and pop-up windows, can appear across multiple views. Their rendering behavior is also handled within the View layer.
 
@@ -163,13 +166,16 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
     /// rest of the function omitted
 }
 ```
-Listing 2: `draw_ui()` function snippet.
+
+\begin{center}
+\textbf{Listing 2:} `draw\_ui()` function snippet.
+\end{center}
 
 The View layer is unaware of how information is stored or which user interactions have led to the current state. It only needs the current state to decide how to compose and display the interface elements.
 
 #### Controller
 
-The Controller layer coordinates the chain of operations triggered by user actions. In general, it captures keyboard events and routes them to their corresponding actions, which typically involve updating the App (Model) and then redrawing the screen (View). Each screen has its own event handler, and whenever a user action causes a screen transition, the corresponding handler function is invoked.
+The Controller layer coordinates the chain of operations triggered by user actions. In general, it captures keyboard events and routes them to their corresponding actions (illustrated in Listing 3), which typically involve updating the App (Model) and then redrawing the screen (View). Each screen has its own event handler, and whenever a user action causes a screen transition, the corresponding handler function is invoked.
 
 Thus, the Controller directly interacts with both the Model and the View, orchestrating their operation at a high level.
 
@@ -190,7 +196,10 @@ match key.code {
 		latest_patchsets.select_above_patchset();
 	}
 ```
-Listing 3: Example of Key-to-action routing.
+
+\begin{center}
+\textbf{Listing 3:} Example of Key-to-action routing.
+\end{center}
 
 ### Lore API
 
@@ -202,7 +211,7 @@ The HTTP client is represented by the `BlockingLoreAPIClient` struct, which is r
 
 We implemented three primary endpoints to provide all the information patch-hub needs about patches from lore.kernel.org:
 
-- **request_available_lists**: returns all mailing lists of kernel subsystems available on lore.kernel.org;
+- **request_available_lists**: returns all mailing lists of kernel subsystems available on lore.kernel.org. Listing 4 displays its implementation;
 
 - **request_patch_feed**: given a mailing list, returns the list of patchsets it contains;
 
@@ -224,7 +233,10 @@ fn request_available_lists(&self, min_index: usize) -> Result<String, ClientErro
 	Ok(body)
 }
 ```
-Listing 4: Example of HTTP request to Lore.
+
+\begin{center}
+\textbf{Listing 4:} Example of HTTP request to Lore.
+\end{center}
 
 # Discussion
 
