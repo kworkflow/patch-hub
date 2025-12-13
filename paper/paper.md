@@ -1,5 +1,5 @@
 ---
-title: 'patch-hub: A Terminal User Interface to streamline Linux kernel patch review'
+title: 'patch-hub: A terminal-based tool to streamline Linux kernel patch review'
 tags:
   - Linux kernel
   - Free Software
