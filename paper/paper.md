@@ -1,7 +1,9 @@
 ---
-title: 'patch-hub: A Terminal-Based Tool to Streamline Linux Kernel Patch Review'
+title: 'patch-hub: A Terminal User Interface to streamline Linux kernel patch review'
 tags:
   - Linux kernel
+  - Free Software
+  - Development workflow
   - Patch review
   - Rust
   - Terminal User Interface
@@ -22,7 +24,7 @@ aas-journal:
 
 # Summary
 
-`Patch-hub` is a terminal-based software written in Rust that aims to streamline one of the key workflows in the Linux kernel development model: reviewing patches. Its main features include browsing the patches of each Linux development mailing list, applying them locally for validation, and also the option to respond to them with a _Reviewed-by_ tag.
+`patch-hub` is a terminal-based software written in Rust that aims to streamline one of the key workflows in the Linux kernel development model: reviewing patches. Its main features include browsing the patches of each Linux development mailing list, applying them locally for validation, and also the option to respond to them with a _Reviewed-by_ tag.
 
 Beyond its practical value, `patch-hub` is part of a broader effort to modernize Linux kernel development workflows and mitigate bottlenecks. By simplifying the interaction between reviewers, developers, and patches, the tool not only reduces friction in the review process but also creates opportunities for empirical research on software engineering practices within this ecosystem.
 
@@ -209,7 +211,7 @@ The primary goal of this module is to communicate with lore.kernel.org via HTTP 
 
 The HTTP client is represented by the `BlockingLoreAPIClient` struct, which is responsible for managing requests, handling network communication (including headers, timeouts, etc.), and parsing XML responses from the site.
 
-We implemented three primary endpoints to provide all the information patch-hub needs about patches from lore.kernel.org:
+We implemented three primary endpoints to provide all the information `patch-hub` needs about patches from lore.kernel.org:
 
 - **request_available_lists**: returns all mailing lists of kernel subsystems available on lore.kernel.org. Listing 4 displays its implementation;
 
@@ -250,7 +252,7 @@ There are two primary motivations behind choosing Rust for the development of `p
 
 - Idiomatic expressiveness, arising from Rust's language design, which encourages clean code practices and enhances code readability. Key features include immutability by default and constructs such as Result, Option, and functional-style iterator combinators (e.g., map, filter, find, collect).
 
-The second motivation is more abstract, directly related to the context in which `patch-hub` is situated and reflects recent trends in the Linux kernel development community. The adoption of Rust in patch-hub aligns with one of the project's implicit goals: modernizing the Linux kernel development process. In recent years, Rust's use in Linux has grown significantly. By the 2025 Linux Kernel Maintainer Summit, Rust was no longer considered experimental [@eol-rust4linux-exp]. Linus Torvalds also expressed support for Rust in the kernel, clarifying that while maintainers are not required to adopt Rust in their own subsystems, they cannot block its use elsewhere [@torvalds-defends-rust]. Although the kernel has historically been written in C, which provides high performance and a great deal of developer freedom, the motivation for incorporating Rust primarily lies in its compile-time memory safety guarantees, as mentioned above.
+The second motivation is more abstract, directly related to the context in which `patch-hub` is situated and reflects recent trends in the Linux kernel development community. The adoption of Rust in `patch-hub` aligns with one of the project's implicit goals: modernizing the Linux kernel development process. In recent years, Rust's use in Linux has grown significantly. By the 2025 Linux Kernel Maintainer Summit, Rust was no longer considered experimental [@eol-rust4linux-exp]. Linus Torvalds also expressed support for Rust in the kernel, clarifying that while maintainers are not required to adopt Rust in their own subsystems, they cannot block its use elsewhere [@torvalds-defends-rust]. Although the kernel has historically been written in C, which provides high performance and a great deal of developer freedom, the motivation for incorporating Rust primarily lies in its compile-time memory safety guarantees, as mentioned above.
 
 Thus, `patch-hub` follows this growing enthusiasm for the language and aligns itself with the community's ongoing trends. Moreover, contributing to `patch-hub` (or to any other open-source projects written in Rust) can be seen as an opportunity to prepare for future contributions to the kernel itself, especially considering that one of the key challenges in adopting Rust is its relatively steep learning curve.
 
@@ -260,11 +262,11 @@ A recurring concern among Linux kernel developers in recent years has been the s
 
 When interacting with patches, users must understand the dynamics of mailing lists and learn the steps and conventions involved in submitting and reviewing patches. These factors can slow down the development cycle and make it harder to integrate new contributors, reviewers, and maintainers.
 
-Patch-hub is one such support tool that aims to improve this scenario directly. By allowing users to visualize, validate, and respond to patchsets more quickly, intuitively, and in a centralized manner, the tool eliminates or simplifies many of the steps traditionally required in the process.
+`patch-hub` is one such support tool that aims to improve this scenario directly. By allowing users to visualize, validate, and respond to patchsets more quickly, intuitively, and in a centralized manner, the tool eliminates or simplifies many of the steps traditionally required in the process.
 
 The lore.kernel.org platform itself is an example of a tool designed to simplify how users interact with patchsets. `patch-hub` builds on this well-established system, extending its functionality and usability so that users need nothing beyond their terminal to work with patchsets.
 
-For these reasons, `patch-hub` can be viewed as a bridge between the traditional practices of kernel development, which depend on tools and technologies that are increasingly uncommon in modern software engineering, and more contemporary approaches that emphasize user experience as a means to boost productivity and reduce the likelihood of errors. Furthermore, when considered within the broader context of its integration with kw, patch-hub can significantly expand the potential for automation and, consequently, accelerate the entire development workflow.
+For these reasons, `patch-hub` can be viewed as a bridge between the traditional practices of kernel development, which depend on tools and technologies that are increasingly uncommon in modern software engineering, and more contemporary approaches that emphasize user experience as a means to boost productivity and reduce the likelihood of errors. Furthermore, when considered within the broader context of its integration with kw, `patch-hub` can significantly expand the potential for automation and, consequently, accelerate the entire development workflow.
 
 Another point worth highlighting is the tool's potential to serve as a platform for experimentation and metrics collection regarding the kernel contribution process. The analysis of data and feedback generated during its use could enable investigations into different aspects of the patch review cycle, such as review time, volume, and engagement in reviews, among other metrics related to reviewers' interactions with patches.
 
@@ -272,7 +274,7 @@ In this way, `patch-hub` not only facilitates the daily work of contributors but
 
 ## Next steps
 
-There are two clear next steps for patch-hub. The first is to improve the tool’s integration with its predecessor, kw, so that it becomes possible, for example, to compile and deploy a patch or patchset under review in a more automated way, directly from patch-hub itself. Furthermore, given the strong relationship between the tools, additional initiatives can be undertaken to enhance this integration, making the overall development flow even more centralized and seamless.
+There are two clear next steps for `patch-hub`. The first is to improve the tool’s integration with its predecessor, kw, so that it becomes possible, for example, to compile and deploy a patch or patchset under review in a more automated way, directly from `patch-hub` itself. Furthermore, given the strong relationship between the tools, additional initiatives can be undertaken to enhance this integration, making the overall development flow even more centralized and seamless.
 
 The second step involves instrumenting `patch-hub` to enable, with user consent, the collection of telemetry data during its execution. By anonymizing and sending this information to a server, it would be possible to consolidate user data and analyze it to identify bottlenecks, understand usage patterns, and propose improvements that reduce friction in the revision flow. The existence of this metrics collection infrastructure will facilitate the design and comparison of future experiments involving Linux kernel developers. The existence of this metrics collection infrastructure will also facilitate the design and comparison of future experiments involving Linux kernel developers. Finally, it can support broader reflections on tool usage and user behavior, as discussed in the previous section.
 
