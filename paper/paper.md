@@ -17,7 +17,7 @@ authors:
   - name: Paulo Meirelles
     affiliation: 1 #
 affiliations:
- - name: IME, University of São Paulo - USP, Brazil
+ - name: Institute of Mathematics, Statistics, and Computer Science, University of São Paulo - USP, Brazil
    index: 1
 date: 12 December 2025
 bibliography: paper.bib
