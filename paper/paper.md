@@ -9,10 +9,16 @@ tags:
   - Terminal User Interface
 authors:
   - name: Lorenzo Bertin Salvador
+    affiliation: 1 #
   - name: David Tadokoro
+    affiliation: 1 #
   - name: Hannah Harrisonn
+    affiliation: 1 #
   - name: Paulo Meirelles
+    affiliation: 1 #
 affiliations:
+ - name: IME, University of São Paulo - USP, Brazil
+   index: 1
 date: 12 December 2025
 bibliography: paper.bib
 
