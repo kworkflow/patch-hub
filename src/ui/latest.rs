@@ -67,7 +67,7 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
     f.render_stateful_widget(list, chunk, &mut list_state);
 }
 
-pub fn mode_footer_text(app: &App) -> Vec<Span> {
+pub fn mode_footer_text(app: &App) -> Vec<Span<'_>> {
     vec![Span::styled(
         format!(
             "Latest Patchsets from {} (page {})",

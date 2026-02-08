@@ -50,39 +50,32 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
     f.render_stateful_widget(list, chunk, &mut list_state);
 }
 
-pub fn mode_footer_text(app: &App) -> Vec<Span> {
-    let mut text_area = Span::default();
-
-    if app.mailing_list_selection.target_list.is_empty() {
-        text_area = Span::styled("type the target list", Style::default().fg(Color::DarkGray))
+pub fn mode_footer_text(app: &App) -> Vec<Span<'_>> {
+    let text_area = if app.mailing_list_selection.target_list.is_empty() {
+        Span::styled("type the target list", Style::default().fg(Color::DarkGray))
     } else {
-        for mailing_list in &app.mailing_list_selection.mailing_lists {
-            if mailing_list
-                .name()
-                .eq(&app.mailing_list_selection.target_list)
-            {
-                text_area = Span::styled(
-                    &app.mailing_list_selection.target_list,
-                    Style::default().fg(Color::Green),
-                );
-                break;
-            } else if mailing_list
-                .name()
-                .starts_with(&app.mailing_list_selection.target_list)
-            {
-                text_area = Span::styled(
-                    &app.mailing_list_selection.target_list,
-                    Style::default().fg(Color::LightCyan),
-                );
-            }
-        }
-        if text_area.content.is_empty() {
-            text_area = Span::styled(
+        let exact_match = app.mailing_list_selection.mailing_lists.iter().any(|ml| {
+            ml.name()
+                .eq_ignore_ascii_case(&app.mailing_list_selection.target_list)
+        });
+
+        if exact_match {
+            Span::styled(
+                &app.mailing_list_selection.target_list,
+                Style::default().fg(Color::Green),
+            )
+        } else if !app.mailing_list_selection.possible_mailing_lists.is_empty() {
+            Span::styled(
+                &app.mailing_list_selection.target_list,
+                Style::default().fg(Color::LightCyan),
+            )
+        } else {
+            Span::styled(
                 &app.mailing_list_selection.target_list,
                 Style::default().fg(Color::Red),
-            );
+            )
         }
-    }
+    };
 
     vec![
         Span::styled("Target List: ", Style::default().fg(Color::Green)),
