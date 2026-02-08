@@ -55,17 +55,25 @@ impl MailingListSelection {
         }
 
         let query = self.target_list.to_lowercase();
-        let mut possible_mailing_lists: Vec<MailingList> = Vec::new();
+        let mut exact_matches: Vec<MailingList> = Vec::new();
+        let mut partial_matches: Vec<MailingList> = Vec::new();
 
         for mailing_list in &self.mailing_lists {
-            if mailing_list.name().to_lowercase().contains(&query)
-                || mailing_list.description().to_lowercase().contains(&query)
-            {
-                possible_mailing_lists.push(mailing_list.clone());
+            let name_lower = mailing_list.name().to_lowercase();
+            let desc_lower = mailing_list.description().to_lowercase();
+
+            // Check for exact match first (case-insensitive)
+            if name_lower == query {
+                exact_matches.push(mailing_list.clone());
+            } else if name_lower.contains(&query) || desc_lower.contains(&query) {
+                partial_matches.push(mailing_list.clone());
             }
         }
 
-        self.possible_mailing_lists = possible_mailing_lists;
+        // Prioritize exact matches by placing them first
+        let mut all_matches = exact_matches;
+        all_matches.append(&mut partial_matches);
+        self.possible_mailing_lists = all_matches;
         self.highlighted_list_index = 0;
     }
 

@@ -54,11 +54,10 @@ pub fn mode_footer_text(app: &App) -> Vec<Span<'_>> {
     let text_area = if app.mailing_list_selection.target_list.is_empty() {
         Span::styled("type the target list", Style::default().fg(Color::DarkGray))
     } else {
-        let exact_match = app
-            .mailing_list_selection
-            .mailing_lists
-            .iter()
-            .any(|ml| ml.name() == &app.mailing_list_selection.target_list);
+        let exact_match = app.mailing_list_selection.mailing_lists.iter().any(|ml| {
+            ml.name()
+                .eq_ignore_ascii_case(&app.mailing_list_selection.target_list)
+        });
 
         if exact_match {
             Span::styled(
