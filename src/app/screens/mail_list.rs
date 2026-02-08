@@ -48,10 +48,19 @@ impl MailingListSelection {
     }
 
     fn process_possible_mailing_lists(&mut self) {
+        if self.target_list.is_empty() {
+            self.possible_mailing_lists = self.mailing_lists.clone();
+            self.highlighted_list_index = 0;
+            return;
+        }
+
+        let query = self.target_list.to_lowercase();
         let mut possible_mailing_lists: Vec<MailingList> = Vec::new();
 
         for mailing_list in &self.mailing_lists {
-            if mailing_list.name().starts_with(&self.target_list) {
+            if mailing_list.name().to_lowercase().contains(&query)
+                || mailing_list.description().to_lowercase().contains(&query)
+            {
                 possible_mailing_lists.push(mailing_list.clone());
             }
         }

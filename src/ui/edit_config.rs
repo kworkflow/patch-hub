@@ -64,7 +64,7 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
     }
 }
 
-pub fn mode_footer_text(app: &App) -> Vec<Span> {
+pub fn mode_footer_text(app: &App) -> Vec<Span<'_>> {
     let edit_config_state = app.edit_config.as_ref().unwrap();
     vec![if edit_config_state.is_editing() {
         Span::styled("Editing...", Style::default().fg(Color::LightYellow))
@@ -73,7 +73,7 @@ pub fn mode_footer_text(app: &App) -> Vec<Span> {
     }]
 }
 
-pub fn keys_hint(app: &App) -> Span {
+pub fn keys_hint(app: &App) -> Span<'_> {
     let edit_config_state = app.edit_config.as_ref().unwrap();
     match edit_config_state.is_editing() {
         true => Span::styled(
