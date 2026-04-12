@@ -3,49 +3,58 @@ mod r#trait;
 #[allow(unused_imports)]
 pub use r#trait::{FileSystemError, FileSystemTrait};
 
-use std::{io, path::Path};
+use std::{
+    fs::{self, File},
+    io::{self, BufReader},
+    path::Path,
+};
+
+#[cfg(test)]
+mod tests;
 
 #[allow(dead_code)]
 pub struct OsFileSystem;
 
 impl FileSystemTrait for OsFileSystem {
-    fn read_to_string(&self, _path: &Path) -> Result<String, FileSystemError> {
-        todo!()
+    fn read_to_string(&self, path: &Path) -> Result<String, FileSystemError> {
+        Ok(fs::read_to_string(path)?)
     }
 
-    fn write(&self, _path: &Path, _contents: &[u8]) -> Result<(), FileSystemError> {
-        todo!()
+    fn write(&self, path: &Path, contents: &[u8]) -> Result<(), FileSystemError> {
+        Ok(fs::write(path, contents)?)
     }
 
-    fn create_dir_all(&self, _path: &Path) -> Result<(), FileSystemError> {
-        todo!()
+    fn create_dir_all(&self, path: &Path) -> Result<(), FileSystemError> {
+        Ok(fs::create_dir_all(path)?)
     }
 
-    fn exists(&self, _path: &Path) -> bool {
-        todo!()
+    fn exists(&self, path: &Path) -> bool {
+        path.exists()
     }
 
-    fn is_file(&self, _path: &Path) -> bool {
-        todo!()
+    fn is_file(&self, path: &Path) -> bool {
+        path.is_file()
     }
 
-    fn is_dir(&self, _path: &Path) -> bool {
-        todo!()
+    fn is_dir(&self, path: &Path) -> bool {
+        path.is_dir()
     }
 
-    fn rename(&self, _from: &Path, _to: &Path) -> Result<(), FileSystemError> {
-        todo!()
+    fn rename(&self, from: &Path, to: &Path) -> Result<(), FileSystemError> {
+        Ok(fs::rename(from, to)?)
     }
 
-    fn create_writer(&self, _path: &Path) -> Result<Box<dyn io::Write + Send>, FileSystemError> {
-        todo!()
+    fn create_writer(&self, path: &Path) -> Result<Box<dyn io::Write + Send>, FileSystemError> {
+        let file = File::create(path)?;
+        Ok(Box::new(file))
     }
 
-    fn open_bufreader(&self, _path: &Path) -> Result<Box<dyn io::BufRead + Send>, FileSystemError> {
-        todo!()
+    fn open_bufreader(&self, path: &Path) -> Result<Box<dyn io::BufRead + Send>, FileSystemError> {
+        let file = File::open(path)?;
+        Ok(Box::new(BufReader::new(file)))
     }
 
-    fn metadata(&self, _path: &Path) -> Result<std::fs::Metadata, FileSystemError> {
-        todo!()
+    fn metadata(&self, path: &Path) -> Result<fs::Metadata, FileSystemError> {
+        Ok(fs::metadata(path)?)
     }
 }
