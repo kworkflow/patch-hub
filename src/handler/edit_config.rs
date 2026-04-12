@@ -33,7 +33,7 @@ pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()
                 }
                 KeyCode::Esc | KeyCode::Char('q') => {
                     app.consolidate_edit_config();
-                    app.config.save_patch_hub_config()?;
+                    app.config.save_patch_hub_config(&*app.fs)?;
                     app.reset_edit_config();
                     app.set_current_screen(CurrentScreen::MailingListSelection);
                 }

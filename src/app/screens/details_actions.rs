@@ -9,6 +9,7 @@ use std::{
 
 use crate::{
     app::config::{Config, KernelTree},
+    infrastructure::file_system::FileSystemTrait,
     lore::{
         lore_api_client::BlockingLoreAPIClient,
         lore_session,
@@ -175,6 +176,7 @@ impl DetailsActions {
 
     pub fn reply_patchset_with_reviewed_by(
         &self,
+        fs: &dyn FileSystemTrait,
         target_list: &str,
         git_send_email_options: &str,
         successful_indexes: &mut HashSet<usize>,
@@ -197,6 +199,7 @@ impl DetailsActions {
         );
 
         let git_reply_commands = match lore_session::prepare_reply_patchset_with_reviewed_by(
+            fs,
             &self.lore_api_client,
             tmp_dir,
             target_list,
@@ -232,7 +235,11 @@ impl DetailsActions {
     /// that kernel tree is a valid git directory.
     ///
     /// Returns the a valid `KernelTree` or a `String` with the error message on failure.
-    fn validate_kernel_tree<'a>(&self, config: &'a Config) -> Result<&'a KernelTree, String> {
+    fn validate_kernel_tree<'a>(
+        &self,
+        fs: &dyn FileSystemTrait,
+        config: &'a Config,
+    ) -> Result<&'a KernelTree, String> {
         let kernel_tree_id = if let Some(target) = config.target_kernel_tree() {
             target
         } else {
@@ -246,9 +253,9 @@ impl DetailsActions {
         };
 
         let kernel_tree_path = Path::new(kernel_tree.path());
-        if !kernel_tree_path.is_dir() {
+        if !fs.is_dir(kernel_tree_path) {
             return Err(format!("{} isn't a directory", kernel_tree.path()));
-        } else if !kernel_tree_path.join(".git").is_dir() {
+        } else if !fs.is_dir(&kernel_tree_path.join(".git")) {
             return Err(format!("{} isn't a git repository", kernel_tree.path()));
         }
 
@@ -260,22 +267,26 @@ impl DetailsActions {
     // is valid.
     //
     // Returns `()` on success and a `String` with an error message on failure.
-    fn check_git_state(&self, kernel_tree: &KernelTree) -> Result<(), String> {
+    fn check_git_state(
+        &self,
+        fs: &dyn FileSystemTrait,
+        kernel_tree: &KernelTree,
+    ) -> Result<(), String> {
         let kernel_tree_path = Path::new(kernel_tree.path());
 
-        if kernel_tree_path.join(".git/rebase-merge").is_dir() {
+        if fs.is_dir(&kernel_tree_path.join(".git/rebase-merge")) {
             return Err(
                 "rebase in progress. \nrun `git rebase --abort` before continuing".to_string(),
             );
-        } else if kernel_tree_path.join(".git/MERGE_HEAD").is_file() {
+        } else if fs.is_file(&kernel_tree_path.join(".git/MERGE_HEAD")) {
             return Err(
                 "merge in progress. \nrun `git merge --abort` before continuing".to_string(),
             );
-        } else if kernel_tree_path.join(".git/BISECT_LOG").is_file() {
+        } else if fs.is_file(&kernel_tree_path.join(".git/BISECT_LOG")) {
             return Err(
                 "bisect in progress. \nrun `git bisect reset` before continuing".to_string(),
             );
-        } else if kernel_tree_path.join(".git/rebase-apply").is_dir() {
+        } else if fs.is_dir(&kernel_tree_path.join(".git/rebase-apply")) {
             return Err(
                 "`git am` already in progress. \nrun `git am --abort` before continuing"
                     .to_string(),
@@ -435,9 +446,13 @@ impl DetailsActions {
     /// Returns a `Result<String, String>` containing either the success or the error message.
     /// # TODO:
     /// - Add unit tests
-    pub fn apply_patchset(&self, config: &Config) -> Result<String, String> {
-        let kernel_tree = self.validate_kernel_tree(config)?;
-        self.check_git_state(kernel_tree)?;
+    pub fn apply_patchset(
+        &self,
+        fs: &dyn FileSystemTrait,
+        config: &Config,
+    ) -> Result<String, String> {
+        let kernel_tree = self.validate_kernel_tree(fs, config)?;
+        self.check_git_state(fs, kernel_tree)?;
 
         let original_branch = self.get_current_branch(kernel_tree)?;
         let target_branch = self.create_target_branch(kernel_tree, config)?;

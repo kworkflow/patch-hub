@@ -12,6 +12,7 @@ use cli::Cli;
 use color_eyre::eyre::bail;
 use handler::run_app;
 use infrastructure::{
+    file_system::OsFileSystem,
     monitoring::{init_monitoring, InitMonitoringProduct},
     terminal::{init, restore},
 };
@@ -32,8 +33,9 @@ fn main() -> color_eyre::Result<()> {
     infrastructure::errors::install_hooks()?;
     let mut terminal = init()?;
 
-    let config = Config::build();
-    config.create_dirs();
+    let fs = OsFileSystem;
+    let config = Config::build(&fs);
+    config.create_dirs(&fs);
 
     // with the config we can update log directory
     let _guards = multi_log_file_writer.update_log_writer_with_config(
@@ -47,7 +49,7 @@ fn main() -> color_eyre::Result<()> {
         ControlFlow::Continue(t) => terminal = t,
     }
 
-    let app = App::new(config)?;
+    let app = App::new(config, Box::new(fs))?;
     if !app.check_external_deps() {
         event!(
             Level::WARN,

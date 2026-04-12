@@ -11,7 +11,9 @@ use tracing::{event, Level};
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    infrastructure::monitoring::logging::garbage_collector::collect_garbage,
+    infrastructure::{
+        file_system::FileSystemTrait, monitoring::logging::garbage_collector::collect_garbage,
+    },
     log_on_error,
     lore::{
         lore_api_client::BlockingLoreAPIClient,
@@ -55,6 +57,8 @@ pub struct App {
     /// Client to handle Lore API requests and responses
     pub lore_api_client: BlockingLoreAPIClient,
     pub popup: Option<Box<dyn PopUp>>,
+    /// Filesystem abstraction
+    pub fs: Box<dyn FileSystemTrait>,
 }
 
 impl App {
@@ -65,16 +69,16 @@ impl App {
     /// # Returns
     ///
     /// `App` instance with loading configurations and app data.
-    pub fn new(config: Config) -> color_eyre::Result<Self> {
-        let mailing_lists =
-            lore_session::load_available_lists(config.mailing_lists_path()).unwrap_or_default();
+    pub fn new(config: Config, fs: Box<dyn FileSystemTrait>) -> color_eyre::Result<Self> {
+        let mailing_lists = lore_session::load_available_lists(&*fs, config.mailing_lists_path())
+            .unwrap_or_default();
 
         let bookmarked_patchsets =
-            lore_session::load_bookmarked_patchsets(config.bookmarked_patchsets_path())
+            lore_session::load_bookmarked_patchsets(&*fs, config.bookmarked_patchsets_path())
                 .unwrap_or_default();
 
         let reviewed_patchsets =
-            lore_session::load_reviewed_patchsets(config.reviewed_patchsets_path())
+            lore_session::load_reviewed_patchsets(&*fs, config.reviewed_patchsets_path())
                 .unwrap_or_default();
 
         let lore_api_client = BlockingLoreAPIClient::default();
@@ -103,6 +107,7 @@ impl App {
             config,
             lore_api_client,
             popup: None,
+            fs,
         })
     }
 
@@ -166,6 +171,7 @@ impl App {
         };
 
         let patchset_path: String = match lore_session::download_patchset(
+            &*self.fs,
             self.config.patchsets_cache_dir(),
             &representative_patch,
         ) {
@@ -175,7 +181,7 @@ impl App {
             }
         };
 
-        match log_on_error!(lore_session::split_patchset(&patchset_path)) {
+        match log_on_error!(lore_session::split_patchset(&*self.fs, &patchset_path)) {
             Ok(raw_patches) => {
                 let mut patches_preview: Vec<Text> = Vec::new();
                 for raw_patch in &raw_patches {
@@ -296,6 +302,7 @@ impl App {
         }
 
         lore_session::save_bookmarked_patchsets(
+            &*self.fs,
             &self.bookmarked_patchsets.bookmarked_patchsets,
             self.config.bookmarked_patchsets_path(),
         )?;
@@ -306,6 +313,7 @@ impl App {
                 .remove(&representative_patch.message_id().href)
                 .unwrap_or_default();
             details_actions.reply_patchset_with_reviewed_by(
+                &*self.fs,
                 "all",
                 self.config.git_send_email_options(),
                 &mut successful_indexes,
@@ -316,6 +324,7 @@ impl App {
             );
 
             lore_session::save_reviewed_patchsets(
+                &*self.fs,
                 &self.reviewed_patchsets,
                 self.config.reviewed_patchsets_path(),
             )?;
@@ -337,7 +346,7 @@ impl App {
                 .details_actions
                 .as_ref()
                 .unwrap()
-                .apply_patchset(&self.config)
+                .apply_patchset(&*self.fs, &self.config)
             {
                 Ok(msg) => InfoPopUp::generate_info_popup("Patchset Apply Success", &msg),
                 Err(msg) => InfoPopUp::generate_info_popup("Patchset Apply Fail", &msg),
@@ -369,10 +378,10 @@ impl App {
             if let Ok(page_size) = edit_config.page_size() {
                 self.config.set_page_size(page_size)
             }
-            if let Ok(cache_dir) = edit_config.cache_dir() {
+            if let Ok(cache_dir) = edit_config.cache_dir(&*self.fs) {
                 self.config.set_cache_dir(cache_dir)
             }
-            if let Ok(data_dir) = edit_config.data_dir() {
+            if let Ok(data_dir) = edit_config.data_dir(&*self.fs) {
                 self.config.set_data_dir(data_dir)
             }
             if let Ok(git_send_email_option) = edit_config.git_send_email_option() {

@@ -4,11 +4,11 @@ use serde::{Deserialize, Serialize};
 
 use std::{
     collections::{HashMap, HashSet},
-    env,
-    fs::{self, File},
-    io,
+    env, io,
     path::Path,
 };
+
+use crate::infrastructure::file_system::{FileSystemError, FileSystemTrait};
 
 pub const DEFAULT_CONFIG_PATH_SUFFIX: &str = ".config/patch-hub/config.json";
 
@@ -91,11 +91,11 @@ impl Config {
     /// Loads the configuration for patch-hub from the config file.
     ///
     /// Returns the default config if the config file is not found or if it's not a valid JSON.
-    fn load_file() -> Config {
+    fn load_file(fs: &dyn FileSystemTrait) -> Config {
         let config_path = Config::get_config_path();
 
-        if Path::new(&config_path).is_file() {
-            match fs::read_to_string(&config_path) {
+        if fs.is_file(Path::new(&config_path)) {
+            match fs.read_to_string(Path::new(&config_path)) {
                 Ok(file_contents) => match serde_json::from_str(&file_contents) {
                     Ok(config) => return config,
                     Err(e) => eprintln!("Failed to parse config file {config_path}: {e}"),
@@ -137,9 +137,9 @@ impl Config {
     /// [tests::can_build_with_config_file]
     /// [tests::can_build_with_env_vars]
     /// [tests::test_config_precedence]
-    pub fn build() -> Self {
-        let mut config = Self::load_file();
-        config.save_patch_hub_config().unwrap_or_else(|e| {
+    pub fn build(fs: &dyn FileSystemTrait) -> Self {
+        let mut config = Self::load_file(fs);
+        config.save_patch_hub_config(fs).unwrap_or_else(|e| {
             eprintln!("Failed to save default config: {e}");
         });
         config.override_with_env_vars();
@@ -205,21 +205,20 @@ impl Config {
         self.max_log_age = max_log_age;
     }
 
-    pub fn save_patch_hub_config(&self) -> io::Result<()> {
+    pub fn save_patch_hub_config(&self, fs: &dyn FileSystemTrait) -> Result<(), FileSystemError> {
         let config_path = Config::get_config_path();
 
         let config_path = Path::new(&config_path);
-        // We need to assure that the parent dir of `config_path` exists
         if let Some(parent_dir) = Path::parent(config_path) {
-            fs::create_dir_all(parent_dir)?;
+            fs.create_dir_all(parent_dir)?;
         }
 
         let tmp_filename = format!("{}.tmp", config_path.display());
         {
-            let tmp_file = File::create(&tmp_filename)?;
-            serde_json::to_writer_pretty(tmp_file, self)?;
+            let tmp_file = fs.create_writer(Path::new(&tmp_filename))?;
+            serde_json::to_writer_pretty(tmp_file, self).map_err(io::Error::from)?;
         }
-        fs::rename(tmp_filename, config_path)?;
+        fs.rename(Path::new(&tmp_filename), config_path)?;
         Ok(())
     }
 
@@ -239,7 +238,7 @@ impl Config {
     /// The directories are defined during the Config build.
     ///
     /// This function must be called as soon as the Config is built so no other function attempt to use an inexistent folder.
-    pub fn create_dirs(&self) {
+    pub fn create_dirs(&self, fs: &dyn FileSystemTrait) {
         let paths = vec![
             &self.cache_dir,
             &self.data_dir,
@@ -248,8 +247,8 @@ impl Config {
         ];
 
         for path in paths {
-            if fs::metadata(path).is_err() {
-                fs::create_dir_all(path).unwrap();
+            if fs.metadata(Path::new(path)).is_err() {
+                fs.create_dir_all(Path::new(path)).unwrap();
             }
         }
     }

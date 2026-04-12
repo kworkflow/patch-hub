@@ -6,18 +6,20 @@ use thiserror::Error;
 use std::{
     collections::{HashMap, HashSet},
     ffi::OsStr,
-    fs::{self, File},
-    io::{self, BufRead, BufReader},
+    io::{self, BufRead},
     mem::swap,
     path::Path,
     process::{Command, Stdio},
     sync::LazyLock,
 };
 
-use crate::lore::{
-    lore_api_client::{AvailableListsRequest, ClientError, PatchFeedRequest, PatchHTMLRequest},
-    mailing_list::MailingList,
-    patch::{Patch, PatchFeed, PatchRegex},
+use crate::{
+    infrastructure::file_system::{FileSystemError, FileSystemTrait},
+    lore::{
+        lore_api_client::{AvailableListsRequest, ClientError, PatchFeedRequest, PatchHTMLRequest},
+        mailing_list::MailingList,
+        patch::{Patch, PatchFeed, PatchRegex},
+    },
 };
 
 #[cfg(test)]
@@ -161,19 +163,16 @@ impl LoreSession {
     }
 }
 
-pub fn download_patchset(output_dir: &str, patch: &Patch) -> B4Result {
+pub fn download_patchset(fs: &dyn FileSystemTrait, output_dir: &str, patch: &Patch) -> B4Result {
     let message_id: &str = &patch.message_id().href;
     let mbox_name: String = extract_mbox_name_from_message_id(message_id);
 
-    if !Path::new(output_dir).exists() {
-        match fs::create_dir_all(output_dir) {
-            Ok(_) => {}
-            Err(_) => return B4Result::PatchNotFound("Couldn't create patches dir.".to_string()),
-        };
+    if !fs.exists(Path::new(output_dir)) && fs.create_dir_all(Path::new(output_dir)).is_err() {
+        return B4Result::PatchNotFound("Couldn't create patches dir.".to_string());
     }
 
     let filepath: String = format!("{output_dir}/{mbox_name}");
-    if !Path::new(&filepath).exists() {
+    if !fs.exists(Path::new(&filepath)) {
         match Command::new("b4")
             .arg("--quiet")
             .arg("am")
@@ -197,7 +196,7 @@ pub fn download_patchset(output_dir: &str, patch: &Patch) -> B4Result {
 
     let path = Path::new(OsStr::new(&filepath));
 
-    if path.exists() {
+    if fs.exists(path) {
         B4Result::PatchFound(filepath)
     } else {
         B4Result::PatchNotFound("b4 couldn't fetch patchset file.".to_string())
@@ -218,23 +217,26 @@ fn extract_mbox_name_from_message_id(message_id: &str) -> String {
     mbox_name
 }
 
-pub fn split_patchset(patchset_path_str: &str) -> Result<Vec<String>, String> {
+pub fn split_patchset(
+    fs: &dyn FileSystemTrait,
+    patchset_path_str: &str,
+) -> Result<Vec<String>, String> {
     let mut patches: Vec<String> = Vec::new();
     let patchset_path: &Path = Path::new(patchset_path_str);
     let cover_letter_path_str: String = patchset_path_str.replace(".mbx", ".cover");
     let cover_letter_path: &Path = Path::new(&cover_letter_path_str);
 
-    if !patchset_path.exists() {
+    if !fs.exists(patchset_path) {
         return Err(format!("{}: Path doesn't exist", patchset_path.display()));
-    } else if !patchset_path.is_file() {
+    } else if !fs.is_file(patchset_path) {
         return Err(format!("{}: Not a file", patchset_path.display()));
     }
 
-    if cover_letter_path.exists() && cover_letter_path.is_file() {
-        extract_patches(cover_letter_path, &mut patches);
+    if fs.exists(cover_letter_path) && fs.is_file(cover_letter_path) {
+        extract_patches(fs, cover_letter_path, &mut patches);
     }
 
-    extract_patches(patchset_path, &mut patches);
+    extract_patches(fs, patchset_path, &mut patches);
 
     Ok(patches)
 }
@@ -254,12 +256,12 @@ pub fn split_cover(patch: &str) -> (&str, &str) {
     (cover, diff)
 }
 
-fn extract_patches(mbox_path: &Path, patches: &mut Vec<String>) {
+fn extract_patches(fs: &dyn FileSystemTrait, mbox_path: &Path, patches: &mut Vec<String>) {
     let mut current_patch: String = String::new();
     let mut is_reading_patch: bool = false;
     let mut is_last_line: bool = false;
 
-    let mbox_reader: BufReader<fs::File> = io::BufReader::new(fs::File::open(mbox_path).unwrap());
+    let mbox_reader = fs.open_bufreader(mbox_path).unwrap();
 
     for line in mbox_reader.lines() {
         let line = line.unwrap();
@@ -298,25 +300,29 @@ fn extract_patches(mbox_path: &Path, patches: &mut Vec<String>) {
 }
 
 pub fn save_bookmarked_patchsets(
+    fs: &dyn FileSystemTrait,
     bookmarked_patchsets: &Vec<Patch>,
     filepath: &str,
-) -> io::Result<()> {
+) -> Result<(), FileSystemError> {
     if let Some(parent) = Path::new(filepath).parent() {
-        fs::create_dir_all(parent)?;
+        fs.create_dir_all(parent)?;
     }
 
     let tmp_filename = format!("{filepath}.tmp");
     {
-        let tmp_file = File::create(&tmp_filename)?;
-        serde_json::to_writer(tmp_file, &bookmarked_patchsets)?;
+        let tmp_file = fs.create_writer(Path::new(&tmp_filename))?;
+        serde_json::to_writer(tmp_file, &bookmarked_patchsets).map_err(io::Error::from)?;
     }
-    fs::rename(tmp_filename, filepath)?;
+    fs.rename(Path::new(&tmp_filename), Path::new(filepath))?;
     Ok(())
 }
 
-pub fn load_bookmarked_patchsets(filepath: &str) -> io::Result<Vec<Patch>> {
-    let bookmarked_patchsets_file = File::open(filepath)?;
-    let bookmarked_patchesets = serde_json::from_reader(bookmarked_patchsets_file)?;
+pub fn load_bookmarked_patchsets(
+    fs: &dyn FileSystemTrait,
+    filepath: &str,
+) -> Result<Vec<Patch>, FileSystemError> {
+    let reader = fs.open_bufreader(Path::new(filepath))?;
+    let bookmarked_patchesets = serde_json::from_reader(reader).map_err(io::Error::from)?;
     Ok(bookmarked_patchesets)
 }
 
@@ -384,27 +390,35 @@ fn process_available_lists(available_lists_str: String) -> Vec<MailingList> {
     available_lists
 }
 
-pub fn save_available_lists(available_lists: &Vec<MailingList>, filepath: &str) -> io::Result<()> {
+pub fn save_available_lists(
+    fs: &dyn FileSystemTrait,
+    available_lists: &Vec<MailingList>,
+    filepath: &str,
+) -> Result<(), FileSystemError> {
     if let Some(parent) = Path::new(filepath).parent() {
-        fs::create_dir_all(parent)?;
+        fs.create_dir_all(parent)?;
     }
 
     let tmp_filename = format!("{filepath}.tmp");
     {
-        let tmp_file = File::create(&tmp_filename)?;
-        serde_json::to_writer(tmp_file, &available_lists)?;
+        let tmp_file = fs.create_writer(Path::new(&tmp_filename))?;
+        serde_json::to_writer(tmp_file, &available_lists).map_err(io::Error::from)?;
     }
-    fs::rename(tmp_filename, filepath)?;
+    fs.rename(Path::new(&tmp_filename), Path::new(filepath))?;
     Ok(())
 }
 
-pub fn load_available_lists(filepath: &str) -> io::Result<Vec<MailingList>> {
-    let available_lists_file = File::open(filepath)?;
-    let available_lists = serde_json::from_reader(available_lists_file)?;
+pub fn load_available_lists(
+    fs: &dyn FileSystemTrait,
+    filepath: &str,
+) -> Result<Vec<MailingList>, FileSystemError> {
+    let reader = fs.open_bufreader(Path::new(filepath))?;
+    let available_lists = serde_json::from_reader(reader).map_err(io::Error::from)?;
     Ok(available_lists)
 }
 
 pub fn prepare_reply_patchset_with_reviewed_by<T>(
+    fs: &dyn FileSystemTrait,
     lore_api_client: &T,
     tmp_dir: &Path,
     target_list: &str,
@@ -436,7 +450,7 @@ where
         let reply_path = tmp_dir.join(format!("{message_id}-reply.mbx"));
         let mut reply = generate_patch_reply_template(patch);
         reply.push_str(&format!("\nReviewed-by: {git_signature}\n"));
-        fs::write(&reply_path, &reply).unwrap();
+        fs.write(&reply_path, reply.as_bytes()).unwrap();
 
         let patch_body = lore_api_client.request_patch_html(target_list, message_id)?;
 
@@ -541,24 +555,28 @@ pub fn get_git_signature(git_repo_path: &str) -> (String, String) {
 }
 
 pub fn save_reviewed_patchsets(
+    fs: &dyn FileSystemTrait,
     reviewed_patchsets: &HashMap<String, HashSet<usize>>,
     filepath: &str,
-) -> io::Result<()> {
+) -> Result<(), FileSystemError> {
     if let Some(parent) = Path::new(filepath).parent() {
-        fs::create_dir_all(parent)?;
+        fs.create_dir_all(parent)?;
     }
 
     let tmp_filename = format!("{filepath}.tmp");
     {
-        let tmp_file = File::create(&tmp_filename)?;
-        serde_json::to_writer(tmp_file, &reviewed_patchsets)?;
+        let tmp_file = fs.create_writer(Path::new(&tmp_filename))?;
+        serde_json::to_writer(tmp_file, &reviewed_patchsets).map_err(io::Error::from)?;
     }
-    fs::rename(tmp_filename, filepath)?;
+    fs.rename(Path::new(&tmp_filename), Path::new(filepath))?;
     Ok(())
 }
 
-pub fn load_reviewed_patchsets(filepath: &str) -> io::Result<HashMap<String, HashSet<usize>>> {
-    let reviewed_patchsets_file = File::open(filepath)?;
-    let reviewed_patchsets = serde_json::from_reader(reviewed_patchsets_file)?;
+pub fn load_reviewed_patchsets(
+    fs: &dyn FileSystemTrait,
+    filepath: &str,
+) -> Result<HashMap<String, HashSet<usize>>, FileSystemError> {
+    let reader = fs.open_bufreader(Path::new(filepath))?;
+    let reviewed_patchsets = serde_json::from_reader(reader).map_err(io::Error::from)?;
     Ok(reviewed_patchsets)
 }

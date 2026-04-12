@@ -1,12 +1,19 @@
 use io::Read;
-use std::fs;
+use std::fs::{self, File};
 
-use crate::lore::{
-    lore_api_client::{MockBlockingLoreAPIClient, MockPatchFeedRequest},
-    patch::Author,
+use crate::{
+    infrastructure::file_system::OsFileSystem,
+    lore::{
+        lore_api_client::{MockBlockingLoreAPIClient, MockPatchFeedRequest},
+        patch::Author,
+    },
 };
 
 use super::*;
+
+fn os_fs() -> OsFileSystem {
+    OsFileSystem
+}
 
 #[test]
 fn can_initialize_fresh_lore_session() {
@@ -134,11 +141,12 @@ fn should_process_multiple_representative_patches() {
 
 #[test]
 fn test_split_patchset_invalid_cases() {
-    let ret: Result<Vec<String>, String> = split_patchset("invalid/path");
+    let fs = os_fs();
+    let ret: Result<Vec<String>, String> = split_patchset(&fs, "invalid/path");
     assert_eq!(Err("invalid/path: Path doesn't exist".to_string()), ret);
 
     let ret: Result<Vec<String>, String> =
-        split_patchset("test_samples/lore_session/split_patchset/not_a_file");
+        split_patchset(&fs, "test_samples/lore_session/split_patchset/not_a_file");
     assert_eq!(
         Err("test_samples/lore_session/split_patchset/not_a_file: Not a file".to_string()),
         ret
@@ -148,6 +156,7 @@ fn test_split_patchset_invalid_cases() {
 #[test]
 fn should_split_patchset_without_cover_letter() {
     let ret: Result<Vec<String>, String> = split_patchset(
+        &os_fs(),
         "test_samples/lore_session/split_patchset/patchset_sample_without_cover_letter.mbx",
     );
 
@@ -183,8 +192,10 @@ fn should_split_patchset_without_cover_letter() {
 
 #[test]
 fn should_split_patchset_complete() {
-    let ret: Result<Vec<String>, String> =
-        split_patchset("test_samples/lore_session/split_patchset/patchset_sample_complete.mbx");
+    let ret: Result<Vec<String>, String> = split_patchset(
+        &os_fs(),
+        "test_samples/lore_session/split_patchset/patchset_sample_complete.mbx",
+    );
 
     if ret.is_err() {
         panic!("Should return a `Vec<String>` type");
@@ -515,6 +526,7 @@ fn should_prepare_reply_patchset_with_reviewed_by() {
     let patches_to_reply = vec![true; patches.len()];
 
     let git_reply_commands = prepare_reply_patchset_with_reviewed_by(
+        &os_fs(),
         &lore_api_client,
         tmp_dir,
         target_list,

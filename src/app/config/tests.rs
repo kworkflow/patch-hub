@@ -2,7 +2,13 @@ use serde_json::json;
 
 use super::*;
 
-use std::{process::Command, sync::Mutex};
+use std::{fs, process::Command, sync::Mutex};
+
+use crate::infrastructure::file_system::OsFileSystem;
+
+fn os_fs() -> OsFileSystem {
+    OsFileSystem
+}
 
 static TEST_LOCK: Mutex<()> = Mutex::new(());
 static mut TMP_CONFIG_SAMPLE_FILE_PATH: String = String::new();
@@ -51,7 +57,7 @@ fn can_build_with_default_values() {
     let _lock = TEST_LOCK.lock().unwrap();
 
     env::set_var("HOME", "/fake/home/path");
-    let config = Config::build();
+    let config = Config::build(&os_fs());
 
     assert_eq!(30, config.page_size());
     assert_eq!(
@@ -91,7 +97,7 @@ fn can_build_with_config_file() {
     let _lock = TEST_LOCK.lock().unwrap();
 
     setup_tmp_config_sample_file();
-    let config = Config::build();
+    let config = Config::build(&os_fs());
     teardown_tmp_config_sample_file();
 
     assert_eq!(1234, config.page_size());
@@ -137,7 +143,7 @@ fn can_build_with_env_vars() {
     env::set_var("PATCH_HUB_CACHE_DIR", "/fake/cache/path");
     env::set_var("PATCH_HUB_DATA_DIR", "/fake/data/path");
     env::set_var("PATCH_HUB_GIT_SEND_EMAIL_OPTIONS", "--option1 --option2");
-    let config = Config::build();
+    let config = Config::build(&os_fs());
     env::remove_var("PATCH_HUB_PAGE_SIZE");
     env::remove_var("PATCH_HUB_CACHE_DIR");
     env::remove_var("PATCH_HUB_DATA_DIR");
@@ -171,17 +177,17 @@ fn test_config_precedence() {
 
     // Default values
     env::set_var("HOME", "/fake/home/path");
-    let config = Config::build();
+    let config = Config::build(&os_fs());
     assert_eq!(30, config.page_size());
 
     // Config file should have precedence over default values
     setup_tmp_config_sample_file();
-    let config = Config::build();
+    let config = Config::build(&os_fs());
     assert_eq!(1234, config.page_size());
 
     // Env vars should have precedence over default values
     env::set_var("PATCH_HUB_PAGE_SIZE", "42");
-    let config = Config::build();
+    let config = Config::build(&os_fs());
     assert_eq!(42, config.page_size());
 
     teardown_tmp_config_sample_file();

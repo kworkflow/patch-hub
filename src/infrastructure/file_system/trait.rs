@@ -9,7 +9,6 @@ pub enum FileSystemError {
     IoError(#[from] io::Error),
 }
 
-#[allow(dead_code)]
 #[automock]
 pub trait FileSystemTrait: Send + Sync {
     fn read_to_string(&self, path: &Path) -> Result<String, FileSystemError>;

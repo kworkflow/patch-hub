@@ -1,6 +1,5 @@
 mod r#trait;
 
-#[allow(unused_imports)]
 pub use r#trait::{FileSystemError, FileSystemTrait};
 
 use std::{
@@ -12,7 +11,6 @@ use std::{
 #[cfg(test)]
 mod tests;
 
-#[allow(dead_code)]
 pub struct OsFileSystem;
 
 impl FileSystemTrait for OsFileSystem {
