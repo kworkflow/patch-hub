@@ -11,9 +11,9 @@ use crate::{
         shell::{ShellCommand, ShellTrait},
     },
     lore::{
+        domain::patch::{Author, Patch},
         lore_api_client::PatchHTMLRequest,
         lore_session,
-        patch::{Author, Patch},
     },
 };
 

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{infrastructure::net::UreqNetClient, lore::patch::PatchFeed};
+use crate::{infrastructure::net::UreqNetClient, lore::domain::patch::PatchFeed};
 
 fn default_client() -> BlockingLoreAPIClient {
     BlockingLoreAPIClient::new(Box::new(UreqNetClient::new()))

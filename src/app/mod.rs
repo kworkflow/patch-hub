@@ -17,9 +17,9 @@ use crate::{
     },
     log_on_error,
     lore::{
+        domain::patch::{Author, Patch},
         lore_api_client::BlockingLoreAPIClient,
         lore_session::{self, B4Result},
-        patch::{Author, Patch},
     },
     ui::popup::{info_popup::InfoPopUp, PopUp},
 };

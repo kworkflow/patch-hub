@@ -17,9 +17,8 @@ use crate::{
         shell::{ShellCommand, ShellTrait},
     },
     lore::{
+        domain::{mailing_list::MailingList, patch::{Patch, PatchFeed, PatchRegex}},
         lore_api_client::{AvailableListsRequest, ClientError, PatchFeedRequest, PatchHTMLRequest},
-        mailing_list::MailingList,
-        patch::{Patch, PatchFeed, PatchRegex},
     },
 };
 

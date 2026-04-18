@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::{app::App, lore::patch::Patch};
+use crate::{app::App, lore::domain::patch::Patch};
 
 pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
     let page_number = app.latest_patchsets.as_ref().unwrap().page_number();

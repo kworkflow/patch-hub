@@ -2,7 +2,7 @@ use color_eyre::eyre::bail;
 
 use crate::{
     infrastructure::file_system::FileSystemTrait,
-    lore::{lore_api_client::AvailableListsRequest, lore_session, mailing_list::MailingList},
+    lore::{lore_api_client::AvailableListsRequest, lore_session, domain::mailing_list::MailingList},
 };
 
 pub struct MailingListSelection {

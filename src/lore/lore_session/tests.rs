@@ -10,8 +10,8 @@ use crate::{
         shell::{OsShell, ShellCommand},
     },
     lore::{
+        domain::patch::Author,
         lore_api_client::{MockBlockingLoreAPIClient, MockPatchFeedRequest},
-        patch::Author,
     },
 };
 

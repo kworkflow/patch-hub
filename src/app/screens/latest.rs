@@ -4,7 +4,7 @@ use derive_getters::Getters;
 use crate::lore::{
     lore_api_client::{ClientError, PatchFeedRequest},
     lore_session::{LoreSession, LoreSessionError},
-    patch::Patch,
+    domain::patch::Patch,
 };
 
 #[derive(Getters)]
