@@ -12,6 +12,7 @@ use cli::Cli;
 use color_eyre::eyre::bail;
 use handler::run_app;
 use infrastructure::{
+    env::OsEnv,
     file_system::OsFileSystem,
     monitoring::{init_monitoring, InitMonitoringProduct},
     shell::OsShell,
@@ -36,7 +37,8 @@ fn main() -> color_eyre::Result<()> {
 
     let fs = OsFileSystem;
     let shell = OsShell;
-    let config = Config::build(&fs);
+    let env = OsEnv;
+    let config = Config::build(&env, &fs);
     config.create_dirs(&fs);
 
     // with the config we can update log directory
@@ -51,7 +53,7 @@ fn main() -> color_eyre::Result<()> {
         ControlFlow::Continue(t) => terminal = t,
     }
 
-    let app = App::new(config, Box::new(fs), Box::new(shell))?;
+    let app = App::new(config, Box::new(fs), Box::new(shell), Box::new(env))?;
     if !app.check_external_deps() {
         event!(
             Level::WARN,

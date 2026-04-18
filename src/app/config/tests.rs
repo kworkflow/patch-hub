@@ -1,63 +1,45 @@
 use serde_json::json;
+use std::{env::VarError, fs, process::Command};
 
 use super::*;
 
-use std::{fs, process::Command, sync::Mutex};
-
-use crate::infrastructure::file_system::OsFileSystem;
+use crate::infrastructure::{env::MockEnvTrait, file_system::OsFileSystem};
 
 fn os_fs() -> OsFileSystem {
     OsFileSystem
 }
 
-static TEST_LOCK: Mutex<()> = Mutex::new(());
-static mut TMP_CONFIG_SAMPLE_FILE_PATH: String = String::new();
-
-fn setup_tmp_config_sample_file() {
-    #[allow(static_mut_refs)]
-    unsafe {
-        // Create temporary file
-        TMP_CONFIG_SAMPLE_FILE_PATH = String::from_utf8(
-            Command::new("mktemp")
-                .output()
-                .expect("Failed to create temporary file!")
-                .stdout,
-        )
-        .expect("Couldn't convert `mktemp` output to String!");
-
-        // Copy contents from sample config file to temporary file
-        fs::copy(
-            "test_samples/app/config/config.json",
-            &TMP_CONFIG_SAMPLE_FILE_PATH,
-        )
-        .expect("Couldn't copy config sample file contents to temporary file!");
-
-        // Set temporary config file to be used instead of the git tracked sample file
-        env::set_var("PATCH_HUB_CONFIG_PATH", &TMP_CONFIG_SAMPLE_FILE_PATH);
-    };
-}
-
-fn teardown_tmp_config_sample_file() {
-    #[allow(static_mut_refs)]
-    unsafe {
-        // Sanitizing temporary file
-        let _ = Command::new("rm")
-            .arg(&TMP_CONFIG_SAMPLE_FILE_PATH)
-            .output()
-            .expect("Couldn't remove temporary config sample file!");
-
-        // Unset config file to used
-        env::remove_var("PATCH_HUB_CONFIG_PATH");
-    }
+/// Returns a `MockEnvTrait` that responds to all PATCH_HUB_* and HOME/config
+/// path vars with `NotPresent`, and returns `home` for `HOME`.
+fn default_env(home: &str) -> MockEnvTrait {
+    let home = home.to_string();
+    let mut mock = MockEnvTrait::new();
+    mock.expect_var()
+        .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .returning(|_| Err(VarError::NotPresent.into()));
+    mock.expect_var()
+        .withf(move |key| key == "HOME")
+        .returning(move |_| Ok(home.clone()));
+    mock.expect_var()
+        .withf(|key| {
+            matches!(
+                key,
+                "PATCH_HUB_PAGE_SIZE"
+                    | "PATCH_HUB_CACHE_DIR"
+                    | "PATCH_HUB_DATA_DIR"
+                    | "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS"
+                    | "PATCH_HUB_PATCH_RENDERER"
+            )
+        })
+        .returning(|_| Err(VarError::NotPresent.into()));
+    mock
 }
 
 #[test]
 /// Tests [`Config::build`]
 fn can_build_with_default_values() {
-    let _lock = TEST_LOCK.lock().unwrap();
-
-    env::set_var("HOME", "/fake/home/path");
-    let config = Config::build(&os_fs());
+    let env = default_env("/fake/home/path");
+    let config = Config::build(&env, &os_fs());
 
     assert_eq!(30, config.page_size());
     assert_eq!(
@@ -94,11 +76,41 @@ fn can_build_with_default_values() {
 #[test]
 /// Tests [`Config::build`]
 fn can_build_with_config_file() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    let tmp_path = String::from_utf8(
+        Command::new("mktemp")
+            .output()
+            .expect("Failed to create temporary file!")
+            .stdout,
+    )
+    .expect("Couldn't convert `mktemp` output to String!")
+    .trim()
+    .to_string();
 
-    setup_tmp_config_sample_file();
-    let config = Config::build(&os_fs());
-    teardown_tmp_config_sample_file();
+    fs::copy("test_samples/app/config/config.json", &tmp_path)
+        .expect("Couldn't copy config sample file!");
+
+    let tmp_path_clone = tmp_path.clone();
+    let mut mock = MockEnvTrait::new();
+    mock.expect_var()
+        .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .returning(move |_| Ok(tmp_path_clone.clone()));
+    mock.expect_var()
+        .withf(|key| {
+            matches!(
+                key,
+                "HOME"
+                    | "PATCH_HUB_PAGE_SIZE"
+                    | "PATCH_HUB_CACHE_DIR"
+                    | "PATCH_HUB_DATA_DIR"
+                    | "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS"
+                    | "PATCH_HUB_PATCH_RENDERER"
+            )
+        })
+        .returning(|_| Err(VarError::NotPresent.into()));
+
+    let config = Config::build(&mock, &os_fs());
+
+    let _ = fs::remove_file(&tmp_path);
 
     assert_eq!(1234, config.page_size());
     assert_eq!("/cachedir/path", config.patchsets_cache_dir());
@@ -137,17 +149,30 @@ fn can_build_with_config_file() {
 #[test]
 /// Tests [`Config::build`]
 fn can_build_with_env_vars() {
-    let _lock = TEST_LOCK.lock().unwrap();
+    let mut mock = MockEnvTrait::new();
+    mock.expect_var()
+        .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .returning(|_| Err(VarError::NotPresent.into()));
+    mock.expect_var()
+        .withf(|key| key == "HOME")
+        .returning(|_| Ok("/fake/home/path".to_string()));
+    mock.expect_var()
+        .withf(|key| key == "PATCH_HUB_PAGE_SIZE")
+        .returning(|_| Ok("42".to_string()));
+    mock.expect_var()
+        .withf(|key| key == "PATCH_HUB_CACHE_DIR")
+        .returning(|_| Ok("/fake/cache/path".to_string()));
+    mock.expect_var()
+        .withf(|key| key == "PATCH_HUB_DATA_DIR")
+        .returning(|_| Ok("/fake/data/path".to_string()));
+    mock.expect_var()
+        .withf(|key| key == "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS")
+        .returning(|_| Ok("--option1 --option2".to_string()));
+    mock.expect_var()
+        .withf(|key| key == "PATCH_HUB_PATCH_RENDERER")
+        .returning(|_| Err(VarError::NotPresent.into()));
 
-    env::set_var("PATCH_HUB_PAGE_SIZE", "42");
-    env::set_var("PATCH_HUB_CACHE_DIR", "/fake/cache/path");
-    env::set_var("PATCH_HUB_DATA_DIR", "/fake/data/path");
-    env::set_var("PATCH_HUB_GIT_SEND_EMAIL_OPTIONS", "--option1 --option2");
-    let config = Config::build(&os_fs());
-    env::remove_var("PATCH_HUB_PAGE_SIZE");
-    env::remove_var("PATCH_HUB_CACHE_DIR");
-    env::remove_var("PATCH_HUB_DATA_DIR");
-    env::remove_var("PATCH_HUB_GIT_SEND_EMAIL_OPTIONS");
+    let config = Config::build(&mock, &os_fs());
 
     assert_eq!(42, config.page_size());
     assert_eq!("/fake/cache/path/patchsets", config.patchsets_cache_dir());
@@ -165,33 +190,83 @@ fn can_build_with_env_vars() {
     );
     assert_eq!("/fake/data/path/logs", config.logs_path());
     assert_eq!("--option1 --option2", config.git_send_email_options());
-
-    env::remove_var("PATCH_HUB_CACHE_DIR");
-    env::remove_var("PATCH_HUB_DATA_DIR");
 }
 
 #[test]
 /// Tests [`Config::build`]
 fn test_config_precedence() {
-    let _lock = TEST_LOCK.lock().unwrap();
-
     // Default values
-    env::set_var("HOME", "/fake/home/path");
-    let config = Config::build(&os_fs());
+    let env = default_env("/fake/home/path");
+    let config = Config::build(&env, &os_fs());
     assert_eq!(30, config.page_size());
 
     // Config file should have precedence over default values
-    setup_tmp_config_sample_file();
-    let config = Config::build(&os_fs());
+    let tmp_path = String::from_utf8(
+        Command::new("mktemp")
+            .output()
+            .expect("Failed to create temporary file!")
+            .stdout,
+    )
+    .expect("Couldn't convert `mktemp` output to String!")
+    .trim()
+    .to_string();
+
+    fs::copy("test_samples/app/config/config.json", &tmp_path)
+        .expect("Couldn't copy config sample file!");
+
+    let tmp_path_clone = tmp_path.clone();
+    let mut env_with_file = MockEnvTrait::new();
+    env_with_file
+        .expect_var()
+        .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .returning(move |_| Ok(tmp_path_clone.clone()));
+    env_with_file
+        .expect_var()
+        .withf(|key| {
+            matches!(
+                key,
+                "HOME"
+                    | "PATCH_HUB_PAGE_SIZE"
+                    | "PATCH_HUB_CACHE_DIR"
+                    | "PATCH_HUB_DATA_DIR"
+                    | "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS"
+                    | "PATCH_HUB_PATCH_RENDERER"
+            )
+        })
+        .returning(|_| Err(VarError::NotPresent.into()));
+
+    let config = Config::build(&env_with_file, &os_fs());
     assert_eq!(1234, config.page_size());
 
-    // Env vars should have precedence over default values
-    env::set_var("PATCH_HUB_PAGE_SIZE", "42");
-    let config = Config::build(&os_fs());
+    // Env vars should have precedence over config file values
+    let tmp_path_clone2 = tmp_path.clone();
+    let mut env_with_file_and_var = MockEnvTrait::new();
+    env_with_file_and_var
+        .expect_var()
+        .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .returning(move |_| Ok(tmp_path_clone2.clone()));
+    env_with_file_and_var
+        .expect_var()
+        .withf(|key| key == "PATCH_HUB_PAGE_SIZE")
+        .returning(|_| Ok("42".to_string()));
+    env_with_file_and_var
+        .expect_var()
+        .withf(|key| {
+            matches!(
+                key,
+                "HOME"
+                    | "PATCH_HUB_CACHE_DIR"
+                    | "PATCH_HUB_DATA_DIR"
+                    | "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS"
+                    | "PATCH_HUB_PATCH_RENDERER"
+            )
+        })
+        .returning(|_| Err(VarError::NotPresent.into()));
+
+    let config = Config::build(&env_with_file_and_var, &os_fs());
     assert_eq!(42, config.page_size());
 
-    teardown_tmp_config_sample_file();
-    env::remove_var("PATCH_HUB_PAGE_SIZE");
+    let _ = fs::remove_file(&tmp_path);
 }
 
 #[test]

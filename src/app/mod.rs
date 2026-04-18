@@ -12,8 +12,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     infrastructure::{
-        file_system::FileSystemTrait, monitoring::logging::garbage_collector::collect_garbage,
-        shell::ShellTrait,
+        env::EnvTrait, file_system::FileSystemTrait,
+        monitoring::logging::garbage_collector::collect_garbage, shell::ShellTrait,
     },
     log_on_error,
     lore::{
@@ -62,6 +62,8 @@ pub struct App {
     pub fs: Box<dyn FileSystemTrait>,
     /// Shell abstraction
     pub shell: Box<dyn ShellTrait>,
+    /// Environment abstraction
+    pub env: Box<dyn EnvTrait>,
 }
 
 impl App {
@@ -76,6 +78,7 @@ impl App {
         config: Config,
         fs: Box<dyn FileSystemTrait>,
         shell: Box<dyn ShellTrait>,
+        env: Box<dyn EnvTrait>,
     ) -> color_eyre::Result<Self> {
         let mailing_lists = lore_session::load_available_lists(&*fs, config.mailing_lists_path())
             .unwrap_or_default();
@@ -116,6 +119,7 @@ impl App {
             popup: None,
             fs,
             shell,
+            env,
         })
     }
 
@@ -426,7 +430,7 @@ impl App {
     pub fn check_external_deps(&self) -> bool {
         let mut app_can_run = true;
 
-        if which::which("b4").is_err() {
+        if !self.env.which("b4") {
             event!(
                 Level::ERROR,
                 "b4 is not installed, patchsets cannot be downloaded"
@@ -434,13 +438,13 @@ impl App {
             app_can_run = false;
         }
 
-        if which::which("git").is_err() {
+        if !self.env.which("git") {
             event!(Level::WARN, "git is not installed, send-email won't work");
         }
 
         match self.config.patch_renderer() {
             PatchRenderer::Bat => {
-                if which::which("bat").is_err() {
+                if !self.env.which("bat") {
                     event!(
                         Level::WARN,
                         "bat is not installed, patch rendering will fallback to default"
@@ -448,7 +452,7 @@ impl App {
                 }
             }
             PatchRenderer::Delta => {
-                if which::which("delta").is_err() {
+                if !self.env.which("delta") {
                     event!(
                         Level::WARN,
                         "delta is not installed, patch rendering will fallback to default",
@@ -456,7 +460,7 @@ impl App {
                 }
             }
             PatchRenderer::DiffSoFancy => {
-                if which::which("diff-so-fancy").is_err() {
+                if !self.env.which("diff-so-fancy") {
                     event!(
                         Level::WARN,
                         "diff-so-fancy is not installed, patch rendering will fallback to default",
