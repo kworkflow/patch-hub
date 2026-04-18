@@ -16,7 +16,7 @@ use crate::{
             api::LoreServiceApi,
             cache::{
                 BootstrapLoreData, CacheMode, CacheTtl, FeedCacheEntry, LoreCache,
-                MailingListsCacheEntry,
+                MailingListsCacheEntry, PatchsetCacheEntry, PatchsetCacheKey,
             },
             dto::{PatchTagSummary, PatchsetDetails},
             errors::LoreError,
@@ -83,35 +83,37 @@ impl LoreServiceApi for LoreService {
     fn fetch_available_lists(&mut self, mode: CacheMode) -> Result<Vec<MailingList>, LoreError> {
         const LORE_PAGE_SIZE: usize = 200;
 
-        if mode == CacheMode::UseCache {
-            // 1. In-memory hit
-            if let Some(entry) = &self.cache.lists {
-                if !entry.is_stale(self.ttl.mailing_lists) {
-                    tracing::debug!("mailing lists cache: hit");
-                    return Ok(entry.lists.clone());
+        match mode {
+            CacheMode::UseCache => {
+                // 1. In-memory hit
+                if let Some(entry) = &self.cache.lists {
+                    if !entry.is_stale(self.ttl.mailing_lists) {
+                        tracing::debug!("mailing lists cache: hit");
+                        return Ok(entry.lists.clone());
+                    }
+                    tracing::debug!("mailing lists cache: stale, falling back to disk");
+                    self.cache.lists = None;
                 }
-                tracing::debug!("mailing lists cache: stale, falling back to disk");
+                // 2. Disk fallback
+                match self.lists_store.load_available_lists() {
+                    Ok(lists) => {
+                        tracing::debug!("mailing lists cache: disk hit");
+                        self.cache.lists = Some(MailingListsCacheEntry::new(lists.clone()));
+                        return Ok(lists);
+                    }
+                    Err(e) => {
+                        tracing::debug!(error = %e, "mailing lists cache: disk miss");
+                        return Err(LoreError::Persistence(e));
+                    }
+                }
+            }
+            CacheMode::Refresh => {
+                tracing::info!("mailing lists cache: refresh requested");
                 self.cache.lists = None;
             }
-            // 2. Disk fallback
-            match self.lists_store.load_available_lists() {
-                Ok(lists) => {
-                    tracing::debug!("mailing lists cache: disk hit");
-                    self.cache.lists = Some(MailingListsCacheEntry::new(lists.clone()));
-                    return Ok(lists);
-                }
-                Err(e) => {
-                    tracing::debug!(error = %e, "mailing lists cache: disk miss");
-                    return Err(LoreError::Persistence(e));
-                }
+            CacheMode::Bypass => {
+                tracing::debug!("mailing lists cache: bypass");
             }
-        }
-
-        if mode == CacheMode::Refresh {
-            tracing::info!("mailing lists cache: refresh requested");
-            self.cache.lists = None;
-        } else {
-            tracing::debug!("mailing lists cache: bypass");
         }
 
         // Network fetch (Refresh or Bypass)
@@ -133,9 +135,12 @@ impl LoreServiceApi for LoreService {
 
         all_lists.sort();
 
-        if mode != CacheMode::Bypass {
-            self.lists_store.save_available_lists(&all_lists)?;
-            self.cache.lists = Some(MailingListsCacheEntry::new(all_lists.clone()));
+        match mode {
+            CacheMode::Bypass => {}
+            CacheMode::Refresh | CacheMode::UseCache => {
+                self.lists_store.save_available_lists(&all_lists)?;
+                self.cache.lists = Some(MailingListsCacheEntry::new(all_lists.clone()));
+            }
         }
 
         Ok(all_lists)
@@ -169,28 +174,30 @@ impl LoreServiceApi for LoreService {
     ) -> Result<Vec<Patch>, LoreError> {
         let needed = page_size * page_number;
 
-        if mode == CacheMode::Refresh {
-            tracing::info!(list = target_list, "feed cache: refresh requested");
-            self.cache.feeds.remove(target_list);
-        }
-
-        // UseCache: return from in-memory index if not stale and already sufficient.
-        if mode == CacheMode::UseCache {
-            if let Some(entry) = self.cache.feeds.get(target_list) {
-                if entry.is_stale(self.ttl.feed) {
-                    tracing::debug!(list = target_list, "feed cache: stale, evicting");
-                    self.cache.feeds.remove(target_list);
-                } else {
-                    let current = entry.index.representative_patch_ids().len();
-                    if current >= needed {
-                        tracing::debug!(list = target_list, "feed cache: hit");
-                        return match entry.index.get_page(page_size, page_number) {
-                            Some(patches) => Ok(patches.into_iter().cloned().collect()),
-                            None => Err(LoreError::EndOfFeed),
-                        };
+        match mode {
+            CacheMode::Refresh => {
+                tracing::info!(list = target_list, "feed cache: refresh requested");
+                self.cache.feeds.remove(target_list);
+            }
+            CacheMode::UseCache => {
+                // Return from in-memory index if not stale and already sufficient.
+                if let Some(entry) = self.cache.feeds.get(target_list) {
+                    if entry.is_stale(self.ttl.feed) {
+                        tracing::debug!(list = target_list, "feed cache: stale, evicting");
+                        self.cache.feeds.remove(target_list);
+                    } else {
+                        let current = entry.index.representative_patch_ids().len();
+                        if current >= needed {
+                            tracing::debug!(list = target_list, "feed cache: hit");
+                            return match entry.index.get_page(page_size, page_number) {
+                                Some(patches) => Ok(patches.into_iter().cloned().collect()),
+                                None => Err(LoreError::EndOfFeed),
+                            };
+                        }
                     }
                 }
             }
+            CacheMode::Bypass => {}
         }
 
         // Get-or-create the cache entry.
@@ -240,9 +247,36 @@ impl LoreServiceApi for LoreService {
     }
 
     fn fetch_patchset_details(
-        &self,
+        &mut self,
         representative_patch: &Patch,
+        mode: CacheMode,
     ) -> Result<PatchsetDetails, LoreError> {
+        let key = PatchsetCacheKey::from_patch(representative_patch);
+
+        match mode {
+            CacheMode::Refresh => {
+                tracing::info!(msg_id = %key.message_id, "patchset cache: refresh requested");
+                self.cache.patchsets.remove(&key);
+            }
+            CacheMode::UseCache => {
+                if let Some(entry) = self.cache.patchsets.get(&key) {
+                    if entry.is_stale(self.ttl.patchset) {
+                        tracing::debug!(msg_id = %key.message_id, "patchset cache: stale, evicting");
+                        self.cache.patchsets.remove(&key);
+                    } else {
+                        tracing::debug!(msg_id = %key.message_id, "patchset cache: hit");
+                        return Ok(PatchsetDetails {
+                            representative_patch: representative_patch.clone(),
+                            patchset_path: entry.patchset_path.clone(),
+                            raw_patches: entry.raw_patches.clone(),
+                            tag_summary: entry.tag_summary.clone(),
+                        });
+                    }
+                }
+            }
+            CacheMode::Bypass => {}
+        }
+
         let patchset_path = self
             .patchset_fetcher
             .download(representative_patch)
@@ -253,7 +287,22 @@ impl LoreServiceApi for LoreService {
             .split_patchset(&patchset_path)
             .map_err(LoreError::Parse)?;
 
-        let tag_summary = raw_patches.iter().map(|p| extract_tag_summary(p)).collect();
+        let tag_summary: Vec<PatchTagSummary> =
+            raw_patches.iter().map(|p| extract_tag_summary(p)).collect();
+
+        match mode {
+            CacheMode::Bypass => {}
+            CacheMode::Refresh | CacheMode::UseCache => {
+                self.cache.patchsets.insert(
+                    key,
+                    PatchsetCacheEntry::new(
+                        patchset_path.clone(),
+                        raw_patches.clone(),
+                        tag_summary.clone(),
+                    ),
+                );
+            }
+        }
 
         Ok(PatchsetDetails {
             representative_patch: representative_patch.clone(),
@@ -417,7 +466,10 @@ mod tests {
     use crate::{
         infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
         lore::{
-            application::cache::{CacheTtl, FeedCacheEntry, MailingListsCacheEntry},
+            application::cache::{
+                CacheTtl, FeedCacheEntry, MailingListsCacheEntry, PatchsetCacheEntry,
+                PatchsetCacheKey,
+            },
             domain::{mailing_list::MailingList, patchset::PatchFeedIndex},
         },
     };
@@ -753,5 +805,130 @@ mod tests {
             .fetch_next_patch_page(target, 1, 1, CacheMode::Refresh)
             .unwrap();
         assert_eq!(1, patches.len());
+    }
+
+    // ── patchset details cache tests ──────────────────────────────────────────
+
+    fn make_patch_for_cache(msg_id: &str) -> Patch {
+        serde_json::from_value(serde_json::json!({
+            "title": "test",
+            "author": { "name": "T", "email": "t@t.com" },
+            "link": { "@href": msg_id },
+            "updated": "2023-01-01"
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn fetch_patchset_details_use_cache_hit() {
+        // Pre-populate the cache; fetcher and parser must NOT be called.
+        let patch = make_patch_for_cache("msg-1");
+
+        let mut svc = make_service(
+            MockListsGateway::new(),
+            MockFeedGateway::new(),
+            MockPatchHtmlGateway::new(),
+            MockMailingListsCacheStore::new(),
+            MockUserLoreStateStore::new(),
+            MockPatchsetFetcher::new(), // no expectations
+            MockPatchsetParser::new(),  // no expectations
+        );
+
+        let key = PatchsetCacheKey::from_patch(&patch);
+        svc.cache.patchsets.insert(
+            key,
+            PatchsetCacheEntry::new(
+                "/tmp/cached.mbx".to_string(),
+                vec!["raw patch content".to_string()],
+                vec![],
+            ),
+        );
+
+        let details = svc
+            .fetch_patchset_details(&patch, CacheMode::UseCache)
+            .unwrap();
+        assert_eq!("/tmp/cached.mbx", details.patchset_path);
+        assert_eq!(1, details.raw_patches.len());
+    }
+
+    #[test]
+    fn fetch_patchset_details_cache_miss_downloads() {
+        // No cache entry; fetcher and parser are called once each.
+        let patch = make_patch_for_cache("msg-2");
+
+        let mut fetcher = MockPatchsetFetcher::new();
+        fetcher
+            .expect_download()
+            .times(1)
+            .returning(|_| Ok("/tmp/new.mbx".to_string()));
+
+        let mut parser = MockPatchsetParser::new();
+        parser
+            .expect_split_patchset()
+            .times(1)
+            .returning(|_| Ok(vec!["raw".to_string()]));
+
+        let mut svc = make_service(
+            MockListsGateway::new(),
+            MockFeedGateway::new(),
+            MockPatchHtmlGateway::new(),
+            MockMailingListsCacheStore::new(),
+            MockUserLoreStateStore::new(),
+            fetcher,
+            parser,
+        );
+
+        let details = svc
+            .fetch_patchset_details(&patch, CacheMode::UseCache)
+            .unwrap();
+        assert_eq!("/tmp/new.mbx", details.patchset_path);
+        // The result should now be in cache.
+        let key = PatchsetCacheKey::from_patch(&patch);
+        assert!(svc.cache.patchsets.contains_key(&key));
+    }
+
+    #[test]
+    fn fetch_patchset_details_refresh_re_downloads() {
+        // Even with a warm cache, Refresh must call fetcher and parser.
+        let patch = make_patch_for_cache("msg-3");
+
+        let mut fetcher = MockPatchsetFetcher::new();
+        fetcher
+            .expect_download()
+            .times(1)
+            .returning(|_| Ok("/tmp/refreshed.mbx".to_string()));
+
+        let mut parser = MockPatchsetParser::new();
+        parser
+            .expect_split_patchset()
+            .times(1)
+            .returning(|_| Ok(vec!["fresh raw".to_string()]));
+
+        let mut svc = make_service(
+            MockListsGateway::new(),
+            MockFeedGateway::new(),
+            MockPatchHtmlGateway::new(),
+            MockMailingListsCacheStore::new(),
+            MockUserLoreStateStore::new(),
+            fetcher,
+            parser,
+        );
+
+        // Pre-populate the cache.
+        let key = PatchsetCacheKey::from_patch(&patch);
+        svc.cache.patchsets.insert(
+            key.clone(),
+            PatchsetCacheEntry::new("/tmp/old.mbx".to_string(), vec![], vec![]),
+        );
+
+        let details = svc
+            .fetch_patchset_details(&patch, CacheMode::Refresh)
+            .unwrap();
+        assert_eq!("/tmp/refreshed.mbx", details.patchset_path);
+        // Cache is updated with the fresh entry.
+        assert_eq!(
+            "/tmp/refreshed.mbx",
+            svc.cache.patchsets[&key].patchset_path
+        );
     }
 }

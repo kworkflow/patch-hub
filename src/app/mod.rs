@@ -199,7 +199,7 @@ impl App {
 
         let details = match self
             .lore_service
-            .fetch_patchset_details(&representative_patch)
+            .fetch_patchset_details(&representative_patch, CacheMode::UseCache)
         {
             Ok(d) => d,
             Err(LoreError::PatchNotFound(err)) => return Ok(B4Result::PatchNotFound(err)),

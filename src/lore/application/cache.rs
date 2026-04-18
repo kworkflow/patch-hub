@@ -1,8 +1,3 @@
-// All items in this module are consumed by LoreService starting in Commit 3-C.
-// The module is added in Commit 3-A as a pure vocabulary addition; consumers
-// land in subsequent commits of the same Phase 3 branch.
-#![allow(dead_code)]
-
 use std::{
     collections::{HashMap, HashSet},
     time::{Duration, SystemTime},
@@ -28,6 +23,7 @@ use crate::lore::{
 pub enum CacheMode {
     UseCache,
     Refresh,
+    #[expect(dead_code)]
     Bypass,
 }
 
@@ -58,6 +54,10 @@ impl Default for CacheTtl {
 // ── Generic cache policy trait ────────────────────────────────────────────────
 
 /// Homogeneous interface shared by all three cache stores.
+///
+/// Not yet used by any concrete implementor; provided as a documented
+/// extension point for future phases.
+#[allow(dead_code)]
 pub trait CachePolicy<K, V> {
     fn get(&self, key: &K) -> Option<&V>;
     fn put(&mut self, key: K, value: V);
@@ -95,6 +95,7 @@ pub struct FeedCacheEntry {
     pub index: PatchFeedIndex,
     pub fetched_at: SystemTime,
     /// `true` once the gateway has returned `EndOfFeed` for this list.
+    #[allow(dead_code)]
     pub complete: bool,
 }
 

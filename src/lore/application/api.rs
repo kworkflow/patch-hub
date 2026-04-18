@@ -68,9 +68,14 @@ pub trait LoreServiceApi {
 
     /// Download and parse `representative_patch`, returning the full patchset
     /// data needed to populate the details screen.
+    ///
+    /// * `UseCache`  — return from in-memory cache if present and not stale.
+    /// * `Refresh`   — evict the cached entry first, then re-download.
+    /// * `Bypass`    — download and return without reading or writing cache.
     fn fetch_patchset_details(
-        &self,
+        &mut self,
         representative_patch: &Patch,
+        mode: CacheMode,
     ) -> Result<PatchsetDetails, LoreError>;
 
     // ── Reply commands ────────────────────────────────────────────────────────
