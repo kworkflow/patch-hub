@@ -1,4 +1,5 @@
 pub mod api;
+pub mod cache;
 pub mod dto;
 pub mod errors;
 pub mod service;
