@@ -21,7 +21,7 @@ use crate::{
         shell::{ShellCommand, ShellTrait},
     },
     lore::{
-        application::{api::LoreServiceApi, errors::LoreError},
+        application::{api::LoreServiceApi, cache::CacheMode, errors::LoreError},
         domain::patch::{Author, Patch},
         infrastructure::patchset_parser::split_cover,
     },
@@ -89,11 +89,9 @@ impl App {
         fs: Box<dyn FileSystemTrait>,
         shell: Box<dyn ShellTrait>,
         env: Box<dyn EnvTrait>,
-        lore_service: Box<dyn LoreServiceApi>,
+        mut lore_service: Box<dyn LoreServiceApi>,
     ) -> color_eyre::Result<Self> {
-        let mailing_lists = lore_service.load_available_lists().unwrap_or_default();
-        let bookmarked_patchsets = lore_service.load_bookmarked_patchsets().unwrap_or_default();
-        let reviewed_patchsets = lore_service.load_reviewed_patchsets().unwrap_or_default();
+        let bootstrap = lore_service.warm_bootstrap_cache().unwrap_or_default();
 
         event!(Level::INFO, "patch-hub started");
         collect_garbage(&config);
@@ -101,19 +99,19 @@ impl App {
         Ok(App {
             current_screen: CurrentScreen::MailingListSelection,
             mailing_list_selection: MailingListSelection {
-                mailing_lists: mailing_lists.clone(),
+                mailing_lists: bootstrap.mailing_lists.clone(),
                 target_list: String::new(),
-                possible_mailing_lists: mailing_lists,
+                possible_mailing_lists: bootstrap.mailing_lists,
                 highlighted_list_index: 0,
             },
             latest_patchsets: None,
             details_actions: None,
             edit_config: None,
             bookmarked_patchsets: BookmarkedPatchsets {
-                bookmarked_patchsets,
+                bookmarked_patchsets: bootstrap.bookmarks,
                 patchset_index: 0,
             },
-            reviewed_patchsets,
+            reviewed_patchsets: bootstrap.reviewed,
             config,
             lore_service,
             popup: None,
@@ -175,7 +173,8 @@ impl App {
             mailing_list_selection,
             ..
         } = self;
-        mailing_list_selection.refresh_available_mailing_lists(lore_service.as_ref())
+        mailing_list_selection
+            .refresh_available_mailing_lists(lore_service.as_mut(), CacheMode::Refresh)
     }
 
     /// Initializes field [App::details_actions], from currently selected

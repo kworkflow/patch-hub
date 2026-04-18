@@ -14,6 +14,7 @@ use crate::{
     lore::{
         application::{
             api::LoreServiceApi,
+            cache::{BootstrapLoreData, CacheMode, CacheTtl, LoreCache, MailingListsCacheEntry},
             dto::{PatchTagSummary, PatchsetDetails},
             errors::LoreError,
         },
@@ -43,6 +44,8 @@ pub struct LoreService {
     fs: Arc<dyn FileSystemTrait>,
     shell: Arc<dyn ShellTrait>,
     feed_index_by_list: HashMap<String, PatchFeedIndex>,
+    cache: LoreCache,
+    ttl: CacheTtl,
 }
 
 impl LoreService {
@@ -56,6 +59,7 @@ impl LoreService {
         patchset_parser: Arc<dyn PatchsetParser>,
         fs: Arc<dyn FileSystemTrait>,
         shell: Arc<dyn ShellTrait>,
+        ttl: CacheTtl,
     ) -> Self {
         LoreService {
             lists_gateway,
@@ -68,21 +72,49 @@ impl LoreService {
             fs,
             shell,
             feed_index_by_list: HashMap::new(),
+            cache: LoreCache::new(),
+            ttl,
         }
     }
 }
 
 impl LoreServiceApi for LoreService {
-    fn load_available_lists(&self) -> Result<Vec<MailingList>, LoreError> {
-        Ok(self.lists_store.load_available_lists()?)
-    }
-
-    fn refresh_available_lists(&self) -> Result<Vec<MailingList>, LoreError> {
+    fn fetch_available_lists(&mut self, mode: CacheMode) -> Result<Vec<MailingList>, LoreError> {
         const LORE_PAGE_SIZE: usize = 200;
 
-        let gateway = Arc::clone(&self.lists_gateway);
-        let lists_store = Arc::clone(&self.lists_store);
+        if mode == CacheMode::UseCache {
+            // 1. In-memory hit
+            if let Some(entry) = &self.cache.lists {
+                if !entry.is_stale(self.ttl.mailing_lists) {
+                    tracing::debug!("mailing lists cache: hit");
+                    return Ok(entry.lists.clone());
+                }
+                tracing::debug!("mailing lists cache: stale, falling back to disk");
+                self.cache.lists = None;
+            }
+            // 2. Disk fallback
+            match self.lists_store.load_available_lists() {
+                Ok(lists) => {
+                    tracing::debug!("mailing lists cache: disk hit");
+                    self.cache.lists = Some(MailingListsCacheEntry::new(lists.clone()));
+                    return Ok(lists);
+                }
+                Err(e) => {
+                    tracing::debug!(error = %e, "mailing lists cache: disk miss");
+                    return Err(LoreError::Persistence(e));
+                }
+            }
+        }
 
+        if mode == CacheMode::Refresh {
+            tracing::info!("mailing lists cache: refresh requested");
+            self.cache.lists = None;
+        } else {
+            tracing::debug!("mailing lists cache: bypass");
+        }
+
+        // Network fetch (Refresh or Bypass)
+        let gateway = Arc::clone(&self.lists_gateway);
         let mut all_lists: Vec<MailingList> = Vec::new();
         let mut offset = 0;
 
@@ -90,18 +122,21 @@ impl LoreServiceApi for LoreService {
             let body = gateway
                 .fetch_available_lists_page(offset)
                 .map_err(LoreError::Http)?;
-
             let page = parsers::parse_available_lists(&body);
             if page.is_empty() {
                 break;
             }
-
             all_lists.extend(page);
             offset += LORE_PAGE_SIZE;
         }
 
         all_lists.sort();
-        lists_store.save_available_lists(&all_lists)?;
+
+        if mode != CacheMode::Bypass {
+            self.lists_store.save_available_lists(&all_lists)?;
+            self.cache.lists = Some(MailingListsCacheEntry::new(all_lists.clone()));
+        }
+
         Ok(all_lists)
     }
 
@@ -243,6 +278,28 @@ impl LoreServiceApi for LoreService {
         Ok(commands)
     }
 
+    fn warm_bootstrap_cache(&mut self) -> Result<BootstrapLoreData, LoreError> {
+        let mailing_lists = self
+            .fetch_available_lists(CacheMode::UseCache)
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "bootstrap: failed to load mailing lists");
+                Vec::new()
+            });
+        let bookmarks = self.load_bookmarked_patchsets().unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "bootstrap: failed to load bookmarks");
+            Vec::new()
+        });
+        let reviewed = self.load_reviewed_patchsets().unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "bootstrap: failed to load reviewed patchsets");
+            HashMap::new()
+        });
+        Ok(BootstrapLoreData {
+            mailing_lists,
+            bookmarks,
+            reviewed,
+        })
+    }
+
     fn get_git_signature(&self, git_repo_path: &str) -> (String, String) {
         let mut name_args = vec!["config".to_string(), "user.name".to_string()];
         let mut email_args = vec!["config".to_string(), "user.email".to_string()];
@@ -326,10 +383,15 @@ mod tests {
     };
     use crate::{
         infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
-        lore::domain::mailing_list::MailingList,
+        lore::{
+            application::cache::{CacheTtl, MailingListsCacheEntry},
+            domain::mailing_list::MailingList,
+        },
     };
 
     use super::*;
+
+    // ── helpers ───────────────────────────────────────────────────────────────
 
     fn make_service(
         lists_gateway: MockListsGateway,
@@ -350,18 +412,40 @@ mod tests {
             Arc::new(parser),
             Arc::new(MockFileSystemTrait::new()),
             Arc::new(MockShellTrait::new()),
+            CacheTtl::default(),
         )
     }
 
+    // ── mailing lists cache tests ─────────────────────────────────────────────
+
     #[test]
-    fn load_available_lists_delegates_to_persistence() {
+    fn fetch_available_lists_use_cache_disk_hit() {
         let mut lists_store = MockMailingListsCacheStore::new();
         lists_store
             .expect_load_available_lists()
             .times(1)
             .returning(|| Ok(vec![MailingList::new("linux-mm", "desc")]));
 
-        let svc = make_service(
+        let mut svc = make_service(
+            MockListsGateway::new(), // gateway must NOT be called
+            MockFeedGateway::new(),
+            MockPatchHtmlGateway::new(),
+            lists_store,
+            MockUserLoreStateStore::new(),
+            MockPatchsetFetcher::new(),
+            MockPatchsetParser::new(),
+        );
+
+        let result = svc.fetch_available_lists(CacheMode::UseCache).unwrap();
+        assert_eq!(1, result.len());
+        assert_eq!("linux-mm", result[0].name());
+    }
+
+    #[test]
+    fn fetch_available_lists_use_cache_memory_hit() {
+        // Gateway and disk must NOT be called after the in-memory entry is warm.
+        let lists_store = MockMailingListsCacheStore::new(); // no expectations
+        let mut svc = make_service(
             MockListsGateway::new(),
             MockFeedGateway::new(),
             MockPatchHtmlGateway::new(),
@@ -371,13 +455,18 @@ mod tests {
             MockPatchsetParser::new(),
         );
 
-        let result = svc.load_available_lists().unwrap();
+        svc.cache.lists = Some(MailingListsCacheEntry::new(vec![MailingList::new(
+            "cached-list",
+            "in memory",
+        )]));
+
+        let result = svc.fetch_available_lists(CacheMode::UseCache).unwrap();
         assert_eq!(1, result.len());
-        assert_eq!("linux-mm", result[0].name());
+        assert_eq!("cached-list", result[0].name());
     }
 
     #[test]
-    fn refresh_available_lists_paginates_and_sorts() {
+    fn fetch_available_lists_refresh_paginates_and_sorts() {
         let mut lists_gateway = MockListsGateway::new();
         lists_gateway
             .expect_fetch_available_lists_page()
@@ -416,7 +505,7 @@ mod tests {
             .times(1)
             .returning(|_| Ok(()));
 
-        let svc = make_service(
+        let mut svc = make_service(
             lists_gateway,
             MockFeedGateway::new(),
             MockPatchHtmlGateway::new(),
@@ -426,11 +515,86 @@ mod tests {
             MockPatchsetParser::new(),
         );
 
-        let lists = svc.refresh_available_lists().unwrap();
+        let lists = svc.fetch_available_lists(CacheMode::Refresh).unwrap();
         assert_eq!(320, lists.len());
         assert_eq!("accel-config", lists[0].name());
         assert_eq!("yocto-toaster", lists[319].name());
     }
+
+    #[test]
+    fn fetch_available_lists_refresh_bypasses_memory_cache() {
+        // Even with a warm memory cache, Refresh must call the gateway.
+        let mut lists_gateway = MockListsGateway::new();
+        lists_gateway
+            .expect_fetch_available_lists_page()
+            .times(1)
+            .returning(|_| Ok(String::new())); // empty page → break loop
+
+        let mut lists_store = MockMailingListsCacheStore::new();
+        lists_store
+            .expect_save_available_lists()
+            .times(1)
+            .returning(|_| Ok(()));
+
+        let mut svc = make_service(
+            lists_gateway,
+            MockFeedGateway::new(),
+            MockPatchHtmlGateway::new(),
+            lists_store,
+            MockUserLoreStateStore::new(),
+            MockPatchsetFetcher::new(),
+            MockPatchsetParser::new(),
+        );
+
+        // Pre-populate the in-memory cache.
+        svc.cache.lists = Some(MailingListsCacheEntry::new(vec![MailingList::new(
+            "stale-list",
+            "",
+        )]));
+
+        let result = svc.fetch_available_lists(CacheMode::Refresh).unwrap();
+        // Network returned an empty page, so result is empty.
+        assert!(result.is_empty());
+        // In-memory cache was updated (cleared then set to empty result).
+        assert!(svc.cache.lists.is_some());
+    }
+
+    #[test]
+    fn warm_bootstrap_cache_loads_all_data() {
+        let mut lists_store = MockMailingListsCacheStore::new();
+        lists_store
+            .expect_load_available_lists()
+            .times(1)
+            .returning(|| Ok(vec![MailingList::new("linux-mm", "")]));
+
+        let mut user_state = MockUserLoreStateStore::new();
+        user_state
+            .expect_load_bookmarked_patchsets()
+            .times(1)
+            .returning(|| Ok(vec![]));
+        user_state
+            .expect_load_reviewed_patchsets()
+            .times(1)
+            .returning(|| Ok(HashMap::new()));
+
+        let mut svc = make_service(
+            MockListsGateway::new(),
+            MockFeedGateway::new(),
+            MockPatchHtmlGateway::new(),
+            lists_store,
+            user_state,
+            MockPatchsetFetcher::new(),
+            MockPatchsetParser::new(),
+        );
+
+        let data = svc.warm_bootstrap_cache().unwrap();
+        assert_eq!(1, data.mailing_lists.len());
+        assert_eq!("linux-mm", data.mailing_lists[0].name());
+        assert!(data.bookmarks.is_empty());
+        assert!(data.reviewed.is_empty());
+    }
+
+    // ── feed tests ────────────────────────────────────────────────────────────
 
     #[test]
     fn fetch_next_patch_page_returns_patches() {

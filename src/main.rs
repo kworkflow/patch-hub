@@ -20,7 +20,7 @@ use infrastructure::{
     terminal::{init, restore},
 };
 use lore::{
-    application::{api::LoreServiceApi, service::LoreService},
+    application::{api::LoreServiceApi, cache::CacheTtl, service::LoreService},
     infrastructure::{
         http_lore_client::HttpLoreGateway,
         patchset_fetcher::B4PatchsetFetcher,
@@ -90,6 +90,7 @@ fn main() -> color_eyre::Result<()> {
         parser,
         fs_arc,
         shell_arc,
+        CacheTtl::default(),
     ));
 
     let app = App::new(
