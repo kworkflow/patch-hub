@@ -1,4 +1,3 @@
-use color_eyre::eyre::{bail, eyre};
 use ratatui::text::Text;
 
 use std::collections::{HashMap, HashSet};
@@ -10,11 +9,7 @@ use crate::{
         file_system::FileSystemTrait,
         shell::{ShellCommand, ShellTrait},
     },
-    lore::{
-        domain::patch::{Author, Patch},
-        lore_api_client::PatchHTMLRequest,
-        lore_session,
-    },
+    lore::domain::patch::{Author, Patch},
 };
 
 use super::CurrentScreen;
@@ -46,12 +41,11 @@ pub struct DetailsActions {
     /// For each patch, a set of `Authors` that appear in `Acked-by` trailers
     pub acked_by: Vec<HashSet<Author>>,
     pub last_screen: CurrentScreen,
-    pub lore_api_client: Box<dyn PatchHTMLRequest>,
 }
 
 const LAST_LINE_PADDING: usize = 10;
 
-#[derive(Hash, Eq, PartialEq)]
+#[derive(Clone, Hash, Eq, PartialEq)]
 pub enum PatchsetAction {
     Bookmark,
     ReplyWithReviewedBy,
@@ -172,63 +166,6 @@ impl DetailsActions {
 
     pub fn actions_require_user_io(&self) -> bool {
         self.patches_to_reply.contains(&true)
-    }
-
-    pub fn reply_patchset_with_reviewed_by(
-        &self,
-        fs: &dyn FileSystemTrait,
-        shell: &dyn ShellTrait,
-        target_list: &str,
-        git_send_email_options: &str,
-        successful_indexes: &mut HashSet<usize>,
-    ) -> color_eyre::Result<()> {
-        let (git_user_name, git_user_email) = lore_session::get_git_signature(shell, "");
-
-        if git_user_name.is_empty() || git_user_email.is_empty() {
-            println!("`git config user.name` or `git config user.email` not set\nAborting...");
-            return Ok(());
-        }
-
-        let mktemp_cmd = ShellCommand::new("mktemp").arg("--directory");
-        let tmp_out = shell
-            .execute(&mktemp_cmd)
-            .map_err(|e| eyre!("failed to create temp directory: {}", e))?;
-        let tmp_dir = Path::new(
-            std::str::from_utf8(&tmp_out.stdout)
-                .map_err(|e| eyre!("invalid utf-8 in temp dir path: {}", e))?
-                .trim(),
-        );
-
-        let git_reply_commands = match lore_session::prepare_reply_patchset_with_reviewed_by(
-            fs,
-            &*self.lore_api_client,
-            tmp_dir,
-            target_list,
-            &self.raw_patches,
-            &self.patches_to_reply,
-            &format!("{git_user_name} <{git_user_email}>"),
-            git_send_email_options,
-        ) {
-            Ok(commands_vector) => commands_vector,
-            Err(failed_patch_html_request) => {
-                bail!(format!("{failed_patch_html_request:#?}"));
-            }
-        };
-
-        let reply_indexes: Vec<usize> = self
-            .patches_to_reply
-            .iter()
-            .enumerate()
-            .filter_map(|(i, &val)| if val { Some(i) } else { None })
-            .collect();
-        for (i, command) in git_reply_commands.into_iter().enumerate() {
-            let success = shell.spawn_interactive(&command).unwrap_or(false);
-            if success {
-                successful_indexes.insert(reply_indexes[i]);
-            }
-        }
-
-        Ok(())
     }
 
     /// Checks if there is a `target_kernel_tree` and if it is in `Config::kernel_trees` and if

@@ -38,9 +38,7 @@ where
                 terminal = loading_screen! {
                     terminal,
                     format!("Fetching patchsets from {}", list_name) => {
-                        let result =
-                        app.latest_patchsets.as_mut().unwrap()
-                        .fetch_current_page();
+                        let result = app.fetch_latest_current_page();
                         if result.is_ok() {
                             app.mailing_list_selection.clear_target_list();
                             app.set_current_screen(CurrentScreen::LatestPatchsets);
@@ -54,8 +52,7 @@ where
             terminal = loading_screen! {
                 terminal,
                 "Refreshing lists" => {
-                    app.mailing_list_selection
-                        .refresh_available_mailing_lists(&*app.fs)
+                    app.refresh_mailing_lists()
                 }
             };
         }
