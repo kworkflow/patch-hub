@@ -79,6 +79,7 @@ impl App {
         fs: Box<dyn FileSystemTrait>,
         shell: Box<dyn ShellTrait>,
         env: Box<dyn EnvTrait>,
+        lore_client: BlockingLoreAPIClient,
     ) -> color_eyre::Result<Self> {
         let mailing_lists = lore_session::load_available_lists(&*fs, config.mailing_lists_path())
             .unwrap_or_default();
@@ -91,8 +92,6 @@ impl App {
             lore_session::load_reviewed_patchsets(&*fs, config.reviewed_patchsets_path())
                 .unwrap_or_default();
 
-        let lore_api_client = BlockingLoreAPIClient::default();
-
         event!(Level::INFO, "patch-hub started");
         collect_garbage(&config);
 
@@ -104,7 +103,7 @@ impl App {
                 possible_mailing_lists: mailing_lists,
                 highlighted_list_index: 0,
                 mailing_lists_path: config.mailing_lists_path().to_string(),
-                lore_api_client: Box::new(lore_api_client.clone()),
+                lore_api_client: Box::new(lore_client.clone()),
             },
             latest_patchsets: None,
             details_actions: None,
@@ -115,7 +114,7 @@ impl App {
             },
             reviewed_patchsets,
             config,
-            lore_api_client,
+            lore_api_client: lore_client,
             popup: None,
             fs,
             shell,
@@ -280,7 +279,7 @@ impl App {
                     tested_by,
                     acked_by,
                     last_screen: self.current_screen.clone(),
-                    lore_api_client: self.lore_api_client.clone(),
+                    lore_api_client: Box::new(self.lore_api_client.clone()),
                     patchset_path,
                 });
                 // At this point, if the initialization is successful, we just

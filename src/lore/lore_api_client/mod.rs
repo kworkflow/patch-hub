@@ -1,9 +1,9 @@
 use mockall::automock;
 use thiserror::Error;
-use ureq::tls::TlsConfig;
-use ureq::Agent;
 
-use std::time::Duration;
+use std::sync::Arc;
+
+use crate::infrastructure::net::{HttpMethod, NetClientTrait, NetError};
 
 #[cfg(test)]
 mod tests;
@@ -14,7 +14,7 @@ const BASE_QUERY_FOR_FEED_REQUEST: &str = r"?x=A&q=((s:patch+OR+s:rfc)+AND+NOT+s
 #[derive(Error, Debug)]
 pub enum ClientError {
     #[error(transparent)]
-    FromUreq(#[from] ureq::Error),
+    Net(#[from] NetError),
 
     #[error("Feed ended")]
     EndOfFeed,
@@ -23,27 +23,14 @@ pub enum ClientError {
 #[derive(Clone)]
 pub struct BlockingLoreAPIClient {
     pub lore_domain: String,
-    client: ureq::Agent,
-}
-impl Default for BlockingLoreAPIClient {
-    fn default() -> Self {
-        let kw_agent: String = format!("kworkflow/patch-hub/{}", env!("CARGO_PKG_VERSION"));
-
-        let agent: Agent = Agent::config_builder()
-            .user_agent(ureq::config::AutoHeaderValue::from(kw_agent))
-            .timeout_per_call(Some(Duration::from_secs(120)))
-            .tls_config(TlsConfig::builder().build())
-            .build()
-            .into();
-        Self::new(agent)
-    }
+    net_client: Arc<dyn NetClientTrait>,
 }
 
 impl BlockingLoreAPIClient {
-    pub fn new(client: ureq::Agent) -> BlockingLoreAPIClient {
+    pub fn new(net_client: Box<dyn NetClientTrait>) -> BlockingLoreAPIClient {
         BlockingLoreAPIClient {
             lore_domain: LORE_DOMAIN.to_string(),
-            client,
+            net_client: Arc::from(net_client),
         }
     }
 }
@@ -63,23 +50,18 @@ impl PatchFeedRequest for BlockingLoreAPIClient {
         target_list: &str,
         min_index: usize,
     ) -> Result<String, ClientError> {
-        let feed_url: String = format!(
+        let url = format!(
             "{}/{target_list}/{BASE_QUERY_FOR_FEED_REQUEST}&o={min_index}",
             self.lore_domain
         );
 
-        let request_builder = self
-            .client
-            .get(feed_url)
-            .header("Accept", "text/html,application/xhtml+xml,application/xml");
+        let body = self.net_client.request(HttpMethod::Get, &url)?;
 
-        let feed_response_body = request_builder.call()?.body_mut().read_to_string()?;
-
-        if feed_response_body.eq(r"</feed>") {
+        if body.eq(r"</feed>") {
             return Err(ClientError::EndOfFeed);
-        };
+        }
 
-        Ok(feed_response_body)
+        Ok(body)
     }
 }
 
@@ -90,14 +72,8 @@ pub trait AvailableListsRequest {
 
 impl AvailableListsRequest for BlockingLoreAPIClient {
     fn request_available_lists(&self, min_index: usize) -> Result<String, ClientError> {
-        let available_lists_url = format!("{}/?&o={min_index}", self.lore_domain);
-
-        let body: String = ureq::get(&available_lists_url)
-            .header("Accept", "text/html,application/xhtml+xml,application/xml")
-            .call()?
-            .body_mut()
-            .read_to_string()?;
-        Ok(body)
+        let url = format!("{}/?&o={min_index}", self.lore_domain);
+        Ok(self.net_client.request(HttpMethod::Get, &url)?)
     }
 }
 
@@ -116,15 +92,8 @@ impl PatchHTMLRequest for BlockingLoreAPIClient {
         target_list: &str,
         message_id: &str,
     ) -> Result<String, ClientError> {
-        let patch_html_url = format!("{}/{target_list}/{message_id}/", self.lore_domain);
-
-        let body: String = ureq::get(&patch_html_url)
-            .header("Accept", "text/html,application/xhtml+xml,application/xml")
-            .call()?
-            .body_mut()
-            .read_to_string()?;
-
-        Ok(body)
+        let url = format!("{}/{target_list}/{message_id}/", self.lore_domain);
+        Ok(self.net_client.request(HttpMethod::Get, &url)?)
     }
 }
 

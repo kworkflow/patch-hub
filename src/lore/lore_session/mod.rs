@@ -431,7 +431,7 @@ pub fn prepare_reply_patchset_with_reviewed_by<T>(
     git_send_email_options: &str,
 ) -> Result<Vec<ShellCommand>, LoreSessionError>
 where
-    T: PatchHTMLRequest,
+    T: PatchHTMLRequest + ?Sized,
 {
     let mut git_reply_commands: Vec<ShellCommand> = Vec::new();
 

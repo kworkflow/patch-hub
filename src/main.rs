@@ -15,9 +15,11 @@ use infrastructure::{
     env::OsEnv,
     file_system::OsFileSystem,
     monitoring::{init_monitoring, InitMonitoringProduct},
+    net::UreqNetClient,
     shell::OsShell,
     terminal::{init, restore},
 };
+use lore::lore_api_client::BlockingLoreAPIClient;
 use std::ops::ControlFlow;
 use tracing::{event, Level};
 
@@ -53,7 +55,13 @@ fn main() -> color_eyre::Result<()> {
         ControlFlow::Continue(t) => terminal = t,
     }
 
-    let app = App::new(config, Box::new(fs), Box::new(shell), Box::new(env))?;
+    let app = App::new(
+        config,
+        Box::new(fs),
+        Box::new(shell),
+        Box::new(env),
+        BlockingLoreAPIClient::new(Box::new(UreqNetClient::new())),
+    )?;
     if !app.check_external_deps() {
         event!(
             Level::WARN,

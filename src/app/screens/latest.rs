@@ -40,7 +40,7 @@ impl LatestPatchsets {
         ) {
             match lore_session_error {
                 LoreSessionError::FromLoreAPIClient(client_error) => match client_error {
-                    ClientError::FromUreq(_) => {
+                    ClientError::Net(_) => {
                         bail!("Failed to request feed\n{client_error:#?}")
                     }
                     ClientError::EndOfFeed => (),
@@ -185,7 +185,14 @@ mod tests {
                 target_list_arg == target_list && *min_index_arg == 0
             })
             .times(1)
-            .returning(move |_, _| Err(ClientError::FromUreq(ureq::Error::StatusCode(401))));
+            .returning(move |_, _| {
+                Err(ClientError::Net(
+                    crate::infrastructure::net::NetError::HttpStatus {
+                        code: 401,
+                        message: "HTTP 401".to_string(),
+                    },
+                ))
+            });
 
         let mut latest_patchsets =
             LatestPatchsets::new(target_list.to_string(), 0, Box::new(lore_api_client));

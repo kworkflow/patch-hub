@@ -506,7 +506,7 @@ fn should_prepare_reply_patchset_with_reviewed_by() {
         ],
     };
 
-    let expected_git_reply_commands = vec![
+    let expected_git_reply_commands = [
         expected_git_reply_command_0,
         expected_git_reply_command_1,
         expected_git_reply_command_2,

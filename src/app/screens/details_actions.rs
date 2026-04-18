@@ -11,7 +11,7 @@ use crate::{
         shell::{ShellCommand, ShellTrait},
     },
     lore::{
-        lore_api_client::BlockingLoreAPIClient,
+        lore_api_client::PatchHTMLRequest,
         lore_session,
         patch::{Author, Patch},
     },
@@ -46,7 +46,7 @@ pub struct DetailsActions {
     /// For each patch, a set of `Authors` that appear in `Acked-by` trailers
     pub acked_by: Vec<HashSet<Author>>,
     pub last_screen: CurrentScreen,
-    pub lore_api_client: BlockingLoreAPIClient,
+    pub lore_api_client: Box<dyn PatchHTMLRequest>,
 }
 
 const LAST_LINE_PADDING: usize = 10;
@@ -201,7 +201,7 @@ impl DetailsActions {
 
         let git_reply_commands = match lore_session::prepare_reply_patchset_with_reviewed_by(
             fs,
-            &self.lore_api_client,
+            &*self.lore_api_client,
             tmp_dir,
             target_list,
             &self.raw_patches,
