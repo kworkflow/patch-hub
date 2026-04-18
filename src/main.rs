@@ -22,8 +22,10 @@ use infrastructure::{
 use lore::{
     application::{api::LoreServiceApi, service::LoreService},
     infrastructure::{
-        http_lore_client::HttpLoreGateway, patchset_fetcher::B4PatchsetFetcher,
-        patchset_parser::MboxPatchsetParser, persistence::FileLorePersistence,
+        http_lore_client::HttpLoreGateway,
+        patchset_fetcher::B4PatchsetFetcher,
+        patchset_parser::MboxPatchsetParser,
+        persistence::{FileLorePersistence, MailingListsCacheStore, UserLoreStateStore},
     },
 };
 use std::{ops::ControlFlow, sync::Arc};
@@ -82,7 +84,8 @@ fn main() -> color_eyre::Result<()> {
         gateway.clone(),
         gateway.clone(),
         gateway.clone(),
-        persistence,
+        persistence.clone() as Arc<dyn MailingListsCacheStore>,
+        persistence.clone() as Arc<dyn UserLoreStateStore>,
         fetcher,
         parser,
         fs_arc,

@@ -27,7 +27,7 @@ use crate::{
             parsers,
             patchset_fetcher::PatchsetFetcher,
             patchset_parser::{self, PatchsetParser},
-            persistence::LorePersistence,
+            persistence::{MailingListsCacheStore, UserLoreStateStore},
         },
     },
 };
@@ -36,7 +36,8 @@ pub struct LoreService {
     lists_gateway: Arc<dyn ListsGateway>,
     feed_gateway: Arc<dyn FeedGateway>,
     patch_html_gateway: Arc<dyn PatchHtmlGateway>,
-    persistence: Arc<dyn LorePersistence>,
+    lists_store: Arc<dyn MailingListsCacheStore>,
+    user_state: Arc<dyn UserLoreStateStore>,
     patchset_fetcher: Arc<dyn PatchsetFetcher>,
     patchset_parser: Arc<dyn PatchsetParser>,
     fs: Arc<dyn FileSystemTrait>,
@@ -49,7 +50,8 @@ impl LoreService {
         lists_gateway: Arc<dyn ListsGateway>,
         feed_gateway: Arc<dyn FeedGateway>,
         patch_html_gateway: Arc<dyn PatchHtmlGateway>,
-        persistence: Arc<dyn LorePersistence>,
+        lists_store: Arc<dyn MailingListsCacheStore>,
+        user_state: Arc<dyn UserLoreStateStore>,
         patchset_fetcher: Arc<dyn PatchsetFetcher>,
         patchset_parser: Arc<dyn PatchsetParser>,
         fs: Arc<dyn FileSystemTrait>,
@@ -59,7 +61,8 @@ impl LoreService {
             lists_gateway,
             feed_gateway,
             patch_html_gateway,
-            persistence,
+            lists_store,
+            user_state,
             patchset_fetcher,
             patchset_parser,
             fs,
@@ -71,14 +74,14 @@ impl LoreService {
 
 impl LoreServiceApi for LoreService {
     fn load_available_lists(&self) -> Result<Vec<MailingList>, LoreError> {
-        Ok(self.persistence.load_available_lists()?)
+        Ok(self.lists_store.load_available_lists()?)
     }
 
     fn refresh_available_lists(&self) -> Result<Vec<MailingList>, LoreError> {
         const LORE_PAGE_SIZE: usize = 200;
 
         let gateway = Arc::clone(&self.lists_gateway);
-        let persistence = Arc::clone(&self.persistence);
+        let lists_store = Arc::clone(&self.lists_store);
 
         let mut all_lists: Vec<MailingList> = Vec::new();
         let mut offset = 0;
@@ -98,27 +101,27 @@ impl LoreServiceApi for LoreService {
         }
 
         all_lists.sort();
-        persistence.save_available_lists(&all_lists)?;
+        lists_store.save_available_lists(&all_lists)?;
         Ok(all_lists)
     }
 
     fn load_bookmarked_patchsets(&self) -> Result<Vec<Patch>, LoreError> {
-        Ok(self.persistence.load_bookmarked_patchsets()?)
+        Ok(self.user_state.load_bookmarked_patchsets()?)
     }
 
     fn save_bookmarked_patchsets(&self, patchsets: &[Patch]) -> Result<(), LoreError> {
-        Ok(self.persistence.save_bookmarked_patchsets(patchsets)?)
+        Ok(self.user_state.save_bookmarked_patchsets(patchsets)?)
     }
 
     fn load_reviewed_patchsets(&self) -> Result<HashMap<String, HashSet<usize>>, LoreError> {
-        Ok(self.persistence.load_reviewed_patchsets()?)
+        Ok(self.user_state.load_reviewed_patchsets()?)
     }
 
     fn save_reviewed_patchsets(
         &self,
         reviewed: &HashMap<String, HashSet<usize>>,
     ) -> Result<(), LoreError> {
-        Ok(self.persistence.save_reviewed_patchsets(reviewed)?)
+        Ok(self.user_state.save_reviewed_patchsets(reviewed)?)
     }
 
     fn fetch_next_patch_page(
@@ -319,7 +322,7 @@ mod tests {
         },
         patchset_fetcher::MockPatchsetFetcher,
         patchset_parser::MockPatchsetParser,
-        persistence::MockLorePersistence,
+        persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
     };
     use crate::{
         infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
@@ -332,7 +335,8 @@ mod tests {
         lists_gateway: MockListsGateway,
         feed_gateway: MockFeedGateway,
         patch_html_gateway: MockPatchHtmlGateway,
-        persistence: MockLorePersistence,
+        lists_store: MockMailingListsCacheStore,
+        user_state: MockUserLoreStateStore,
         fetcher: MockPatchsetFetcher,
         parser: MockPatchsetParser,
     ) -> LoreService {
@@ -340,7 +344,8 @@ mod tests {
             Arc::new(lists_gateway),
             Arc::new(feed_gateway),
             Arc::new(patch_html_gateway),
-            Arc::new(persistence),
+            Arc::new(lists_store),
+            Arc::new(user_state),
             Arc::new(fetcher),
             Arc::new(parser),
             Arc::new(MockFileSystemTrait::new()),
@@ -350,8 +355,8 @@ mod tests {
 
     #[test]
     fn load_available_lists_delegates_to_persistence() {
-        let mut persistence = MockLorePersistence::new();
-        persistence
+        let mut lists_store = MockMailingListsCacheStore::new();
+        lists_store
             .expect_load_available_lists()
             .times(1)
             .returning(|| Ok(vec![MailingList::new("linux-mm", "desc")]));
@@ -360,7 +365,8 @@ mod tests {
             MockListsGateway::new(),
             MockFeedGateway::new(),
             MockPatchHtmlGateway::new(),
-            persistence,
+            lists_store,
+            MockUserLoreStateStore::new(),
             MockPatchsetFetcher::new(),
             MockPatchsetParser::new(),
         );
@@ -404,8 +410,8 @@ mod tests {
                 .unwrap())
             });
 
-        let mut persistence = MockLorePersistence::new();
-        persistence
+        let mut lists_store = MockMailingListsCacheStore::new();
+        lists_store
             .expect_save_available_lists()
             .times(1)
             .returning(|_| Ok(()));
@@ -414,7 +420,8 @@ mod tests {
             lists_gateway,
             MockFeedGateway::new(),
             MockPatchHtmlGateway::new(),
-            persistence,
+            lists_store,
+            MockUserLoreStateStore::new(),
             MockPatchsetFetcher::new(),
             MockPatchsetParser::new(),
         );
@@ -441,7 +448,8 @@ mod tests {
             MockListsGateway::new(),
             feed_gateway,
             MockPatchHtmlGateway::new(),
-            MockLorePersistence::new(),
+            MockMailingListsCacheStore::new(),
+            MockUserLoreStateStore::new(),
             MockPatchsetFetcher::new(),
             MockPatchsetParser::new(),
         );
@@ -466,7 +474,8 @@ mod tests {
             MockListsGateway::new(),
             feed_gateway,
             MockPatchHtmlGateway::new(),
-            MockLorePersistence::new(),
+            MockMailingListsCacheStore::new(),
+            MockUserLoreStateStore::new(),
             MockPatchsetFetcher::new(),
             MockPatchsetParser::new(),
         );
@@ -490,7 +499,8 @@ mod tests {
             MockListsGateway::new(),
             feed_gateway,
             MockPatchHtmlGateway::new(),
-            MockLorePersistence::new(),
+            MockMailingListsCacheStore::new(),
+            MockUserLoreStateStore::new(),
             MockPatchsetFetcher::new(),
             MockPatchsetParser::new(),
         );

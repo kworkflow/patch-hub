@@ -12,11 +12,20 @@ use crate::{
     lore::domain::{mailing_list::MailingList, patch::Patch},
 };
 
+/// Backing store for the mailing-lists remote-data cache.
 #[automock]
-pub trait LorePersistence: Send + Sync {
+pub trait MailingListsCacheStore: Send + Sync {
     fn load_available_lists(&self) -> Result<Vec<MailingList>, FileSystemError>;
     fn save_available_lists(&self, lists: &[MailingList]) -> Result<(), FileSystemError>;
+}
 
+/// Persistence for user-local Lore state (bookmarks and reviewed patchsets).
+///
+/// Intentionally separate from [`MailingListsCacheStore`]: user state is not
+/// a cache of remote data — it never expires and is never refreshed from the
+/// network.
+#[automock]
+pub trait UserLoreStateStore: Send + Sync {
     fn load_bookmarked_patchsets(&self) -> Result<Vec<Patch>, FileSystemError>;
     fn save_bookmarked_patchsets(&self, patchsets: &[Patch]) -> Result<(), FileSystemError>;
 
@@ -75,7 +84,7 @@ impl FileLorePersistence {
     }
 }
 
-impl LorePersistence for FileLorePersistence {
+impl MailingListsCacheStore for FileLorePersistence {
     fn load_available_lists(&self) -> Result<Vec<MailingList>, FileSystemError> {
         self.read_json(&self.mailing_lists_path)
     }
@@ -83,7 +92,9 @@ impl LorePersistence for FileLorePersistence {
     fn save_available_lists(&self, lists: &[MailingList]) -> Result<(), FileSystemError> {
         self.atomic_write_json(lists, &self.mailing_lists_path)
     }
+}
 
+impl UserLoreStateStore for FileLorePersistence {
     fn load_bookmarked_patchsets(&self) -> Result<Vec<Patch>, FileSystemError> {
         self.read_json(&self.bookmarked_path)
     }
@@ -145,6 +156,7 @@ mod tests {
             MailingList::new("linux-kernel", "LKML"),
         ];
 
+        // MailingListsCacheStore
         p.save_available_lists(&lists).unwrap();
         let loaded = p.load_available_lists().unwrap();
 
@@ -164,6 +176,7 @@ mod tests {
         reviewed.entry("some-id".to_string()).or_default().insert(1);
         reviewed.entry("some-id".to_string()).or_default().insert(2);
 
+        // UserLoreStateStore
         p.save_reviewed_patchsets(&reviewed).unwrap();
         let loaded = p.load_reviewed_patchsets().unwrap();
 
@@ -179,6 +192,7 @@ mod tests {
         let dir = tmp_dir("missing");
         let p = make_persistence(&dir);
 
+        // Both traits return errors when backing files are absent
         assert!(p.load_available_lists().is_err());
         assert!(p.load_bookmarked_patchsets().is_err());
         assert!(p.load_reviewed_patchsets().is_err());
