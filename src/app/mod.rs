@@ -131,17 +131,9 @@ impl App {
         self.latest_patchsets = Some(LatestPatchsets::new(target_list, self.config.page_size()));
     }
 
-    /// Sets field [App::latest_patchsets] to `None` and resets the feed cursor
-    /// in [App::lore_service] so the next visit fetches fresh data.
+    /// Sets field [App::latest_patchsets] to `None`.
     pub fn reset_latest_patchsets(&mut self) {
-        let target_list = self
-            .latest_patchsets
-            .as_ref()
-            .map(|p| p.target_list().to_string());
         self.latest_patchsets = None;
-        if let Some(list) = target_list {
-            self.lore_service.reset_feed_cursor(&list);
-        }
     }
 
     /// Fetches (or re-fetches) the current page of [App::latest_patchsets]
@@ -156,7 +148,7 @@ impl App {
             ..
         } = self;
         if let Some(patchsets) = latest_patchsets.as_mut() {
-            patchsets.fetch_current_page(lore_service.as_mut())
+            patchsets.fetch_current_page(lore_service.as_mut(), CacheMode::UseCache)
         } else {
             Ok(())
         }

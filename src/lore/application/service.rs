@@ -14,7 +14,10 @@ use crate::{
     lore::{
         application::{
             api::LoreServiceApi,
-            cache::{BootstrapLoreData, CacheMode, CacheTtl, LoreCache, MailingListsCacheEntry},
+            cache::{
+                BootstrapLoreData, CacheMode, CacheTtl, FeedCacheEntry, LoreCache,
+                MailingListsCacheEntry,
+            },
             dto::{PatchTagSummary, PatchsetDetails},
             errors::LoreError,
         },
@@ -43,7 +46,6 @@ pub struct LoreService {
     patchset_parser: Arc<dyn PatchsetParser>,
     fs: Arc<dyn FileSystemTrait>,
     shell: Arc<dyn ShellTrait>,
-    feed_index_by_list: HashMap<String, PatchFeedIndex>,
     cache: LoreCache,
     ttl: CacheTtl,
 }
@@ -71,7 +73,6 @@ impl LoreService {
             patchset_parser,
             fs,
             shell,
-            feed_index_by_list: HashMap::new(),
             cache: LoreCache::new(),
             ttl,
         }
@@ -164,46 +165,78 @@ impl LoreServiceApi for LoreService {
         target_list: &str,
         page_size: usize,
         page_number: usize,
+        mode: CacheMode,
     ) -> Result<Vec<Patch>, LoreError> {
         let needed = page_size * page_number;
 
-        self.feed_index_by_list
+        if mode == CacheMode::Refresh {
+            tracing::info!(list = target_list, "feed cache: refresh requested");
+            self.cache.feeds.remove(target_list);
+        }
+
+        // UseCache: return from in-memory index if not stale and already sufficient.
+        if mode == CacheMode::UseCache {
+            if let Some(entry) = self.cache.feeds.get(target_list) {
+                if entry.is_stale(self.ttl.feed) {
+                    tracing::debug!(list = target_list, "feed cache: stale, evicting");
+                    self.cache.feeds.remove(target_list);
+                } else {
+                    let current = entry.index.representative_patch_ids().len();
+                    if current >= needed {
+                        tracing::debug!(list = target_list, "feed cache: hit");
+                        return match entry.index.get_page(page_size, page_number) {
+                            Some(patches) => Ok(patches.into_iter().cloned().collect()),
+                            None => Err(LoreError::EndOfFeed),
+                        };
+                    }
+                }
+            }
+        }
+
+        // Get-or-create the cache entry.
+        self.cache
+            .feeds
             .entry(target_list.to_string())
-            .or_insert_with(|| PatchFeedIndex::new(target_list.to_string()));
+            .or_insert_with(|| FeedCacheEntry::new(PatchFeedIndex::new(target_list.to_string())));
 
         // Clone the Arc so the borrow on `self.feed_gateway` doesn't conflict
-        // with the mutable borrow on `self.feed_index_by_list`.
+        // with the mutable borrow on `self.cache.feeds`.
         let gateway = Arc::clone(&self.feed_gateway);
 
         loop {
-            let current = self.feed_index_by_list[target_list]
+            let current = self.cache.feeds[target_list]
+                .index
                 .representative_patch_ids()
                 .len();
             if current >= needed {
                 break;
             }
 
-            let offset = self.feed_index_by_list[target_list].next_offset();
+            let offset = self.cache.feeds[target_list].index.next_offset();
             match gateway.fetch_patch_feed_page(target_list, offset) {
                 Ok(body) => {
                     let feed = parsers::parse_patch_feed(&body).map_err(LoreError::Parse)?;
-                    let index = self.feed_index_by_list.get_mut(target_list).unwrap();
-                    index.process_feed_page(feed);
-                    index.advance_offset();
+                    let entry = self.cache.feeds.get_mut(target_list).unwrap();
+                    entry.index.process_feed_page(feed);
+                    entry.index.advance_offset();
                 }
-                Err(LoreHttpError::EndOfFeed) => break,
+                Err(LoreHttpError::EndOfFeed) => {
+                    if let Some(entry) = self.cache.feeds.get_mut(target_list) {
+                        entry.complete = true;
+                    }
+                    break;
+                }
                 Err(e) => return Err(LoreError::Http(e)),
             }
         }
 
-        match self.feed_index_by_list[target_list].get_page(page_size, page_number) {
+        match self.cache.feeds[target_list]
+            .index
+            .get_page(page_size, page_number)
+        {
             Some(patches) => Ok(patches.into_iter().cloned().collect()),
             None => Err(LoreError::EndOfFeed),
         }
-    }
-
-    fn reset_feed_cursor(&mut self, target_list: &str) {
-        self.feed_index_by_list.remove(target_list);
     }
 
     fn fetch_patchset_details(
@@ -384,8 +417,8 @@ mod tests {
     use crate::{
         infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
         lore::{
-            application::cache::{CacheTtl, MailingListsCacheEntry},
-            domain::mailing_list::MailingList,
+            application::cache::{CacheTtl, FeedCacheEntry, MailingListsCacheEntry},
+            domain::{mailing_list::MailingList, patchset::PatchFeedIndex},
         },
     };
 
@@ -618,7 +651,9 @@ mod tests {
             MockPatchsetParser::new(),
         );
 
-        let patches = svc.fetch_next_patch_page(target, 1, 1).unwrap();
+        let patches = svc
+            .fetch_next_patch_page(target, 1, 1, CacheMode::UseCache)
+            .unwrap();
         assert_eq!(1, patches.len());
         assert!(patches[0]
             .message_id()
@@ -644,19 +679,53 @@ mod tests {
             MockPatchsetParser::new(),
         );
 
-        let result = svc.fetch_next_patch_page("some-list", 1, 1);
+        let result = svc.fetch_next_patch_page("some-list", 1, 1, CacheMode::UseCache);
         assert!(matches!(result, Err(LoreError::EndOfFeed)));
     }
 
     #[test]
-    fn reset_feed_cursor_clears_index() {
+    fn fetch_next_patch_page_use_cache_hit() {
+        // Pre-populate the feed cache with 1 patch; the gateway must NOT be called.
+        let src = "test_samples/lore_session/process_representative_patch/patch_feed_sample_1.xml";
+        let target = "some-list";
+
+        let mut svc = make_service(
+            MockListsGateway::new(),
+            MockFeedGateway::new(), // no expectations
+            MockPatchHtmlGateway::new(),
+            MockMailingListsCacheStore::new(),
+            MockUserLoreStateStore::new(),
+            MockPatchsetFetcher::new(),
+            MockPatchsetParser::new(),
+        );
+
+        let feed = {
+            use crate::lore::infrastructure::parsers::parse_patch_feed;
+            let xml = fs::read_to_string(src).unwrap();
+            parse_patch_feed(&xml).unwrap()
+        };
+        let mut index = PatchFeedIndex::new(target.to_string());
+        index.process_feed_page(feed);
+        svc.cache
+            .feeds
+            .insert(target.to_string(), FeedCacheEntry::new(index));
+
+        let patches = svc
+            .fetch_next_patch_page(target, 1, 1, CacheMode::UseCache)
+            .unwrap();
+        assert_eq!(1, patches.len());
+    }
+
+    #[test]
+    fn fetch_next_patch_page_refresh_bypasses_cache() {
+        // Even with a warm cache, Refresh must hit the gateway.
         let src = "test_samples/lore_session/process_representative_patch/patch_feed_sample_1.xml";
         let target = "some-list";
 
         let mut feed_gateway = MockFeedGateway::new();
-        // First call: returns page with 1 patch
         feed_gateway
             .expect_fetch_patch_feed_page()
+            .times(1)
             .returning(move |_, _| Ok(fs::read_to_string(src).unwrap()));
 
         let mut svc = make_service(
@@ -669,10 +738,20 @@ mod tests {
             MockPatchsetParser::new(),
         );
 
-        svc.fetch_next_patch_page(target, 1, 1).unwrap();
-        assert!(svc.feed_index_by_list.contains_key(target));
+        // Pre-populate the cache.
+        let feed = {
+            let xml = fs::read_to_string(src).unwrap();
+            crate::lore::infrastructure::parsers::parse_patch_feed(&xml).unwrap()
+        };
+        let mut index = PatchFeedIndex::new(target.to_string());
+        index.process_feed_page(feed);
+        svc.cache
+            .feeds
+            .insert(target.to_string(), FeedCacheEntry::new(index));
 
-        svc.reset_feed_cursor(target);
-        assert!(!svc.feed_index_by_list.contains_key(target));
+        let patches = svc
+            .fetch_next_patch_page(target, 1, 1, CacheMode::Refresh)
+            .unwrap();
+        assert_eq!(1, patches.len());
     }
 }

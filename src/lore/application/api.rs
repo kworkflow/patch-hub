@@ -50,16 +50,19 @@ pub trait LoreServiceApi {
     ///
     /// Internally fetches more feed pages from the network as needed.
     /// Returns [`LoreError::EndOfFeed`] when the list is exhausted.
+    ///
+    /// * `UseCache`  — return from the in-memory index if not stale and already
+    ///   large enough; otherwise extend the index from the network.
+    /// * `Refresh`   — evict the cached index first, then fetch from the network.
+    /// * `Bypass`    — fetch from the network; the result is still accumulated
+    ///   in the in-memory index for subsequent pagination requests.
     fn fetch_next_patch_page(
         &mut self,
         target_list: &str,
         page_size: usize,
         page_number: usize,
+        mode: CacheMode,
     ) -> Result<Vec<Patch>, LoreError>;
-
-    /// Discard the cached feed state for `target_list` so the next call to
-    /// [`fetch_next_patch_page`] starts from the beginning.
-    fn reset_feed_cursor(&mut self, target_list: &str);
 
     // ── Patchset details ──────────────────────────────────────────────────────
 

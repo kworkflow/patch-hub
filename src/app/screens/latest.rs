@@ -1,7 +1,7 @@
 use color_eyre::eyre::bail;
 
 use crate::lore::{
-    application::{api::LoreServiceApi, errors::LoreError},
+    application::{api::LoreServiceApi, cache::CacheMode, errors::LoreError},
     domain::patch::Patch,
 };
 
@@ -46,11 +46,13 @@ impl LatestPatchsets {
     pub fn fetch_current_page(
         &mut self,
         lore_service: &mut dyn LoreServiceApi,
+        mode: CacheMode,
     ) -> color_eyre::Result<()> {
         match lore_service.fetch_next_patch_page(
             &self.target_list,
             self.page_size,
             self.page_number,
+            mode,
         ) {
             Ok(patches) => {
                 self.current_page = patches;
@@ -124,10 +126,10 @@ mod tests {
         let mut mock = MockLoreServiceApi::new();
         mock.expect_fetch_next_patch_page()
             .times(1)
-            .returning(|_, _, _| Ok(vec![make_patch("id-1"), make_patch("id-2")]));
+            .returning(|_, _, _, _| Ok(vec![make_patch("id-1"), make_patch("id-2")]));
 
         let mut lp = LatestPatchsets::new("some-list".to_string(), 5);
-        let result = lp.fetch_current_page(&mut mock);
+        let result = lp.fetch_current_page(&mut mock, CacheMode::UseCache);
 
         assert!(result.is_ok());
         assert_eq!(lp.processed_patchsets_count(), 2);
@@ -138,10 +140,10 @@ mod tests {
         let mut mock = MockLoreServiceApi::new();
         mock.expect_fetch_next_patch_page()
             .times(1)
-            .returning(|_, _, _| Err(LoreError::EndOfFeed));
+            .returning(|_, _, _, _| Err(LoreError::EndOfFeed));
 
         let mut lp = LatestPatchsets::new("some-list".to_string(), 5);
-        let result = lp.fetch_current_page(&mut mock);
+        let result = lp.fetch_current_page(&mut mock, CacheMode::UseCache);
 
         assert!(result.is_ok());
         assert_eq!(lp.processed_patchsets_count(), 0);
@@ -155,7 +157,7 @@ mod tests {
         let mut mock = MockLoreServiceApi::new();
         mock.expect_fetch_next_patch_page()
             .times(1)
-            .returning(|_, _, _| {
+            .returning(|_, _, _, _| {
                 Err(LoreError::Http(LoreHttpError::Net(NetError::HttpStatus {
                     code: 500,
                     message: "Internal Server Error".to_string(),
@@ -163,7 +165,7 @@ mod tests {
             });
 
         let mut lp = LatestPatchsets::new("some-list".to_string(), 5);
-        let result = lp.fetch_current_page(&mut mock);
+        let result = lp.fetch_current_page(&mut mock, CacheMode::UseCache);
 
         assert!(result.is_err());
     }
