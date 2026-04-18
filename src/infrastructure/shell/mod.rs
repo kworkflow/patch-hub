@@ -8,6 +8,9 @@ use std::{
 };
 
 #[cfg(test)]
+pub use r#trait::MockShellTrait;
+
+#[cfg(test)]
 mod tests;
 
 pub struct OsShell;

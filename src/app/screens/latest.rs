@@ -2,9 +2,9 @@ use color_eyre::eyre::bail;
 use derive_getters::Getters;
 
 use crate::lore::{
+    domain::patch::Patch,
     lore_api_client::{ClientError, PatchFeedRequest},
     lore_session::{LoreSession, LoreSessionError},
-    domain::patch::Patch,
 };
 
 #[derive(Getters)]
