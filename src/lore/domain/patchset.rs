@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 
 use crate::lore::domain::patch::{Patch, PatchFeed, PatchRegex};
@@ -10,6 +8,8 @@ const LORE_PAGE_SIZE: usize = 200;
 ///
 /// Replaces the state that was previously mixed into [`LoreSession`].
 pub struct PatchFeedIndex {
+    // TODO: used by the actor model (Phase 6) to identify which list this index belongs to.
+    #[allow(dead_code)]
     target_list: String,
     next_offset: usize,
     representative_patch_ids: Vec<String>,
@@ -28,6 +28,8 @@ impl PatchFeedIndex {
         }
     }
 
+    // TODO: used by the actor model (Phase 6) for random-access patch lookup by message ID.
+    #[allow(dead_code)]
     pub fn target_list(&self) -> &str {
         &self.target_list
     }
@@ -40,6 +42,8 @@ impl PatchFeedIndex {
         &self.representative_patch_ids
     }
 
+    // TODO: used by the actor model (Phase 6) for random-access patch lookup by message ID.
+    #[allow(dead_code)]
     pub fn get_patch(&self, id: &str) -> Option<&Patch> {
         self.patches_by_id.get(id)
     }

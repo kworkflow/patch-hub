@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use mockall::automock;
 
 use std::{

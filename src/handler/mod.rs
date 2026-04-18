@@ -78,19 +78,10 @@ where
             }
         }
         CurrentScreen::LatestPatchsets => {
-            if app
-                .latest_patchsets
-                .as_ref()
-                .unwrap()
-                .processed_patchsets_count()
-                == 0
-            {
-                let target_list = app
-                    .latest_patchsets
-                    .as_ref()
-                    .unwrap()
-                    .target_list()
-                    .to_string();
+            let patchsets_state = app.latest_patchsets.as_mut().unwrap();
+
+            if patchsets_state.processed_patchsets_count() == 0 {
+                let target_list = patchsets_state.target_list().to_string();
                 terminal = loading_screen! {
                     terminal,
                     format!("Fetching patchsets from {}", target_list) => {

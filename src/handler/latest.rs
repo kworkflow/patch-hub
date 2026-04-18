@@ -7,9 +7,8 @@ use ratatui::{
 use std::ops::ControlFlow;
 
 use crate::{
-    app::{screens::CurrentScreen, App},
+    app::{screens::CurrentScreen, App, B4Result},
     loading_screen,
-    lore::lore_session::B4Result,
     ui::popup::{help::HelpPopUpBuilder, info_popup::InfoPopUp, PopUp},
 };
 
@@ -21,6 +20,8 @@ pub fn handle_latest_patchsets<B>(
 where
     B: Backend + Send + 'static,
 {
+    let latest_patchsets = app.latest_patchsets.as_mut().unwrap();
+
     match key.code {
         KeyCode::Char('?') => {
             let popup = generate_help_popup();
@@ -31,34 +32,23 @@ where
             app.set_current_screen(CurrentScreen::MailingListSelection);
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            app.latest_patchsets
-                .as_mut()
-                .unwrap()
-                .select_below_patchset();
+            latest_patchsets.select_below_patchset();
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            app.latest_patchsets
-                .as_mut()
-                .unwrap()
-                .select_above_patchset();
+            latest_patchsets.select_above_patchset();
         }
         KeyCode::Char('l') | KeyCode::Right => {
-            let list_name = app
-                .latest_patchsets
-                .as_ref()
-                .unwrap()
-                .target_list()
-                .to_string();
+            let list_name = latest_patchsets.target_list().to_string();
             terminal = loading_screen! {
                 terminal,
                 format!("Fetching patchsets from {}", list_name) => {
-                    app.latest_patchsets.as_mut().unwrap().increment_page();
+                    latest_patchsets.increment_page();
                     app.fetch_latest_current_page()
                 }
             };
         }
         KeyCode::Char('h') | KeyCode::Left => {
-            app.latest_patchsets.as_mut().unwrap().decrement_page();
+            latest_patchsets.decrement_page();
             // Reload from cache (no network call since LoreService caches all pages)
             app.fetch_latest_current_page()?;
         }
@@ -69,7 +59,7 @@ where
                     let result = app.init_details_actions();
                     if result.is_ok() {
                         match result.unwrap() {
-                            B4Result::PatchFound(_) => {
+                            B4Result::PatchFound => {
                                 app.set_current_screen(CurrentScreen::PatchsetDetails);
                             }
                             B4Result::PatchNotFound(err_cause) => {

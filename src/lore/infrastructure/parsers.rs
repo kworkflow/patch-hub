@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use regex::Regex;
 use std::sync::LazyLock;
 

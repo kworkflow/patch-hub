@@ -24,7 +24,6 @@ use crate::{
         application::{api::LoreServiceApi, errors::LoreError},
         domain::patch::{Author, Patch},
         infrastructure::patchset_parser::split_cover,
-        lore_session::B4Result,
     },
     ui::popup::{info_popup::InfoPopUp, PopUp},
 };
@@ -40,6 +39,12 @@ use screens::{
     mail_list::MailingListSelection,
     CurrentScreen,
 };
+
+/// Result type signalling whether a patchset was successfully loaded.
+pub enum B4Result {
+    PatchFound,
+    PatchNotFound(String),
+}
 
 /// Type that represents the overall state of the application. It can be viewed
 /// as the **Model** component of `patch-hub`.
@@ -275,7 +280,7 @@ impl App {
             last_screen: self.current_screen.clone(),
         });
 
-        Ok(B4Result::PatchFound("".to_string()))
+        Ok(B4Result::PatchFound)
     }
 
     /// Sets field [App::details_actions] to `None`.
@@ -290,25 +295,12 @@ impl App {
     ///
     /// This function will panic if `details_actions` is `None`.
     pub fn consolidate_patchset_actions(&mut self) -> color_eyre::Result<()> {
-        let representative_patch = self
-            .details_actions
-            .as_ref()
-            .unwrap()
-            .representative_patch
-            .clone();
-        let patchset_actions = self
-            .details_actions
-            .as_ref()
-            .unwrap()
-            .patchset_actions
-            .clone();
-        let raw_patches = self.details_actions.as_ref().unwrap().raw_patches.clone();
-        let patches_to_reply = self
-            .details_actions
-            .as_ref()
-            .unwrap()
-            .patches_to_reply
-            .clone();
+        let details_actions = self.details_actions.as_ref().unwrap();
+
+        let representative_patch = details_actions.representative_patch.clone();
+        let patchset_actions = details_actions.patchset_actions.clone();
+        let raw_patches = details_actions.raw_patches.clone();
+        let patches_to_reply = details_actions.patches_to_reply.clone();
 
         if let Some(true) = patchset_actions.get(&PatchsetAction::Bookmark) {
             self.bookmarked_patchsets
