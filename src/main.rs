@@ -14,6 +14,7 @@ use handler::run_app;
 use infrastructure::{
     file_system::OsFileSystem,
     monitoring::{init_monitoring, InitMonitoringProduct},
+    shell::OsShell,
     terminal::{init, restore},
 };
 use std::ops::ControlFlow;
@@ -34,6 +35,7 @@ fn main() -> color_eyre::Result<()> {
     let mut terminal = init()?;
 
     let fs = OsFileSystem;
+    let shell = OsShell;
     let config = Config::build(&fs);
     config.create_dirs(&fs);
 
@@ -49,7 +51,7 @@ fn main() -> color_eyre::Result<()> {
         ControlFlow::Continue(t) => terminal = t,
     }
 
-    let app = App::new(config, Box::new(fs))?;
+    let app = App::new(config, Box::new(fs), Box::new(shell))?;
     if !app.check_external_deps() {
         event!(
             Level::WARN,

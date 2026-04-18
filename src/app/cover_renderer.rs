@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
-
-use std::{
-    fmt::Display,
-    io::Write,
-    process::{Command, Stdio},
-};
 use tracing::{event, Level};
+
+use std::fmt::Display;
+
+use color_eyre::eyre::eyre;
+
+use crate::infrastructure::shell::{ShellCommand, ShellTrait};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]
 pub enum CoverRenderer {
@@ -43,10 +43,14 @@ impl Display for CoverRenderer {
     }
 }
 
-pub fn render_cover(raw: &str, renderer: &CoverRenderer) -> color_eyre::Result<String> {
+pub fn render_cover(
+    shell: &dyn ShellTrait,
+    raw: &str,
+    renderer: &CoverRenderer,
+) -> color_eyre::Result<String> {
     let text = match renderer {
         CoverRenderer::Default => Ok(raw.to_string()),
-        CoverRenderer::Bat => bat_cover_renderer(raw),
+        CoverRenderer::Bat => bat_cover_renderer(shell, raw),
     }?;
 
     Ok(text)
@@ -57,21 +61,15 @@ pub fn render_cover(raw: &str, renderer: &CoverRenderer) -> color_eyre::Result<S
 /// # Errors
 ///
 /// If bat isn't installed or if the command fails, an error will be returned.
-fn bat_cover_renderer(patch: &str) -> color_eyre::Result<String> {
-    let mut bat = Command::new("bat")
-        .arg("-pp")
-        .arg("-f")
-        .arg("-l")
-        .arg("mbx")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
+fn bat_cover_renderer(shell: &dyn ShellTrait, patch: &str) -> color_eyre::Result<String> {
+    let cmd = ShellCommand::new("bat").args(["-pp", "-f", "-l", "mbx"]);
+
+    let out = shell
+        .execute_with_stdin(&cmd, patch.as_bytes())
         .map_err(|e| {
             event!(Level::ERROR, "Failed to spawn bat for cover preview: {}", e);
-            e
+            eyre!(e)
         })?;
 
-    bat.stdin.as_mut().unwrap().write_all(patch.as_bytes())?;
-    let output = bat.wait_with_output()?;
-    Ok(String::from_utf8(output.stdout)?)
+    Ok(String::from_utf8(out.stdout)?)
 }

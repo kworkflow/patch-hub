@@ -5,16 +5,17 @@ use thiserror::Error;
 
 use std::{
     collections::{HashMap, HashSet},
-    ffi::OsStr,
     io::{self, BufRead},
     mem::swap,
     path::Path,
-    process::{Command, Stdio},
     sync::LazyLock,
 };
 
 use crate::{
-    infrastructure::file_system::{FileSystemError, FileSystemTrait},
+    infrastructure::{
+        file_system::{FileSystemError, FileSystemTrait},
+        shell::{ShellCommand, ShellTrait},
+    },
     lore::{
         lore_api_client::{AvailableListsRequest, ClientError, PatchFeedRequest, PatchHTMLRequest},
         mailing_list::MailingList,
@@ -163,7 +164,12 @@ impl LoreSession {
     }
 }
 
-pub fn download_patchset(fs: &dyn FileSystemTrait, output_dir: &str, patch: &Patch) -> B4Result {
+pub fn download_patchset(
+    fs: &dyn FileSystemTrait,
+    shell: &dyn ShellTrait,
+    output_dir: &str,
+    patch: &Patch,
+) -> B4Result {
     let message_id: &str = &patch.message_id().href;
     let mbox_name: String = extract_mbox_name_from_message_id(message_id);
 
@@ -173,20 +179,19 @@ pub fn download_patchset(fs: &dyn FileSystemTrait, output_dir: &str, patch: &Pat
 
     let filepath: String = format!("{output_dir}/{mbox_name}");
     if !fs.exists(Path::new(&filepath)) {
-        match Command::new("b4")
-            .arg("--quiet")
-            .arg("am")
-            .arg("--use-version")
-            .arg(format!("{}", patch.version()))
-            .arg(message_id)
-            .arg("--outdir")
-            .arg(output_dir)
-            .arg("--mbox-name")
-            .arg(&mbox_name)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-        {
+        let cmd = ShellCommand::new("b4").args([
+            "--quiet",
+            "am",
+            "--use-version",
+            &format!("{}", patch.version()),
+            message_id,
+            "--outdir",
+            output_dir,
+            "--mbox-name",
+            &mbox_name,
+        ]);
+
+        match shell.execute(&cmd) {
             Ok(_) => {}
             Err(_) => {
                 return B4Result::PatchNotFound("b4 couldn't fetch patchset file.".to_string())
@@ -194,9 +199,7 @@ pub fn download_patchset(fs: &dyn FileSystemTrait, output_dir: &str, patch: &Pat
         };
     }
 
-    let path = Path::new(OsStr::new(&filepath));
-
-    if fs.exists(path) {
+    if fs.exists(Path::new(&filepath)) {
         B4Result::PatchFound(filepath)
     } else {
         B4Result::PatchNotFound("b4 couldn't fetch patchset file.".to_string())
@@ -426,11 +429,11 @@ pub fn prepare_reply_patchset_with_reviewed_by<T>(
     patches_to_reply: &[bool],
     git_signature: &str,
     git_send_email_options: &str,
-) -> Result<Vec<Command>, LoreSessionError>
+) -> Result<Vec<ShellCommand>, LoreSessionError>
 where
     T: PatchHTMLRequest,
 {
-    let mut git_reply_commands: Vec<Command> = Vec::new();
+    let mut git_reply_commands: Vec<ShellCommand> = Vec::new();
 
     static RE_MESSAGE_ID: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r#"(?m)^Message-Id: <(.*?)>"#).unwrap());
@@ -454,8 +457,11 @@ where
 
         let patch_body = lore_api_client.request_patch_html(target_list, message_id)?;
 
-        let mut git_reply_command = extract_git_reply_command(&patch_body, git_send_email_options);
-        git_reply_command.arg(format!("{}", reply_path.display()));
+        let git_reply_command = extract_git_reply_command(
+            &patch_body,
+            git_send_email_options,
+            &format!("{}", reply_path.display()),
+        );
 
         git_reply_commands.push(git_reply_command);
     }
@@ -496,12 +502,15 @@ fn generate_patch_reply_template(patch_contents: &str) -> String {
     reply_template
 }
 
-fn extract_git_reply_command(patch_html: &str, git_send_email_options: &str) -> Command {
-    let mut git_reply_command = Command::new("git");
-    git_reply_command.arg("send-email");
+fn extract_git_reply_command(
+    patch_html: &str,
+    git_send_email_options: &str,
+    reply_path: &str,
+) -> ShellCommand {
+    let mut args: Vec<String> = vec!["send-email".to_string()];
 
     for option in git_send_email_options.split_whitespace() {
-        git_reply_command.arg(option);
+        args.push(option.to_string());
     }
 
     static RE_FULL_GIT_COMMAND: LazyLock<Regex> = LazyLock::new(|| {
@@ -516,42 +525,50 @@ fn extract_git_reply_command(patch_html: &str, git_send_email_options: &str) -> 
             let full_git_command = full_git_command_match.as_str();
 
             for long_option_match in RE_LONG_OPTIONS.find_iter(full_git_command) {
-                git_reply_command.arg(long_option_match.as_str());
+                args.push(long_option_match.as_str().to_string());
             }
         }
     }
 
-    git_reply_command
+    args.push(reply_path.to_string());
+
+    ShellCommand {
+        program: "git".to_string(),
+        args,
+    }
 }
 
-pub fn get_git_signature(git_repo_path: &str) -> (String, String) {
-    let mut git_user_name_command = Command::new("git");
-    if !git_repo_path.is_empty() {
-        git_user_name_command.arg("-C").arg(git_repo_path);
-    }
-    let git_user_name_output = git_user_name_command
-        .arg("config")
-        .arg("user.name")
-        .output()
-        .unwrap();
-    let git_user_name = std::str::from_utf8(&git_user_name_output.stdout)
-        .unwrap()
-        .trim();
+pub fn get_git_signature(shell: &dyn ShellTrait, git_repo_path: &str) -> (String, String) {
+    let mut name_args = vec!["config".to_string(), "user.name".to_string()];
+    let mut email_args = vec!["config".to_string(), "user.email".to_string()];
 
-    let mut git_user_email_command = Command::new("git");
     if !git_repo_path.is_empty() {
-        git_user_email_command.arg("-C").arg(git_repo_path);
+        name_args.insert(0, git_repo_path.to_string());
+        name_args.insert(0, "-C".to_string());
+        email_args.insert(0, git_repo_path.to_string());
+        email_args.insert(0, "-C".to_string());
     }
-    let git_user_email_output = git_user_email_command
-        .arg("config")
-        .arg("user.email")
-        .output()
-        .unwrap();
-    let git_user_email = std::str::from_utf8(&git_user_email_output.stdout)
-        .unwrap()
-        .trim();
 
-    (git_user_name.to_owned(), git_user_email.to_owned())
+    let name_cmd = ShellCommand {
+        program: "git".to_string(),
+        args: name_args,
+    };
+    let email_cmd = ShellCommand {
+        program: "git".to_string(),
+        args: email_args,
+    };
+
+    let git_user_name = shell
+        .execute(&name_cmd)
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+        .unwrap_or_default();
+
+    let git_user_email = shell
+        .execute(&email_cmd)
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+        .unwrap_or_default();
+
+    (git_user_name, git_user_email)
 }
 
 pub fn save_reviewed_patchsets(

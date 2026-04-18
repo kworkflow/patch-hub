@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     infrastructure::{
         file_system::FileSystemTrait, monitoring::logging::garbage_collector::collect_garbage,
+        shell::ShellTrait,
     },
     log_on_error,
     lore::{
@@ -59,6 +60,8 @@ pub struct App {
     pub popup: Option<Box<dyn PopUp>>,
     /// Filesystem abstraction
     pub fs: Box<dyn FileSystemTrait>,
+    /// Shell abstraction
+    pub shell: Box<dyn ShellTrait>,
 }
 
 impl App {
@@ -69,7 +72,11 @@ impl App {
     /// # Returns
     ///
     /// `App` instance with loading configurations and app data.
-    pub fn new(config: Config, fs: Box<dyn FileSystemTrait>) -> color_eyre::Result<Self> {
+    pub fn new(
+        config: Config,
+        fs: Box<dyn FileSystemTrait>,
+        shell: Box<dyn ShellTrait>,
+    ) -> color_eyre::Result<Self> {
         let mailing_lists = lore_session::load_available_lists(&*fs, config.mailing_lists_path())
             .unwrap_or_default();
 
@@ -108,6 +115,7 @@ impl App {
             lore_api_client,
             popup: None,
             fs,
+            shell,
         })
     }
 
@@ -172,6 +180,7 @@ impl App {
 
         let patchset_path: String = match lore_session::download_patchset(
             &*self.fs,
+            &*self.shell,
             self.config.patchsets_cache_dir(),
             &representative_patch,
         ) {
@@ -216,29 +225,32 @@ impl App {
                     tested_by.push(authors_tested_by);
                     acked_by.push(authors_acked_by);
 
-                    let rendered_cover = match render_cover(raw_cover, self.config.cover_renderer())
-                    {
-                        Ok(render) => render,
-                        Err(_) => {
-                            event!(
-                                Level::ERROR,
-                                "Failed to render cover preview with external program"
-                            );
-                            raw_cover.to_string()
-                        }
-                    };
-
-                    let rendered_patch =
-                        match render_patch_preview(raw_patch, self.config.patch_renderer()) {
+                    let rendered_cover =
+                        match render_cover(&*self.shell, raw_cover, self.config.cover_renderer()) {
                             Ok(render) => render,
                             Err(_) => {
                                 event!(
                                     Level::ERROR,
-                                    "Failed to render patch preview with external program",
+                                    "Failed to render cover preview with external program"
                                 );
-                                raw_patch.to_string()
+                                raw_cover.to_string()
                             }
                         };
+
+                    let rendered_patch = match render_patch_preview(
+                        &*self.shell,
+                        raw_patch,
+                        self.config.patch_renderer(),
+                    ) {
+                        Ok(render) => render,
+                        Err(_) => {
+                            event!(
+                                Level::ERROR,
+                                "Failed to render patch preview with external program",
+                            );
+                            raw_patch.to_string()
+                        }
+                    };
 
                     patches_preview
                         .push(format!("{rendered_cover}---\n{rendered_patch}").into_text()?);
@@ -314,6 +326,7 @@ impl App {
                 .unwrap_or_default();
             details_actions.reply_patchset_with_reviewed_by(
                 &*self.fs,
+                &*self.shell,
                 "all",
                 self.config.git_send_email_options(),
                 &mut successful_indexes,
@@ -342,12 +355,11 @@ impl App {
             .patchset_actions
             .get(&PatchsetAction::Apply)
         {
-            let popup = match self
-                .details_actions
-                .as_ref()
-                .unwrap()
-                .apply_patchset(&*self.fs, &self.config)
-            {
+            let popup = match self.details_actions.as_ref().unwrap().apply_patchset(
+                &*self.fs,
+                &*self.shell,
+                &self.config,
+            ) {
                 Ok(msg) => InfoPopUp::generate_info_popup("Patchset Apply Success", &msg),
                 Err(msg) => InfoPopUp::generate_info_popup("Patchset Apply Fail", &msg),
             };
