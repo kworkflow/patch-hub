@@ -15,3 +15,6 @@ pub use state::{normalize_derived_paths, ConfigSnapshot, ConfigState, KernelTree
 pub use update::{ConfigUpdateDraft, ValidatedConfigUpdate};
 
 pub const DEFAULT_CONFIG_PATH_SUFFIX: &str = ".config/patch-hub/config.json";
+
+#[cfg(test)]
+mod tests;

@@ -32,7 +32,7 @@ pub struct ConfigService<FS: FileSystemTrait> {
 impl<FS: FileSystemTrait + Send + Sync> ConfigService<FS> {
     /// Bootstrap configuration: load file or defaults, persist, apply env overrides, ensure dirs.
     ///
-    /// Same overall behaviour as legacy [`crate::app::config::Config::build`] + [`crate::app::config::Config::create_dirs`].
+    /// Loads file or defaults, saves, applies env overrides, ensures directories exist.
     pub fn bootstrap(env: &dyn EnvTrait, fs: FS) -> Result<Self, ConfigError> {
         let repo = JsonConfigRepository::new(env, fs);
         let mut state = Self::load_initial_state(env, &repo);

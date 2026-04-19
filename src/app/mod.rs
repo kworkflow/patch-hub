@@ -1,5 +1,4 @@
 pub mod commands;
-pub mod config;
 pub mod cover_renderer;
 pub mod errors;
 pub mod patch_renderer;

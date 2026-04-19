@@ -13,7 +13,7 @@ pub struct KernelTree {
     branch: String,
 }
 
-/// Canonical persisted configuration (same JSON shape as legacy [`crate::app::config::Config`]).
+/// Canonical persisted configuration (on-disk JSON for patch-hub).
 #[derive(Serialize, Getters)]
 #[serde_individual_default]
 pub struct ConfigState {
