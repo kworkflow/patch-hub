@@ -1,9 +1,11 @@
 mod app;
 mod cli;
+mod config;
 mod handler;
 mod infrastructure;
 mod lore;
 mod macros;
+mod render_prefs;
 mod ui;
 
 use app::{config::Config, patch_renderer::PatchRenderer, App};
