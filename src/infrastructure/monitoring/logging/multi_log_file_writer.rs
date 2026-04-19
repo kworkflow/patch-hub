@@ -10,7 +10,7 @@ use tracing::{event, Level};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::{reload::Handle, Layer, Registry};
 
-use crate::app::config::Config;
+use crate::config::ConfigSnapshot;
 
 #[derive(Clone)]
 pub struct MultiLogFileWriter {
@@ -31,7 +31,7 @@ impl MultiLogFileWriter {
 
     pub fn update_log_writer_with_config(
         &mut self,
-        config: &Config,
+        config: &ConfigSnapshot,
         current_guards_by_file_name: HashMap<String, WorkerGuard>,
         reload_handle: Handle<Box<dyn Layer<Registry> + Send + Sync>, Registry>,
     ) -> Vec<WorkerGuard> {

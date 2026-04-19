@@ -18,6 +18,7 @@ use std::{
 };
 
 use crate::{
+    config::ConfigServiceApi,
     infrastructure::{
         env::EnvTrait,
         file_system::FileSystemTrait,
@@ -31,8 +32,6 @@ use crate::{
     },
     ui::popup::info_popup::InfoPopUp,
 };
-
-use config::Config;
 use screens::{
     bookmarked::BookmarkedPatchsetsState,
     details_actions::{PatchsetAction, PatchsetDetailsState},
@@ -51,6 +50,7 @@ pub struct AppServices {
     pub shell: Box<dyn ShellTrait>,
     pub fs: Box<dyn FileSystemTrait>,
     pub env: Box<dyn EnvTrait>,
+    pub config: Box<dyn ConfigServiceApi>,
 }
 
 /// Result type signalling whether a patchset was successfully loaded.
@@ -66,15 +66,14 @@ pub struct App {
 }
 
 impl App {
-    /// Creates a new instance of `App`. It dynamically loads configurations
-    /// based on precedence (see [crate::app::Config::build]), app data
-    /// (available mailing lists, bookmarked patchsets, reviewed patchsets)
+    /// Creates a new instance of `App`. Configuration comes from [`ConfigServiceApi::snapshot`];
+    /// Lore bootstrap uses already-warmed cache from `lore_service`.
     ///
     /// # Returns
     ///
     /// `App` instance with loading configurations and app data.
     pub fn new(
-        config: Config,
+        config_service: Box<dyn ConfigServiceApi>,
         fs: Box<dyn FileSystemTrait>,
         shell: Box<dyn ShellTrait>,
         env: Box<dyn EnvTrait>,
@@ -82,6 +81,7 @@ impl App {
         render: Box<dyn RenderServiceApi>,
     ) -> color_eyre::Result<Self> {
         let bootstrap = lore_service.warm_bootstrap_cache().unwrap_or_default();
+        let config = config_service.snapshot();
 
         event!(Level::INFO, "patch-hub started");
         collect_garbage(&config);
@@ -118,6 +118,7 @@ impl App {
                 shell,
                 fs,
                 env,
+                config: config_service,
             },
         })
     }
@@ -421,7 +422,7 @@ impl App {
         }
     }
 
-    /// Opens the edit-config screen from current [`Config`].
+    /// Opens the edit-config screen from the current configuration snapshot.
     pub fn init_edit_config(&mut self) {
         self.state.config_state.edit_config = Some(EditConfigState::new(&self.state.config));
     }
@@ -431,11 +432,13 @@ impl App {
     }
 
     /// Applies edited values from [`ConfigUiState::edit_config`] into [`AppState::config`].
-    pub fn consolidate_edit_config(&mut self) {
+    pub fn consolidate_edit_config(&mut self) -> color_eyre::Result<()> {
         if let Some(edit_config) = &self.state.config_state.edit_config {
             let draft = edit_config.to_update_draft(&*self.services.fs);
-            self.state.config.apply_update(draft);
+            let snapshot = self.services.config.apply_update(draft)?;
+            self.state.config = snapshot;
         }
+        Ok(())
     }
 
     pub fn set_current_screen(&mut self, new_current_screen: CurrentScreen) {

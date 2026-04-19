@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::{
-    app::config::{Config, KernelTree},
+    config::{ConfigSnapshot, KernelTree},
     infrastructure::{
         file_system::FileSystemTrait,
         shell::{ShellCommand, ShellTrait},
@@ -175,7 +175,7 @@ impl PatchsetDetailsState {
     fn validate_kernel_tree<'a>(
         &self,
         fs: &dyn FileSystemTrait,
-        config: &'a Config,
+        config: &'a ConfigSnapshot,
     ) -> Result<&'a KernelTree, String> {
         let kernel_tree_id = if let Some(target) = config.target_kernel_tree() {
             target
@@ -327,7 +327,7 @@ impl PatchsetDetailsState {
         &self,
         shell: &dyn ShellTrait,
         kernel_tree: &KernelTree,
-        config: &Config,
+        config: &ConfigSnapshot,
     ) -> Result<String, String> {
         self.switch_to_branch(shell, kernel_tree, kernel_tree.branch())?;
 
@@ -364,7 +364,7 @@ impl PatchsetDetailsState {
         &self,
         shell: &dyn ShellTrait,
         kernel_tree: &KernelTree,
-        config: &Config,
+        config: &ConfigSnapshot,
     ) -> Result<(), String> {
         let mut git_am_cmd = ShellCommand::new("git")
             .arg("-C")
@@ -402,7 +402,7 @@ impl PatchsetDetailsState {
         &self,
         fs: &dyn FileSystemTrait,
         shell: &dyn ShellTrait,
-        config: &Config,
+        config: &ConfigSnapshot,
     ) -> Result<String, String> {
         let kernel_tree = self.validate_kernel_tree(fs, config)?;
         self.check_git_state(fs, shell, kernel_tree)?;

@@ -6,6 +6,7 @@ use crate::config::DEFAULT_CONFIG_PATH_SUFFIX;
 use crate::infrastructure::{env::EnvTrait, file_system::FileSystemTrait};
 
 pub trait ConfigRepository: Send + Sync {
+    #[allow(dead_code)]
     fn load(&self) -> Result<ConfigState, ConfigError>;
     fn save(&self, state: &ConfigState) -> Result<(), ConfigError>;
 }

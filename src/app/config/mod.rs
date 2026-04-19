@@ -1,3 +1,6 @@
+//! Legacy on-disk `Config` type kept for unit tests until Phase 5-D removes it.
+#![allow(dead_code)]
+
 use derive_getters::Getters;
 use patch_hub_proc_macros::serde_individual_default;
 use serde::{Deserialize, Serialize};
@@ -16,21 +19,6 @@ use crate::infrastructure::{
 pub const DEFAULT_CONFIG_PATH_SUFFIX: &str = ".config/patch-hub/config.json";
 
 use super::{cover_renderer::CoverRenderer, patch_renderer::PatchRenderer};
-
-/// Parsed edits from the edit-config screen, ready to merge into [`Config`].
-///
-/// Each field is independent: only `Some` values are applied by [`Config::apply_update`].
-#[derive(Debug, Default, Clone)]
-pub struct ConfigUpdateDraft {
-    pub page_size: Option<usize>,
-    pub cache_dir: Option<String>,
-    pub data_dir: Option<String>,
-    pub git_send_email_option: Option<String>,
-    pub git_am_option: Option<String>,
-    pub patch_renderer: Option<String>,
-    pub cover_renderer: Option<String>,
-    pub max_log_age: Option<usize>,
-}
 
 #[cfg(test)]
 mod tests;
@@ -240,34 +228,6 @@ impl Config {
 
     pub fn set_max_log_age(&mut self, max_log_age: usize) {
         self.max_log_age = max_log_age;
-    }
-
-    /// Merges validated field updates from the edit-config flow into this config.
-    pub fn apply_update(&mut self, draft: ConfigUpdateDraft) {
-        if let Some(page_size) = draft.page_size {
-            self.set_page_size(page_size);
-        }
-        if let Some(cache_dir) = draft.cache_dir {
-            self.set_cache_dir(cache_dir);
-        }
-        if let Some(data_dir) = draft.data_dir {
-            self.set_data_dir(data_dir);
-        }
-        if let Some(git_send_email_options) = draft.git_send_email_option {
-            self.set_git_send_email_option(git_send_email_options);
-        }
-        if let Some(git_am_options) = draft.git_am_option {
-            self.set_git_am_option(git_am_options);
-        }
-        if let Some(s) = draft.patch_renderer {
-            self.set_patch_renderer(s.into());
-        }
-        if let Some(s) = draft.cover_renderer {
-            self.set_cover_renderer(s.into());
-        }
-        if let Some(max_log_age) = draft.max_log_age {
-            self.set_max_log_age(max_log_age);
-        }
     }
 
     pub fn save_patch_hub_config(

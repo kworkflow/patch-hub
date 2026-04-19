@@ -1,5 +1,7 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
+use color_eyre::eyre::eyre;
+
 use crate::{
     app::{screens::CurrentScreen, App},
     ui::popup::{help::HelpPopUpBuilder, PopUp},
@@ -32,10 +34,11 @@ pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()
                     app.state.popup = Some(popup);
                 }
                 KeyCode::Esc | KeyCode::Char('q') => {
-                    app.consolidate_edit_config();
-                    app.state
+                    app.consolidate_edit_config()?;
+                    app.services
                         .config
-                        .save_patch_hub_config(&*app.services.env, &*app.services.fs)?;
+                        .persist()
+                        .map_err(|e| eyre!("failed to save config: {e}"))?;
                     app.reset_edit_config();
                     app.set_current_screen(CurrentScreen::MailingListSelection);
                 }

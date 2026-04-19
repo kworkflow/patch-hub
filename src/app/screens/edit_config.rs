@@ -4,7 +4,7 @@ use derive_getters::Getters;
 use std::{collections::HashMap, fmt::Display, path::Path};
 
 use crate::{
-    app::config::{Config, ConfigUpdateDraft},
+    config::{ConfigSnapshot, ConfigUpdateDraft},
     infrastructure::file_system::FileSystemTrait,
 };
 
@@ -18,7 +18,7 @@ pub struct EditConfigState {
 }
 
 impl EditConfigState {
-    pub fn new(config: &Config) -> Self {
+    pub fn new(config: &ConfigSnapshot) -> Self {
         let mut config_buffer = HashMap::new();
         config_buffer.insert(EditableConfig::PageSize, config.page_size().to_string());
         config_buffer.insert(EditableConfig::CacheDir, config.cache_dir().to_string());

@@ -1,14 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    app::{
-        config::Config,
-        screens::{
-            bookmarked::BookmarkedPatchsetsState, details_actions::PatchsetDetailsState,
-            edit_config::EditConfigState, latest::LatestPatchsetsState,
-            mail_list::MailingListSelectionState, CurrentScreen,
-        },
+    app::screens::{
+        bookmarked::BookmarkedPatchsetsState, details_actions::PatchsetDetailsState,
+        edit_config::EditConfigState, latest::LatestPatchsetsState,
+        mail_list::MailingListSelectionState, CurrentScreen,
     },
+    config::ConfigSnapshot,
     ui::popup::PopUp,
 };
 
@@ -41,6 +39,6 @@ pub struct AppState {
     pub lore: LoreUiState,
     pub user_state: UserLoreState,
     pub config_state: ConfigUiState,
-    pub config: Config,
+    pub config: ConfigSnapshot,
     pub popup: Option<Box<dyn PopUp>>,
 }

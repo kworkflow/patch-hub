@@ -12,6 +12,8 @@ use crate::infrastructure::{env::EnvTrait, file_system::FileSystemTrait};
 pub trait ConfigServiceApi: Send + Sync {
     fn snapshot(&self) -> ConfigSnapshot;
     fn apply_update(&mut self, draft: ConfigUpdateDraft) -> Result<ConfigSnapshot, ConfigError>;
+    /// Writes the current in-memory configuration to disk (same file as bootstrap).
+    fn persist(&self) -> Result<(), ConfigError>;
 }
 
 pub struct ConfigService<FS: FileSystemTrait> {
@@ -80,5 +82,9 @@ impl<FS: FileSystemTrait + Send + Sync> ConfigServiceApi for ConfigService<FS> {
         normalize_derived_paths(&mut self.state);
         self.ensure_directories()?;
         Ok(self.state.to_snapshot())
+    }
+
+    fn persist(&self) -> Result<(), ConfigError> {
+        self.repo.save(&self.state)
     }
 }

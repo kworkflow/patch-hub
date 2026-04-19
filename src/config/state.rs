@@ -79,6 +79,7 @@ impl ConfigState {
         }
     }
 
+    #[allow(dead_code)]
     pub fn page_size(&self) -> usize {
         self.page_size
     }

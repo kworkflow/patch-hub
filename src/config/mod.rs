@@ -1,7 +1,5 @@
 //! Configuration bounded context: state, persistence, bootstrap, and snapshots.
-//! Not yet wired into `App` (Phase 5 commit 1 — module only).
-#![allow(dead_code)] // exercised in commit 5-B wiring and tests
-#![allow(unused_imports)] // pub re-exports unused until wiring (commit 5-B)
+#![allow(unused_imports)] // `pub use` re-exports are the public API of this module
 
 mod env_overrides;
 mod errors;
