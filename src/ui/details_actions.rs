@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::app::{
-    screens::details_actions::{DetailsActions, PatchsetAction},
+    screens::details_actions::{PatchsetAction, PatchsetDetailsState},
     App,
 };
 
@@ -17,7 +17,7 @@ use crate::app::{
 /// of line returned:
 ///
 /// _**Reviewed-by: 1 | Tested-by: 0 | Acked-by: 2**_
-fn review_trailers_details(details_actions: &DetailsActions) -> Line<'static> {
+fn review_trailers_details(details_actions: &PatchsetDetailsState) -> Line<'static> {
     let i = details_actions.preview_index;
 
     let resolve_color = |n_trailers: usize| -> Style {

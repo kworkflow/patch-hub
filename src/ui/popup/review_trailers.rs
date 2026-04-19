@@ -8,7 +8,7 @@ use ratatui::{
 
 use std::collections::HashSet;
 
-use crate::{app::screens::details_actions::DetailsActions, lore::domain::patch::Author};
+use crate::{app::screens::details_actions::PatchsetDetailsState, lore::domain::patch::Author};
 
 use super::PopUp;
 
@@ -31,7 +31,7 @@ impl ReviewTrailersPopUp {
     /// the fields `reviewed_by`, `tested_by`, and `acked_by`, which are the
     /// tags considered for the generated pop-up. This function succeeds regardless if
     /// there are no code-review trailers for the specific patch.
-    pub fn generate_trailers_popup(details_actions: &DetailsActions) -> Box<dyn PopUp> {
+    pub fn generate_trailers_popup(details_actions: &PatchsetDetailsState) -> Box<dyn PopUp> {
         let i = details_actions.preview_index;
         let mut reviewed_by_text = String::new();
         let mut tested_by_text = String::new();

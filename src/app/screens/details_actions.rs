@@ -14,7 +14,7 @@ use crate::{
 
 use super::CurrentScreen;
 
-pub struct DetailsActions {
+pub struct PatchsetDetailsState {
     pub representative_patch: Patch,
     /// Raw patches as plain text files
     pub raw_patches: Vec<String>,
@@ -52,7 +52,7 @@ pub enum PatchsetAction {
     Apply,
 }
 
-impl DetailsActions {
+impl PatchsetDetailsState {
     pub fn preview_next_patch(&mut self) {
         if (self.preview_index + 1) < self.patches_preview.len() {
             self.preview_index += 1;
@@ -159,7 +159,7 @@ impl DetailsActions {
         let current_value = *self
             .patchset_actions
             .get(&patchset_action)
-            .expect("DetailsActions::Patchset_actions must be initialized properly");
+            .expect("PatchsetDetailsState::patchset_actions must be initialized properly");
         self.patchset_actions
             .insert(patchset_action, !current_value);
     }

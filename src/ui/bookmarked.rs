@@ -6,9 +6,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::screens::bookmarked::BookmarkedPatchsets;
+use crate::app::screens::bookmarked::BookmarkedPatchsetsState;
 
-pub fn render_main(f: &mut Frame, bookmarked_patchsets: &BookmarkedPatchsets, chunk: Rect) {
+pub fn render_main(f: &mut Frame, bookmarked_patchsets: &BookmarkedPatchsetsState, chunk: Rect) {
     let patchset_index = bookmarked_patchsets.patchset_index;
     let mut list_items = Vec::<ListItem>::new();
 

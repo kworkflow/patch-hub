@@ -5,14 +5,14 @@ use crate::lore::{
     domain::mailing_list::MailingList,
 };
 
-pub struct MailingListSelection {
+pub struct MailingListSelectionState {
     pub mailing_lists: Vec<MailingList>,
     pub target_list: String,
     pub possible_mailing_lists: Vec<MailingList>,
     pub highlighted_list_index: usize,
 }
 
-impl MailingListSelection {
+impl MailingListSelectionState {
     pub fn refresh_available_mailing_lists(
         &mut self,
         lore_service: &mut dyn LoreServiceApi,
@@ -90,7 +90,7 @@ mod tests {
     fn test_remove_last_target_list_char_empty_target_list() {
         let possible_mailing_lists = vec![MailingList::new("mailing list", "")];
         let highlighted_list_index = 9;
-        let mut selection = MailingListSelection {
+        let mut selection = MailingListSelectionState {
             mailing_lists: vec![],
             target_list: "".to_string(),
             possible_mailing_lists: possible_mailing_lists.clone(),
@@ -112,7 +112,7 @@ mod tests {
             MailingList::new("non target", ""),
         ];
         let highlighted_list_index = 9;
-        let mut selection = MailingListSelection {
+        let mut selection = MailingListSelectionState {
             mailing_lists: mailing_lists.clone(),
             target_list: "target".to_string(),
             possible_mailing_lists: vec![],
@@ -136,7 +136,7 @@ mod tests {
             MailingList::new("target", ""),
             MailingList::new("non target", ""),
         ];
-        let mut selection = MailingListSelection {
+        let mut selection = MailingListSelectionState {
             mailing_lists: mailing_lists.clone(),
             target_list: "targe".to_string(),
             possible_mailing_lists: vec![],
@@ -154,7 +154,7 @@ mod tests {
 
     #[test]
     fn test_clear_target_list() {
-        let mut selection = MailingListSelection {
+        let mut selection = MailingListSelectionState {
             mailing_lists: vec![],
             target_list: "some value".to_string(),
             possible_mailing_lists: vec![MailingList::new("match", "")],
@@ -249,7 +249,7 @@ mod tests {
         ];
 
         for test_case in test_cases {
-            let mut mailing_list_selection = MailingListSelection {
+            let mut mailing_list_selection = MailingListSelectionState {
                 mailing_lists: test_case.mailing_lists,
                 target_list: test_case.target_list.to_string(),
                 possible_mailing_lists: vec![],
@@ -276,7 +276,7 @@ mod tests {
             MailingList::new("some-list", ""),
             MailingList::new("some-list-2", ""),
         ];
-        let mut selection = MailingListSelection {
+        let mut selection = MailingListSelectionState {
             mailing_lists: vec![],
             target_list: "".to_string(),
             possible_mailing_lists,
@@ -294,7 +294,7 @@ mod tests {
     #[test]
     fn test_highlight_above_list() {
         let mailing_list = MailingList::new("some-list", "");
-        let mut selection = MailingListSelection {
+        let mut selection = MailingListSelectionState {
             mailing_lists: vec![],
             target_list: "".to_string(),
             possible_mailing_lists: vec![mailing_list.clone(), mailing_list.clone()],
@@ -315,7 +315,7 @@ mod tests {
     #[test]
     fn test_has_valid_target_list() {
         let mailing_list = MailingList::new("some-list", "");
-        let selection_valid = MailingListSelection {
+        let selection_valid = MailingListSelectionState {
             mailing_lists: vec![],
             target_list: "".to_string(),
             possible_mailing_lists: vec![mailing_list.clone()],
@@ -323,7 +323,7 @@ mod tests {
         };
         assert!(selection_valid.has_valid_target_list());
 
-        let selection_invalid = MailingListSelection {
+        let selection_invalid = MailingListSelectionState {
             mailing_lists: vec![],
             target_list: "".to_string(),
             possible_mailing_lists: vec![mailing_list.clone()],

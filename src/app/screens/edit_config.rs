@@ -6,7 +6,7 @@ use std::{collections::HashMap, fmt::Display, path::Path};
 use crate::{app::config::Config, infrastructure::file_system::FileSystemTrait};
 
 #[derive(Debug, Getters)]
-pub struct EditConfig {
+pub struct EditConfigState {
     #[getter(skip)]
     config_buffer: HashMap<EditableConfig, String>,
     highlighted: usize,
@@ -14,7 +14,7 @@ pub struct EditConfig {
     curr_edit: String,
 }
 
-impl EditConfig {
+impl EditConfigState {
     pub fn new(config: &Config) -> Self {
         let mut config_buffer = HashMap::new();
         config_buffer.insert(EditableConfig::PageSize, config.page_size().to_string());
@@ -38,7 +38,7 @@ impl EditConfig {
         );
         config_buffer.insert(EditableConfig::MaxLogAge, config.max_log_age().to_string());
 
-        EditConfig {
+        EditConfigState {
             config_buffer,
             highlighted: 0,
             is_editing: false,
@@ -114,7 +114,7 @@ impl EditConfig {
     }
 }
 
-impl EditConfig {
+impl EditConfigState {
     fn extract_config_buffer_val(&mut self, editable_config: &EditableConfig) -> String {
         let mut ret_value = String::new();
         if let Some(config_value) = self.config_buffer.get_mut(editable_config) {

@@ -32,11 +32,11 @@ use config::Config;
 use cover_renderer::render_cover;
 use patch_renderer::{render_patch_preview, PatchRenderer};
 use screens::{
-    bookmarked::BookmarkedPatchsets,
-    details_actions::{DetailsActions, PatchsetAction},
-    edit_config::EditConfig,
-    latest::LatestPatchsets,
-    mail_list::MailingListSelection,
+    bookmarked::BookmarkedPatchsetsState,
+    details_actions::{PatchsetAction, PatchsetDetailsState},
+    edit_config::EditConfigState,
+    latest::LatestPatchsetsState,
+    mail_list::MailingListSelectionState,
     CurrentScreen,
 };
 
@@ -52,15 +52,15 @@ pub struct App {
     /// The current active screen
     pub current_screen: CurrentScreen,
     /// Screen to navigate and select the mailing lists archived on Lore
-    pub mailing_list_selection: MailingListSelection,
+    pub mailing_list_selection: MailingListSelectionState,
     /// Screen with listing patchsets that were previously bookmarked
-    pub bookmarked_patchsets: BookmarkedPatchsets,
+    pub bookmarked_patchsets: BookmarkedPatchsetsState,
     /// Screen with paginated listing of latest patchsets from a target list
-    pub latest_patchsets: Option<LatestPatchsets>,
+    pub latest_patchsets: Option<LatestPatchsetsState>,
     /// Screen with details (metadata and previewing) and runnable actions of individual patchset
-    pub details_actions: Option<DetailsActions>,
+    pub details_actions: Option<PatchsetDetailsState>,
     /// Screen to edit configurations of the app
-    pub edit_config: Option<EditConfig>,
+    pub edit_config: Option<EditConfigState>,
     /// Database to track patchsets `Reviewed-by` state
     pub reviewed_patchsets: HashMap<String, HashSet<usize>>,
     /// Configurations of the app
@@ -98,7 +98,7 @@ impl App {
 
         Ok(App {
             current_screen: CurrentScreen::MailingListSelection,
-            mailing_list_selection: MailingListSelection {
+            mailing_list_selection: MailingListSelectionState {
                 mailing_lists: bootstrap.mailing_lists.clone(),
                 target_list: String::new(),
                 possible_mailing_lists: bootstrap.mailing_lists,
@@ -107,7 +107,7 @@ impl App {
             latest_patchsets: None,
             details_actions: None,
             edit_config: None,
-            bookmarked_patchsets: BookmarkedPatchsets {
+            bookmarked_patchsets: BookmarkedPatchsetsState {
                 bookmarked_patchsets: bootstrap.bookmarks,
                 patchset_index: 0,
             },
@@ -128,7 +128,10 @@ impl App {
         let target_list = self.mailing_list_selection.possible_mailing_lists[list_index]
             .name()
             .to_string();
-        self.latest_patchsets = Some(LatestPatchsets::new(target_list, self.config.page_size()));
+        self.latest_patchsets = Some(LatestPatchsetsState::new(
+            target_list,
+            self.config.page_size(),
+        ));
     }
 
     /// Sets field [App::latest_patchsets] to `None`.
@@ -249,7 +252,7 @@ impl App {
         let has_cover_letter = representative_patch.number_in_series() == 0;
         let patches_to_reply = vec![false; details.raw_patches.len()];
 
-        self.details_actions = Some(DetailsActions {
+        self.details_actions = Some(PatchsetDetailsState {
             representative_patch,
             raw_patches: details.raw_patches,
             patchset_path: details.patchset_path,
@@ -394,7 +397,7 @@ impl App {
 
     /// Initializes field [App::edit_config], using values from [App::config].
     pub fn init_edit_config(&mut self) {
-        self.edit_config = Some(EditConfig::new(&self.config));
+        self.edit_config = Some(EditConfigState::new(&self.config));
     }
 
     /// Sets field [App::edit_config] to `None`.
