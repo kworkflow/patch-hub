@@ -1,15 +1,12 @@
 //! Rich patch/cover preview via external programs (`bat`, `delta`, `diff-so-fancy`).
-//!
-//! `ShellRenderService` is wired from `App` in a follow-up commit; this module is
-//! compiled first so the trait and implementation exist without dead-code noise.
-
-#![allow(dead_code)]
 
 mod r#trait;
 
 pub use r#trait::{RenderError, RenderServiceApi};
 
 use std::sync::Arc;
+
+use tracing::{event, Level};
 
 use crate::{
     app::cover_renderer::render_cover, app::patch_renderer::render_patch_preview,
@@ -42,10 +39,26 @@ impl RenderServiceApi for ShellRenderService {
         for raw_patch in raw_patches {
             let raw_patch_expanded = raw_patch.replace('\t', "        ");
             let (raw_cover, raw_diff) = split_cover(&raw_patch_expanded);
-            let rendered_cover = render_cover(shell, raw_cover, cover_renderer)
-                .map_err(|e| RenderError::Failed(e.to_string()))?;
-            let rendered_patch = render_patch_preview(shell, raw_diff, patch_renderer)
-                .map_err(|e| RenderError::Failed(e.to_string()))?;
+            let rendered_cover = match render_cover(shell, raw_cover, cover_renderer) {
+                Ok(render) => render,
+                Err(_) => {
+                    event!(
+                        Level::ERROR,
+                        "Failed to render cover preview with external program"
+                    );
+                    raw_cover.to_string()
+                }
+            };
+            let rendered_patch = match render_patch_preview(shell, raw_diff, patch_renderer) {
+                Ok(render) => render,
+                Err(_) => {
+                    event!(
+                        Level::ERROR,
+                        "Failed to render patch preview with external program",
+                    );
+                    raw_diff.to_string()
+                }
+            };
             previews.push(format!("{rendered_cover}---\n{rendered_patch}"));
         }
         Ok(previews)

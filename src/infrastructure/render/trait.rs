@@ -5,6 +5,10 @@ use crate::app::cover_renderer::CoverRenderer;
 use crate::app::patch_renderer::PatchRenderer;
 
 /// Failure while running an external preview renderer (bat, delta, etc.).
+///
+/// Reserved for future strict error propagation; [`super::ShellRenderService`]
+/// currently falls back to raw text and returns `Ok`.
+#[allow(dead_code)]
 #[derive(Debug, Error)]
 pub enum RenderError {
     #[error("render failed: {0}")]

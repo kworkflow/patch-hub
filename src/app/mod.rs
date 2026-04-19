@@ -20,19 +20,17 @@ use crate::{
         env::EnvTrait,
         file_system::FileSystemTrait,
         monitoring::logging::garbage_collector::collect_garbage,
+        render::RenderServiceApi,
         shell::{ShellCommand, ShellTrait},
     },
     lore::{
         application::{api::LoreServiceApi, cache::CacheMode, errors::LoreError},
         domain::patch::{Author, Patch},
-        infrastructure::patchset_parser::split_cover,
     },
     ui::popup::info_popup::InfoPopUp,
 };
 
 use config::Config;
-use cover_renderer::render_cover;
-use patch_renderer::render_patch_preview;
 use screens::{
     bookmarked::BookmarkedPatchsetsState,
     details_actions::{PatchsetAction, PatchsetDetailsState},
@@ -46,6 +44,7 @@ pub use state::{AppState, ConfigUiState, LoreUiState, NavigationState, UserLoreS
 /// Injected capabilities used by `App` orchestration (not screen state).
 pub struct AppServices {
     pub lore: Box<dyn LoreServiceApi>,
+    pub render: Box<dyn RenderServiceApi>,
     pub shell: Box<dyn ShellTrait>,
     pub fs: Box<dyn FileSystemTrait>,
     pub env: Box<dyn EnvTrait>,
@@ -77,6 +76,7 @@ impl App {
         shell: Box<dyn ShellTrait>,
         env: Box<dyn EnvTrait>,
         mut lore_service: Box<dyn LoreServiceApi>,
+        render: Box<dyn RenderServiceApi>,
     ) -> color_eyre::Result<Self> {
         let bootstrap = lore_service.warm_bootstrap_cache().unwrap_or_default();
 
@@ -111,6 +111,7 @@ impl App {
             },
             services: AppServices {
                 lore: lore_service,
+                render,
                 shell,
                 fs,
                 env,
@@ -207,50 +208,26 @@ impl App {
             Err(e) => bail!("{e:#?}"),
         };
 
+        let preview_lines = self
+            .services
+            .render
+            .render_patchset_preview(
+                &details.raw_patches,
+                self.state.config.patch_renderer(),
+                self.state.config.cover_renderer(),
+            )
+            .map_err(|e| eyre!("{e}"))?;
+
         let mut patches_preview: Vec<Text> = Vec::new();
         let mut reviewed_by: Vec<HashSet<Author>> = Vec::new();
         let mut tested_by: Vec<HashSet<Author>> = Vec::new();
         let mut acked_by: Vec<HashSet<Author>> = Vec::new();
 
-        for (raw_patch, tag_summary) in details.raw_patches.iter().zip(details.tag_summary.iter()) {
-            let raw_patch_expanded = raw_patch.replace('\t', "        ");
-            let (raw_cover, raw_diff) = split_cover(&raw_patch_expanded);
-
+        for (line, tag_summary) in preview_lines.iter().zip(details.tag_summary.iter()) {
             reviewed_by.push(tag_summary.reviewed_by.clone());
             tested_by.push(tag_summary.tested_by.clone());
             acked_by.push(tag_summary.acked_by.clone());
-
-            let rendered_cover = match render_cover(
-                &*self.services.shell,
-                raw_cover,
-                self.state.config.cover_renderer(),
-            ) {
-                Ok(render) => render,
-                Err(_) => {
-                    event!(
-                        Level::ERROR,
-                        "Failed to render cover preview with external program"
-                    );
-                    raw_cover.to_string()
-                }
-            };
-
-            let rendered_patch = match render_patch_preview(
-                &*self.services.shell,
-                raw_diff,
-                self.state.config.patch_renderer(),
-            ) {
-                Ok(render) => render,
-                Err(_) => {
-                    event!(
-                        Level::ERROR,
-                        "Failed to render patch preview with external program",
-                    );
-                    raw_diff.to_string()
-                }
-            };
-
-            patches_preview.push(format!("{rendered_cover}---\n{rendered_patch}").into_text()?);
+            patches_preview.push(line.as_str().into_text()?);
         }
 
         let has_cover_letter = representative_patch.number_in_series() == 0;

@@ -16,6 +16,7 @@ use infrastructure::{
     file_system::OsFileSystem,
     monitoring::{init_monitoring, InitMonitoringProduct},
     net::UreqNetClient,
+    render::{RenderServiceApi, ShellRenderService},
     shell::OsShell,
     terminal::{init, restore},
 };
@@ -129,6 +130,8 @@ fn main() -> color_eyre::Result<()> {
     ));
     let parser = Arc::new(MboxPatchsetParser::new(fs_arc.clone()));
 
+    let render: Box<dyn RenderServiceApi> = Box::new(ShellRenderService::new(shell_arc.clone()));
+
     let lore_service: Box<dyn LoreServiceApi> = Box::new(LoreService::new(
         gateway.clone(),
         gateway.clone(),
@@ -148,6 +151,7 @@ fn main() -> color_eyre::Result<()> {
         Box::new(OsShell),
         Box::new(env),
         lore_service,
+        render,
     )?;
     if !check_external_deps(&*app.services.env, &app.state.config) {
         event!(
