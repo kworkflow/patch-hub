@@ -35,14 +35,14 @@ fn key_handling<B>(
 where
     B: Backend + Send + 'static,
 {
-    if let Some(popup) = app.popup.as_mut() {
+    if let Some(popup) = app.state.popup.as_mut() {
         if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
-            app.popup = None;
+            app.state.popup = None;
         } else {
             popup.handle(key)?;
         }
     } else {
-        match app.current_screen {
+        match app.state.navigation.current_screen {
             CurrentScreen::MailingListSelection => {
                 return handle_mailing_list_selection(app, key, terminal);
             }
@@ -67,9 +67,15 @@ fn logic_handling<B>(mut terminal: Terminal<B>, app: &mut App) -> color_eyre::Re
 where
     B: Backend + Send + 'static,
 {
-    match app.current_screen {
+    match app.state.navigation.current_screen {
         CurrentScreen::MailingListSelection => {
-            if app.mailing_list_selection.mailing_lists.is_empty() {
+            if app
+                .state
+                .lore
+                .mailing_list_selection
+                .mailing_lists
+                .is_empty()
+            {
                 terminal = loading_screen! {
                     terminal, "Fetching mailing lists" => {
                         app.refresh_mailing_lists()
@@ -78,7 +84,7 @@ where
             }
         }
         CurrentScreen::LatestPatchsets => {
-            let patchsets_state = app.latest_patchsets.as_mut().unwrap();
+            let patchsets_state = app.state.lore.latest_patchsets.as_ref().unwrap();
 
             if patchsets_state.processed_patchsets_count() == 0 {
                 let target_list = patchsets_state.target_list().to_string();
@@ -89,11 +95,17 @@ where
                     }
                 };
 
-                app.mailing_list_selection.clear_target_list();
+                app.state.lore.mailing_list_selection.clear_target_list();
             }
         }
         CurrentScreen::BookmarkedPatchsets => {
-            if app.bookmarked_patchsets.bookmarked_patchsets.is_empty() {
+            if app
+                .state
+                .user_state
+                .bookmarked_patchsets
+                .bookmarked_patchsets
+                .is_empty()
+            {
                 app.set_current_screen(CurrentScreen::MailingListSelection);
             }
         }

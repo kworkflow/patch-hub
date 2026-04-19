@@ -48,7 +48,7 @@ fn review_trailers_details(details_actions: &PatchsetDetailsState) -> Line<'stat
 }
 
 fn render_details_and_actions(f: &mut Frame, app: &App, details_chunk: Rect, actions_chunk: Rect) {
-    let patchset_details_and_actions = app.details_actions.as_ref().unwrap();
+    let patchset_details_and_actions = app.state.lore.details.as_ref().unwrap();
 
     let mut staged_to_reply = String::new();
     if let Some(true) = patchset_details_and_actions
@@ -200,7 +200,7 @@ fn render_details_and_actions(f: &mut Frame, app: &App, details_chunk: Rect, act
 }
 
 fn render_preview(f: &mut Frame, app: &App, chunk: Rect) {
-    let patchset_details_and_actions = app.details_actions.as_ref().unwrap();
+    let patchset_details_and_actions = app.state.lore.details.as_ref().unwrap();
 
     let preview_index = patchset_details_and_actions.preview_index;
 
@@ -210,7 +210,10 @@ fn render_preview(f: &mut Frame, app: &App, chunk: Rect) {
         .href;
     let mut preview_title = String::from(" Preview ");
     if matches!(
-        app.reviewed_patchsets.get(representative_patch_message_id),
+        app.state
+            .user_state
+            .reviewed_patchsets
+            .get(representative_patch_message_id),
         Some(successful_indexes) if successful_indexes.contains(&preview_index)
     ) {
         preview_title = " Preview [REVIEWED-BY] ".to_string();
@@ -243,7 +246,7 @@ fn render_preview(f: &mut Frame, app: &App, chunk: Rect) {
 }
 
 pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
-    let patchset_details_and_actions = app.details_actions.as_ref().unwrap();
+    let patchset_details_and_actions = app.state.lore.details.as_ref().unwrap();
 
     if patchset_details_and_actions.preview_fullscreen {
         render_preview(f, app, chunk);

@@ -9,10 +9,10 @@ use ratatui::{
 use crate::app::App;
 
 pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
-    let highlighted_list_index = app.mailing_list_selection.highlighted_list_index;
+    let highlighted_list_index = app.state.lore.mailing_list_selection.highlighted_list_index;
     let mut list_items = Vec::<ListItem>::new();
 
-    for mailing_list in &app.mailing_list_selection.possible_mailing_lists {
+    for mailing_list in &app.state.lore.mailing_list_selection.possible_mailing_lists {
         list_items.push(ListItem::new(
             Line::from(vec![
                 Span::styled(
@@ -53,32 +53,32 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
 pub fn mode_footer_text(app: &App) -> Vec<Span> {
     let mut text_area = Span::default();
 
-    if app.mailing_list_selection.target_list.is_empty() {
+    if app.state.lore.mailing_list_selection.target_list.is_empty() {
         text_area = Span::styled("type the target list", Style::default().fg(Color::DarkGray))
     } else {
-        for mailing_list in &app.mailing_list_selection.mailing_lists {
+        for mailing_list in &app.state.lore.mailing_list_selection.mailing_lists {
             if mailing_list
                 .name()
-                .eq(&app.mailing_list_selection.target_list)
+                .eq(&app.state.lore.mailing_list_selection.target_list)
             {
                 text_area = Span::styled(
-                    &app.mailing_list_selection.target_list,
+                    &app.state.lore.mailing_list_selection.target_list,
                     Style::default().fg(Color::Green),
                 );
                 break;
             } else if mailing_list
                 .name()
-                .starts_with(&app.mailing_list_selection.target_list)
+                .starts_with(&app.state.lore.mailing_list_selection.target_list)
             {
                 text_area = Span::styled(
-                    &app.mailing_list_selection.target_list,
+                    &app.state.lore.mailing_list_selection.target_list,
                     Style::default().fg(Color::LightCyan),
                 );
             }
         }
         if text_area.content.is_empty() {
             text_area = Span::styled(
-                &app.mailing_list_selection.target_list,
+                &app.state.lore.mailing_list_selection.target_list,
                 Style::default().fg(Color::Red),
             );
         }

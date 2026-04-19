@@ -10,7 +10,7 @@ use crate::app::{screens::CurrentScreen, App};
 use super::{bookmarked, details_actions, edit_config, latest, mail_list};
 
 pub fn render(f: &mut Frame, app: &App, chunk: Rect) {
-    let mode_footer_text = match app.current_screen {
+    let mode_footer_text = match app.state.navigation.current_screen {
         CurrentScreen::MailingListSelection => mail_list::mode_footer_text(app),
         CurrentScreen::BookmarkedPatchsets => bookmarked::mode_footer_text(),
         CurrentScreen::LatestPatchsets => latest::mode_footer_text(app),
@@ -22,7 +22,7 @@ pub fn render(f: &mut Frame, app: &App, chunk: Rect) {
         .centered();
 
     let current_keys_hint = {
-        match app.current_screen {
+        match app.state.navigation.current_screen {
             CurrentScreen::MailingListSelection => mail_list::keys_hint(),
             CurrentScreen::BookmarkedPatchsets => bookmarked::keys_hint(),
             CurrentScreen::LatestPatchsets => latest::keys_hint(),

@@ -32,10 +32,10 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
 
     render_title(f, chunks[0]);
 
-    match app.current_screen {
+    match app.state.navigation.current_screen {
         CurrentScreen::MailingListSelection => mail_list::render_main(f, app, chunks[1]),
         CurrentScreen::BookmarkedPatchsets => {
-            bookmarked::render_main(f, &app.bookmarked_patchsets, chunks[1])
+            bookmarked::render_main(f, &app.state.user_state.bookmarked_patchsets, chunks[1])
         }
         CurrentScreen::LatestPatchsets => latest::render_main(f, app, chunks[1]),
         CurrentScreen::PatchsetDetails => details_actions::render_main(f, app, chunks[1]),
@@ -44,7 +44,7 @@ pub fn draw_ui(f: &mut Frame, app: &App) {
 
     navigation_bar::render(f, app, chunks[2]);
 
-    app.popup.as_ref().inspect(|p| {
+    app.state.popup.as_ref().inspect(|p| {
         let (x, y) = p.dimensions();
         let rect = centered_rect(x, y, f.area());
         p.render(f, rect);

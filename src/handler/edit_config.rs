@@ -6,7 +6,7 @@ use crate::{
 };
 
 pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()> {
-    if let Some(edit_config_state) = app.edit_config.as_mut() {
+    if let Some(edit_config_state) = app.state.config_state.edit_config.as_mut() {
         match edit_config_state.is_editing() {
             true => match key.code {
                 KeyCode::Esc => {
@@ -29,11 +29,13 @@ pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()
             false => match key.code {
                 KeyCode::Char('?') => {
                     let popup = generate_help_popup();
-                    app.popup = Some(popup);
+                    app.state.popup = Some(popup);
                 }
                 KeyCode::Esc | KeyCode::Char('q') => {
                     app.consolidate_edit_config();
-                    app.config.save_patch_hub_config(&*app.env, &*app.fs)?;
+                    app.state
+                        .config
+                        .save_patch_hub_config(&*app.services.env, &*app.services.fs)?;
                     app.reset_edit_config();
                     app.set_current_screen(CurrentScreen::MailingListSelection);
                 }

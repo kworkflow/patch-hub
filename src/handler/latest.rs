@@ -20,12 +20,12 @@ pub fn handle_latest_patchsets<B>(
 where
     B: Backend + Send + 'static,
 {
-    let latest_patchsets = app.latest_patchsets.as_mut().unwrap();
+    let latest_patchsets = app.state.lore.latest_patchsets.as_mut().unwrap();
 
     match key.code {
         KeyCode::Char('?') => {
             let popup = generate_help_popup();
-            app.popup = Some(popup);
+            app.state.popup = Some(popup);
         }
         KeyCode::Esc | KeyCode::Char('q') => {
             app.reset_latest_patchsets();
@@ -56,14 +56,14 @@ where
             terminal = loading_screen! {
                 terminal,
                 "Loading patchset" => {
-                    let result = app.init_details_actions();
+                    let result = app.open_patchset_details();
                     if result.is_ok() {
                         match result.unwrap() {
                             B4Result::PatchFound => {
                                 app.set_current_screen(CurrentScreen::PatchsetDetails);
                             }
                             B4Result::PatchNotFound(err_cause) => {
-                                app.popup = Some(InfoPopUp::generate_info_popup(
+                                app.state.popup = Some(InfoPopUp::generate_info_popup(
                                     "Error",&format!("The selected patchset couldn't be retrieved.\nReason: {err_cause}\nPlease choose another patchset.")
                                 ));
                                 app.set_current_screen(CurrentScreen::LatestPatchsets);

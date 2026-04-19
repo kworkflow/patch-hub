@@ -19,7 +19,7 @@ pub fn handle_patchset_details<B: Backend>(
     key: KeyEvent,
     terminal: &mut Terminal<B>,
 ) -> color_eyre::Result<()> {
-    let patchset_details_and_actions = app.details_actions.as_mut().unwrap();
+    let patchset_details_and_actions = app.state.lore.details.as_mut().unwrap();
 
     if key.modifiers.contains(KeyModifiers::SHIFT) {
         match key.code {
@@ -51,7 +51,7 @@ pub fn handle_patchset_details<B: Backend>(
             KeyCode::Char('t') => {
                 let popup =
                     ReviewTrailersPopUp::generate_trailers_popup(patchset_details_and_actions);
-                app.popup = Some(popup);
+                app.state.popup = Some(popup);
             }
             _ => {}
         }
@@ -61,7 +61,7 @@ pub fn handle_patchset_details<B: Backend>(
     match key.code {
         KeyCode::Char('?') => {
             let popup = generate_help_popup();
-            app.popup = Some(popup);
+            app.state.popup = Some(popup);
         }
         KeyCode::Esc | KeyCode::Char('q') => {
             let ps_da_clone = patchset_details_and_actions.last_screen.clone();
