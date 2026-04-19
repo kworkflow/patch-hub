@@ -3,7 +3,7 @@ use thiserror::Error;
 use crate::infrastructure::file_system::FileSystemError;
 
 #[derive(Debug, Error)]
-#[allow(dead_code)] // reserved for validate_update (Phase 5-C); Load/Save/Fs used today
+#[allow(dead_code)] // EnvOverride reserved for stricter env parsing (Phase 5-D+)
 pub enum ConfigError {
     #[error("failed to load config: {0}")]
     Load(String),

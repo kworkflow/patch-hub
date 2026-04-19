@@ -1,12 +1,9 @@
 use color_eyre::eyre::bail;
 use derive_getters::Getters;
 
-use std::{collections::HashMap, fmt::Display, path::Path};
+use std::{collections::HashMap, fmt::Display};
 
-use crate::{
-    config::{ConfigSnapshot, ConfigUpdateDraft},
-    infrastructure::file_system::FileSystemTrait,
-};
+use crate::config::{ConfigSnapshot, ConfigUpdateDraft};
 
 #[derive(Debug, Getters)]
 pub struct EditConfigState {
@@ -116,53 +113,27 @@ impl EditConfigState {
         }
     }
 
-    fn is_valid_dir(fs: &dyn FileSystemTrait, dir_path: &str) -> bool {
-        let path_to_check = Path::new(dir_path);
-
-        if fs.exists(path_to_check) && fs.is_dir(path_to_check) {
-            true
-        } else {
-            fs.create_dir_all(path_to_check).is_ok()
+    /// Raw form values for [`crate::config::ConfigServiceApi::validate_update`].
+    pub fn to_update_draft(&self) -> ConfigUpdateDraft {
+        ConfigUpdateDraft {
+            page_size: self.config_buffer.get(&EditableConfig::PageSize).cloned(),
+            cache_dir: self.config_buffer.get(&EditableConfig::CacheDir).cloned(),
+            data_dir: self.config_buffer.get(&EditableConfig::DataDir).cloned(),
+            git_send_email_option: self
+                .config_buffer
+                .get(&EditableConfig::GitSendEmailOpt)
+                .cloned(),
+            git_am_option: self.config_buffer.get(&EditableConfig::GitAmOpt).cloned(),
+            patch_renderer: self
+                .config_buffer
+                .get(&EditableConfig::PatchRenderer)
+                .cloned(),
+            cover_renderer: self
+                .config_buffer
+                .get(&EditableConfig::CoverRenderer)
+                .cloned(),
+            max_log_age: self.config_buffer.get(&EditableConfig::MaxLogAge).cloned(),
         }
-    }
-
-    /// Builds a [`ConfigUpdateDraft`] from the current buffer values that pass validation,
-    /// without mutating the buffer.
-    pub fn to_update_draft(&self, fs: &dyn FileSystemTrait) -> ConfigUpdateDraft {
-        let mut draft = ConfigUpdateDraft::default();
-        if let Some(s) = self.config_buffer.get(&EditableConfig::PageSize) {
-            if let Ok(v) = s.parse::<usize>() {
-                draft.page_size = Some(v);
-            }
-        }
-        if let Some(s) = self.config_buffer.get(&EditableConfig::CacheDir) {
-            if Self::is_valid_dir(fs, s) {
-                draft.cache_dir = Some(s.clone());
-            }
-        }
-        if let Some(s) = self.config_buffer.get(&EditableConfig::DataDir) {
-            if Self::is_valid_dir(fs, s) {
-                draft.data_dir = Some(s.clone());
-            }
-        }
-        if let Some(s) = self.config_buffer.get(&EditableConfig::GitSendEmailOpt) {
-            draft.git_send_email_option = Some(s.clone());
-        }
-        if let Some(s) = self.config_buffer.get(&EditableConfig::GitAmOpt) {
-            draft.git_am_option = Some(s.clone());
-        }
-        if let Some(s) = self.config_buffer.get(&EditableConfig::PatchRenderer) {
-            draft.patch_renderer = Some(s.clone());
-        }
-        if let Some(s) = self.config_buffer.get(&EditableConfig::CoverRenderer) {
-            draft.cover_renderer = Some(s.clone());
-        }
-        if let Some(s) = self.config_buffer.get(&EditableConfig::MaxLogAge) {
-            if let Ok(v) = s.parse::<usize>() {
-                draft.max_log_age = Some(v);
-            }
-        }
-        draft
     }
 }
 

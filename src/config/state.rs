@@ -3,7 +3,7 @@ use patch_hub_proc_macros::serde_individual_default;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 
-use crate::config::update::ConfigUpdateDraft;
+use crate::config::update::ValidatedConfigUpdate;
 use crate::infrastructure::env::EnvTrait;
 use crate::render_prefs::{CoverRenderer, PatchRenderer};
 
@@ -121,30 +121,30 @@ impl ConfigState {
         self.max_log_age = max_log_age;
     }
 
-    /// Merges field updates from the edit-config flow (same semantics as legacy `Config::apply_update`).
-    pub fn apply_update(&mut self, draft: &ConfigUpdateDraft) {
-        if let Some(page_size) = draft.page_size {
+    /// Merges validated field updates from the edit-config flow.
+    pub fn apply_update(&mut self, u: &ValidatedConfigUpdate) {
+        if let Some(page_size) = u.page_size {
             self.set_page_size(page_size);
         }
-        if let Some(cache_dir) = draft.cache_dir.clone() {
-            self.set_cache_dir(cache_dir);
+        if let Some(ref cache_dir) = u.cache_dir {
+            self.set_cache_dir(cache_dir.clone());
         }
-        if let Some(data_dir) = draft.data_dir.clone() {
-            self.set_data_dir(data_dir);
+        if let Some(ref data_dir) = u.data_dir {
+            self.set_data_dir(data_dir.clone());
         }
-        if let Some(git_send_email_options) = draft.git_send_email_option.clone() {
-            self.set_git_send_email_option(git_send_email_options);
+        if let Some(ref git_send_email_options) = u.git_send_email_option {
+            self.set_git_send_email_option(git_send_email_options.clone());
         }
-        if let Some(git_am_options) = draft.git_am_option.clone() {
-            self.set_git_am_option(git_am_options);
+        if let Some(ref git_am_options) = u.git_am_option {
+            self.set_git_am_option(git_am_options.clone());
         }
-        if let Some(s) = draft.patch_renderer.clone() {
-            self.set_patch_renderer(s.into());
+        if let Some(patch_renderer) = u.patch_renderer {
+            self.set_patch_renderer(patch_renderer);
         }
-        if let Some(s) = draft.cover_renderer.clone() {
-            self.set_cover_renderer(s.into());
+        if let Some(cover_renderer) = u.cover_renderer {
+            self.set_cover_renderer(cover_renderer);
         }
-        if let Some(max_log_age) = draft.max_log_age {
+        if let Some(max_log_age) = u.max_log_age {
             self.set_max_log_age(max_log_age);
         }
     }

@@ -1,14 +1,27 @@
-/// Parsed edits from the edit-config screen, ready to merge into config state.
-///
-/// Each field is independent: only `Some` values are applied by [`ConfigState::apply_update`](crate::config::ConfigState::apply_update).
+use crate::render_prefs::{CoverRenderer, PatchRenderer};
+
+/// Raw strings from the edit-config form (one field per option; `None` means omit from form).
 #[derive(Debug, Default, Clone)]
 pub struct ConfigUpdateDraft {
-    pub page_size: Option<usize>,
+    pub page_size: Option<String>,
     pub cache_dir: Option<String>,
     pub data_dir: Option<String>,
     pub git_send_email_option: Option<String>,
     pub git_am_option: Option<String>,
     pub patch_renderer: Option<String>,
     pub cover_renderer: Option<String>,
+    pub max_log_age: Option<String>,
+}
+
+/// Parsed and validated update ready to merge into [`crate::config::ConfigState`](super::state::ConfigState).
+#[derive(Debug, Default, Clone)]
+pub struct ValidatedConfigUpdate {
+    pub page_size: Option<usize>,
+    pub cache_dir: Option<String>,
+    pub data_dir: Option<String>,
+    pub git_send_email_option: Option<String>,
+    pub git_am_option: Option<String>,
+    pub patch_renderer: Option<PatchRenderer>,
+    pub cover_renderer: Option<CoverRenderer>,
     pub max_log_age: Option<usize>,
 }

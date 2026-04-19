@@ -434,8 +434,9 @@ impl App {
     /// Applies edited values from [`ConfigUiState::edit_config`] into [`AppState::config`].
     pub fn consolidate_edit_config(&mut self) -> color_eyre::Result<()> {
         if let Some(edit_config) = &self.state.config_state.edit_config {
-            let draft = edit_config.to_update_draft(&*self.services.fs);
-            let snapshot = self.services.config.apply_update(draft)?;
+            let draft = edit_config.to_update_draft();
+            let validated = self.services.config.validate_update(draft)?;
+            let snapshot = self.services.config.apply_update(validated)?;
             self.state.config = snapshot;
         }
         Ok(())
