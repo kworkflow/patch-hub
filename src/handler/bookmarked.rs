@@ -45,7 +45,7 @@ where
             terminal = loading_screen! {
                 terminal,
                 "Loading patchset" => {
-                    let result = app.init_details_actions();
+                    let result = app.open_patchset_details();
                     if result.is_ok() {
                         // If a patchset has been bookmarked UI, this means that
                         // b4 was successful in fetching it, so it shouldn't be

@@ -5,6 +5,7 @@ pub mod errors;
 pub mod patch_renderer;
 pub mod screens;
 pub mod state;
+pub mod view_model;
 
 use ansi_to_tui::IntoText;
 use color_eyre::eyre::{bail, eyre};
@@ -41,6 +42,7 @@ use screens::{
     CurrentScreen,
 };
 pub use state::{AppState, ConfigUiState, LoreUiState, NavigationState, UserLoreState};
+pub use view_model::AppViewModel;
 
 /// Injected capabilities used by `App` orchestration (not screen state).
 pub struct AppServices {
@@ -166,7 +168,7 @@ impl App {
     }
 
     /// Loads patchset details into [`LoreUiState::details`].
-    pub fn init_details_actions(&mut self) -> color_eyre::Result<B4Result> {
+    pub fn open_patchset_details(&mut self) -> color_eyre::Result<B4Result> {
         let representative_patch: Patch;
         let mut is_patchset_bookmarked = true;
 
@@ -438,5 +440,11 @@ impl App {
 
     pub fn set_current_screen(&mut self, new_current_screen: CurrentScreen) {
         self.state.navigation.current_screen = new_current_screen;
+    }
+
+    /// Borrows state for one UI frame without passing [`App`] into `ui/`.
+    #[must_use]
+    pub fn to_view_model(&self) -> AppViewModel<'_> {
+        AppViewModel { state: &self.state }
     }
 }

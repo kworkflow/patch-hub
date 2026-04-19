@@ -7,10 +7,10 @@ use ratatui::{
 };
 use tracing::{event, Level};
 
-use crate::app::App;
+use crate::app::AppViewModel;
 
-pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
-    let edit_config = app.state.config_state.edit_config.as_ref().unwrap();
+pub fn render_main(f: &mut Frame, vm: &AppViewModel<'_>, chunk: Rect) {
+    let edit_config = vm.state.config_state.edit_config.as_ref().unwrap();
     let mut constraints = Vec::new();
 
     for _ in 0..(chunk.height / 3) {
@@ -64,8 +64,8 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
     }
 }
 
-pub fn mode_footer_text(app: &App) -> Vec<Span> {
-    let edit_config_state = app.state.config_state.edit_config.as_ref().unwrap();
+pub fn mode_footer_text<'a>(vm: &'a AppViewModel<'a>) -> Vec<Span<'a>> {
+    let edit_config_state = vm.state.config_state.edit_config.as_ref().unwrap();
     vec![if edit_config_state.is_editing() {
         Span::styled("Editing...", Style::default().fg(Color::LightYellow))
     } else {
@@ -73,8 +73,8 @@ pub fn mode_footer_text(app: &App) -> Vec<Span> {
     }]
 }
 
-pub fn keys_hint(app: &App) -> Span {
-    let edit_config_state = app.state.config_state.edit_config.as_ref().unwrap();
+pub fn keys_hint<'a>(vm: &'a AppViewModel<'a>) -> Span<'a> {
+    let edit_config_state = vm.state.config_state.edit_config.as_ref().unwrap();
     match edit_config_state.is_editing() {
         true => Span::styled(
             "(ESC) cancel | (ENTER) confirm",
