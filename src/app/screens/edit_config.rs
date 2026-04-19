@@ -3,7 +3,10 @@ use derive_getters::Getters;
 
 use std::{collections::HashMap, fmt::Display, path::Path};
 
-use crate::{app::config::Config, infrastructure::file_system::FileSystemTrait};
+use crate::{
+    app::config::{Config, ConfigUpdateDraft},
+    infrastructure::file_system::FileSystemTrait,
+};
 
 #[derive(Debug, Getters)]
 pub struct EditConfigState {
@@ -112,31 +115,6 @@ impl EditConfigState {
                 .insert(editable_config, std::mem::take(&mut self.curr_edit));
         }
     }
-}
-
-impl EditConfigState {
-    fn extract_config_buffer_val(&mut self, editable_config: &EditableConfig) -> String {
-        let mut ret_value = String::new();
-        if let Some(config_value) = self.config_buffer.get_mut(editable_config) {
-            std::mem::swap(&mut ret_value, config_value);
-        }
-        ret_value
-    }
-
-    /// Extracts the page size from the config
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the page size inserted string is not a valid integer
-    pub fn page_size(&mut self) -> Result<usize, ()> {
-        match self
-            .extract_config_buffer_val(&EditableConfig::PageSize)
-            .parse::<usize>()
-        {
-            Ok(value) => Ok(value),
-            Err(_) => Err(()),
-        }
-    }
 
     fn is_valid_dir(fs: &dyn FileSystemTrait, dir_path: &str) -> bool {
         let path_to_check = Path::new(dir_path);
@@ -148,69 +126,43 @@ impl EditConfigState {
         }
     }
 
-    /// Extracts the cache directory from the config
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the cache directory is not a valid directory
-    pub fn cache_dir(&mut self, fs: &dyn FileSystemTrait) -> Result<String, ()> {
-        let cache_dir = self.extract_config_buffer_val(&EditableConfig::CacheDir);
-        match Self::is_valid_dir(fs, &cache_dir) {
-            true => Ok(cache_dir),
-            false => Err(()),
+    /// Builds a [`ConfigUpdateDraft`] from the current buffer values that pass validation,
+    /// without mutating the buffer.
+    pub fn to_update_draft(&self, fs: &dyn FileSystemTrait) -> ConfigUpdateDraft {
+        let mut draft = ConfigUpdateDraft::default();
+        if let Some(s) = self.config_buffer.get(&EditableConfig::PageSize) {
+            if let Ok(v) = s.parse::<usize>() {
+                draft.page_size = Some(v);
+            }
         }
-    }
-
-    /// Extracts the data directory from the config
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the data directory is not a valid directory
-    pub fn data_dir(&mut self, fs: &dyn FileSystemTrait) -> Result<String, ()> {
-        let data_dir = self.extract_config_buffer_val(&EditableConfig::DataDir);
-        match Self::is_valid_dir(fs, &data_dir) {
-            true => Ok(data_dir),
-            false => Err(()),
+        if let Some(s) = self.config_buffer.get(&EditableConfig::CacheDir) {
+            if Self::is_valid_dir(fs, s) {
+                draft.cache_dir = Some(s.clone());
+            }
         }
-    }
-
-    /// Extracts the `git send email` option from the config
-    pub fn git_send_email_option(&mut self) -> Result<String, ()> {
-        let git_send_emial_option =
-            self.extract_config_buffer_val(&EditableConfig::GitSendEmailOpt);
-        // TODO: Check if the option is valid
-        Ok(git_send_emial_option)
-    }
-
-    /// Extracts the `git am` option from the config
-    pub fn git_am_option(&mut self) -> Result<String, ()> {
-        let git_am_option = self.extract_config_buffer_val(&EditableConfig::GitAmOpt);
-        Ok(git_am_option)
-    }
-
-    pub fn extract_patch_renderer(&mut self) -> Result<String, ()> {
-        let patch_renderer = self.extract_config_buffer_val(&EditableConfig::PatchRenderer);
-        Ok(patch_renderer)
-    }
-
-    pub fn extract_cover_renderer(&mut self) -> Result<String, ()> {
-        let cover_renderer = self.extract_config_buffer_val(&EditableConfig::CoverRenderer);
-        Ok(cover_renderer)
-    }
-
-    /// Extracts the max log age from the config
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the max log age inserted string is not a valid integer
-    pub fn max_log_age(&mut self) -> Result<usize, ()> {
-        match self
-            .extract_config_buffer_val(&EditableConfig::MaxLogAge)
-            .parse::<usize>()
-        {
-            Ok(value) => Ok(value),
-            Err(_) => Err(()),
+        if let Some(s) = self.config_buffer.get(&EditableConfig::DataDir) {
+            if Self::is_valid_dir(fs, s) {
+                draft.data_dir = Some(s.clone());
+            }
         }
+        if let Some(s) = self.config_buffer.get(&EditableConfig::GitSendEmailOpt) {
+            draft.git_send_email_option = Some(s.clone());
+        }
+        if let Some(s) = self.config_buffer.get(&EditableConfig::GitAmOpt) {
+            draft.git_am_option = Some(s.clone());
+        }
+        if let Some(s) = self.config_buffer.get(&EditableConfig::PatchRenderer) {
+            draft.patch_renderer = Some(s.clone());
+        }
+        if let Some(s) = self.config_buffer.get(&EditableConfig::CoverRenderer) {
+            draft.cover_renderer = Some(s.clone());
+        }
+        if let Some(s) = self.config_buffer.get(&EditableConfig::MaxLogAge) {
+            if let Ok(v) = s.parse::<usize>() {
+                draft.max_log_age = Some(v);
+            }
+        }
+        draft
     }
 }
 

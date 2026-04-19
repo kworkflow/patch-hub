@@ -414,34 +414,9 @@ impl App {
 
     /// Applies edited values from [`ConfigUiState::edit_config`] into [`AppState::config`].
     pub fn consolidate_edit_config(&mut self) {
-        // TODO: Handle invalid values!
-        if let Some(edit_config) = &mut self.state.config_state.edit_config {
-            if let Ok(page_size) = edit_config.page_size() {
-                self.state.config.set_page_size(page_size)
-            }
-            if let Ok(cache_dir) = edit_config.cache_dir(&*self.services.fs) {
-                self.state.config.set_cache_dir(cache_dir)
-            }
-            if let Ok(data_dir) = edit_config.data_dir(&*self.services.fs) {
-                self.state.config.set_data_dir(data_dir)
-            }
-            if let Ok(git_send_email_option) = edit_config.git_send_email_option() {
-                self.state
-                    .config
-                    .set_git_send_email_option(git_send_email_option)
-            }
-            if let Ok(git_am_option) = edit_config.git_am_option() {
-                self.state.config.set_git_am_option(git_am_option)
-            }
-            if let Ok(patch_renderer) = edit_config.extract_patch_renderer() {
-                self.state.config.set_patch_renderer(patch_renderer.into())
-            }
-            if let Ok(cover_renderer) = edit_config.extract_cover_renderer() {
-                self.state.config.set_cover_renderer(cover_renderer.into())
-            }
-            if let Ok(max_log_age) = edit_config.max_log_age() {
-                self.state.config.set_max_log_age(max_log_age)
-            }
+        if let Some(edit_config) = &self.state.config_state.edit_config {
+            let draft = edit_config.to_update_draft(&*self.services.fs);
+            self.state.config.apply_update(draft);
         }
     }
 
