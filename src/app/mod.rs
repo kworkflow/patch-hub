@@ -1,3 +1,4 @@
+pub mod commands;
 pub mod config;
 pub mod cover_renderer;
 pub mod errors;
@@ -269,22 +270,27 @@ impl App {
     ///
     /// Panics if [`LoreUiState::details`] is `None`.
     pub fn consolidate_patchset_actions(&mut self) -> color_eyre::Result<()> {
+        self.sync_patchset_bookmark()?;
+        self.execute_reviewed_reply()?;
+        self.execute_apply_patchset();
+        Ok(())
+    }
+
+    fn sync_patchset_bookmark(&mut self) -> color_eyre::Result<()> {
         let details = self.state.lore.details.as_ref().unwrap();
-        let representative_patch = details.representative_patch.clone();
-        let patchset_actions = details.patchset_actions.clone();
-        let raw_patches = details.raw_patches.clone();
-        let patches_to_reply = details.patches_to_reply.clone();
+        let representative_patch = &details.representative_patch;
+        let patchset_actions = &details.patchset_actions;
 
         if let Some(true) = patchset_actions.get(&PatchsetAction::Bookmark) {
             self.state
                 .user_state
                 .bookmarked_patchsets
-                .bookmark_selected_patch(&representative_patch);
+                .bookmark_selected_patch(representative_patch);
         } else {
             self.state
                 .user_state
                 .bookmarked_patchsets
-                .unbookmark_selected_patch(&representative_patch);
+                .unbookmark_selected_patch(representative_patch);
         }
 
         self.services
@@ -297,6 +303,15 @@ impl App {
                     .bookmarked_patchsets,
             )
             .map_err(|e| eyre!("{e:#?}"))?;
+        Ok(())
+    }
+
+    fn execute_reviewed_reply(&mut self) -> color_eyre::Result<()> {
+        let details = self.state.lore.details.as_ref().unwrap();
+        let representative_patch = details.representative_patch.clone();
+        let patchset_actions = &details.patchset_actions;
+        let raw_patches = details.raw_patches.clone();
+        let patches_to_reply = details.patches_to_reply.clone();
 
         if let Some(true) = patchset_actions.get(&PatchsetAction::ReplyWithReviewedBy) {
             let mut successful_indexes = self
@@ -371,7 +386,10 @@ impl App {
                 .unwrap()
                 .reset_reply_with_reviewed_by_action();
         }
+        Ok(())
+    }
 
+    fn execute_apply_patchset(&mut self) {
         if let Some(true) = self
             .state
             .lore
@@ -399,8 +417,6 @@ impl App {
                 .unwrap()
                 .toggle_apply_action();
         }
-
-        Ok(())
     }
 
     /// Opens the edit-config screen from current [`Config`].
