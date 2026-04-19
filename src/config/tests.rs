@@ -7,8 +7,11 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use crate::config::state::ConfigState;
-use crate::config::{ConfigService, ConfigServiceApi};
+use crate::config::repository::{ConfigRepository, JsonConfigRepository};
+use crate::config::state::{normalize_derived_paths, ConfigState};
+use crate::config::{
+    ConfigError, ConfigService, ConfigServiceApi, ConfigUpdateDraft, DEFAULT_CONFIG_PATH_SUFFIX,
+};
 use crate::infrastructure::{env::MockEnvTrait, file_system::OsFileSystem};
 
 static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -362,4 +365,235 @@ fn deserialize_config_state_with_missing_field() {
 
     assert_eq!(state.page_size(), 30);
     assert_eq!(state.max_log_age(), 500);
+}
+
+#[test]
+fn bootstrap_rejects_invalid_patch_hub_page_size_env() {
+    let home = unique_test_dir("bad-pagesz");
+    let home_s = home.to_string_lossy().into_owned();
+    let mut mock = MockEnvTrait::new();
+    mock.expect_var()
+        .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .returning(|_| Err(VarError::NotPresent.into()));
+    mock.expect_var()
+        .withf(|key| key == "HOME")
+        .times(2)
+        .returning(move |_| Ok(home_s.clone()));
+    mock.expect_var()
+        .withf(|key| key == "PATCH_HUB_PAGE_SIZE")
+        .returning(|_| Ok("not-a-number".into()));
+    mock.expect_var()
+        .withf(|key| {
+            matches!(
+                key,
+                "PATCH_HUB_CACHE_DIR"
+                    | "PATCH_HUB_DATA_DIR"
+                    | "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS"
+                    | "PATCH_HUB_PATCH_RENDERER"
+            )
+        })
+        .returning(|_| Err(VarError::NotPresent.into()));
+
+    match ConfigService::bootstrap(&mock, os_fs()) {
+        Ok(_) => panic!("expected bootstrap to fail"),
+        Err(err) => {
+            assert!(matches!(err, ConfigError::InvalidPageSize(ref s) if s == "not-a-number"))
+        }
+    }
+}
+
+#[test]
+fn bootstrap_rejects_invalid_patch_hub_patch_renderer_env() {
+    let home = unique_test_dir("bad-renderer");
+    let home_s = home.to_string_lossy().into_owned();
+    let mut mock = MockEnvTrait::new();
+    mock.expect_var()
+        .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .returning(|_| Err(VarError::NotPresent.into()));
+    mock.expect_var()
+        .withf(|key| key == "HOME")
+        .times(2)
+        .returning(move |_| Ok(home_s.clone()));
+    mock.expect_var()
+        .withf(|key| key == "PATCH_HUB_PAGE_SIZE")
+        .returning(|_| Err(VarError::NotPresent.into()));
+    mock.expect_var()
+        .withf(|key| key == "PATCH_HUB_CACHE_DIR")
+        .returning(|_| Err(VarError::NotPresent.into()));
+    mock.expect_var()
+        .withf(|key| key == "PATCH_HUB_DATA_DIR")
+        .returning(|_| Err(VarError::NotPresent.into()));
+    mock.expect_var()
+        .withf(|key| key == "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS")
+        .returning(|_| Err(VarError::NotPresent.into()));
+    mock.expect_var()
+        .withf(|key| key == "PATCH_HUB_PATCH_RENDERER")
+        .returning(|_| Ok("not-a-real-renderer".into()));
+
+    match ConfigService::bootstrap(&mock, os_fs()) {
+        Ok(_) => panic!("expected bootstrap to fail"),
+        Err(err) => assert!(matches!(
+            err,
+            ConfigError::InvalidPatchRenderer(ref s) if s == "not-a-real-renderer"
+        )),
+    }
+}
+
+#[test]
+fn normalize_derived_paths_recomputes_cache_and_data_subpaths() {
+    let (env, _home) = default_env();
+    let mut state = ConfigState::new_with_defaults(&env);
+    state.cache_dir = "/tmp/custom-cache".into();
+    state.data_dir = "/tmp/custom-data".into();
+    state.patchsets_cache_dir = "stale-patchsets".into();
+    state.bookmarked_patchsets_path = "stale-b".into();
+    state.mailing_lists_path = "stale-m".into();
+    state.reviewed_patchsets_path = "stale-r".into();
+    state.logs_path = "stale-logs".into();
+
+    normalize_derived_paths(&mut state);
+
+    assert_eq!(state.patchsets_cache_dir, "/tmp/custom-cache/patchsets");
+    assert_eq!(
+        state.bookmarked_patchsets_path,
+        "/tmp/custom-data/bookmarked_patchsets.json"
+    );
+    assert_eq!(
+        state.mailing_lists_path,
+        "/tmp/custom-data/mailing_lists.json"
+    );
+    assert_eq!(
+        state.reviewed_patchsets_path,
+        "/tmp/custom-data/reviewed_patchsets.json"
+    );
+    assert_eq!(state.logs_path, "/tmp/custom-data/logs");
+}
+
+#[test]
+fn validate_update_rejects_invalid_page_size() {
+    let (env, _home) = default_env();
+    let service = ConfigService::bootstrap(&env, os_fs()).unwrap();
+    let err = service
+        .validate_update(ConfigUpdateDraft {
+            page_size: Some("xyz".into()),
+            ..Default::default()
+        })
+        .unwrap_err();
+    assert!(matches!(err, ConfigError::InvalidPageSize(ref s) if s == "xyz"));
+}
+
+#[test]
+fn validate_update_rejects_invalid_patch_renderer() {
+    let (env, _home) = default_env();
+    let service = ConfigService::bootstrap(&env, os_fs()).unwrap();
+    let err = service
+        .validate_update(ConfigUpdateDraft {
+            patch_renderer: Some("nope".into()),
+            ..Default::default()
+        })
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        ConfigError::InvalidPatchRenderer(ref s) if s == "nope"
+    ));
+}
+
+#[test]
+fn validate_update_rejects_invalid_cover_renderer() {
+    let (env, _home) = default_env();
+    let service = ConfigService::bootstrap(&env, os_fs()).unwrap();
+    let err = service
+        .validate_update(ConfigUpdateDraft {
+            cover_renderer: Some("delta".into()),
+            ..Default::default()
+        })
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        ConfigError::InvalidCoverRenderer(ref s) if s == "delta"
+    ));
+}
+
+#[test]
+fn validate_update_rejects_invalid_max_log_age() {
+    let (env, _home) = default_env();
+    let service = ConfigService::bootstrap(&env, os_fs()).unwrap();
+    let err = service
+        .validate_update(ConfigUpdateDraft {
+            max_log_age: Some("not-a-number".into()),
+            ..Default::default()
+        })
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        ConfigError::InvalidMaxLogAge(ref s) if s == "not-a-number"
+    ));
+}
+
+#[test]
+fn validate_update_rejects_cache_dir_that_is_existing_file() {
+    let (env, _home) = default_env();
+    let service = ConfigService::bootstrap(&env, os_fs()).unwrap();
+    let root = unique_test_dir("not-a-dir");
+    let blocking = root.join("blocking-file");
+    fs::write(&blocking, b"x").unwrap();
+    let err = service
+        .validate_update(ConfigUpdateDraft {
+            cache_dir: Some(blocking.to_string_lossy().into_owned()),
+            ..Default::default()
+        })
+        .unwrap_err();
+    assert!(matches!(err, ConfigError::InvalidDirectory(_)));
+}
+
+#[test]
+fn json_config_repository_save_creates_parent_and_leaves_no_tmp_stale() {
+    let root = unique_test_dir("repo-atomic");
+    let cfg_path = root.join("deep").join("config.json");
+    let cfg_s = cfg_path.to_string_lossy().into_owned();
+    let home = unique_test_dir("repo-home");
+    let home_s = home.to_string_lossy().into_owned();
+
+    let mut mock = MockEnvTrait::new();
+    mock.expect_var()
+        .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .returning(move |_| Ok(cfg_s.clone()));
+    mock.expect_var()
+        .withf(|key| key == "HOME")
+        .returning(move |_| Ok(home_s.clone()));
+
+    let repo = JsonConfigRepository::new(&mock, os_fs());
+    let state = ConfigState::new_with_defaults(&mock);
+    repo.save(&state).unwrap();
+
+    assert!(cfg_path.is_file());
+    let parent = cfg_path.parent().unwrap();
+    let tmp_left = fs::read_dir(parent).unwrap().any(|e| {
+        e.ok()
+            .is_some_and(|x| x.file_name().to_string_lossy().ends_with(".tmp"))
+    });
+    assert!(
+        !tmp_left,
+        "atomic save should rename away .tmp, not leave it behind"
+    );
+}
+
+#[test]
+fn apply_update_persists_to_config_file() {
+    let (env, home) = default_env();
+    let mut service = ConfigService::bootstrap(&env, os_fs()).unwrap();
+    let cfg_path = home.join(DEFAULT_CONFIG_PATH_SUFFIX);
+
+    let validated = service
+        .validate_update(ConfigUpdateDraft {
+            page_size: Some("77".into()),
+            ..Default::default()
+        })
+        .unwrap();
+    service.apply_update(validated).unwrap();
+
+    assert_eq!(service.snapshot().page_size(), 77);
+    let raw = fs::read_to_string(&cfg_path).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(parsed["page_size"], 77);
 }

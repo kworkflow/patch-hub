@@ -1,10 +1,18 @@
+use crate::config::errors::ConfigError;
+use crate::config::parsing::parse_patch_renderer;
 use crate::config::state::ConfigState;
 use crate::infrastructure::env::EnvTrait;
 
 /// Applies `PATCH_HUB_*` overrides (same semantics as legacy `Config::override_with_env_vars`).
-pub fn apply_env_overrides(state: &mut ConfigState, env: &dyn EnvTrait) {
+pub fn apply_env_overrides(state: &mut ConfigState, env: &dyn EnvTrait) -> Result<(), ConfigError> {
     if let Ok(page_size) = env.var("PATCH_HUB_PAGE_SIZE") {
-        state.page_size = page_size.parse().unwrap();
+        let t = page_size.trim();
+        if t.is_empty() {
+            return Err(ConfigError::InvalidPageSize(page_size));
+        }
+        state.page_size = t
+            .parse()
+            .map_err(|_| ConfigError::InvalidPageSize(page_size.clone()))?;
     }
 
     if let Ok(cache_dir) = env.var("PATCH_HUB_CACHE_DIR") {
@@ -25,6 +33,8 @@ pub fn apply_env_overrides(state: &mut ConfigState, env: &dyn EnvTrait) {
     }
 
     if let Ok(patch_renderer) = env.var("PATCH_HUB_PATCH_RENDERER") {
-        state.patch_renderer = patch_renderer.into();
+        state.patch_renderer = parse_patch_renderer(&patch_renderer)?;
     }
+
+    Ok(())
 }

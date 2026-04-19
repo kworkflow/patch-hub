@@ -3,6 +3,7 @@
 
 mod env_overrides;
 mod errors;
+mod parsing;
 mod repository;
 mod service;
 mod state;

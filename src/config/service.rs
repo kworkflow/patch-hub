@@ -2,12 +2,12 @@ use std::path::Path;
 
 use crate::config::env_overrides;
 use crate::config::errors::ConfigError;
+use crate::config::parsing::{parse_cover_renderer, parse_patch_renderer};
 use crate::config::repository::{ConfigRepository, JsonConfigRepository};
 use crate::config::state::ConfigSnapshot;
 use crate::config::state::{normalize_derived_paths, ConfigState};
 use crate::config::update::{ConfigUpdateDraft, ValidatedConfigUpdate};
 use crate::infrastructure::{env::EnvTrait, file_system::FileSystemTrait};
-use crate::render_prefs::{CoverRenderer, PatchRenderer};
 
 /// Public surface for configuration (maps to a future `ConfigActor` protocol).
 pub trait ConfigServiceApi: Send + Sync {
@@ -20,8 +20,6 @@ pub trait ConfigServiceApi: Send + Sync {
         &mut self,
         update: ValidatedConfigUpdate,
     ) -> Result<ConfigSnapshot, ConfigError>;
-    /// Writes the current in-memory configuration to disk (same file as bootstrap).
-    fn persist(&self) -> Result<(), ConfigError>;
 }
 
 pub struct ConfigService<FS: FileSystemTrait> {
@@ -39,7 +37,7 @@ impl<FS: FileSystemTrait + Send + Sync> ConfigService<FS> {
         if let Err(e) = repo.save(&state) {
             eprintln!("Failed to save default config: {e}");
         }
-        env_overrides::apply_env_overrides(&mut state, env);
+        env_overrides::apply_env_overrides(&mut state, env)?;
         normalize_derived_paths(&mut state);
         let service = Self { repo, state };
         service.ensure_directories()?;
@@ -87,24 +85,6 @@ impl<FS: FileSystemTrait + Send + Sync> ConfigService<FS> {
         fs.create_dir_all(path)
             .map_err(|_| ConfigError::InvalidDirectory(dir_path.to_string()))?;
         Ok(())
-    }
-
-    fn parse_patch_renderer(s: &str) -> Result<PatchRenderer, ConfigError> {
-        match s.trim() {
-            "" | "default" => Ok(PatchRenderer::Default),
-            "bat" => Ok(PatchRenderer::Bat),
-            "delta" => Ok(PatchRenderer::Delta),
-            "diff-so-fancy" => Ok(PatchRenderer::DiffSoFancy),
-            other => Err(ConfigError::InvalidPatchRenderer(other.to_string())),
-        }
-    }
-
-    fn parse_cover_renderer(s: &str) -> Result<CoverRenderer, ConfigError> {
-        match s.trim() {
-            "" | "default" => Ok(CoverRenderer::Default),
-            "bat" => Ok(CoverRenderer::Bat),
-            other => Err(ConfigError::InvalidCoverRenderer(other.to_string())),
-        }
     }
 }
 
@@ -164,12 +144,12 @@ impl<FS: FileSystemTrait + Send + Sync> ConfigServiceApi for ConfigService<FS> {
 
         let patch_renderer = match &draft.patch_renderer {
             None => None,
-            Some(s) => Some(Self::parse_patch_renderer(s)?),
+            Some(s) => Some(parse_patch_renderer(s)?),
         };
 
         let cover_renderer = match &draft.cover_renderer {
             None => None,
-            Some(s) => Some(Self::parse_cover_renderer(s)?),
+            Some(s) => Some(parse_cover_renderer(s)?),
         };
 
         let max_log_age = match &draft.max_log_age {
@@ -203,10 +183,7 @@ impl<FS: FileSystemTrait + Send + Sync> ConfigServiceApi for ConfigService<FS> {
         self.state.apply_update(&update);
         normalize_derived_paths(&mut self.state);
         self.ensure_directories()?;
+        self.repo.save(&self.state)?;
         Ok(self.state.to_snapshot())
-    }
-
-    fn persist(&self) -> Result<(), ConfigError> {
-        self.repo.save(&self.state)
     }
 }

@@ -3,7 +3,6 @@ use thiserror::Error;
 use crate::infrastructure::file_system::FileSystemError;
 
 #[derive(Debug, Error)]
-#[allow(dead_code)] // EnvOverride reserved for stricter env parsing (Phase 5-D+)
 pub enum ConfigError {
     #[error("failed to load config: {0}")]
     Load(String),
@@ -19,8 +18,6 @@ pub enum ConfigError {
     InvalidCoverRenderer(String),
     #[error("invalid max log age: {0}")]
     InvalidMaxLogAge(String),
-    #[error("environment override error: {0}")]
-    EnvOverride(String),
     #[error("filesystem error: {0}")]
     Fs(#[from] FileSystemError),
 }
