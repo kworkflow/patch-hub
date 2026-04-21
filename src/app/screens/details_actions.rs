@@ -92,7 +92,7 @@ impl DetailsActions {
     pub fn go_to_last_line(&mut self) {
         // TODO: Support for renderers (only considers base preview string)
         let number_of_lines = self.patches_preview[self.preview_index].height();
-        self.preview_scroll_offset = number_of_lines - LAST_LINE_PADDING;
+        self.preview_scroll_offset = number_of_lines.saturating_sub(LAST_LINE_PADDING);
     }
 
     /// Scroll to first line
@@ -451,5 +451,478 @@ impl DetailsActions {
         },
             Err(e) => Err(format!( "`git am` failed\n{}{}", &original_branch, e))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_patch(title: &str) -> Patch {
+        let json = format!(
+            r#"{{
+                    "title": "{title}",
+                    "author": {{ "name": "name", "email": "teste@teste.com" }},
+                    "link": {{ "@href": "http://lore.kernel.org/some-list/1234-1-teste@teste.com" }},
+                    "thr:in-reply-to": null,
+                    "updated": "2024-07-06T19:15:48Z"
+                }}"#
+        );
+        serde_json::from_str::<Patch>(&json).unwrap()
+    }
+
+    fn mock_details_actions(patch: Patch, current_screen: CurrentScreen) -> DetailsActions {
+        DetailsActions {
+            representative_patch: patch,
+            raw_patches: vec!["diff --git a/file.rs b/file.rs".into()],
+            patches_preview: vec![
+                Text::from("Fake patch preview"),
+                Text::from("Fake patch preview"),
+                Text::from("Fake patch preview"),
+            ],
+            has_cover_letter: false,
+            patches_to_reply: vec![false, false, false],
+            patchset_path: "/tmp/fake_patchset.mbx".into(),
+            preview_index: 0,
+            preview_scroll_offset: 0,
+            preview_pan: 0,
+            preview_fullscreen: false,
+            patchset_actions: {
+                let mut m = HashMap::new();
+                m.insert(PatchsetAction::Bookmark, false);
+                m.insert(PatchsetAction::Apply, false);
+                m.insert(PatchsetAction::ReplyWithReviewedBy, false);
+                m
+            },
+            reviewed_by: vec![HashSet::new()],
+            tested_by: vec![HashSet::new()],
+            acked_by: vec![HashSet::new()],
+            last_screen: current_screen,
+            lore_api_client: BlockingLoreAPIClient::default(),
+        }
+    }
+
+    #[test]
+    fn test_preview_next_patch() {
+        let mut details_actions = mock_details_actions(
+            make_patch("test_preview_next_patch"),
+            CurrentScreen::BookmarkedPatchsets,
+        );
+
+        let index = details_actions.preview_index;
+
+        details_actions.preview_scroll_offset = 5;
+        details_actions.preview_pan = 3;
+
+        details_actions.preview_next_patch();
+
+        assert_eq!(details_actions.preview_index, index + 1);
+        assert_eq!(details_actions.preview_scroll_offset, 0);
+        assert_eq!(details_actions.preview_pan, 0);
+    }
+
+    #[test]
+    fn test_preview_previous_patch_should_go_back() {
+        let mut details_actions = mock_details_actions(
+            make_patch("test_preview_previous_patch"),
+            CurrentScreen::BookmarkedPatchsets,
+        );
+
+        details_actions.preview_index = 1;
+
+        details_actions.preview_previous_patch();
+
+        assert_eq!(details_actions.preview_index, 0);
+        assert_eq!(details_actions.preview_scroll_offset, 0);
+        assert_eq!(details_actions.preview_pan, 0);
+    }
+
+    #[test]
+    fn test_preview_scroll_up() {
+        let mut details_actions = mock_details_actions(
+            make_patch("test_preview_scroll_up"),
+            CurrentScreen::BookmarkedPatchsets,
+        );
+        details_actions.preview_scroll_up(100);
+        assert!(details_actions.preview_scroll_offset == 0);
+    }
+
+    #[test]
+    fn test_preview_scroll_down() {
+        let mut details_actions = mock_details_actions(
+            make_patch("test_preview_scroll_down"),
+            CurrentScreen::BookmarkedPatchsets,
+        );
+        let height = details_actions.patches_preview[details_actions.preview_index].height();
+
+        let preview_scroll_offset = details_actions.preview_scroll_offset;
+
+        details_actions.preview_scroll_down(height + 10);
+        assert_eq!(details_actions.preview_scroll_offset, preview_scroll_offset);
+
+        details_actions.preview_scroll_down(1);
+        assert_eq!(
+            details_actions.preview_scroll_offset,
+            preview_scroll_offset + 1
+        );
+    }
+
+    #[test]
+    fn test_go_to_last_line() {
+        let mut details_actions = mock_details_actions(
+            make_patch("test_go_to_last_line"),
+            CurrentScreen::BookmarkedPatchsets,
+        );
+
+        let height = details_actions.patches_preview[details_actions.preview_index].height();
+
+        details_actions.preview_scroll_offset = 0;
+
+        details_actions.go_to_last_line();
+
+        assert_eq!(
+            details_actions.preview_scroll_offset,
+            height.saturating_sub(LAST_LINE_PADDING)
+        );
+    }
+
+    #[test]
+    fn test_go_to_first_line() {
+        let mut details_actions = mock_details_actions(
+            make_patch("test_go_to_first_line"),
+            CurrentScreen::BookmarkedPatchsets,
+        );
+
+        details_actions.preview_scroll_offset = 42;
+
+        details_actions.go_to_first_line();
+
+        assert_eq!(details_actions.preview_scroll_offset, 0);
+    }
+
+    #[test]
+    fn test_preview_pan_right_increments() {
+        let mut details_actions = mock_details_actions(
+            make_patch("test_preview_pan_right"),
+            CurrentScreen::BookmarkedPatchsets,
+        );
+
+        details_actions.preview_pan = 100;
+
+        details_actions.preview_pan_right();
+
+        assert_eq!(details_actions.preview_pan, 101);
+    }
+
+    #[test]
+    fn test_preview_pan_left() {
+        let mut details_actions = mock_details_actions(
+            make_patch("test_preview_pan_left"),
+            CurrentScreen::BookmarkedPatchsets,
+        );
+
+        details_actions.preview_pan = 5;
+
+        details_actions.preview_pan_left();
+
+        assert_eq!(details_actions.preview_pan, 4);
+
+        details_actions.preview_pan = 0;
+
+        details_actions.preview_pan_left();
+
+        assert_eq!(details_actions.preview_pan, 0);
+    }
+
+    #[test]
+    fn test_go_to_beg_of_line() {
+        let mut details_actions = mock_details_actions(
+            make_patch("test_go_to_beg_of_line"),
+            CurrentScreen::BookmarkedPatchsets,
+        );
+
+        details_actions.preview_pan = 123;
+
+        details_actions.go_to_beg_of_line();
+
+        assert_eq!(details_actions.preview_pan, 0);
+    }
+
+    #[test]
+    fn test_toggle_preview_fullscreen() {
+        let mut details_actions = mock_details_actions(
+            make_patch("test_toggle_preview_fullscreen"),
+            CurrentScreen::BookmarkedPatchsets,
+        );
+
+        let first = details_actions.preview_fullscreen;
+
+        details_actions.toggle_preview_fullscreen();
+        assert_eq!(details_actions.preview_fullscreen, !first);
+
+        details_actions.toggle_preview_fullscreen();
+        assert_eq!(details_actions.preview_fullscreen, first);
+    }
+
+    #[test]
+    fn test_toggle_bookmark_action() {
+        let mut details_actions = mock_details_actions(
+            make_patch("test_toggle_bookmark_action"),
+            CurrentScreen::BookmarkedPatchsets,
+        );
+
+        let initial = details_actions.patchset_actions[&PatchsetAction::Bookmark];
+
+        details_actions.toggle_bookmark_action();
+        assert_eq!(
+            details_actions
+                .patchset_actions
+                .get(&PatchsetAction::Bookmark),
+            Some(&!initial)
+        );
+
+        details_actions.toggle_bookmark_action();
+        assert_eq!(
+            details_actions
+                .patchset_actions
+                .get(&PatchsetAction::Bookmark),
+            Some(&initial)
+        );
+    }
+
+    #[test]
+    fn test_toggle_action() {
+        let mut details_actions = mock_details_actions(
+            make_patch("test_toggle_action"),
+            CurrentScreen::BookmarkedPatchsets,
+        );
+
+        let initial = *details_actions
+            .patchset_actions
+            .get(&PatchsetAction::Bookmark)
+            .expect("Bookmark action must exist");
+
+        details_actions.toggle_action(PatchsetAction::Bookmark);
+        assert_eq!(
+            details_actions
+                .patchset_actions
+                .get(&PatchsetAction::Bookmark),
+            Some(&!initial)
+        );
+
+        details_actions.toggle_action(PatchsetAction::Bookmark);
+        assert_eq!(
+            details_actions
+                .patchset_actions
+                .get(&PatchsetAction::Bookmark),
+            Some(&initial)
+        );
+    }
+
+    #[test]
+    fn test_toggle_reply_with_reviewed_by_action() {
+        let mut details_actions = mock_details_actions(
+            make_patch("test_toggle_reply_with_reviewed_by_action"),
+            CurrentScreen::BookmarkedPatchsets,
+        );
+
+        let idx = details_actions.preview_index;
+
+        details_actions.patches_to_reply = vec![false, false, false];
+        details_actions.toggle_reply_with_reviewed_by_action(false);
+        assert!(details_actions.patches_to_reply[idx]);
+        assert_eq!(
+            details_actions
+                .patchset_actions
+                .get(&PatchsetAction::ReplyWithReviewedBy),
+            Some(&true)
+        );
+
+        details_actions.toggle_reply_with_reviewed_by_action(false);
+        assert!(!details_actions.patches_to_reply[idx]);
+        assert_eq!(
+            details_actions
+                .patchset_actions
+                .get(&PatchsetAction::ReplyWithReviewedBy),
+            Some(&false)
+        );
+
+        details_actions.patches_to_reply = vec![true, false, true];
+        details_actions.toggle_reply_with_reviewed_by_action(true);
+        assert_eq!(details_actions.patches_to_reply, vec![true, true, true]);
+        assert_eq!(
+            details_actions
+                .patchset_actions
+                .get(&PatchsetAction::ReplyWithReviewedBy),
+            Some(&true)
+        );
+
+        details_actions.patches_to_reply = vec![true, true, true];
+        details_actions.toggle_reply_with_reviewed_by_action(true);
+        assert_eq!(details_actions.patches_to_reply, vec![false, false, false]);
+        assert_eq!(
+            details_actions
+                .patchset_actions
+                .get(&PatchsetAction::ReplyWithReviewedBy),
+            Some(&false)
+        );
+
+        details_actions.reset_reply_with_reviewed_by_action();
+
+        details_actions.toggle_reply_with_reviewed_by_action(false);
+        assert_eq!(
+            details_actions
+                .patchset_actions
+                .get(&PatchsetAction::ReplyWithReviewedBy),
+            Some(&true)
+        );
+
+        details_actions.toggle_reply_with_reviewed_by_action(false);
+        assert_eq!(
+            details_actions
+                .patchset_actions
+                .get(&PatchsetAction::ReplyWithReviewedBy),
+            Some(&false)
+        );
+    }
+
+    #[test]
+    fn test_toggle_apply_action() {
+        let mut details_actions = mock_details_actions(
+            make_patch("test_toggle_reply_with_reviewed_by_action"),
+            CurrentScreen::BookmarkedPatchsets,
+        );
+
+        details_actions.toggle_apply_action();
+        assert_eq!(
+            details_actions.patchset_actions.get(&PatchsetAction::Apply),
+            Some(&true)
+        );
+
+        details_actions.toggle_apply_action();
+        assert_eq!(
+            details_actions.patchset_actions.get(&PatchsetAction::Apply),
+            Some(&false)
+        );
+    }
+
+    #[test]
+    fn test_reset_reply_with_reviewed_by_action() {
+        let mut details_actions = mock_details_actions(
+            make_patch("test_toggle_reply_with_reviewed_by_action"),
+            CurrentScreen::BookmarkedPatchsets,
+        );
+
+        details_actions.toggle_reply_with_reviewed_by_action(true);
+        assert!(details_actions.patches_to_reply.iter().all(|&v| v));
+
+        details_actions.reset_reply_with_reviewed_by_action();
+
+        assert!(details_actions.patches_to_reply.iter().all(|&v| !v));
+
+        assert_eq!(
+            details_actions
+                .patchset_actions
+                .get(&PatchsetAction::ReplyWithReviewedBy),
+            Some(&false)
+        );
+
+        details_actions.toggle_reply_with_reviewed_by_action(false);
+
+        assert_eq!(
+            details_actions
+                .patchset_actions
+                .get(&PatchsetAction::ReplyWithReviewedBy),
+            Some(&true)
+        );
+
+        details_actions.reset_reply_with_reviewed_by_action();
+
+        assert!(details_actions.patches_to_reply.iter().all(|&v| !v));
+
+        assert_eq!(
+            details_actions
+                .patchset_actions
+                .get(&PatchsetAction::ReplyWithReviewedBy),
+            Some(&false)
+        );
+    }
+
+    #[test]
+    fn test_toggle_all_actions() {
+        let mut details_actions = mock_details_actions(
+            make_patch("test_toggle_all_actions"),
+            CurrentScreen::BookmarkedPatchsets,
+        );
+
+        assert_eq!(
+            details_actions
+                .patchset_actions
+                .get(&PatchsetAction::Bookmark),
+            Some(&false)
+        );
+        details_actions.toggle_action(PatchsetAction::Bookmark);
+        assert_eq!(
+            details_actions
+                .patchset_actions
+                .get(&PatchsetAction::Bookmark),
+            Some(&true)
+        );
+        details_actions.toggle_action(PatchsetAction::Bookmark);
+        assert_eq!(
+            details_actions
+                .patchset_actions
+                .get(&PatchsetAction::Bookmark),
+            Some(&false)
+        );
+
+        assert_eq!(
+            details_actions.patchset_actions.get(&PatchsetAction::Apply),
+            Some(&false)
+        );
+        details_actions.toggle_action(PatchsetAction::Apply);
+        assert_eq!(
+            details_actions.patchset_actions.get(&PatchsetAction::Apply),
+            Some(&true)
+        );
+        details_actions.toggle_action(PatchsetAction::Apply);
+        assert_eq!(
+            details_actions.patchset_actions.get(&PatchsetAction::Apply),
+            Some(&false)
+        );
+
+        assert_eq!(
+            details_actions
+                .patchset_actions
+                .get(&PatchsetAction::ReplyWithReviewedBy),
+            Some(&false)
+        );
+        details_actions.toggle_action(PatchsetAction::ReplyWithReviewedBy);
+        assert_eq!(
+            details_actions
+                .patchset_actions
+                .get(&PatchsetAction::ReplyWithReviewedBy),
+            Some(&true)
+        );
+        details_actions.toggle_action(PatchsetAction::ReplyWithReviewedBy);
+        assert_eq!(
+            details_actions
+                .patchset_actions
+                .get(&PatchsetAction::ReplyWithReviewedBy),
+            Some(&false)
+        );
+    }
+
+    #[test]
+    fn test_actions_require_user_io() {
+        let mut details = mock_details_actions(
+            make_patch("test_actions_require_user_io"),
+            CurrentScreen::BookmarkedPatchsets,
+        );
+
+        assert!(!details.actions_require_user_io());
+
+        details.patches_to_reply[0] = true;
+        assert!(details.actions_require_user_io());
     }
 }
