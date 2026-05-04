@@ -7,12 +7,14 @@ use std::fmt::Display;
 #[cfg(test)]
 mod tests;
 
+/// Contains the list of patches received from Lore.
 #[derive(Getters, Serialize, Deserialize, Debug, Clone)]
 pub struct PatchFeed {
     #[serde(rename = "entry")]
     patches: Vec<Patch>,
 }
 
+/// Represents a single email or patch from the mailing list.
 #[derive(Getters, Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Patch {
     r#title: String,
@@ -33,6 +35,7 @@ pub struct Patch {
     updated: String,
 }
 
+/// Stores the name and email of the sender.
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
 pub struct Author {
     pub name: String,
@@ -46,35 +49,45 @@ impl Display for Author {
     }
 }
 
+/// Holds the unique link for the message.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct MessageID {
     #[serde(rename = "@href")]
     pub href: String,
 }
 
+/// Returns the default version (1) when reading data.
 fn default_version() -> usize {
     1
 }
+/// Returns the default patch number (1) when reading data.
 fn default_number_in_series() -> usize {
     1
 }
+/// Returns the default total count (1) when reading data.
 fn default_total_in_series() -> usize {
     1
 }
 
 impl Patch {
+    /// Gets the version number (e.g. 1 for v1, 2 for v2).
     pub fn version(&self) -> usize {
         self.version
     }
 
+    /// Gets the number of this patch in the series (e.g. 1 in "1/3").
     pub fn number_in_series(&self) -> usize {
         self.number_in_series
     }
 
+    /// Gets the total number of patches in the series (e.g. 3 in "1/3").
     pub fn total_in_series(&self) -> usize {
         self.total_in_series
     }
 
+    /// Updates the patch details (like version and series info) by looking at the title.
+    ///
+    /// It finds tags like `[PATCH v2 1/3]`, saves that info, and cleans up the title text.
     pub fn update_patch_metadata(&mut self, patch_regex: &PatchRegex) {
         let patch_tag: String = match self.get_patch_tag(&patch_regex.re_patch_tag) {
             Some(value) => value.to_string(),
@@ -87,6 +100,7 @@ impl Patch {
         self.set_total_in_series(&patch_tag, &patch_regex.re_patch_series);
     }
 
+    /// Finds the tag part of the title, like "[PATCH 1/2]".
     fn get_patch_tag(&self, re_patch_tag: &Regex) -> Option<&str> {
         match re_patch_tag.find(&self.title) {
             Some(patch_tag) => Some(patch_tag.as_str()),
@@ -94,10 +108,12 @@ impl Patch {
         }
     }
 
+    /// Removes the tag from the title so only the subject remains.
     fn remove_patch_tag_from_title(&mut self, patch_tag: &str) {
         self.title = self.title.replace(patch_tag, "").trim().to_string();
     }
 
+    /// Reads the version number from the tag.
     fn set_version(&mut self, patch_tag: &str, re_patch_version: &Regex) {
         if let Some(capture) = re_patch_version.captures(patch_tag) {
             if let Some(version) = capture.get(1) {
@@ -106,6 +122,7 @@ impl Patch {
         }
     }
 
+    /// Reads the patch number from the tag.
     fn set_number_in_series(&mut self, patch_tag: &str, re_patch_series: &Regex) {
         if let Some(capture) = re_patch_series.captures(patch_tag) {
             if let Some(number_in_series) = capture.get(1) {
@@ -114,6 +131,7 @@ impl Patch {
         }
     }
 
+    /// Reads the total number of patches from the tag.
     fn set_total_in_series(&mut self, patch_tag: &str, re_patch_series: &Regex) {
         if let Some(capture) = re_patch_series.captures(patch_tag) {
             if let Some(total_in_series) = capture.get(2) {
@@ -123,6 +141,7 @@ impl Patch {
     }
 }
 
+/// Holds the patterns used to find information in patch titles.
 pub struct PatchRegex {
     pub re_patch_tag: Regex,
     pub re_patch_version: Regex,
@@ -136,6 +155,7 @@ impl Default for PatchRegex {
 }
 
 impl PatchRegex {
+    /// Creates the patterns used to search for tags, versions, and series numbers.
     pub fn new() -> PatchRegex {
         let re_patch_tag = Regex::new(r"(?i)\[[^\]]*(PATCH|RFC)[^\[]*\]").unwrap();
         let re_patch_version = Regex::new(r"[v|V] *(\d+)").unwrap();
