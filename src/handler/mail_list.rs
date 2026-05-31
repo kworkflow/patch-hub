@@ -1,31 +1,28 @@
-use ratatui::{
-    crossterm::event::{KeyCode, KeyEvent},
-    prelude::Backend,
-    Terminal,
-};
+use ratatui::{prelude::Backend, Terminal};
 
 use std::ops::ControlFlow;
 
 use crate::{
     app::{screens::CurrentScreen, App},
+    input::event::InputEvent,
     loading_screen,
     ui::popup::{help::HelpPopUpBuilder, PopUp},
 };
 
 pub async fn handle_mailing_list_selection<B>(
     app: &mut App,
-    key: KeyEvent,
+    input: InputEvent,
     mut terminal: Terminal<B>,
 ) -> color_eyre::Result<ControlFlow<(), Terminal<B>>>
 where
     B: Backend + Send + 'static,
 {
-    match key.code {
-        KeyCode::Char('?') => {
+    match input {
+        InputEvent::OpenHelp => {
             let popup = generate_help_popup();
             app.state.popup = Some(popup);
         }
-        KeyCode::Enter => {
+        InputEvent::OpenLatestPatchsets => {
             if app
                 .state
                 .lore
@@ -55,7 +52,7 @@ where
                 };
             }
         }
-        KeyCode::F(5) => {
+        InputEvent::RefreshMailingLists => {
             terminal = loading_screen! {
                 terminal,
                 "Refreshing lists" => {
@@ -63,11 +60,11 @@ where
                 }
             };
         }
-        KeyCode::F(2) => {
+        InputEvent::OpenEditConfig => {
             app.init_edit_config();
             app.set_current_screen(CurrentScreen::EditConfig);
         }
-        KeyCode::F(1) => {
+        InputEvent::OpenBookmarkedPatchsets => {
             if !app
                 .state
                 .user_state
@@ -79,25 +76,25 @@ where
                 app.set_current_screen(CurrentScreen::BookmarkedPatchsets);
             }
         }
-        KeyCode::Backspace => {
+        InputEvent::Backspace => {
             app.state
                 .lore
                 .mailing_list_selection
                 .remove_last_target_list_char();
         }
-        KeyCode::Esc => {
+        InputEvent::Quit => {
             return Ok(ControlFlow::Break(()));
         }
-        KeyCode::Char(ch) => {
+        InputEvent::TextInput(ch) => {
             app.state
                 .lore
                 .mailing_list_selection
                 .push_char_to_target_list(ch);
         }
-        KeyCode::Down => {
+        InputEvent::NavigateDown => {
             app.state.lore.mailing_list_selection.highlight_below_list();
         }
-        KeyCode::Up => {
+        InputEvent::NavigateUp => {
             app.state.lore.mailing_list_selection.highlight_above_list();
         }
         _ => {}

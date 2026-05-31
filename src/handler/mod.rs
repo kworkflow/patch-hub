@@ -18,7 +18,8 @@ use std::{
 use crate::{
     app::{screens::CurrentScreen, App},
     input::{
-        event::{InputEvent, TerminalEvent},
+        event::{InputEvent, KeyInput, TerminalEvent},
+        mapper::InputMapper,
         terminal_source::{CrosstermEventSource, TerminalEventSource},
     },
     ui::draw_ui,
@@ -34,6 +35,7 @@ async fn key_handling<B>(
     mut terminal: Terminal<B>,
     app: &mut App,
     key: KeyEvent,
+    input_mapper: &mut InputMapper,
 ) -> color_eyre::Result<ControlFlow<(), Terminal<B>>>
 where
     B: Backend + Send + 'static,
@@ -47,16 +49,22 @@ where
     } else {
         match app.state.navigation.current_screen {
             CurrentScreen::MailingListSelection => {
-                return handle_mailing_list_selection(app, key, terminal).await;
+                if let Some(input) = map_key_to_input(app, key, input_mapper) {
+                    return handle_mailing_list_selection(app, input, terminal).await;
+                }
             }
             CurrentScreen::BookmarkedPatchsets => {
-                return handle_bookmarked_patchsets(app, key, terminal).await;
+                if let Some(input) = map_key_to_input(app, key, input_mapper) {
+                    return handle_bookmarked_patchsets(app, input, terminal).await;
+                }
             }
             CurrentScreen::PatchsetDetails => {
                 handle_patchset_details(app, key, &mut terminal).await?;
             }
             CurrentScreen::EditConfig => {
-                handle_edit_config(app, key)?;
+                if let Some(input) = map_key_to_input(app, key, input_mapper) {
+                    handle_edit_config(app, input)?;
+                }
             }
             CurrentScreen::LatestPatchsets => {
                 return handle_latest_patchsets(app, key, terminal).await;
@@ -64,6 +72,17 @@ where
         }
     }
     Ok(ControlFlow::Continue(terminal))
+}
+
+fn map_key_to_input(
+    app: &App,
+    key: KeyEvent,
+    input_mapper: &mut InputMapper,
+) -> Option<InputEvent> {
+    input_mapper.map_terminal_event(
+        TerminalEvent::Key(KeyInput::from(key)),
+        &app.input_context(),
+    )
 }
 
 fn popup_input_from_key(key: KeyEvent) -> Option<InputEvent> {
@@ -81,6 +100,7 @@ where
     B: Backend + Send + 'static,
 {
     let mut event_source = CrosstermEventSource;
+    let mut input_mapper = InputMapper::default();
 
     loop {
         terminal = app.process_system_updates(terminal).await?;
@@ -94,7 +114,7 @@ where
         // if event::poll(Duration::from_millis(16))? {
         if let Some(TerminalEvent::Key(key)) = event_source.read_event()? {
             let key = key.to_key_event();
-            match key_handling(terminal, &mut app, key).await? {
+            match key_handling(terminal, &mut app, key, &mut input_mapper).await? {
                 ControlFlow::Continue(t) => terminal = t,
                 ControlFlow::Break(_) => return Ok(()),
             }
