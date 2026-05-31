@@ -1,8 +1,7 @@
 use tokio::{sync::mpsc, task};
 
 use crate::lore::application::{
-    api::LoreServiceApi, errors::LoreError, handle::LoreApiHandle, messages::LoreApiMessage,
-    service::LoreService,
+    errors::LoreError, handle::LoreApiHandle, messages::LoreApiMessage, service::LoreService,
 };
 
 pub const DEFAULT_LORE_API_CHANNEL_SIZE: usize = 32;

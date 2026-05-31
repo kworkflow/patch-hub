@@ -13,7 +13,6 @@ use crate::{
     },
     lore::{
         application::{
-            api::LoreServiceApi,
             cache::{
                 BootstrapLoreData, CacheMode, CacheTtl, FeedCacheEntry, LoreCache,
                 MailingListsCacheEntry, PatchsetCacheEntry, PatchsetCacheKey,
@@ -79,8 +78,11 @@ impl LoreService {
     }
 }
 
-impl LoreServiceApi for LoreService {
-    fn fetch_available_lists(&mut self, mode: CacheMode) -> Result<Vec<MailingList>, LoreError> {
+impl LoreService {
+    pub fn fetch_available_lists(
+        &mut self,
+        mode: CacheMode,
+    ) -> Result<Vec<MailingList>, LoreError> {
         const LORE_PAGE_SIZE: usize = 200;
 
         match mode {
@@ -146,26 +148,26 @@ impl LoreServiceApi for LoreService {
         Ok(all_lists)
     }
 
-    fn load_bookmarked_patchsets(&self) -> Result<Vec<Patch>, LoreError> {
+    pub fn load_bookmarked_patchsets(&self) -> Result<Vec<Patch>, LoreError> {
         Ok(self.user_state.load_bookmarked_patchsets()?)
     }
 
-    fn save_bookmarked_patchsets(&self, patchsets: &[Patch]) -> Result<(), LoreError> {
+    pub fn save_bookmarked_patchsets(&self, patchsets: &[Patch]) -> Result<(), LoreError> {
         Ok(self.user_state.save_bookmarked_patchsets(patchsets)?)
     }
 
-    fn load_reviewed_patchsets(&self) -> Result<HashMap<String, HashSet<usize>>, LoreError> {
+    pub fn load_reviewed_patchsets(&self) -> Result<HashMap<String, HashSet<usize>>, LoreError> {
         Ok(self.user_state.load_reviewed_patchsets()?)
     }
 
-    fn save_reviewed_patchsets(
+    pub fn save_reviewed_patchsets(
         &self,
         reviewed: &HashMap<String, HashSet<usize>>,
     ) -> Result<(), LoreError> {
         Ok(self.user_state.save_reviewed_patchsets(reviewed)?)
     }
 
-    fn fetch_next_patch_page(
+    pub fn fetch_next_patch_page(
         &mut self,
         target_list: &str,
         page_size: usize,
@@ -246,7 +248,7 @@ impl LoreServiceApi for LoreService {
         }
     }
 
-    fn fetch_patchset_details(
+    pub fn fetch_patchset_details(
         &mut self,
         representative_patch: &Patch,
         mode: CacheMode,
@@ -312,7 +314,7 @@ impl LoreServiceApi for LoreService {
         })
     }
 
-    fn prepare_reply_commands(
+    pub fn prepare_reply_commands(
         &self,
         tmp_dir: &Path,
         target_list: &str,
@@ -360,7 +362,7 @@ impl LoreServiceApi for LoreService {
         Ok(commands)
     }
 
-    fn warm_bootstrap_cache(&mut self) -> Result<BootstrapLoreData, LoreError> {
+    pub fn warm_bootstrap_cache(&mut self) -> Result<BootstrapLoreData, LoreError> {
         let mailing_lists = self
             .fetch_available_lists(CacheMode::UseCache)
             .unwrap_or_else(|e| {
@@ -382,7 +384,7 @@ impl LoreServiceApi for LoreService {
         })
     }
 
-    fn get_git_signature(&self, git_repo_path: &str) -> (String, String) {
+    pub fn get_git_signature(&self, git_repo_path: &str) -> (String, String) {
         let mut name_args = vec!["config".to_string(), "user.name".to_string()];
         let mut email_args = vec!["config".to_string(), "user.email".to_string()];
 

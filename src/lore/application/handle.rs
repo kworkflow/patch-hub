@@ -1,4 +1,4 @@
-#![allow(dead_code)] // Follow-up commits replace remaining synchronous LoreServiceApi usage.
+#![allow(dead_code)] // Some protocol methods are reserved for future App flows.
 
 use std::{
     collections::{HashMap, HashSet},
