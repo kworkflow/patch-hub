@@ -87,21 +87,7 @@ impl TerminalSessionApi for CrosstermTerminalSession {
     }
 
     fn wait_for_key_press(&mut self, key: KeyCode, timeout: Duration) -> TerminalResult<bool> {
-        let started_at = std::time::Instant::now();
-
-        while started_at.elapsed() < timeout {
-            let elapsed = started_at.elapsed();
-            let remaining = timeout.saturating_sub(elapsed);
-            let poll_timeout = remaining.min(Duration::from_millis(16));
-
-            if let Some(TerminalEvent::Key(input)) = self.poll_event(poll_timeout)? {
-                if input.code == key {
-                    return Ok(true);
-                }
-            }
-        }
-
-        Ok(false)
+        wait_for_key_press_from_session(self, key, timeout)
     }
 
     fn size(&self) -> TerminalResult<(u16, u16)> {
@@ -118,6 +104,78 @@ impl TerminalSessionApi for CrosstermTerminalSession {
         self.shutdown = true;
         Ok(())
     }
+}
+
+/// Transitional Crossterm event source used while drawing still owns the
+/// concrete Ratatui terminal outside the actor.
+pub struct CrosstermEventSession;
+
+impl TerminalSessionApi for CrosstermEventSession {
+    fn draw(&mut self, _frame: TerminalFrame) -> TerminalResult<()> {
+        Err(TerminalError::Session(
+            "event-only terminal session cannot draw".to_string(),
+        ))
+    }
+
+    fn read_event(&mut self) -> TerminalResult<Option<TerminalEvent>> {
+        Ok(CrosstermTerminalSession::terminal_event_from_crossterm_event(event::read()?))
+    }
+
+    fn poll_event(&mut self, timeout: Duration) -> TerminalResult<Option<TerminalEvent>> {
+        if !event::poll(timeout)? {
+            return Ok(None);
+        }
+
+        self.read_event()
+    }
+
+    fn setup_user_io(&mut self) -> TerminalResult<()> {
+        Err(TerminalError::Session(
+            "event-only terminal session cannot setup user I/O".to_string(),
+        ))
+    }
+
+    fn teardown_user_io(&mut self) -> TerminalResult<()> {
+        Err(TerminalError::Session(
+            "event-only terminal session cannot teardown user I/O".to_string(),
+        ))
+    }
+
+    fn wait_for_key_press(&mut self, key: KeyCode, timeout: Duration) -> TerminalResult<bool> {
+        wait_for_key_press_from_session(self, key, timeout)
+    }
+
+    fn size(&self) -> TerminalResult<(u16, u16)> {
+        Err(TerminalError::Session(
+            "event-only terminal session has no terminal size".to_string(),
+        ))
+    }
+
+    fn shutdown(&mut self) -> TerminalResult<()> {
+        Ok(())
+    }
+}
+
+fn wait_for_key_press_from_session(
+    session: &mut dyn TerminalSessionApi,
+    key: KeyCode,
+    timeout: Duration,
+) -> TerminalResult<bool> {
+    let started_at = std::time::Instant::now();
+
+    while started_at.elapsed() < timeout {
+        let elapsed = started_at.elapsed();
+        let remaining = timeout.saturating_sub(elapsed);
+        let poll_timeout = remaining.min(Duration::from_millis(16));
+
+        if let Some(TerminalEvent::Key(input)) = session.poll_event(poll_timeout)? {
+            if input.code == key {
+                return Ok(true);
+            }
+        }
+    }
+
+    Ok(false)
 }
 
 #[cfg(test)]

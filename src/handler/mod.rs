@@ -10,11 +10,8 @@ use std::ops::ControlFlow;
 
 use crate::{
     app::{screens::CurrentScreen, App},
-    input::{
-        event::InputEvent,
-        mapper::InputMapper,
-        terminal_source::{CrosstermEventSource, TerminalEventSource},
-    },
+    input::{event::InputEvent, mapper::InputMapper},
+    terminal::handle::TerminalHandle,
     ui::draw_ui,
 };
 
@@ -60,11 +57,14 @@ where
     Ok(ControlFlow::Continue(terminal))
 }
 
-pub async fn run_app<B>(mut terminal: Terminal<B>, mut app: App) -> color_eyre::Result<()>
+pub async fn run_app<B>(
+    mut terminal: Terminal<B>,
+    mut app: App,
+    terminal_handle: TerminalHandle,
+) -> color_eyre::Result<()>
 where
     B: Backend + Send + 'static,
 {
-    let mut event_source = CrosstermEventSource;
     let mut input_mapper = InputMapper::default();
 
     loop {
@@ -77,7 +77,7 @@ where
         // need to refresh the UI independently of any event as doing so gravely
         // hinders the performance to below acceptable.
         // if event::poll(Duration::from_millis(16))? {
-        if let Some(terminal_event) = event_source.read_event()? {
+        if let Some(terminal_event) = terminal_handle.read_event().await? {
             let input = input_mapper.map_terminal_event(terminal_event, &app.input_context());
             if let Some(input) = input {
                 match input_handling(terminal, &mut app, input).await? {
