@@ -2,7 +2,6 @@ use crate::{app::App, input::context::InputContext};
 
 impl App {
     /// Projects App state into the context needed by the input mapper.
-    #[allow(dead_code)] // Wired into run_app once handlers consume InputEvent.
     pub fn input_context(&self) -> InputContext {
         InputContext {
             current_screen: self.state.navigation.current_screen.clone(),

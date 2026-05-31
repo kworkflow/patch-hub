@@ -4,18 +4,14 @@ mod edit_config;
 mod latest;
 mod mail_list;
 
-use ratatui::{
-    crossterm::event::{KeyCode, KeyEvent},
-    prelude::Backend,
-    Terminal,
-};
+use ratatui::{prelude::Backend, Terminal};
 
 use std::ops::ControlFlow;
 
 use crate::{
     app::{screens::CurrentScreen, App},
     input::{
-        event::{InputEvent, KeyInput, TerminalEvent},
+        event::InputEvent,
         mapper::InputMapper,
         terminal_source::{CrosstermEventSource, TerminalEventSource},
     },
@@ -28,72 +24,40 @@ use edit_config::handle_edit_config;
 use latest::handle_latest_patchsets;
 use mail_list::handle_mailing_list_selection;
 
-async fn key_handling<B>(
+async fn input_handling<B>(
     mut terminal: Terminal<B>,
     app: &mut App,
-    key: KeyEvent,
-    input_mapper: &mut InputMapper,
+    input: InputEvent,
 ) -> color_eyre::Result<ControlFlow<(), Terminal<B>>>
 where
     B: Backend + Send + 'static,
 {
     if let Some(popup) = app.state.popup.as_mut() {
-        if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
+        if input == InputEvent::ClosePopup {
             app.state.popup = None;
-        } else if let Some(input) = popup_input_from_key(key) {
+        } else {
             popup.handle(input)?;
         }
     } else {
         match app.state.navigation.current_screen {
             CurrentScreen::MailingListSelection => {
-                if let Some(input) = map_key_to_input(app, key, input_mapper) {
-                    return handle_mailing_list_selection(app, input, terminal).await;
-                }
+                return handle_mailing_list_selection(app, input, terminal).await;
             }
             CurrentScreen::BookmarkedPatchsets => {
-                if let Some(input) = map_key_to_input(app, key, input_mapper) {
-                    return handle_bookmarked_patchsets(app, input, terminal).await;
-                }
+                return handle_bookmarked_patchsets(app, input, terminal).await;
             }
             CurrentScreen::PatchsetDetails => {
-                if let Some(input) = map_key_to_input(app, key, input_mapper) {
-                    handle_patchset_details(app, input, &mut terminal).await?;
-                }
+                handle_patchset_details(app, input, &mut terminal).await?;
             }
             CurrentScreen::EditConfig => {
-                if let Some(input) = map_key_to_input(app, key, input_mapper) {
-                    handle_edit_config(app, input)?;
-                }
+                handle_edit_config(app, input)?;
             }
             CurrentScreen::LatestPatchsets => {
-                if let Some(input) = map_key_to_input(app, key, input_mapper) {
-                    return handle_latest_patchsets(app, input, terminal).await;
-                }
+                return handle_latest_patchsets(app, input, terminal).await;
             }
         }
     }
     Ok(ControlFlow::Continue(terminal))
-}
-
-fn map_key_to_input(
-    app: &App,
-    key: KeyEvent,
-    input_mapper: &mut InputMapper,
-) -> Option<InputEvent> {
-    input_mapper.map_terminal_event(
-        TerminalEvent::Key(KeyInput::from(key)),
-        &app.input_context(),
-    )
-}
-
-fn popup_input_from_key(key: KeyEvent) -> Option<InputEvent> {
-    match key.code {
-        KeyCode::Char('j') | KeyCode::Down => Some(InputEvent::NavigateDown),
-        KeyCode::Char('k') | KeyCode::Up => Some(InputEvent::NavigateUp),
-        KeyCode::Char('h') | KeyCode::Left => Some(InputEvent::NavigateLeft),
-        KeyCode::Char('l') | KeyCode::Right => Some(InputEvent::NavigateRight),
-        _ => None,
-    }
 }
 
 pub async fn run_app<B>(mut terminal: Terminal<B>, mut app: App) -> color_eyre::Result<()>
@@ -113,11 +77,13 @@ where
         // need to refresh the UI independently of any event as doing so gravely
         // hinders the performance to below acceptable.
         // if event::poll(Duration::from_millis(16))? {
-        if let Some(TerminalEvent::Key(key)) = event_source.read_event()? {
-            let key = key.to_key_event();
-            match key_handling(terminal, &mut app, key, &mut input_mapper).await? {
-                ControlFlow::Continue(t) => terminal = t,
-                ControlFlow::Break(_) => return Ok(()),
+        if let Some(terminal_event) = event_source.read_event()? {
+            let input = input_mapper.map_terminal_event(terminal_event, &app.input_context());
+            if let Some(input) = input {
+                match input_handling(terminal, &mut app, input).await? {
+                    ControlFlow::Continue(t) => terminal = t,
+                    ControlFlow::Break(_) => return Ok(()),
+                }
             }
         }
         // }

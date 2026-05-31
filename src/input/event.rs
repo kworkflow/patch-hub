@@ -34,15 +34,6 @@ impl KeyInput {
     pub fn modified_press(code: KeyCode, modifiers: KeyModifiers) -> Self {
         Self::new(code, modifiers, KeyEventKind::Press)
     }
-
-    pub fn to_key_event(&self) -> KeyEvent {
-        KeyEvent {
-            code: self.code,
-            modifiers: self.modifiers,
-            kind: self.kind,
-            state: self.state,
-        }
-    }
 }
 
 impl From<KeyEvent> for KeyInput {
