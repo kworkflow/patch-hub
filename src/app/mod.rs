@@ -1,7 +1,9 @@
 pub mod commands;
 pub mod errors;
+pub mod input;
 pub mod screens;
 pub mod state;
+pub mod updates;
 pub mod view_model;
 
 use color_eyre::eyre::{bail, eyre};

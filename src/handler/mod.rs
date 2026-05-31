@@ -21,7 +21,6 @@ use crate::{
         event::TerminalEvent,
         terminal_source::{CrosstermEventSource, TerminalEventSource},
     },
-    loading_screen,
     ui::draw_ui,
 };
 
@@ -67,61 +66,6 @@ where
     Ok(ControlFlow::Continue(terminal))
 }
 
-async fn logic_handling<B>(
-    mut terminal: Terminal<B>,
-    app: &mut App,
-) -> color_eyre::Result<Terminal<B>>
-where
-    B: Backend + Send + 'static,
-{
-    match app.state.navigation.current_screen {
-        CurrentScreen::MailingListSelection => {
-            if app
-                .state
-                .lore
-                .mailing_list_selection
-                .mailing_lists
-                .is_empty()
-            {
-                terminal = loading_screen! {
-                    terminal, "Fetching mailing lists" => {
-                        app.refresh_mailing_lists().await
-                    }
-                };
-            }
-        }
-        CurrentScreen::LatestPatchsets => {
-            let patchsets_state = app.state.lore.latest_patchsets.as_ref().unwrap();
-
-            if patchsets_state.processed_patchsets_count() == 0 {
-                let target_list = patchsets_state.target_list().to_string();
-                terminal = loading_screen! {
-                    terminal,
-                    format!("Fetching patchsets from {}", target_list) => {
-                        app.fetch_latest_current_page().await
-                    }
-                };
-
-                app.state.lore.mailing_list_selection.clear_target_list();
-            }
-        }
-        CurrentScreen::BookmarkedPatchsets => {
-            if app
-                .state
-                .user_state
-                .bookmarked_patchsets
-                .bookmarked_patchsets
-                .is_empty()
-            {
-                app.set_current_screen(CurrentScreen::MailingListSelection);
-            }
-        }
-        _ => {}
-    }
-
-    Ok(terminal)
-}
-
 pub async fn run_app<B>(mut terminal: Terminal<B>, mut app: App) -> color_eyre::Result<()>
 where
     B: Backend + Send + 'static,
@@ -129,7 +73,7 @@ where
     let mut event_source = CrosstermEventSource;
 
     loop {
-        terminal = logic_handling(terminal, &mut app).await?;
+        terminal = app.process_system_updates(terminal).await?;
 
         terminal.draw(|f| draw_ui(f, &app.to_view_model()))?;
 
