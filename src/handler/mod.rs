@@ -18,7 +18,7 @@ use std::{
 use crate::{
     app::{screens::CurrentScreen, App},
     input::{
-        event::TerminalEvent,
+        event::{InputEvent, TerminalEvent},
         terminal_source::{CrosstermEventSource, TerminalEventSource},
     },
     ui::draw_ui,
@@ -41,8 +41,8 @@ where
     if let Some(popup) = app.state.popup.as_mut() {
         if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
             app.state.popup = None;
-        } else {
-            popup.handle(key)?;
+        } else if let Some(input) = popup_input_from_key(key) {
+            popup.handle(input)?;
         }
     } else {
         match app.state.navigation.current_screen {
@@ -64,6 +64,16 @@ where
         }
     }
     Ok(ControlFlow::Continue(terminal))
+}
+
+fn popup_input_from_key(key: KeyEvent) -> Option<InputEvent> {
+    match key.code {
+        KeyCode::Char('j') | KeyCode::Down => Some(InputEvent::NavigateDown),
+        KeyCode::Char('k') | KeyCode::Up => Some(InputEvent::NavigateUp),
+        KeyCode::Char('h') | KeyCode::Left => Some(InputEvent::NavigateLeft),
+        KeyCode::Char('l') | KeyCode::Right => Some(InputEvent::NavigateRight),
+        _ => None,
+    }
 }
 
 pub async fn run_app<B>(mut terminal: Terminal<B>, mut app: App) -> color_eyre::Result<()>

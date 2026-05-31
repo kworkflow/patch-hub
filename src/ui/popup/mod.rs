@@ -2,9 +2,11 @@ pub mod help;
 pub mod info_popup;
 pub mod review_trailers;
 
-use ratatui::{crossterm::event::KeyEvent, layout::Rect, Frame};
+use ratatui::{layout::Rect, Frame};
 
 use std::fmt::Debug;
+
+use crate::input::event::InputEvent;
 
 /// A trait that represents a popup that can be rendered on top of a screen
 pub trait PopUp: Debug {
@@ -18,9 +20,9 @@ pub trait PopUp: Debug {
     /// This chunk is a centered rectangle with the dimensions returned by `dimensions`
     fn render(&self, f: &mut Frame, chunk: Rect);
 
-    /// Handles the key event for the popup
+    /// Handles semantic input for the popup.
     ///
-    /// Is important to notice that except for the 'ESC' key, all other keys are hijacked by the popup
+    /// Is important to notice that except for close events, all other keys are hijacked by the popup
     /// So the screens handlers won't be called
-    fn handle(&mut self, key: KeyEvent) -> color_eyre::Result<()>;
+    fn handle(&mut self, input: InputEvent) -> color_eyre::Result<()>;
 }
