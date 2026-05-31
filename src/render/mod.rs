@@ -1,6 +1,9 @@
 //! Rich patch/cover preview via external programs (`bat`, `delta`, `diff-so-fancy`).
 
+pub mod actor;
 pub mod dto;
+pub mod handle;
+pub mod messages;
 mod r#trait;
 
 pub use dto::{RenderPatchsetRequest, RenderedPatchPreview, RenderedPatchsetPreview};

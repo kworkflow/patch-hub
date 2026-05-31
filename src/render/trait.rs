@@ -12,6 +12,8 @@ use super::dto::{RenderPatchsetRequest, RenderedPatchsetPreview};
 pub enum RenderError {
     #[error("render failed: {0}")]
     Failed(String),
+    #[error("render actor unavailable: {0}")]
+    ActorUnavailable(String),
 }
 
 /// Abstraction for rich-text patch/cover preview (shell-backed renderers).
