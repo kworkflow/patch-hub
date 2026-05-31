@@ -67,7 +67,9 @@ where
                 }
             }
             CurrentScreen::LatestPatchsets => {
-                return handle_latest_patchsets(app, key, terminal).await;
+                if let Some(input) = map_key_to_input(app, key, input_mapper) {
+                    return handle_latest_patchsets(app, input, terminal).await;
+                }
             }
         }
     }
