@@ -8,6 +8,7 @@ mod lore;
 mod macros;
 mod render;
 mod render_prefs;
+mod terminal;
 mod ui;
 
 use app::App;
