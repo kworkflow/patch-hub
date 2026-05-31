@@ -17,6 +17,10 @@ use std::{
 
 use crate::{
     app::{screens::CurrentScreen, App},
+    input::{
+        event::TerminalEvent,
+        terminal_source::{CrosstermEventSource, TerminalEventSource},
+    },
     loading_screen,
     ui::draw_ui,
 };
@@ -122,6 +126,8 @@ pub async fn run_app<B>(mut terminal: Terminal<B>, mut app: App) -> color_eyre::
 where
     B: Backend + Send + 'static,
 {
+    let mut event_source = CrosstermEventSource;
+
     loop {
         terminal = logic_handling(terminal, &mut app).await?;
 
@@ -132,10 +138,8 @@ where
         // need to refresh the UI independently of any event as doing so gravely
         // hinders the performance to below acceptable.
         // if event::poll(Duration::from_millis(16))? {
-        if let Event::Key(key) = ratatui::crossterm::event::read()? {
-            if key.kind == KeyEventKind::Release {
-                continue;
-            }
+        if let Some(TerminalEvent::Key(key)) = event_source.read_event()? {
+            let key = key.to_key_event();
             match key_handling(terminal, &mut app, key).await? {
                 ControlFlow::Continue(t) => terminal = t,
                 ControlFlow::Break(_) => return Ok(()),

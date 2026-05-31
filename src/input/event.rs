@@ -1,4 +1,4 @@
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
 /// Raw terminal event after conversion from the terminal backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,6 +14,7 @@ pub struct KeyInput {
     pub code: KeyCode,
     pub modifiers: KeyModifiers,
     pub kind: KeyEventKind,
+    pub state: KeyEventState,
 }
 
 impl KeyInput {
@@ -22,6 +23,7 @@ impl KeyInput {
             code,
             modifiers,
             kind,
+            state: KeyEventState::NONE,
         }
     }
 
@@ -32,6 +34,15 @@ impl KeyInput {
     pub fn modified_press(code: KeyCode, modifiers: KeyModifiers) -> Self {
         Self::new(code, modifiers, KeyEventKind::Press)
     }
+
+    pub fn to_key_event(&self) -> KeyEvent {
+        KeyEvent {
+            code: self.code,
+            modifiers: self.modifiers,
+            kind: self.kind,
+            state: self.state,
+        }
+    }
 }
 
 impl From<KeyEvent> for KeyInput {
@@ -40,6 +51,7 @@ impl From<KeyEvent> for KeyInput {
             code: key.code,
             modifiers: key.modifiers,
             kind: key.kind,
+            state: key.state,
         }
     }
 }

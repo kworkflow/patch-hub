@@ -4,3 +4,4 @@ pub mod bindings;
 pub mod context;
 pub mod event;
 pub mod mapper;
+pub mod terminal_source;
