@@ -1,7 +1,7 @@
 use color_eyre::eyre::bail;
 
 use crate::lore::{
-    application::{api::LoreServiceApi, cache::CacheMode, errors::LoreError},
+    application::{cache::CacheMode, errors::LoreError, handle::LoreApiHandle},
     domain::patch::Patch,
 };
 
@@ -43,17 +43,20 @@ impl LatestPatchsetsState {
         self.page_size
     }
 
-    pub fn fetch_current_page(
+    pub async fn fetch_current_page(
         &mut self,
-        lore_service: &mut dyn LoreServiceApi,
+        lore_api: &LoreApiHandle,
         mode: CacheMode,
     ) -> color_eyre::Result<()> {
-        match lore_service.fetch_next_patch_page(
-            &self.target_list,
-            self.page_size,
-            self.page_number,
-            mode,
-        ) {
+        match lore_api
+            .fetch_feed_page(
+                self.target_list.clone(),
+                self.page_size,
+                self.page_number,
+                mode,
+            )
+            .await
+        {
             Ok(patches) => {
                 self.current_page = patches;
             }
@@ -109,7 +112,22 @@ impl LatestPatchsetsState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lore::application::MockLoreServiceApi;
+    use std::sync::Arc;
+
+    use crate::{
+        infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
+        lore::{
+            application::{actor::LoreApiActor, cache::CacheTtl, service::LoreService},
+            infrastructure::{
+                http_lore_client::{
+                    LoreHttpError, MockFeedGateway, MockListsGateway, MockPatchHtmlGateway,
+                },
+                patchset_fetcher::MockPatchsetFetcher,
+                patchset_parser::MockPatchsetParser,
+                persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
+            },
+        },
+    };
 
     fn make_patch(msg_id: &str) -> Patch {
         serde_json::from_value(serde_json::json!({
@@ -121,51 +139,91 @@ mod tests {
         .unwrap()
     }
 
-    #[test]
-    fn test_fetch_current_page_success() {
-        let mut mock = MockLoreServiceApi::new();
-        mock.expect_fetch_next_patch_page()
-            .times(1)
-            .returning(|_, _, _, _| Ok(vec![make_patch("id-1"), make_patch("id-2")]));
+    fn make_handle(feed_gateway: MockFeedGateway) -> LoreApiHandle {
+        let service = LoreService::new(
+            Arc::new(MockListsGateway::new()),
+            Arc::new(feed_gateway),
+            Arc::new(MockPatchHtmlGateway::new()),
+            Arc::new(MockMailingListsCacheStore::new()),
+            Arc::new(MockUserLoreStateStore::new()),
+            Arc::new(MockPatchsetFetcher::new()),
+            Arc::new(MockPatchsetParser::new()),
+            Arc::new(MockFileSystemTrait::new()),
+            Arc::new(MockShellTrait::new()),
+            CacheTtl::default(),
+        );
+        LoreApiActor::spawn(service)
+    }
 
-        let mut lp = LatestPatchsetsState::new("some-list".to_string(), 5);
-        let result = lp.fetch_current_page(&mut mock, CacheMode::UseCache);
+    fn patch_feed_response() -> String {
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>test patch</title>
+    <author><name>Test</name><email>test@test.com</email></author>
+    <link href="id-1"/>
+    <updated>2023-01-01</updated>
+  </entry>
+  <entry>
+    <title>test patch 2</title>
+    <author><name>Test</name><email>test@test.com</email></author>
+    <link href="id-2"/>
+    <updated>2023-01-01</updated>
+  </entry>
+</feed>"#
+            .to_string()
+    }
+
+    #[tokio::test]
+    async fn test_fetch_current_page_success() {
+        let mut feed_gateway = MockFeedGateway::new();
+        feed_gateway
+            .expect_fetch_patch_feed_page()
+            .times(1)
+            .returning(|_, _| Ok(patch_feed_response()));
+
+        let handle = make_handle(feed_gateway);
+        let mut lp = LatestPatchsetsState::new("some-list".to_string(), 2);
+        let result = lp.fetch_current_page(&handle, CacheMode::UseCache).await;
 
         assert!(result.is_ok());
         assert_eq!(lp.processed_patchsets_count(), 2);
     }
 
-    #[test]
-    fn test_fetch_current_page_end_of_feed() {
-        let mut mock = MockLoreServiceApi::new();
-        mock.expect_fetch_next_patch_page()
+    #[tokio::test]
+    async fn test_fetch_current_page_end_of_feed() {
+        let mut feed_gateway = MockFeedGateway::new();
+        feed_gateway
+            .expect_fetch_patch_feed_page()
             .times(1)
-            .returning(|_, _, _, _| Err(LoreError::EndOfFeed));
+            .returning(|_, _| Err(LoreHttpError::EndOfFeed));
 
+        let handle = make_handle(feed_gateway);
         let mut lp = LatestPatchsetsState::new("some-list".to_string(), 5);
-        let result = lp.fetch_current_page(&mut mock, CacheMode::UseCache);
+        let result = lp.fetch_current_page(&handle, CacheMode::UseCache).await;
 
         assert!(result.is_ok());
         assert_eq!(lp.processed_patchsets_count(), 0);
     }
 
-    #[test]
-    fn test_fetch_current_page_error() {
+    #[tokio::test]
+    async fn test_fetch_current_page_error() {
         use crate::infrastructure::net::NetError;
-        use crate::lore::infrastructure::http_lore_client::LoreHttpError;
 
-        let mut mock = MockLoreServiceApi::new();
-        mock.expect_fetch_next_patch_page()
+        let mut feed_gateway = MockFeedGateway::new();
+        feed_gateway
+            .expect_fetch_patch_feed_page()
             .times(1)
-            .returning(|_, _, _, _| {
-                Err(LoreError::Http(LoreHttpError::Net(NetError::HttpStatus {
+            .returning(|_, _| {
+                Err(LoreHttpError::Net(NetError::HttpStatus {
                     code: 500,
                     message: "Internal Server Error".to_string(),
-                })))
+                }))
             });
 
+        let handle = make_handle(feed_gateway);
         let mut lp = LatestPatchsetsState::new("some-list".to_string(), 5);
-        let result = lp.fetch_current_page(&mut mock, CacheMode::UseCache);
+        let result = lp.fetch_current_page(&handle, CacheMode::UseCache).await;
 
         assert!(result.is_err());
     }

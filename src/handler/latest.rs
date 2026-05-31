@@ -12,7 +12,7 @@ use crate::{
     ui::popup::{help::HelpPopUpBuilder, info_popup::InfoPopUp, PopUp},
 };
 
-pub fn handle_latest_patchsets<B>(
+pub async fn handle_latest_patchsets<B>(
     app: &mut App,
     key: KeyEvent,
     mut terminal: Terminal<B>,
@@ -63,7 +63,7 @@ where
                         .as_mut()
                         .unwrap()
                         .increment_page();
-                    app.fetch_latest_current_page()
+                    app.fetch_latest_current_page().await
                 }
             };
         }
@@ -74,8 +74,8 @@ where
                 .as_mut()
                 .unwrap()
                 .decrement_page();
-            // Reload from cache (no network call since LoreService caches all pages)
-            app.fetch_latest_current_page()?;
+            // Reload from cache (no network call since LoreAPI caches all pages)
+            app.fetch_latest_current_page().await?;
         }
         KeyCode::Enter => {
             terminal = loading_screen! {

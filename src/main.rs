@@ -172,6 +172,7 @@ async fn main() -> color_eyre::Result<()> {
         Box::new(OsFileSystem),
         Box::new(OsShell),
         Box::new(env),
+        lore_api,
         lore_service,
         render,
     )?;
@@ -183,7 +184,7 @@ async fn main() -> color_eyre::Result<()> {
         bail!("patch-hub cannot be executed because some dependencies are missing, check logs for more information");
     }
 
-    run_app(terminal, app)?;
+    run_app(terminal, app).await?;
     restore()?;
 
     event!(Level::INFO, "patch-hub finished");

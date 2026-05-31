@@ -1,7 +1,7 @@
 use color_eyre::eyre::bail;
 
 use crate::lore::{
-    application::{api::LoreServiceApi, cache::CacheMode},
+    application::{cache::CacheMode, handle::LoreApiHandle},
     domain::mailing_list::MailingList,
 };
 
@@ -13,12 +13,12 @@ pub struct MailingListSelectionState {
 }
 
 impl MailingListSelectionState {
-    pub fn refresh_available_mailing_lists(
+    pub async fn refresh_available_mailing_lists(
         &mut self,
-        lore_service: &mut dyn LoreServiceApi,
+        lore_api: &LoreApiHandle,
         mode: CacheMode,
     ) -> color_eyre::Result<()> {
-        match lore_service.fetch_available_lists(mode) {
+        match lore_api.fetch_available_lists(mode).await {
             Ok(available_mailing_lists) => {
                 self.mailing_lists = available_mailing_lists;
             }

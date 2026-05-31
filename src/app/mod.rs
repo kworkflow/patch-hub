@@ -30,6 +30,7 @@ use crate::{
             api::LoreServiceApi,
             cache::{BootstrapLoreData, CacheMode},
             errors::LoreError,
+            handle::LoreApiHandle,
         },
         domain::patch::{Author, Patch},
     },
@@ -48,6 +49,7 @@ pub use view_model::AppViewModel;
 
 /// Injected capabilities used by `App` orchestration (not screen state).
 pub struct AppServices {
+    pub lore_api: LoreApiHandle,
     pub lore: Box<dyn LoreServiceApi>,
     pub render: Box<dyn RenderServiceApi>,
     pub shell: Box<dyn ShellTrait>,
@@ -81,6 +83,7 @@ impl App {
         fs: Box<dyn FileSystemTrait>,
         shell: Box<dyn ShellTrait>,
         env: Box<dyn EnvTrait>,
+        lore_api: LoreApiHandle,
         lore_service: Box<dyn LoreServiceApi>,
         render: Box<dyn RenderServiceApi>,
     ) -> color_eyre::Result<Self> {
@@ -116,6 +119,7 @@ impl App {
                 popup: None,
             },
             services: AppServices {
+                lore_api,
                 lore: lore_service,
                 render,
                 shell,
@@ -153,22 +157,25 @@ impl App {
     }
 
     /// Fetches (or re-fetches) the current page of latest patchsets from Lore.
-    pub fn fetch_latest_current_page(&mut self) -> color_eyre::Result<()> {
-        let lore = self.services.lore.as_mut();
+    pub async fn fetch_latest_current_page(&mut self) -> color_eyre::Result<()> {
+        let lore_api = &self.services.lore_api;
         let latest_patchsets = &mut self.state.lore.latest_patchsets;
         if let Some(patchsets) = latest_patchsets.as_mut() {
-            patchsets.fetch_current_page(lore, CacheMode::UseCache)
+            patchsets
+                .fetch_current_page(lore_api, CacheMode::UseCache)
+                .await
         } else {
             Ok(())
         }
     }
 
     /// Refreshes available mailing lists and updates [`LoreUiState::mailing_list_selection`].
-    pub fn refresh_mailing_lists(&mut self) -> color_eyre::Result<()> {
+    pub async fn refresh_mailing_lists(&mut self) -> color_eyre::Result<()> {
         self.state
             .lore
             .mailing_list_selection
-            .refresh_available_mailing_lists(self.services.lore.as_mut(), CacheMode::Refresh)
+            .refresh_available_mailing_lists(&self.services.lore_api, CacheMode::Refresh)
+            .await
     }
 
     /// Loads patchset details into [`LoreUiState::details`].

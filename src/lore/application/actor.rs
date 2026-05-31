@@ -57,12 +57,7 @@ impl LoreApiActor {
             } => {
                 let result = self
                     .with_core(move |core| {
-                        core.fetch_next_patch_page(
-                            &target_list,
-                            page_size,
-                            page_number,
-                            cache_mode,
-                        )
+                        core.fetch_next_patch_page(&target_list, page_size, page_number, cache_mode)
                     })
                     .await
                     .and_then(|result| result);
@@ -172,7 +167,10 @@ mod tests {
     use crate::{
         infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
         lore::{
-            application::{cache::{CacheMode, CacheTtl}, handle::LoreApiHandle},
+            application::{
+                cache::{CacheMode, CacheTtl},
+                handle::LoreApiHandle,
+            },
             domain::mailing_list::MailingList,
             infrastructure::{
                 http_lore_client::{MockFeedGateway, MockListsGateway, MockPatchHtmlGateway},
@@ -245,8 +243,14 @@ mod tests {
 
         let handle = spawn_test_actor(make_service(lists_store, MockUserLoreStateStore::new()));
 
-        let first = handle.fetch_available_lists(CacheMode::UseCache).await.unwrap();
-        let second = handle.fetch_available_lists(CacheMode::UseCache).await.unwrap();
+        let first = handle
+            .fetch_available_lists(CacheMode::UseCache)
+            .await
+            .unwrap();
+        let second = handle
+            .fetch_available_lists(CacheMode::UseCache)
+            .await
+            .unwrap();
 
         assert_eq!("cached-list", first[0].name());
         assert_eq!("cached-list", second[0].name());

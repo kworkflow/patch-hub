@@ -27,7 +27,7 @@ use edit_config::handle_edit_config;
 use latest::handle_latest_patchsets;
 use mail_list::handle_mailing_list_selection;
 
-fn key_handling<B>(
+async fn key_handling<B>(
     mut terminal: Terminal<B>,
     app: &mut App,
     key: KeyEvent,
@@ -44,7 +44,7 @@ where
     } else {
         match app.state.navigation.current_screen {
             CurrentScreen::MailingListSelection => {
-                return handle_mailing_list_selection(app, key, terminal);
+                return handle_mailing_list_selection(app, key, terminal).await;
             }
             CurrentScreen::BookmarkedPatchsets => {
                 return handle_bookmarked_patchsets(app, key, terminal);
@@ -56,14 +56,17 @@ where
                 handle_edit_config(app, key)?;
             }
             CurrentScreen::LatestPatchsets => {
-                return handle_latest_patchsets(app, key, terminal);
+                return handle_latest_patchsets(app, key, terminal).await;
             }
         }
     }
     Ok(ControlFlow::Continue(terminal))
 }
 
-fn logic_handling<B>(mut terminal: Terminal<B>, app: &mut App) -> color_eyre::Result<Terminal<B>>
+async fn logic_handling<B>(
+    mut terminal: Terminal<B>,
+    app: &mut App,
+) -> color_eyre::Result<Terminal<B>>
 where
     B: Backend + Send + 'static,
 {
@@ -78,7 +81,7 @@ where
             {
                 terminal = loading_screen! {
                     terminal, "Fetching mailing lists" => {
-                        app.refresh_mailing_lists()
+                        app.refresh_mailing_lists().await
                     }
                 };
             }
@@ -91,7 +94,7 @@ where
                 terminal = loading_screen! {
                     terminal,
                     format!("Fetching patchsets from {}", target_list) => {
-                        app.fetch_latest_current_page()
+                        app.fetch_latest_current_page().await
                     }
                 };
 
@@ -115,12 +118,12 @@ where
     Ok(terminal)
 }
 
-pub fn run_app<B>(mut terminal: Terminal<B>, mut app: App) -> color_eyre::Result<()>
+pub async fn run_app<B>(mut terminal: Terminal<B>, mut app: App) -> color_eyre::Result<()>
 where
     B: Backend + Send + 'static,
 {
     loop {
-        terminal = logic_handling(terminal, &mut app)?;
+        terminal = logic_handling(terminal, &mut app).await?;
 
         terminal.draw(|f| draw_ui(f, &app.to_view_model()))?;
 
@@ -133,7 +136,7 @@ where
             if key.kind == KeyEventKind::Release {
                 continue;
             }
-            match key_handling(terminal, &mut app, key)? {
+            match key_handling(terminal, &mut app, key).await? {
                 ControlFlow::Continue(t) => terminal = t,
                 ControlFlow::Break(_) => return Ok(()),
             }
