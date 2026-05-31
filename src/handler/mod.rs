@@ -5,7 +5,6 @@ mod latest;
 mod mail_list;
 
 use std::{
-    future::Future,
     ops::ControlFlow,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -19,11 +18,7 @@ use tokio::task::JoinHandle;
 use crate::{
     app::{screens::CurrentScreen, App},
     input::{event::InputEvent, mapper::InputMapper},
-    terminal::{
-        handle::TerminalHandle,
-        messages::{TerminalFrame, TerminalResult},
-        TerminalError,
-    },
+    terminal::{handle::TerminalHandle, messages::TerminalFrame, TerminalError},
 };
 
 use bookmarked::handle_bookmarked_patchsets;
@@ -37,12 +32,6 @@ const LOADING_FRAME_INTERVAL: Duration = Duration::from_millis(200);
 pub(crate) trait LoadingIndicator {
     fn start(&mut self, title: String);
     fn stop(&mut self) -> color_eyre::Result<()>;
-}
-
-pub(crate) trait TerminalController {
-    fn setup_user_io(&mut self) -> color_eyre::Result<()>;
-    fn teardown_user_io(&mut self) -> color_eyre::Result<()>;
-    fn size(&self) -> color_eyre::Result<(u16, u16)>;
 }
 
 struct TerminalLoadingIndicator {
@@ -106,27 +95,6 @@ impl LoadingIndicator for TerminalLoadingIndicator {
     }
 }
 
-impl TerminalController for TerminalLoadingIndicator {
-    fn setup_user_io(&mut self) -> color_eyre::Result<()> {
-        terminal_handle_call(self.terminal_handle.setup_user_io())
-    }
-
-    fn teardown_user_io(&mut self) -> color_eyre::Result<()> {
-        terminal_handle_call(self.terminal_handle.teardown_user_io())
-    }
-
-    fn size(&self) -> color_eyre::Result<(u16, u16)> {
-        terminal_handle_call(self.terminal_handle.size())
-    }
-}
-
-fn terminal_handle_call<T>(
-    future: impl Future<Output = TerminalResult<T>>,
-) -> color_eyre::Result<T> {
-    tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(future))
-        .map_err(|error| color_eyre::eyre::eyre!("{error}"))
-}
-
 fn terminal_error(error: TerminalError) -> color_eyre::Report {
     color_eyre::eyre::eyre!("{error}")
 }
@@ -155,7 +123,7 @@ async fn input_handling(
                 handle_bookmarked_patchsets(app, input, loading).await?;
             }
             CurrentScreen::PatchsetDetails => {
-                handle_patchset_details(app, input, loading, terminal_handle).await?;
+                handle_patchset_details(app, input, terminal_handle).await?;
             }
             CurrentScreen::EditConfig => {
                 handle_edit_config(app, input)?;

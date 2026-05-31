@@ -239,6 +239,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn setup_user_io_delegates_to_session() {
+        let mut session = MockTerminalSessionApi::new();
+        session.expect_setup_user_io().times(1).returning(|| Ok(()));
+        let handle = spawn_test_actor(session);
+
+        handle.setup_user_io().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn teardown_user_io_delegates_to_session() {
+        let mut session = MockTerminalSessionApi::new();
+        session
+            .expect_teardown_user_io()
+            .times(1)
+            .returning(|| Ok(()));
+        let handle = spawn_test_actor(session);
+
+        handle.teardown_user_io().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn closed_channel_returns_actor_unavailable() {
         let (tx, rx) = mpsc::channel(DEFAULT_TERMINAL_CHANNEL_SIZE);
         let handle = TerminalHandle::new(tx);

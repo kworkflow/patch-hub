@@ -4,7 +4,6 @@ use ratatui::crossterm::event::KeyCode;
 
 use crate::{
     app::{screens::CurrentScreen, App},
-    handler::TerminalController,
     input::event::{InputEvent, ScrollAmount},
     terminal::handle::TerminalHandle,
     ui::popup::{help::HelpPopUpBuilder, review_trailers::ReviewTrailersPopUp, PopUp},
@@ -15,7 +14,6 @@ const USER_IO_ENTER_POLL_TIMEOUT: Duration = Duration::from_millis(200);
 pub async fn handle_patchset_details(
     app: &mut App,
     input: InputEvent,
-    terminal: &mut dyn TerminalController,
     terminal_handle: &TerminalHandle,
 ) -> color_eyre::Result<()> {
     let patchset_details_and_actions = app.state.lore.details.as_mut().unwrap();
@@ -34,11 +32,11 @@ pub async fn handle_patchset_details(
             patchset_details_and_actions.toggle_apply_action();
         }
         InputEvent::PreviewScrollDown(amount) => {
-            let lines = preview_scroll_lines(amount, terminal)?;
+            let lines = preview_scroll_lines(amount, terminal_handle).await?;
             patchset_details_and_actions.preview_scroll_down(lines);
         }
         InputEvent::PreviewScrollUp(amount) => {
-            let lines = preview_scroll_lines(amount, terminal)?;
+            let lines = preview_scroll_lines(amount, terminal_handle).await?;
             patchset_details_and_actions.preview_scroll_up(lines);
         }
         InputEvent::PreviewPanLeft => {
@@ -80,14 +78,14 @@ pub async fn handle_patchset_details(
         }
         InputEvent::ConsolidatePatchsetActions => {
             if patchset_details_and_actions.actions_require_user_io() {
-                terminal.setup_user_io()?;
+                terminal_handle.setup_user_io().await?;
                 app.consolidate_patchset_actions().await?;
                 println!("\nPress ENTER continue...");
                 while !terminal_handle
                     .wait_for_key_press(KeyCode::Enter, USER_IO_ENTER_POLL_TIMEOUT)
                     .await?
                 {}
-                terminal.teardown_user_io()?;
+                terminal_handle.teardown_user_io().await?;
             } else {
                 app.consolidate_patchset_actions().await?;
             }
@@ -98,11 +96,11 @@ pub async fn handle_patchset_details(
     Ok(())
 }
 
-fn preview_scroll_lines(
+async fn preview_scroll_lines(
     amount: ScrollAmount,
-    terminal: &dyn TerminalController,
+    terminal_handle: &TerminalHandle,
 ) -> color_eyre::Result<usize> {
-    let (_, height) = terminal.size()?;
+    let (_, height) = terminal_handle.size().await?;
     Ok(match amount {
         ScrollAmount::Line => 1,
         ScrollAmount::HalfPage => height as usize / 2,
