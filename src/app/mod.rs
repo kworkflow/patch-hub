@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod errors;
 pub mod input;
+pub mod render_snapshot;
 pub mod screens;
 pub mod state;
 pub mod updates;

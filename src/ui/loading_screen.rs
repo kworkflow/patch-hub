@@ -43,7 +43,7 @@ fn spinner() -> char {
 
 /// The actual implementation of the loading screen rendering. Currently the
 /// loading notification is static.
-fn draw_loading_screen(f: &mut Frame, title: impl Display) {
+pub(crate) fn draw_loading_screen(f: &mut Frame, title: impl Display) {
     let frame_area = f.area();
     let loading_text = format!("{} {}", title, spinner());
 

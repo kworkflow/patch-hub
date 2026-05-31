@@ -175,7 +175,7 @@ mod tests {
         let mut session = MockTerminalSessionApi::new();
         session
             .expect_draw()
-            .withf(|frame| frame == &TerminalFrame::Empty)
+            .withf(|frame| matches!(frame, TerminalFrame::Empty))
             .times(1)
             .returning(|_| Ok(()));
         let handle = spawn_test_actor(session);
@@ -208,7 +208,7 @@ mod tests {
         let mut session = MockTerminalSessionApi::new();
         session
             .expect_draw()
-            .withf(|frame| frame == &TerminalFrame::Empty)
+            .withf(|frame| matches!(frame, TerminalFrame::Empty))
             .times(1)
             .returning(|_| Ok(()));
         session.expect_size().times(1).returning(|| Ok((120, 40)));

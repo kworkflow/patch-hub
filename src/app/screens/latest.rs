@@ -5,6 +5,7 @@ use crate::lore::{
     domain::patch::Patch,
 };
 
+#[derive(Clone)]
 pub struct LatestPatchsetsState {
     target_list: String,
     page_number: usize,

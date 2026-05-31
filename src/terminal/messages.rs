@@ -5,13 +5,17 @@ use std::time::Duration;
 use ratatui::crossterm::event::KeyCode;
 use tokio::sync::oneshot;
 
-use crate::{input::event::TerminalEvent, terminal::TerminalError};
+use crate::{
+    app::render_snapshot::AppRenderSnapshot, input::event::TerminalEvent, terminal::TerminalError,
+};
 
 pub type TerminalResult<T> = Result<T, TerminalError>;
 
 /// Owned payload for a terminal draw request.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default)]
 pub enum TerminalFrame {
+    Main(Box<AppRenderSnapshot>),
+    Loading(String),
     /// Placeholder frame used while the terminal actor is wired into the app.
     #[default]
     Empty,
