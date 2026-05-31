@@ -10,12 +10,12 @@ use crate::{input::event::TerminalEvent, terminal::TerminalError};
 pub type TerminalResult<T> = Result<T, TerminalError>;
 
 /// Owned payload for a terminal draw request.
-///
-/// The first protocol commit keeps this intentionally small. Runtime wiring can
-/// evolve it into the final owned render payload without changing the actor
-/// request/reply shape.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct TerminalFrame;
+pub enum TerminalFrame {
+    /// Placeholder frame used while the terminal actor is wired into the app.
+    #[default]
+    Empty,
+}
 
 pub enum TerminalMessage {
     Draw {

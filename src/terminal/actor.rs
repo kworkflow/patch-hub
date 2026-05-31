@@ -174,12 +174,12 @@ mod tests {
         let mut session = MockTerminalSessionApi::new();
         session
             .expect_draw()
-            .withf(|frame| frame == &TerminalFrame)
+            .withf(|frame| frame == &TerminalFrame::Empty)
             .times(1)
             .returning(|_| Ok(()));
         let handle = spawn_test_actor(session);
 
-        let result = handle.draw(TerminalFrame).await;
+        let result = handle.draw(TerminalFrame::Empty).await;
 
         assert!(result.is_ok());
     }
@@ -207,13 +207,13 @@ mod tests {
         let mut session = MockTerminalSessionApi::new();
         session
             .expect_draw()
-            .withf(|frame| frame == &TerminalFrame)
+            .withf(|frame| frame == &TerminalFrame::Empty)
             .times(1)
             .returning(|_| Ok(()));
         session.expect_size().times(1).returning(|| Ok((120, 40)));
         let handle = spawn_test_actor(session);
 
-        handle.draw(TerminalFrame).await.unwrap();
+        handle.draw(TerminalFrame::Empty).await.unwrap();
         let size = handle.size().await.unwrap();
 
         assert_eq!(size, (120, 40));
@@ -243,7 +243,7 @@ mod tests {
         let handle = TerminalHandle::new(tx);
         drop(rx);
 
-        let result = handle.draw(TerminalFrame).await;
+        let result = handle.draw(TerminalFrame::Empty).await;
 
         assert!(matches!(result, Err(TerminalError::ActorUnavailable(_))));
     }
