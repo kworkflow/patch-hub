@@ -2,8 +2,10 @@ use tracing::{event, Level};
 
 use color_eyre::eyre::eyre;
 
-use crate::infrastructure::shell::{ShellCommand, ShellTrait};
-pub use crate::render_prefs::CoverRenderer;
+use crate::{
+    infrastructure::shell::{ShellCommand, ShellTrait},
+    render_prefs::CoverRenderer,
+};
 
 pub fn render_cover(
     shell: &dyn ShellTrait,

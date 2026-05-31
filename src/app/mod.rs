@@ -1,7 +1,5 @@
 pub mod commands;
-pub mod cover_renderer;
 pub mod errors;
-pub mod patch_renderer;
 pub mod screens;
 pub mod state;
 pub mod view_model;

@@ -1,9 +1,11 @@
 //! Rich patch/cover preview via external programs (`bat`, `delta`, `diff-so-fancy`).
 
 pub mod actor;
+mod cover_renderer;
 pub mod dto;
 pub mod handle;
 pub mod messages;
+mod patch_renderer;
 mod r#trait;
 
 pub use dto::{RenderPatchsetRequest, RenderedPatchPreview, RenderedPatchsetPreview};
@@ -14,8 +16,9 @@ use std::sync::Arc;
 use tracing::{event, Level};
 
 use crate::{
-    app::cover_renderer::render_cover, app::patch_renderer::render_patch_preview,
-    infrastructure::shell::ShellTrait, lore::infrastructure::patchset_parser::split_cover,
+    infrastructure::shell::ShellTrait,
+    lore::infrastructure::patchset_parser::split_cover,
+    render::{cover_renderer::render_cover, patch_renderer::render_patch_preview},
 };
 
 /// [`RenderServiceApi`] backed by [`ShellTrait`] and the existing `app` renderer helpers.

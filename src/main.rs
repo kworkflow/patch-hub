@@ -9,7 +9,7 @@ mod render;
 mod render_prefs;
 mod ui;
 
-use app::{patch_renderer::PatchRenderer, App};
+use app::App;
 use clap::Parser;
 use cli::Cli;
 use color_eyre::eyre::{bail, eyre};
@@ -33,6 +33,7 @@ use lore::{
     },
 };
 use render::{actor::RenderActor, ShellRenderService};
+use render_prefs::PatchRenderer;
 use std::{ops::ControlFlow, sync::Arc};
 use tracing::{event, Level};
 

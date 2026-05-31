@@ -1,3 +1,5 @@
+#![allow(dead_code)] // Follow-up phases may wire additional render message variants.
+
 use tokio::sync::oneshot;
 
 use crate::{

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::render::{RenderPatchsetRequest, RenderServiceApi, ShellRenderService};
-use crate::{app::cover_renderer::CoverRenderer, app::patch_renderer::PatchRenderer};
+use crate::render_prefs::{CoverRenderer, PatchRenderer};
 
 use crate::infrastructure::shell::OsShell;
 

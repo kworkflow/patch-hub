@@ -1,3 +1,5 @@
+#![allow(dead_code)] // Some protocol methods are reserved for future App flows.
+
 use tokio::sync::{mpsc, oneshot};
 
 use crate::{
