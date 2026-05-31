@@ -81,7 +81,7 @@ where
             terminal = loading_screen! {
                 terminal,
                 "Loading patchset" => {
-                    let result = app.open_patchset_details();
+                    let result = app.open_patchset_details().await;
                     if result.is_ok() {
                         match result.unwrap() {
                             B4Result::PatchFound => {

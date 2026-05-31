@@ -12,7 +12,7 @@ use crate::{
     ui::popup::{help::HelpPopUpBuilder, info_popup::InfoPopUp, PopUp},
 };
 
-pub fn handle_bookmarked_patchsets<B>(
+pub async fn handle_bookmarked_patchsets<B>(
     app: &mut App,
     key: KeyEvent,
     mut terminal: Terminal<B>,
@@ -45,7 +45,7 @@ where
             terminal = loading_screen! {
                 terminal,
                 "Loading patchset" => {
-                    let result = app.open_patchset_details();
+                    let result = app.open_patchset_details().await;
                     if result.is_ok() {
                         // If a patchset has been bookmarked UI, this means that
                         // b4 was successful in fetching it, so it shouldn't be

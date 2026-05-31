@@ -179,7 +179,7 @@ impl App {
     }
 
     /// Loads patchset details into [`LoreUiState::details`].
-    pub fn open_patchset_details(&mut self) -> color_eyre::Result<B4Result> {
+    pub async fn open_patchset_details(&mut self) -> color_eyre::Result<B4Result> {
         let representative_patch: Patch;
         let mut is_patchset_bookmarked = true;
 
@@ -214,8 +214,9 @@ impl App {
 
         let details = match self
             .services
-            .lore
-            .fetch_patchset_details(&representative_patch, CacheMode::UseCache)
+            .lore_api
+            .fetch_patchset_details(representative_patch.clone(), CacheMode::UseCache)
+            .await
         {
             Ok(d) => d,
             Err(LoreError::PatchNotFound(err)) => return Ok(B4Result::PatchNotFound(err)),
