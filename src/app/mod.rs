@@ -22,7 +22,6 @@ use crate::{
         env::EnvTrait,
         file_system::FileSystemTrait,
         monitoring::logging::garbage_collector::collect_garbage,
-        render::RenderServiceApi,
         shell::{ShellCommand, ShellTrait},
     },
     lore::{
@@ -33,6 +32,7 @@ use crate::{
         },
         domain::patch::{Author, Patch},
     },
+    render::RenderServiceApi,
     ui::popup::info_popup::InfoPopUp,
 };
 use screens::{

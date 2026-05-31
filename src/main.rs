@@ -5,6 +5,7 @@ mod handler;
 mod infrastructure;
 mod lore;
 mod macros;
+mod render;
 mod render_prefs;
 mod ui;
 
@@ -19,7 +20,6 @@ use infrastructure::{
     file_system::OsFileSystem,
     monitoring::{init_monitoring, InitMonitoringProduct},
     net::UreqNetClient,
-    render::{RenderServiceApi, ShellRenderService},
     shell::OsShell,
     terminal::{init, restore},
 };
@@ -32,6 +32,7 @@ use lore::{
         persistence::{FileLorePersistence, MailingListsCacheStore, UserLoreStateStore},
     },
 };
+use render::{RenderServiceApi, ShellRenderService};
 use std::{ops::ControlFlow, sync::Arc};
 use tracing::{event, Level};
 

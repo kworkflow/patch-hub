@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
-use crate::infrastructure::{
-    render::{RenderServiceApi, ShellRenderService},
-    shell::OsShell,
-};
+use crate::render::{RenderServiceApi, ShellRenderService};
 use crate::{app::cover_renderer::CoverRenderer, app::patch_renderer::PatchRenderer};
+
+use crate::infrastructure::shell::OsShell;
 
 #[test]
 fn shell_render_service_produces_one_preview_per_patch() {
