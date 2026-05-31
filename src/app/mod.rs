@@ -13,7 +13,7 @@ use tracing::{event, Level};
 
 use std::{
     collections::{HashMap, HashSet},
-    path::Path,
+    path::PathBuf,
 };
 
 use crate::{
@@ -27,7 +27,6 @@ use crate::{
     },
     lore::{
         application::{
-            api::LoreServiceApi,
             cache::{BootstrapLoreData, CacheMode},
             errors::LoreError,
             handle::LoreApiHandle,
@@ -50,7 +49,6 @@ pub use view_model::AppViewModel;
 /// Injected capabilities used by `App` orchestration (not screen state).
 pub struct AppServices {
     pub lore_api: LoreApiHandle,
-    pub lore: Box<dyn LoreServiceApi>,
     pub render: Box<dyn RenderServiceApi>,
     pub shell: Box<dyn ShellTrait>,
     pub fs: Box<dyn FileSystemTrait>,
@@ -84,7 +82,6 @@ impl App {
         shell: Box<dyn ShellTrait>,
         env: Box<dyn EnvTrait>,
         lore_api: LoreApiHandle,
-        lore_service: Box<dyn LoreServiceApi>,
         render: Box<dyn RenderServiceApi>,
     ) -> color_eyre::Result<Self> {
         let config = config_service.snapshot();
@@ -120,7 +117,6 @@ impl App {
             },
             services: AppServices {
                 lore_api,
-                lore: lore_service,
                 render,
                 shell,
                 fs,
@@ -283,14 +279,14 @@ impl App {
     /// # Panics
     ///
     /// Panics if [`LoreUiState::details`] is `None`.
-    pub fn consolidate_patchset_actions(&mut self) -> color_eyre::Result<()> {
-        self.sync_patchset_bookmark()?;
-        self.execute_reviewed_reply()?;
+    pub async fn consolidate_patchset_actions(&mut self) -> color_eyre::Result<()> {
+        self.sync_patchset_bookmark().await?;
+        self.execute_reviewed_reply().await?;
         self.execute_apply_patchset();
         Ok(())
     }
 
-    fn sync_patchset_bookmark(&mut self) -> color_eyre::Result<()> {
+    async fn sync_patchset_bookmark(&mut self) -> color_eyre::Result<()> {
         let details = self.state.lore.details.as_ref().unwrap();
         let representative_patch = &details.representative_patch;
         let patchset_actions = &details.patchset_actions;
@@ -308,19 +304,20 @@ impl App {
         }
 
         self.services
-            .lore
-            .save_bookmarked_patchsets(
-                &self
-                    .state
+            .lore_api
+            .save_bookmarks(
+                self.state
                     .user_state
                     .bookmarked_patchsets
-                    .bookmarked_patchsets,
+                    .bookmarked_patchsets
+                    .clone(),
             )
+            .await
             .map_err(|e| eyre!("{e:#?}"))?;
         Ok(())
     }
 
-    fn execute_reviewed_reply(&mut self) -> color_eyre::Result<()> {
+    async fn execute_reviewed_reply(&mut self) -> color_eyre::Result<()> {
         let details = self.state.lore.details.as_ref().unwrap();
         let representative_patch = details.representative_patch.clone();
         let patchset_actions = &details.patchset_actions;
@@ -335,7 +332,12 @@ impl App {
                 .remove(&representative_patch.message_id().href)
                 .unwrap_or_default();
 
-            let (git_user_name, git_user_email) = self.services.lore.get_git_signature("");
+            let (git_user_name, git_user_email) = self
+                .services
+                .lore_api
+                .get_git_signature(String::new())
+                .await
+                .map_err(|e| eyre!("{e:#?}"))?;
 
             if git_user_name.is_empty() || git_user_email.is_empty() {
                 println!("`git config user.name` or `git config user.email` not set\nAborting...");
@@ -350,20 +352,21 @@ impl App {
                     .map_err(|e| eyre!("invalid utf-8 in temp dir path: {}", e))?
                     .trim()
                     .to_string();
-                let tmp_dir = Path::new(&tmp_dir_str);
+                let tmp_dir = PathBuf::from(tmp_dir_str);
 
                 let git_signature = format!("{git_user_name} <{git_user_email}>");
                 let git_reply_commands = self
                     .services
-                    .lore
+                    .lore_api
                     .prepare_reply_commands(
                         tmp_dir,
-                        "all",
-                        &raw_patches,
-                        &patches_to_reply,
-                        &git_signature,
-                        self.state.config.git_send_email_options(),
+                        "all".to_string(),
+                        raw_patches,
+                        patches_to_reply.clone(),
+                        git_signature,
+                        self.state.config.git_send_email_options().to_string(),
                     )
+                    .await
                     .map_err(|e| eyre!("{e:#?}"))?;
 
                 let reply_indexes: Vec<usize> = patches_to_reply
@@ -389,8 +392,9 @@ impl App {
             );
 
             self.services
-                .lore
-                .save_reviewed_patchsets(&self.state.user_state.reviewed_patchsets)
+                .lore_api
+                .save_reviewed(self.state.user_state.reviewed_patchsets.clone())
+                .await
                 .map_err(|e| eyre!("{e:#?}"))?;
 
             self.state

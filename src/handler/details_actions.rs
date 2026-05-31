@@ -14,7 +14,7 @@ use crate::{
 
 use super::wait_key_press;
 
-pub fn handle_patchset_details<B: Backend>(
+pub async fn handle_patchset_details<B: Backend>(
     app: &mut App,
     key: KeyEvent,
     terminal: &mut Terminal<B>,
@@ -109,7 +109,7 @@ pub fn handle_patchset_details<B: Backend>(
         KeyCode::Enter => {
             if patchset_details_and_actions.actions_require_user_io() {
                 setup_user_io(terminal)?;
-                app.consolidate_patchset_actions()?;
+                app.consolidate_patchset_actions().await?;
                 println!("\nPress ENTER continue...");
                 loop {
                     if let Event::Key(key) = event::read()? {
@@ -120,7 +120,7 @@ pub fn handle_patchset_details<B: Backend>(
                 }
                 teardown_user_io(terminal)?;
             } else {
-                app.consolidate_patchset_actions()?;
+                app.consolidate_patchset_actions().await?;
             }
             app.set_current_screen(CurrentScreen::PatchsetDetails);
         }

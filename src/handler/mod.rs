@@ -50,7 +50,7 @@ where
                 return handle_bookmarked_patchsets(app, key, terminal).await;
             }
             CurrentScreen::PatchsetDetails => {
-                handle_patchset_details(app, key, &mut terminal)?;
+                handle_patchset_details(app, key, &mut terminal).await?;
             }
             CurrentScreen::EditConfig => {
                 handle_edit_config(app, key)?;

@@ -24,9 +24,7 @@ use infrastructure::{
     terminal::{init, restore},
 };
 use lore::{
-    application::{
-        actor::LoreApiActor, api::LoreServiceApi, cache::CacheTtl, service::LoreService,
-    },
+    application::{actor::LoreApiActor, cache::CacheTtl, service::LoreService},
     infrastructure::{
         http_lore_client::HttpLoreGateway,
         patchset_fetcher::B4PatchsetFetcher,
@@ -153,19 +151,6 @@ async fn main() -> color_eyre::Result<()> {
     ));
     let bootstrap = lore_api.get_bootstrap_data().await.unwrap_or_default();
 
-    let lore_service: Box<dyn LoreServiceApi> = Box::new(LoreService::new(
-        gateway.clone(),
-        gateway.clone(),
-        gateway.clone(),
-        persistence.clone() as Arc<dyn MailingListsCacheStore>,
-        persistence.clone() as Arc<dyn UserLoreStateStore>,
-        fetcher,
-        parser,
-        fs_arc,
-        shell_arc,
-        CacheTtl::default(),
-    ));
-
     let app = App::new(
         config_service,
         bootstrap,
@@ -173,7 +158,6 @@ async fn main() -> color_eyre::Result<()> {
         Box::new(OsShell),
         Box::new(env),
         lore_api,
-        lore_service,
         render,
     )?;
     if !check_external_deps(&*app.services.env, &app.state.config) {
