@@ -30,14 +30,12 @@ pub trait TerminalSessionApi: Send {
 }
 
 /// Ratatui/Crossterm-backed terminal session.
-#[allow(dead_code)] // Wired into main in the next Phase 9 commit.
 pub struct CrosstermTerminalSession {
     terminal: Tui,
     shutdown: bool,
 }
 
 impl CrosstermTerminalSession {
-    #[allow(dead_code)] // Wired into main in the next Phase 9 commit.
     pub fn new(terminal: Tui) -> Self {
         Self {
             terminal,

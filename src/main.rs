@@ -37,7 +37,7 @@ use lore::{
 use render::{actor::RenderActor, ShellRenderService};
 use render_prefs::PatchRenderer;
 use std::{ops::ControlFlow, sync::Arc};
-use terminal::{actor::TerminalActor, session::CrosstermEventSession};
+use terminal::{actor::TerminalActor, session::CrosstermTerminalSession};
 use tracing::{event, Level};
 
 /// Verifies required and optional external binaries before the TUI runs.
@@ -120,8 +120,7 @@ async fn main() -> color_eyre::Result<()> {
         ControlFlow::Continue(()) => {}
     }
 
-    let terminal = init()?;
-    let terminal_events = TerminalActor::spawn(Box::new(CrosstermEventSession));
+    let terminal_handle = TerminalActor::spawn(Box::new(CrosstermTerminalSession::new(init()?)));
 
     // Build shared infrastructure dependencies for LoreService
     let net = Arc::new(UreqNetClient::new());
@@ -175,7 +174,7 @@ async fn main() -> color_eyre::Result<()> {
         bail!("patch-hub cannot be executed because some dependencies are missing, check logs for more information");
     }
 
-    run_app(terminal, app, terminal_events).await?;
+    run_app(app, terminal_handle).await?;
     restore()?;
 
     event!(Level::INFO, "patch-hub finished");

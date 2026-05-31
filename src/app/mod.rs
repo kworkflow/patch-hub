@@ -432,6 +432,7 @@ impl App {
 
     /// Borrows state for one UI frame without passing [`App`] into `ui/`.
     #[must_use]
+    #[allow(dead_code)] // Runtime draws via [`App::render_snapshot`] until the UI actor owns rendering.
     pub fn to_view_model(&self) -> AppViewModel<'_> {
         AppViewModel { state: &self.state }
     }

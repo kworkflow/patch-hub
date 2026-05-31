@@ -27,6 +27,7 @@ const LOADING_AREA_EXTRA_LINES: u16 = 2;
 
 /// This function renders a loading screen taking a `terminal` instance and a
 /// `title`.
+#[allow(dead_code)] // Runtime loading moves to [`TerminalHandle`] in the next Phase 9 commit.
 pub fn render<B: Backend>(mut terminal: Terminal<B>, title: impl Display) -> Terminal<B> {
     let _ = terminal.draw(|f| draw_loading_screen(f, title));
     terminal

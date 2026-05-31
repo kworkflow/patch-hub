@@ -7,7 +7,6 @@ pub struct AppRenderSnapshot {
 }
 
 impl AppRenderSnapshot {
-    #[allow(dead_code)] // Wired into the runtime draw path in the next commit.
     pub fn new(state: AppState) -> Self {
         Self { state }
     }
@@ -18,7 +17,6 @@ impl AppRenderSnapshot {
 }
 
 impl App {
-    #[allow(dead_code)] // Wired into the runtime draw path in the next commit.
     pub fn render_snapshot(&self) -> AppRenderSnapshot {
         AppRenderSnapshot::new(self.state.clone())
     }
