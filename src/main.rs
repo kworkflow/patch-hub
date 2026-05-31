@@ -23,7 +23,7 @@ use infrastructure::{
     monitoring::{init_monitoring, InitMonitoringProduct},
     net::UreqNetClient,
     shell::OsShell,
-    terminal::{init, restore},
+    terminal::init,
 };
 use lore::{
     application::{actor::LoreApiActor, cache::CacheTtl, service::LoreService},
@@ -174,8 +174,11 @@ async fn main() -> color_eyre::Result<()> {
         bail!("patch-hub cannot be executed because some dependencies are missing, check logs for more information");
     }
 
-    run_app(app, terminal_handle).await?;
-    restore()?;
+    run_app(app, terminal_handle.clone()).await?;
+    terminal_handle
+        .shutdown()
+        .await
+        .map_err(|error| eyre!("{error}"))?;
 
     event!(Level::INFO, "patch-hub finished");
 

@@ -260,6 +260,16 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn shutdown_delegates_to_session_and_is_safe_to_repeat() {
+        let mut session = MockTerminalSessionApi::new();
+        session.expect_shutdown().times(2).returning(|| Ok(()));
+        let handle = spawn_test_actor(session);
+
+        handle.shutdown().await.unwrap();
+        handle.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn closed_channel_returns_actor_unavailable() {
         let (tx, rx) = mpsc::channel(DEFAULT_TERMINAL_CHANNEL_SIZE);
         let handle = TerminalHandle::new(tx);

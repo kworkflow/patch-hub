@@ -4,6 +4,10 @@ use super::terminal::restore;
 
 /// This replaces the standard color_eyre panic and error hooks with hooks that
 /// restore the terminal before printing the panic or error.
+///
+/// Normal application shutdown restores the terminal through
+/// [`crate::terminal::handle::TerminalHandle::shutdown`]. These hooks keep a
+/// direct [`super::terminal::restore`] fallback for panics and fatal errors.
 pub fn install_hooks() -> color_eyre::Result<()> {
     let (panic_hook, eyre_hook) = color_eyre::config::HookBuilder::default().into_hooks();
 
