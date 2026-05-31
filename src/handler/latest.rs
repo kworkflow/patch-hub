@@ -1,22 +1,15 @@
-use ratatui::{prelude::Backend, Terminal};
-
-use std::ops::ControlFlow;
-
 use crate::{
     app::{screens::CurrentScreen, App, B4Result},
+    handler::LoadingIndicator,
     input::event::InputEvent,
-    loading_screen,
     ui::popup::{help::HelpPopUpBuilder, info_popup::InfoPopUp, PopUp},
 };
 
-pub async fn handle_latest_patchsets<B>(
+pub async fn handle_latest_patchsets(
     app: &mut App,
     input: InputEvent,
-    mut terminal: Terminal<B>,
-) -> color_eyre::Result<ControlFlow<(), Terminal<B>>>
-where
-    B: Backend + Send + 'static,
-{
+    loading: &mut dyn LoadingIndicator,
+) -> color_eyre::Result<()> {
     match input {
         InputEvent::OpenHelp => {
             let popup = generate_help_popup();
@@ -51,18 +44,16 @@ where
                 .unwrap()
                 .target_list()
                 .to_string();
-            terminal = loading_screen! {
-                terminal,
-                format!("Fetching patchsets from {}", list_name) => {
-                    app.state
-                        .lore
-                        .latest_patchsets
-                        .as_mut()
-                        .unwrap()
-                        .increment_page();
-                    app.fetch_latest_current_page().await
-                }
-            };
+            loading.start(format!("Fetching patchsets from {}", list_name));
+            app.state
+                .lore
+                .latest_patchsets
+                .as_mut()
+                .unwrap()
+                .increment_page();
+            let result = app.fetch_latest_current_page().await;
+            loading.stop()?;
+            result?;
         }
         InputEvent::PreviousPage => {
             app.state
@@ -75,30 +66,26 @@ where
             app.fetch_latest_current_page().await?;
         }
         InputEvent::OpenPatchsetDetails => {
-            terminal = loading_screen! {
-                terminal,
-                "Loading patchset" => {
-                    let result = app.open_patchset_details().await;
-                    if result.is_ok() {
-                        match result.unwrap() {
-                            B4Result::PatchFound => {
-                                app.set_current_screen(CurrentScreen::PatchsetDetails);
-                            }
-                            B4Result::PatchNotFound(err_cause) => {
-                                app.state.popup = Some(InfoPopUp::generate_info_popup(
-                                    "Error",&format!("The selected patchset couldn't be retrieved.\nReason: {err_cause}\nPlease choose another patchset.")
-                                ));
-                                app.set_current_screen(CurrentScreen::LatestPatchsets);
-                            }
-                        }
+            loading.start("Loading patchset".to_string());
+            let result = app.open_patchset_details().await;
+            loading.stop()?;
+            if result.is_ok() {
+                match result.unwrap() {
+                    B4Result::PatchFound => {
+                        app.set_current_screen(CurrentScreen::PatchsetDetails);
                     }
-                    color_eyre::eyre::Ok(())
+                    B4Result::PatchNotFound(err_cause) => {
+                        app.state.popup = Some(InfoPopUp::generate_info_popup(
+                            "Error",&format!("The selected patchset couldn't be retrieved.\nReason: {err_cause}\nPlease choose another patchset.")
+                        ));
+                        app.set_current_screen(CurrentScreen::LatestPatchsets);
+                    }
                 }
-            };
+            }
         }
         _ => {}
     }
-    Ok(ControlFlow::Continue(terminal))
+    Ok(())
 }
 
 pub fn generate_help_popup() -> Box<dyn PopUp> {

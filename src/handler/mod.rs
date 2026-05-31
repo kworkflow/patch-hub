@@ -6,7 +6,15 @@ mod mail_list;
 
 use ratatui::{prelude::Backend, Terminal};
 
-use std::ops::ControlFlow;
+use std::{
+    ops::ControlFlow,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    thread::JoinHandle,
+    time::Duration,
+};
 
 use crate::{
     app::{screens::CurrentScreen, App},
@@ -21,14 +29,98 @@ use edit_config::handle_edit_config;
 use latest::handle_latest_patchsets;
 use mail_list::handle_mailing_list_selection;
 
+pub(crate) trait LoadingIndicator {
+    fn start(&mut self, title: String);
+    fn stop(&mut self) -> color_eyre::Result<()>;
+}
+
+struct TerminalLoadingIndicator<B: Backend + Send + 'static> {
+    terminal: Option<Terminal<B>>,
+    running: Option<Arc<AtomicBool>>,
+    handle: Option<JoinHandle<Terminal<B>>>,
+}
+
+impl<B> TerminalLoadingIndicator<B>
+where
+    B: Backend + Send + 'static,
+{
+    fn new(terminal: Terminal<B>) -> Self {
+        Self {
+            terminal: Some(terminal),
+            running: None,
+            handle: None,
+        }
+    }
+
+    fn terminal_mut(&mut self) -> color_eyre::Result<&mut Terminal<B>> {
+        self.terminal
+            .as_mut()
+            .ok_or_else(|| color_eyre::eyre::eyre!("terminal unavailable while loading"))
+    }
+
+    fn into_terminal(mut self) -> color_eyre::Result<Terminal<B>> {
+        self.stop()?;
+        self.terminal
+            .take()
+            .ok_or_else(|| color_eyre::eyre::eyre!("terminal unavailable after loading"))
+    }
+}
+
+impl<B> LoadingIndicator for TerminalLoadingIndicator<B>
+where
+    B: Backend + Send + 'static,
+{
+    fn start(&mut self, title: String) {
+        if self.handle.is_some() {
+            return;
+        }
+
+        let Some(mut terminal) = self.terminal.take() else {
+            return;
+        };
+        let loading = Arc::new(AtomicBool::new(true));
+        let loading_clone = Arc::clone(&loading);
+
+        self.running = Some(loading);
+        self.handle = Some(std::thread::spawn(move || {
+            while loading_clone.load(Ordering::Relaxed) {
+                terminal = crate::ui::loading_screen::render(terminal, &title);
+                std::thread::sleep(Duration::from_millis(200));
+            }
+
+            terminal
+        }));
+
+        std::thread::sleep(Duration::from_millis(200));
+    }
+
+    fn stop(&mut self) -> color_eyre::Result<()> {
+        let Some(handle) = self.handle.take() else {
+            return Ok(());
+        };
+
+        if let Some(running) = self.running.take() {
+            running.store(false, Ordering::Relaxed);
+        }
+
+        self.terminal = Some(
+            handle
+                .join()
+                .map_err(|_| color_eyre::eyre::eyre!("loading screen thread panicked"))?,
+        );
+        Ok(())
+    }
+}
+
 async fn input_handling<B>(
-    mut terminal: Terminal<B>,
+    terminal: Terminal<B>,
     app: &mut App,
     input: InputEvent,
 ) -> color_eyre::Result<ControlFlow<(), Terminal<B>>>
 where
     B: Backend + Send + 'static,
 {
+    let mut loading = TerminalLoadingIndicator::new(terminal);
     if let Some(popup) = app.state.popup.as_mut() {
         if input == InputEvent::ClosePopup {
             app.state.popup = None;
@@ -38,23 +130,26 @@ where
     } else {
         match app.state.navigation.current_screen {
             CurrentScreen::MailingListSelection => {
-                return handle_mailing_list_selection(app, input, terminal).await;
+                match handle_mailing_list_selection(app, input, &mut loading).await? {
+                    ControlFlow::Continue(()) => {}
+                    ControlFlow::Break(()) => return Ok(ControlFlow::Break(())),
+                }
             }
             CurrentScreen::BookmarkedPatchsets => {
-                return handle_bookmarked_patchsets(app, input, terminal).await;
+                handle_bookmarked_patchsets(app, input, &mut loading).await?;
             }
             CurrentScreen::PatchsetDetails => {
-                handle_patchset_details(app, input, &mut terminal).await?;
+                handle_patchset_details(app, input, loading.terminal_mut()?).await?;
             }
             CurrentScreen::EditConfig => {
                 handle_edit_config(app, input)?;
             }
             CurrentScreen::LatestPatchsets => {
-                return handle_latest_patchsets(app, input, terminal).await;
+                handle_latest_patchsets(app, input, &mut loading).await?;
             }
         }
     }
-    Ok(ControlFlow::Continue(terminal))
+    Ok(ControlFlow::Continue(loading.into_terminal()?))
 }
 
 pub async fn run_app<B>(
@@ -68,7 +163,9 @@ where
     let mut input_mapper = InputMapper::default();
 
     loop {
-        terminal = app.process_system_updates(terminal).await?;
+        let mut loading = TerminalLoadingIndicator::new(terminal);
+        app.process_system_updates(&mut loading).await?;
+        terminal = loading.into_terminal()?;
 
         terminal.draw(|f| draw_ui(f, &app.to_view_model()))?;
 

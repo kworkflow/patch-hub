@@ -1,22 +1,17 @@
-use ratatui::{prelude::Backend, Terminal};
-
 use std::ops::ControlFlow;
 
 use crate::{
     app::{screens::CurrentScreen, App},
+    handler::LoadingIndicator,
     input::event::InputEvent,
-    loading_screen,
     ui::popup::{help::HelpPopUpBuilder, PopUp},
 };
 
-pub async fn handle_mailing_list_selection<B>(
+pub async fn handle_mailing_list_selection(
     app: &mut App,
     input: InputEvent,
-    mut terminal: Terminal<B>,
-) -> color_eyre::Result<ControlFlow<(), Terminal<B>>>
-where
-    B: Backend + Send + 'static,
-{
+    loading: &mut dyn LoadingIndicator,
+) -> color_eyre::Result<ControlFlow<(), ()>> {
     match input {
         InputEvent::OpenHelp => {
             let popup = generate_help_popup();
@@ -39,26 +34,21 @@ where
                     .target_list()
                     .to_string();
 
-                terminal = loading_screen! {
-                    terminal,
-                    format!("Fetching patchsets from {}", list_name) => {
-                        let result = app.fetch_latest_current_page().await;
-                        if result.is_ok() {
-                            app.state.lore.mailing_list_selection.clear_target_list();
-                            app.set_current_screen(CurrentScreen::LatestPatchsets);
-                        }
-                        result
-                    }
-                };
+                loading.start(format!("Fetching patchsets from {}", list_name));
+                let result = app.fetch_latest_current_page().await;
+                loading.stop()?;
+                if result.is_ok() {
+                    app.state.lore.mailing_list_selection.clear_target_list();
+                    app.set_current_screen(CurrentScreen::LatestPatchsets);
+                }
+                result?;
             }
         }
         InputEvent::RefreshMailingLists => {
-            terminal = loading_screen! {
-                terminal,
-                "Refreshing lists" => {
-                    app.refresh_mailing_lists().await
-                }
-            };
+            loading.start("Refreshing lists".to_string());
+            let result = app.refresh_mailing_lists().await;
+            loading.stop()?;
+            result?;
         }
         InputEvent::OpenEditConfig => {
             app.init_edit_config();
@@ -99,7 +89,7 @@ where
         }
         _ => {}
     }
-    Ok(ControlFlow::Continue(terminal))
+    Ok(ControlFlow::Continue(()))
 }
 
 // TODO: Move this to a more appropriate place
