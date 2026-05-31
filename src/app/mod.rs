@@ -32,7 +32,7 @@ use crate::{
         },
         domain::patch::{Author, Patch},
     },
-    render::{RenderPatchsetRequest, RenderServiceApi},
+    render::{handle::RenderHandle, RenderPatchsetRequest},
     ui::popup::info_popup::InfoPopUp,
 };
 use screens::{
@@ -49,7 +49,7 @@ pub use view_model::AppViewModel;
 /// Injected capabilities used by `App` orchestration (not screen state).
 pub struct AppServices {
     pub lore_api: LoreApiHandle,
-    pub render: Box<dyn RenderServiceApi>,
+    pub render: RenderHandle,
     pub shell: Box<dyn ShellTrait>,
     pub fs: Box<dyn FileSystemTrait>,
     pub env: Box<dyn EnvTrait>,
@@ -82,7 +82,7 @@ impl App {
         shell: Box<dyn ShellTrait>,
         env: Box<dyn EnvTrait>,
         lore_api: LoreApiHandle,
-        render: Box<dyn RenderServiceApi>,
+        render: RenderHandle,
     ) -> color_eyre::Result<Self> {
         let config = config_service.snapshot();
 
@@ -228,6 +228,7 @@ impl App {
             .services
             .render
             .render_patchset_preview(render_request)
+            .await
             .map_err(|e| eyre!("{e}"))?;
 
         let mut patches_preview: Vec<Text> = Vec::new();

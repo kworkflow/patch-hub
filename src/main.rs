@@ -32,7 +32,7 @@ use lore::{
         persistence::{FileLorePersistence, MailingListsCacheStore, UserLoreStateStore},
     },
 };
-use render::{RenderServiceApi, ShellRenderService};
+use render::{actor::RenderActor, ShellRenderService};
 use std::{ops::ControlFlow, sync::Arc};
 use tracing::{event, Level};
 
@@ -136,7 +136,7 @@ async fn main() -> color_eyre::Result<()> {
     ));
     let parser = Arc::new(MboxPatchsetParser::new(fs_arc.clone()));
 
-    let render: Box<dyn RenderServiceApi> = Box::new(ShellRenderService::new(shell_arc.clone()));
+    let render = RenderActor::spawn(Box::new(ShellRenderService::new(shell_arc.clone())));
 
     let lore_api = LoreApiActor::spawn(LoreService::new(
         gateway.clone(),
