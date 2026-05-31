@@ -69,3 +69,20 @@ pub enum LoreApiMessage {
         reply: oneshot::Sender<LoreApiResult<Vec<ShellCommand>>>,
     },
 }
+
+impl LoreApiMessage {
+    pub fn name(&self) -> &'static str {
+        match self {
+            LoreApiMessage::GetBootstrapData { .. } => "GetBootstrapData",
+            LoreApiMessage::FetchAvailableLists { .. } => "FetchAvailableLists",
+            LoreApiMessage::FetchFeedPage { .. } => "FetchFeedPage",
+            LoreApiMessage::FetchPatchsetDetails { .. } => "FetchPatchsetDetails",
+            LoreApiMessage::LoadBookmarks { .. } => "LoadBookmarks",
+            LoreApiMessage::SaveBookmarks { .. } => "SaveBookmarks",
+            LoreApiMessage::LoadReviewed { .. } => "LoadReviewed",
+            LoreApiMessage::SaveReviewed { .. } => "SaveReviewed",
+            LoreApiMessage::GetGitSignature { .. } => "GetGitSignature",
+            LoreApiMessage::PrepareReplyCommands { .. } => "PrepareReplyCommands",
+        }
+    }
+}

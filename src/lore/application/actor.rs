@@ -1,4 +1,7 @@
-use tokio::{sync::mpsc, task};
+use tokio::{
+    sync::{mpsc, oneshot},
+    task,
+};
 
 use crate::lore::application::{
     errors::LoreError, handle::LoreApiHandle, messages::LoreApiMessage, service::LoreService,
@@ -21,31 +24,42 @@ impl LoreApiActor {
 
     pub fn spawn(core: LoreService) -> LoreApiHandle {
         let (tx, rx) = mpsc::channel(DEFAULT_LORE_API_CHANNEL_SIZE);
+        tracing::debug!(
+            channel_size = DEFAULT_LORE_API_CHANNEL_SIZE,
+            "spawning lore api actor"
+        );
         tokio::spawn(Self::new(core, rx).run());
         LoreApiHandle::new(tx)
     }
 
     pub async fn run(mut self) {
+        tracing::info!("lore api actor started");
         while let Some(message) = self.rx.recv().await {
             self.handle_message(message).await;
         }
+        tracing::info!("lore api actor stopped");
     }
 
     async fn handle_message(&mut self, message: LoreApiMessage) {
+        let message_name = message.name();
+        tracing::debug!(message = message_name, "lore api request received");
+
         match message {
             LoreApiMessage::GetBootstrapData { reply } => {
+                tracing::debug!("loading lore bootstrap data");
                 let result = self
                     .with_core(|core| core.warm_bootstrap_cache())
                     .await
                     .and_then(|result| result);
-                let _ = reply.send(result);
+                send_lore_reply(message_name, reply, result);
             }
             LoreApiMessage::FetchAvailableLists { cache_mode, reply } => {
+                tracing::debug!(?cache_mode, "fetching available mailing lists");
                 let result = self
                     .with_core(move |core| core.fetch_available_lists(cache_mode))
                     .await
                     .and_then(|result| result);
-                let _ = reply.send(result);
+                send_lore_reply(message_name, reply, result);
             }
             LoreApiMessage::FetchFeedPage {
                 target_list,
@@ -54,63 +68,80 @@ impl LoreApiActor {
                 cache_mode,
                 reply,
             } => {
+                tracing::debug!(
+                    list = %target_list,
+                    page_size,
+                    page_number,
+                    ?cache_mode,
+                    "fetching lore feed page"
+                );
                 let result = self
                     .with_core(move |core| {
                         core.fetch_next_patch_page(&target_list, page_size, page_number, cache_mode)
                     })
                     .await
                     .and_then(|result| result);
-                let _ = reply.send(result);
+                send_lore_reply(message_name, reply, result);
             }
             LoreApiMessage::FetchPatchsetDetails {
                 representative_patch,
                 cache_mode,
                 reply,
             } => {
+                tracing::debug!(
+                    message_id = %representative_patch.message_id().href,
+                    ?cache_mode,
+                    "fetching patchset details"
+                );
                 let result = self
                     .with_core(move |core| {
                         core.fetch_patchset_details(&representative_patch, cache_mode)
                     })
                     .await
                     .and_then(|result| result);
-                let _ = reply.send(result);
+                send_lore_reply(message_name, reply, result);
             }
             LoreApiMessage::LoadBookmarks { reply } => {
+                tracing::debug!("loading bookmarked patchsets");
                 let result = self
                     .with_core(|core| core.load_bookmarked_patchsets())
                     .await
                     .and_then(|result| result);
-                let _ = reply.send(result);
+                send_lore_reply(message_name, reply, result);
             }
             LoreApiMessage::SaveBookmarks { bookmarks, reply } => {
+                tracing::debug!(count = bookmarks.len(), "saving bookmarked patchsets");
                 let result = self
                     .with_core(move |core| core.save_bookmarked_patchsets(&bookmarks))
                     .await
                     .and_then(|result| result);
-                let _ = reply.send(result);
+                send_lore_reply(message_name, reply, result);
             }
             LoreApiMessage::LoadReviewed { reply } => {
+                tracing::debug!("loading reviewed patchsets");
                 let result = self
                     .with_core(|core| core.load_reviewed_patchsets())
                     .await
                     .and_then(|result| result);
-                let _ = reply.send(result);
+                send_lore_reply(message_name, reply, result);
             }
             LoreApiMessage::SaveReviewed { reviewed, reply } => {
+                tracing::debug!(patchsets = reviewed.len(), "saving reviewed patchsets");
                 let result = self
                     .with_core(move |core| core.save_reviewed_patchsets(&reviewed))
                     .await
                     .and_then(|result| result);
-                let _ = reply.send(result);
+                send_lore_reply(message_name, reply, result);
             }
             LoreApiMessage::GetGitSignature {
                 git_repo_path,
                 reply,
             } => {
+                tracing::debug!(repo = %git_repo_path, "loading git signature");
                 let result = self
                     .with_core(move |core| core.get_git_signature(&git_repo_path))
                     .await;
-                let _ = reply.send(result);
+                send_lore_reply(message_name, reply, result);
             }
             LoreApiMessage::PrepareReplyCommands {
                 tmp_dir,
@@ -121,6 +152,12 @@ impl LoreApiActor {
                 git_send_email_options,
                 reply,
             } => {
+                tracing::debug!(
+                    target_list = %target_list,
+                    patch_count = patches.len(),
+                    selected_count = patches_to_reply.iter().filter(|selected| **selected).count(),
+                    "preparing reply commands"
+                );
                 let result = self
                     .with_core(move |core| {
                         core.prepare_reply_commands(
@@ -134,7 +171,7 @@ impl LoreApiActor {
                     })
                     .await
                     .and_then(|result| result);
-                let _ = reply.send(result);
+                send_lore_reply(message_name, reply, result);
             }
         }
     }
@@ -156,6 +193,27 @@ impl LoreApiActor {
         .map_err(|e| LoreError::ActorUnavailable(e.to_string()))?;
         self.core = Some(core);
         Ok(result)
+    }
+}
+
+fn send_lore_reply<T>(
+    message_name: &'static str,
+    reply: oneshot::Sender<Result<T, LoreError>>,
+    result: Result<T, LoreError>,
+) {
+    if let Err(error) = &result {
+        tracing::warn!(
+            message = message_name,
+            error = %error,
+            "lore api request failed"
+        );
+    }
+
+    if reply.send(result).is_err() {
+        tracing::warn!(
+            message = message_name,
+            "lore api reply receiver dropped before response"
+        );
     }
 }
 
