@@ -6,15 +6,10 @@ pub mod screens;
 pub mod state;
 pub mod view_model;
 
-use ansi_to_tui::IntoText;
 use color_eyre::eyre::{bail, eyre};
-use ratatui::text::Text;
 use tracing::{event, Level};
 
-use std::{
-    collections::{HashMap, HashSet},
-    path::PathBuf,
-};
+use std::path::PathBuf;
 
 use crate::{
     config::ConfigServiceApi,
@@ -30,7 +25,7 @@ use crate::{
             errors::LoreError,
             handle::LoreApiHandle,
         },
-        domain::patch::{Author, Patch},
+        domain::patch::Patch,
     },
     render::{handle::RenderHandle, RenderPatchsetRequest},
     ui::popup::info_popup::InfoPopUp,
@@ -231,46 +226,13 @@ impl App {
             .await
             .map_err(|e| eyre!("{e}"))?;
 
-        let mut patches_preview: Vec<Text> = Vec::new();
-        let mut reviewed_by: Vec<HashSet<Author>> = Vec::new();
-        let mut tested_by: Vec<HashSet<Author>> = Vec::new();
-        let mut acked_by: Vec<HashSet<Author>> = Vec::new();
-
-        for (entry, tag_summary) in rendered_preview
-            .entries
-            .iter()
-            .zip(details.tag_summary.iter())
-        {
-            reviewed_by.push(tag_summary.reviewed_by.clone());
-            tested_by.push(tag_summary.tested_by.clone());
-            acked_by.push(tag_summary.acked_by.clone());
-            patches_preview.push(entry.rendered_text.as_str().into_text()?);
-        }
-
-        let has_cover_letter = representative_patch.number_in_series() == 0;
-        let patches_to_reply = vec![false; details.raw_patches.len()];
-
-        self.state.lore.details = Some(PatchsetDetailsState {
+        self.state.lore.details = Some(PatchsetDetailsState::from_rendered_preview(
             representative_patch,
-            raw_patches: details.raw_patches,
-            patchset_path: details.patchset_path,
-            patches_preview,
-            patches_to_reply,
-            has_cover_letter,
-            preview_index: 0,
-            preview_scroll_offset: 0,
-            preview_pan: 0,
-            preview_fullscreen: false,
-            patchset_actions: HashMap::from([
-                (PatchsetAction::Bookmark, is_patchset_bookmarked),
-                (PatchsetAction::ReplyWithReviewedBy, false),
-                (PatchsetAction::Apply, false),
-            ]),
-            reviewed_by,
-            tested_by,
-            acked_by,
-            last_screen: self.state.navigation.current_screen.clone(),
-        });
+            details,
+            rendered_preview,
+            is_patchset_bookmarked,
+            self.state.navigation.current_screen.clone(),
+        )?);
 
         Ok(B4Result::PatchFound)
     }

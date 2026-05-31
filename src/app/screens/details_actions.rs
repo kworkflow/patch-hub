@@ -1,3 +1,4 @@
+use ansi_to_tui::IntoText;
 use ratatui::text::Text;
 
 use std::collections::{HashMap, HashSet};
@@ -9,7 +10,11 @@ use crate::{
         file_system::FileSystemTrait,
         shell::{ShellCommand, ShellTrait},
     },
-    lore::domain::patch::{Author, Patch},
+    lore::{
+        application::dto::PatchsetDetails,
+        domain::patch::{Author, Patch},
+    },
+    render::RenderedPatchsetPreview,
 };
 
 use super::CurrentScreen;
@@ -53,6 +58,55 @@ pub enum PatchsetAction {
 }
 
 impl PatchsetDetailsState {
+    pub fn from_rendered_preview(
+        representative_patch: Patch,
+        details: PatchsetDetails,
+        rendered_preview: RenderedPatchsetPreview,
+        is_patchset_bookmarked: bool,
+        last_screen: CurrentScreen,
+    ) -> color_eyre::Result<Self> {
+        let mut patches_preview: Vec<Text> = Vec::new();
+        let mut reviewed_by: Vec<HashSet<Author>> = Vec::new();
+        let mut tested_by: Vec<HashSet<Author>> = Vec::new();
+        let mut acked_by: Vec<HashSet<Author>> = Vec::new();
+
+        for (entry, tag_summary) in rendered_preview
+            .entries
+            .iter()
+            .zip(details.tag_summary.iter())
+        {
+            reviewed_by.push(tag_summary.reviewed_by.clone());
+            tested_by.push(tag_summary.tested_by.clone());
+            acked_by.push(tag_summary.acked_by.clone());
+            patches_preview.push(entry.rendered_text.as_str().into_text()?);
+        }
+
+        let has_cover_letter = representative_patch.number_in_series() == 0;
+        let patches_to_reply = vec![false; details.raw_patches.len()];
+
+        Ok(Self {
+            representative_patch,
+            raw_patches: details.raw_patches,
+            patchset_path: details.patchset_path,
+            patches_preview,
+            patches_to_reply,
+            has_cover_letter,
+            preview_index: 0,
+            preview_scroll_offset: 0,
+            preview_pan: 0,
+            preview_fullscreen: false,
+            patchset_actions: HashMap::from([
+                (PatchsetAction::Bookmark, is_patchset_bookmarked),
+                (PatchsetAction::ReplyWithReviewedBy, false),
+                (PatchsetAction::Apply, false),
+            ]),
+            reviewed_by,
+            tested_by,
+            acked_by,
+            last_screen,
+        })
+    }
+
     pub fn preview_next_patch(&mut self) {
         if (self.preview_index + 1) < self.patches_preview.len() {
             self.preview_index += 1;
