@@ -10,6 +10,7 @@ pub struct InputContext {
 }
 
 impl InputContext {
+    #[cfg(test)]
     pub fn new(current_screen: CurrentScreen) -> Self {
         Self {
             current_screen,
@@ -19,11 +20,13 @@ impl InputContext {
         }
     }
 
+    #[cfg(test)]
     pub fn with_popup_open(mut self, popup_open: bool) -> Self {
         self.popup_open = popup_open;
         self
     }
 
+    #[cfg(test)]
     pub fn with_edit_config_editing(mut self, edit_config_editing: bool) -> Self {
         self.edit_config_editing = edit_config_editing;
         self

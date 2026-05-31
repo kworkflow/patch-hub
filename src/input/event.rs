@@ -1,10 +1,14 @@
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 /// Raw terminal event after conversion from the terminal backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TerminalEvent {
     Key(KeyInput),
-    Resize { width: u16, height: u16 },
+    Resize {
+        width: u16,
+        height: u16,
+    },
+    #[allow(dead_code)] // Reserved for future non-blocking refresh loops.
     Tick,
 }
 
@@ -14,23 +18,24 @@ pub struct KeyInput {
     pub code: KeyCode,
     pub modifiers: KeyModifiers,
     pub kind: KeyEventKind,
-    pub state: KeyEventState,
 }
 
 impl KeyInput {
+    #[cfg(test)]
     pub fn new(code: KeyCode, modifiers: KeyModifiers, kind: KeyEventKind) -> Self {
         Self {
             code,
             modifiers,
             kind,
-            state: KeyEventState::NONE,
         }
     }
 
+    #[cfg(test)]
     pub fn press(code: KeyCode) -> Self {
         Self::new(code, KeyModifiers::NONE, KeyEventKind::Press)
     }
 
+    #[cfg(test)]
     pub fn modified_press(code: KeyCode, modifiers: KeyModifiers) -> Self {
         Self::new(code, modifiers, KeyEventKind::Press)
     }
@@ -42,7 +47,6 @@ impl From<KeyEvent> for KeyInput {
             code: key.code,
             modifiers: key.modifiers,
             kind: key.kind,
-            state: key.state,
         }
     }
 }

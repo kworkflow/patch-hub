@@ -11,15 +11,13 @@ impl App {
                 .config_state
                 .edit_config
                 .as_ref()
-                .map(|edit_config| edit_config.is_editing())
-                .unwrap_or(false),
+                .is_some_and(|edit_config| edit_config.is_editing()),
             preview_fullscreen: self
                 .state
                 .lore
                 .details
                 .as_ref()
-                .map(|details| details.preview_fullscreen)
-                .unwrap_or(false),
+                .is_some_and(|details| details.preview_fullscreen),
         }
     }
 }
