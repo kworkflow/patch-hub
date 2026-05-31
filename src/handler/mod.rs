@@ -18,6 +18,7 @@ use std::{
 
 use crate::{
     app::{screens::CurrentScreen, App},
+    infrastructure::terminal::{setup_user_io, teardown_user_io},
     input::{event::InputEvent, mapper::InputMapper},
     terminal::handle::TerminalHandle,
     ui::draw_ui,
@@ -32,6 +33,12 @@ use mail_list::handle_mailing_list_selection;
 pub(crate) trait LoadingIndicator {
     fn start(&mut self, title: String);
     fn stop(&mut self) -> color_eyre::Result<()>;
+}
+
+pub(crate) trait TerminalController {
+    fn setup_user_io(&mut self) -> color_eyre::Result<()>;
+    fn teardown_user_io(&mut self) -> color_eyre::Result<()>;
+    fn size(&self) -> color_eyre::Result<(u16, u16)>;
 }
 
 struct TerminalLoadingIndicator<B: Backend + Send + 'static> {
@@ -112,10 +119,33 @@ where
     }
 }
 
+impl<B> TerminalController for TerminalLoadingIndicator<B>
+where
+    B: Backend + Send + 'static,
+{
+    fn setup_user_io(&mut self) -> color_eyre::Result<()> {
+        setup_user_io(self.terminal_mut()?)
+    }
+
+    fn teardown_user_io(&mut self) -> color_eyre::Result<()> {
+        teardown_user_io(self.terminal_mut()?)
+    }
+
+    fn size(&self) -> color_eyre::Result<(u16, u16)> {
+        let size = self
+            .terminal
+            .as_ref()
+            .ok_or_else(|| color_eyre::eyre::eyre!("terminal unavailable while loading"))?
+            .size()?;
+        Ok((size.width, size.height))
+    }
+}
+
 async fn input_handling<B>(
     terminal: Terminal<B>,
     app: &mut App,
     input: InputEvent,
+    terminal_handle: &TerminalHandle,
 ) -> color_eyre::Result<ControlFlow<(), Terminal<B>>>
 where
     B: Backend + Send + 'static,
@@ -139,7 +169,7 @@ where
                 handle_bookmarked_patchsets(app, input, &mut loading).await?;
             }
             CurrentScreen::PatchsetDetails => {
-                handle_patchset_details(app, input, loading.terminal_mut()?).await?;
+                handle_patchset_details(app, input, &mut loading, terminal_handle).await?;
             }
             CurrentScreen::EditConfig => {
                 handle_edit_config(app, input)?;
@@ -177,7 +207,7 @@ where
         if let Some(terminal_event) = terminal_handle.read_event().await? {
             let input = input_mapper.map_terminal_event(terminal_event, &app.input_context());
             if let Some(input) = input {
-                match input_handling(terminal, &mut app, input).await? {
+                match input_handling(terminal, &mut app, input, &terminal_handle).await? {
                     ControlFlow::Continue(t) => terminal = t,
                     ControlFlow::Break(_) => return Ok(()),
                 }
