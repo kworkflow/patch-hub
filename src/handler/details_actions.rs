@@ -1,123 +1,87 @@
-use ratatui::{
-    backend::Backend,
-    crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
-    Terminal,
-};
-
-use std::time::Duration;
+use ratatui::{backend::Backend, Terminal};
 
 use crate::{
     app::{screens::CurrentScreen, App},
     infrastructure::terminal::{setup_user_io, teardown_user_io},
+    input::{
+        event::{InputEvent, ScrollAmount},
+        terminal_source::{wait_for_enter_press, CrosstermEventSource},
+    },
     ui::popup::{help::HelpPopUpBuilder, review_trailers::ReviewTrailersPopUp, PopUp},
 };
 
-use super::wait_key_press;
-
 pub async fn handle_patchset_details<B: Backend>(
     app: &mut App,
-    key: KeyEvent,
+    input: InputEvent,
     terminal: &mut Terminal<B>,
 ) -> color_eyre::Result<()> {
     let patchset_details_and_actions = app.state.lore.details.as_mut().unwrap();
 
-    if key.modifiers.contains(KeyModifiers::SHIFT) {
-        match key.code {
-            KeyCode::Char('G') => patchset_details_and_actions.go_to_last_line(),
-            KeyCode::Char('R') => {
-                patchset_details_and_actions.toggle_reply_with_reviewed_by_action(true);
-            }
-            _ => {}
-        }
-        return Ok(());
-    }
-
-    if key.modifiers.contains(KeyModifiers::CONTROL) {
-        // TODO: Get preview sub-window height w/out coupling it to UI
-        let terminal_height = terminal.size().unwrap().height as usize;
-        match key.code {
-            KeyCode::Char('b') => {
-                patchset_details_and_actions.preview_scroll_up(terminal_height);
-            }
-            KeyCode::Char('f') => {
-                patchset_details_and_actions.preview_scroll_down(terminal_height);
-            }
-            KeyCode::Char('u') => {
-                patchset_details_and_actions.preview_scroll_up(terminal_height / 2);
-            }
-            KeyCode::Char('d') => {
-                patchset_details_and_actions.preview_scroll_down(terminal_height / 2);
-            }
-            KeyCode::Char('t') => {
-                let popup =
-                    ReviewTrailersPopUp::generate_trailers_popup(patchset_details_and_actions);
-                app.state.popup = Some(popup);
-            }
-            _ => {}
-        }
-        return Ok(());
-    }
-
-    match key.code {
-        KeyCode::Char('?') => {
+    match input {
+        InputEvent::OpenHelp => {
             let popup = generate_help_popup();
             app.state.popup = Some(popup);
         }
-        KeyCode::Esc | KeyCode::Char('q') => {
+        InputEvent::Back => {
             let ps_da_clone = patchset_details_and_actions.last_screen.clone();
             app.set_current_screen(ps_da_clone);
             app.reset_details_actions();
         }
-        KeyCode::Char('a') => {
+        InputEvent::ToggleApply => {
             patchset_details_and_actions.toggle_apply_action();
         }
-        KeyCode::Char('j') | KeyCode::Down => {
-            patchset_details_and_actions.preview_scroll_down(1);
+        InputEvent::PreviewScrollDown(amount) => {
+            let lines = preview_scroll_lines(amount, terminal);
+            patchset_details_and_actions.preview_scroll_down(lines);
         }
-        KeyCode::Char('k') | KeyCode::Up => {
-            patchset_details_and_actions.preview_scroll_up(1);
+        InputEvent::PreviewScrollUp(amount) => {
+            let lines = preview_scroll_lines(amount, terminal);
+            patchset_details_and_actions.preview_scroll_up(lines);
         }
-        KeyCode::Char('h') | KeyCode::Left => {
+        InputEvent::PreviewPanLeft => {
             patchset_details_and_actions.preview_pan_left();
         }
-        KeyCode::Char('l') | KeyCode::Right => {
+        InputEvent::PreviewPanRight => {
             patchset_details_and_actions.preview_pan_right();
         }
-        KeyCode::Char('0') => {
+        InputEvent::PreviewGoToBeginningOfLine => {
             patchset_details_and_actions.go_to_beg_of_line();
         }
-        KeyCode::Char('g') => {
-            if let Ok(true) = wait_key_press('g', Duration::from_millis(500)) {
-                patchset_details_and_actions.go_to_first_line();
-            }
+        InputEvent::PreviewGoToFirstLine => {
+            patchset_details_and_actions.go_to_first_line();
         }
-        KeyCode::Char('f') => {
+        InputEvent::PreviewGoToLastLine => {
+            patchset_details_and_actions.go_to_last_line();
+        }
+        InputEvent::TogglePreviewFullscreen => {
             patchset_details_and_actions.toggle_preview_fullscreen();
         }
-        KeyCode::Char('n') => {
+        InputEvent::PreviewNext => {
             patchset_details_and_actions.preview_next_patch();
         }
-        KeyCode::Char('p') => {
+        InputEvent::PreviewPrevious => {
             patchset_details_and_actions.preview_previous_patch();
         }
-        KeyCode::Char('b') => {
+        InputEvent::ToggleBookmark => {
             patchset_details_and_actions.toggle_bookmark_action();
         }
-        KeyCode::Char('r') => {
+        InputEvent::ToggleReplyWithReviewedBy => {
             patchset_details_and_actions.toggle_reply_with_reviewed_by_action(false);
         }
-        KeyCode::Enter => {
+        InputEvent::ToggleReplyWithReviewedByAll => {
+            patchset_details_and_actions.toggle_reply_with_reviewed_by_action(true);
+        }
+        InputEvent::ShowReviewTrailers => {
+            let popup = ReviewTrailersPopUp::generate_trailers_popup(patchset_details_and_actions);
+            app.state.popup = Some(popup);
+        }
+        InputEvent::ConsolidatePatchsetActions => {
             if patchset_details_and_actions.actions_require_user_io() {
                 setup_user_io(terminal)?;
                 app.consolidate_patchset_actions().await?;
                 println!("\nPress ENTER continue...");
-                loop {
-                    if let Event::Key(key) = event::read()? {
-                        if key.kind == KeyEventKind::Press && key.code == KeyCode::Enter {
-                            break;
-                        }
-                    }
-                }
+                let mut event_source = CrosstermEventSource;
+                wait_for_enter_press(&mut event_source)?;
                 teardown_user_io(terminal)?;
             } else {
                 app.consolidate_patchset_actions().await?;
@@ -127,6 +91,14 @@ pub async fn handle_patchset_details<B: Backend>(
         _ => {}
     }
     Ok(())
+}
+
+fn preview_scroll_lines<B: Backend>(amount: ScrollAmount, terminal: &Terminal<B>) -> usize {
+    match amount {
+        ScrollAmount::Line => 1,
+        ScrollAmount::HalfPage => terminal.size().unwrap().height as usize / 2,
+        ScrollAmount::Page => terminal.size().unwrap().height as usize,
+    }
 }
 
 pub fn generate_help_popup() -> Box<dyn PopUp> {

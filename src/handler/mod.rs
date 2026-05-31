@@ -5,15 +5,12 @@ mod latest;
 mod mail_list;
 
 use ratatui::{
-    crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind},
+    crossterm::event::{KeyCode, KeyEvent},
     prelude::Backend,
     Terminal,
 };
 
-use std::{
-    ops::ControlFlow,
-    time::{Duration, Instant},
-};
+use std::ops::ControlFlow;
 
 use crate::{
     app::{screens::CurrentScreen, App},
@@ -59,7 +56,9 @@ where
                 }
             }
             CurrentScreen::PatchsetDetails => {
-                handle_patchset_details(app, key, &mut terminal).await?;
+                if let Some(input) = map_key_to_input(app, key, input_mapper) {
+                    handle_patchset_details(app, input, &mut terminal).await?;
+                }
             }
             CurrentScreen::EditConfig => {
                 if let Some(input) = map_key_to_input(app, key, input_mapper) {
@@ -123,23 +122,4 @@ where
         }
         // }
     }
-}
-
-fn wait_key_press(ch: char, wait_time: Duration) -> color_eyre::Result<bool> {
-    let start = Instant::now();
-
-    while Instant::now() - start < wait_time {
-        if ratatui::crossterm::event::poll(Duration::from_millis(16))? {
-            if let Event::Key(key) = ratatui::crossterm::event::read()? {
-                if key.kind == KeyEventKind::Release {
-                    continue;
-                }
-                if key.code == KeyCode::Char(ch) {
-                    return Ok(true);
-                }
-            }
-        }
-    }
-
-    Ok(false)
 }
