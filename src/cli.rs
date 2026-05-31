@@ -1,10 +1,9 @@
 use clap::Parser;
 use color_eyre::eyre::eyre;
-use ratatui::{prelude::Backend, Terminal};
 
 use std::ops::ControlFlow;
 
-use crate::{config::ConfigSnapshot, infrastructure::terminal::restore};
+use crate::config::ConfigSnapshot;
 
 #[derive(Debug, Parser)]
 #[command(version, about)]
@@ -15,19 +14,11 @@ pub struct Cli {
 }
 
 impl Cli {
-    /// Resolves the command line arguments and applies the necessary changes to the terminal and app
+    /// Resolves command line arguments that may finish before the TUI starts.
     ///
     /// Some arguments may finish the program early (returning `ControlFlow::Break`)
-    pub fn resolve<B: Backend>(
-        &self,
-        terminal: Terminal<B>,
-        config: &ConfigSnapshot,
-    ) -> ControlFlow<color_eyre::Result<()>, Terminal<B>> {
+    pub fn resolve(&self, config: &ConfigSnapshot) -> ControlFlow<color_eyre::Result<()>, ()> {
         if self.show_configs {
-            drop(terminal);
-            if let Err(err) = restore() {
-                return ControlFlow::Break(Err(eyre!(err)));
-            }
             match serde_json::to_string_pretty(&config) {
                 Err(err) => return ControlFlow::Break(Err(eyre!(err))),
                 Ok(config) => println!("patch-hub configurations:\n{config}"),
@@ -36,6 +27,34 @@ impl Cli {
             return ControlFlow::Break(Ok(()));
         }
 
-        ControlFlow::Continue(terminal)
+        ControlFlow::Continue(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ConfigState;
+
+    #[test]
+    fn resolve_continues_when_no_early_cli_action_is_requested() {
+        let cli = Cli {
+            show_configs: false,
+        };
+        let config = ConfigState::default().to_snapshot();
+
+        let result = cli.resolve(&config);
+
+        assert!(matches!(result, ControlFlow::Continue(())));
+    }
+
+    #[test]
+    fn resolve_finishes_after_printing_configs() {
+        let cli = Cli { show_configs: true };
+        let config = ConfigState::default().to_snapshot();
+
+        let result = cli.resolve(&config);
+
+        assert!(matches!(result, ControlFlow::Break(Ok(()))));
     }
 }

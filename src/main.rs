@@ -101,7 +101,6 @@ async fn main() -> color_eyre::Result<()> {
     let args = Cli::parse();
 
     infrastructure::errors::install_hooks()?;
-    let mut terminal = init()?;
 
     let env = OsEnv;
     let config_service: Box<dyn ConfigServiceApi> =
@@ -115,10 +114,12 @@ async fn main() -> color_eyre::Result<()> {
         logging_reload_handle,
     );
 
-    match args.resolve(terminal, &config) {
+    match args.resolve(&config) {
         ControlFlow::Break(b) => return b,
-        ControlFlow::Continue(t) => terminal = t,
+        ControlFlow::Continue(()) => {}
     }
+
+    let terminal = init()?;
 
     // Build shared infrastructure dependencies for LoreService
     let net = Arc::new(UreqNetClient::new());
