@@ -1,8 +1,7 @@
 use mockall::automock;
 use thiserror::Error;
 
-use crate::app::cover_renderer::CoverRenderer;
-use crate::app::patch_renderer::PatchRenderer;
+use super::dto::{RenderPatchsetRequest, RenderedPatchsetPreview};
 
 /// Failure while running an external preview renderer (bat, delta, etc.).
 ///
@@ -25,8 +24,6 @@ pub trait RenderServiceApi: Send + Sync {
     /// `"{cover}---\\n{patch}"` per entry.
     fn render_patchset_preview(
         &self,
-        raw_patches: &[String],
-        patch_renderer: &PatchRenderer,
-        cover_renderer: &CoverRenderer,
-    ) -> Result<Vec<String>, RenderError>;
+        request: RenderPatchsetRequest,
+    ) -> Result<RenderedPatchsetPreview, RenderError>;
 }

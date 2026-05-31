@@ -32,7 +32,7 @@ use crate::{
         },
         domain::patch::{Author, Patch},
     },
-    render::RenderServiceApi,
+    render::{RenderPatchsetRequest, RenderServiceApi},
     ui::popup::info_popup::InfoPopUp,
 };
 use screens::{
@@ -219,14 +219,15 @@ impl App {
             Err(e) => bail!("{e:#?}"),
         };
 
-        let preview_lines = self
+        let render_request = RenderPatchsetRequest::new(
+            details.raw_patches.clone(),
+            *self.state.config.patch_renderer(),
+            *self.state.config.cover_renderer(),
+        );
+        let rendered_preview = self
             .services
             .render
-            .render_patchset_preview(
-                &details.raw_patches,
-                self.state.config.patch_renderer(),
-                self.state.config.cover_renderer(),
-            )
+            .render_patchset_preview(render_request)
             .map_err(|e| eyre!("{e}"))?;
 
         let mut patches_preview: Vec<Text> = Vec::new();
@@ -234,11 +235,15 @@ impl App {
         let mut tested_by: Vec<HashSet<Author>> = Vec::new();
         let mut acked_by: Vec<HashSet<Author>> = Vec::new();
 
-        for (line, tag_summary) in preview_lines.iter().zip(details.tag_summary.iter()) {
+        for (entry, tag_summary) in rendered_preview
+            .entries
+            .iter()
+            .zip(details.tag_summary.iter())
+        {
             reviewed_by.push(tag_summary.reviewed_by.clone());
             tested_by.push(tag_summary.tested_by.clone());
             acked_by.push(tag_summary.acked_by.clone());
-            patches_preview.push(line.as_str().into_text()?);
+            patches_preview.push(entry.rendered_text.as_str().into_text()?);
         }
 
         let has_cover_letter = representative_patch.number_in_series() == 0;
