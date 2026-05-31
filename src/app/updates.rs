@@ -29,7 +29,7 @@ impl App {
 
                 if patchsets_state.processed_patchsets_count() == 0 {
                     let target_list = patchsets_state.target_list().to_string();
-                    loading.start(format!("Fetching patchsets from {}", target_list));
+                    loading.start(format!("Fetching patchsets from {target_list}"));
                     let result = self.fetch_latest_current_page().await;
                     loading.stop()?;
                     result?;

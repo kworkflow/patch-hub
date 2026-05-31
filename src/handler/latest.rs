@@ -44,7 +44,7 @@ pub async fn handle_latest_patchsets(
                 .unwrap()
                 .target_list()
                 .to_string();
-            loading.start(format!("Fetching patchsets from {}", list_name));
+            loading.start(format!("Fetching patchsets from {list_name}"));
             app.state
                 .lore
                 .latest_patchsets

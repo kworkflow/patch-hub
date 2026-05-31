@@ -34,7 +34,7 @@ pub async fn handle_mailing_list_selection(
                     .target_list()
                     .to_string();
 
-                loading.start(format!("Fetching patchsets from {}", list_name));
+                loading.start(format!("Fetching patchsets from {list_name}"));
                 let result = app.fetch_latest_current_page().await;
                 loading.stop()?;
                 if result.is_ok() {

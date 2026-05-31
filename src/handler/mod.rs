@@ -199,11 +199,6 @@ where
 
         terminal.draw(|f| draw_ui(f, &app.to_view_model()))?;
 
-        // *IMPORTANT*: Uncommenting the if below makes `patch-hub` not block
-        // until an event is captured.  We should only do it when (if ever) we
-        // need to refresh the UI independently of any event as doing so gravely
-        // hinders the performance to below acceptable.
-        // if event::poll(Duration::from_millis(16))? {
         if let Some(terminal_event) = terminal_handle.read_event().await? {
             let input = input_mapper.map_terminal_event(terminal_event, &app.input_context());
             if let Some(input) = input {
@@ -213,6 +208,5 @@ where
                 }
             }
         }
-        // }
     }
 }

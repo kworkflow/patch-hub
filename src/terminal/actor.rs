@@ -5,7 +5,7 @@ use tokio::{
 
 use crate::terminal::{
     handle::TerminalHandle,
-    messages::{TerminalFrame, TerminalMessage, TerminalResult},
+    messages::{TerminalMessage, TerminalResult},
     session::TerminalSessionApi,
     TerminalError,
 };
@@ -160,6 +160,7 @@ mod tests {
 
     use crate::{
         input::event::{KeyInput, TerminalEvent},
+        terminal::messages::TerminalFrame,
         terminal::session::MockTerminalSessionApi,
     };
 
