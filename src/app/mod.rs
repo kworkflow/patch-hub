@@ -26,7 +26,11 @@ use crate::{
         shell::{ShellCommand, ShellTrait},
     },
     lore::{
-        application::{api::LoreServiceApi, cache::CacheMode, errors::LoreError},
+        application::{
+            api::LoreServiceApi,
+            cache::{BootstrapLoreData, CacheMode},
+            errors::LoreError,
+        },
         domain::patch::{Author, Patch},
     },
     ui::popup::info_popup::InfoPopUp,
@@ -73,13 +77,13 @@ impl App {
     /// `App` instance with loading configurations and app data.
     pub fn new(
         config_service: Box<dyn ConfigServiceApi>,
+        bootstrap: BootstrapLoreData,
         fs: Box<dyn FileSystemTrait>,
         shell: Box<dyn ShellTrait>,
         env: Box<dyn EnvTrait>,
-        mut lore_service: Box<dyn LoreServiceApi>,
+        lore_service: Box<dyn LoreServiceApi>,
         render: Box<dyn RenderServiceApi>,
     ) -> color_eyre::Result<Self> {
-        let bootstrap = lore_service.warm_bootstrap_cache().unwrap_or_default();
         let config = config_service.snapshot();
 
         event!(Level::INFO, "patch-hub started");

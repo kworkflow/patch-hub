@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Follow-up commits wire the actor into main/App.
-
 use tokio::{sync::mpsc, task};
 
 use crate::lore::application::{

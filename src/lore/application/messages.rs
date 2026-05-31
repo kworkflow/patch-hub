@@ -1,4 +1,4 @@
-#![allow(dead_code)] // Phase 6 wires this protocol in follow-up commits.
+#![allow(dead_code)] // Follow-up commits wire the remaining message variants.
 
 use std::{
     collections::{HashMap, HashSet},
