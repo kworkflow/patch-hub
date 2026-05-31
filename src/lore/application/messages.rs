@@ -57,7 +57,7 @@ pub enum LoreApiMessage {
     },
     GetGitSignature {
         git_repo_path: String,
-        reply: oneshot::Sender<(String, String)>,
+        reply: oneshot::Sender<LoreApiResult<(String, String)>>,
     },
     PrepareReplyCommands {
         tmp_dir: PathBuf,
