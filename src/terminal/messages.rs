@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Follow-up Phase 9 commits wire the full terminal protocol.
-
 use std::time::Duration;
 
 use ratatui::crossterm::event::KeyCode;
@@ -16,7 +14,7 @@ pub type TerminalResult<T> = Result<T, TerminalError>;
 pub enum TerminalFrame {
     Main(Box<AppRenderSnapshot>),
     Loading(String),
-    /// Placeholder frame used while the terminal actor is wired into the app.
+    /// Placeholder frame used in terminal actor tests.
     #[default]
     Empty,
 }

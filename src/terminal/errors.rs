@@ -1,7 +1,6 @@
 use thiserror::Error;
 
 /// Failures at the terminal actor/session boundary.
-#[allow(dead_code)]
 #[derive(Debug, Error)]
 pub enum TerminalError {
     #[error("terminal I/O error: {0}")]

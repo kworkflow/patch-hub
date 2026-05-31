@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Follow-up Phase 9 commits wire terminal handle methods.
-
 use std::time::Duration;
 
 use ratatui::crossterm::event::KeyCode;
@@ -33,6 +31,7 @@ impl TerminalHandle {
             .await
     }
 
+    #[allow(dead_code)] // Reserved for Phase 10 non-blocking input polling.
     pub async fn poll_event(&self, timeout: Duration) -> TerminalResult<Option<TerminalEvent>> {
         self.request_result(|reply| TerminalMessage::PollEvent { timeout, reply })
             .await
