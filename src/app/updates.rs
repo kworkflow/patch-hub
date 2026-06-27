@@ -7,7 +7,7 @@ impl App {
     /// Processes app-driven updates that are not direct user input.
     pub async fn process_system_updates(
         &mut self,
-        loading: &mut dyn LoadingIndicator,
+        loading: &mut (dyn LoadingIndicator + Send),
     ) -> color_eyre::Result<()> {
         match self.state.navigation.current_screen {
             CurrentScreen::MailingListSelection => {

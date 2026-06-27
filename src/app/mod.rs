@@ -1,5 +1,7 @@
+pub mod actor;
 pub mod commands;
 pub mod errors;
+pub mod handle;
 pub mod input;
 pub mod messages;
 pub mod popup;
@@ -8,6 +10,7 @@ pub mod state;
 pub mod transitions;
 pub mod updates;
 pub mod view_model;
+
 
 use color_eyre::eyre::{bail, eyre};
 use tracing::{event, Level};

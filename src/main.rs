@@ -11,12 +11,11 @@ mod render_prefs;
 mod terminal;
 mod ui;
 
-use app::App;
+use app::{actor::AppActor, App};
 use clap::Parser;
 use cli::Cli;
 use color_eyre::eyre::{bail, eyre};
 use config::{ConfigService, ConfigServiceApi, ConfigSnapshot};
-use handler::run_app;
 use infrastructure::{
     env::{EnvTrait, OsEnv},
     file_system::OsFileSystem,
@@ -185,13 +184,14 @@ async fn main() -> color_eyre::Result<()> {
         .await
         .map_err(|e| eyre!("{e}"))?;
 
-    run_app(
+    AppActor::spawn(
         app,
         terminal_handle.clone(),
         ui_handle.clone(),
         input_handle,
         app_input_rx,
     )
+    .run_until_done()
     .await?;
     ui_handle.shutdown().await;
     terminal_handle

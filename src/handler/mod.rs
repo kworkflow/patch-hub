@@ -30,7 +30,7 @@ use mail_list::handle_mailing_list_selection;
 
 const LOADING_FRAME_INTERVAL: Duration = Duration::from_millis(200);
 
-pub(crate) trait LoadingIndicator {
+pub(crate) trait LoadingIndicator: Send {
     fn start(&mut self, title: String);
     fn stop(&mut self) -> color_eyre::Result<()>;
 }
@@ -137,7 +137,7 @@ async fn input_handling(
     Ok(ControlFlow::Continue(()))
 }
 
-pub async fn run_app(
+pub(crate) async fn run_app(
     mut app: App,
     terminal_handle: TerminalHandle,
     ui_handle: UiHandle,
