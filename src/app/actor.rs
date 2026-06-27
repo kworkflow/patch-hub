@@ -13,6 +13,7 @@ use crate::{
         },
         handle::AppHandle,
         loading::{terminal_error, TerminalLoadingIndicator},
+        messages::AppMessage,
         screens::CurrentScreen,
         App,
     },
@@ -20,6 +21,8 @@ use crate::{
     terminal::{handle::TerminalHandle, messages::TerminalFrame},
     ui::handle::UiHandle,
 };
+
+pub const DEFAULT_APP_MSG_CHANNEL_SIZE: usize = 32;
 
 /// Owns `App` state and drives the main application loop on a dedicated task.
 ///
@@ -31,11 +34,12 @@ pub struct AppActor {
     ui_handle: UiHandle,
     input_handle: InputHandle,
     event_rx: mpsc::Receiver<InputEvent>,
+    msg_rx: mpsc::Receiver<AppMessage>,
 }
 
 impl AppActor {
     /// Moves all resources into a new `AppActor`, spawns it on the Tokio
-    /// runtime, and returns an [`AppHandle`] to wait on its completion.
+    /// runtime, and returns an [`AppHandle`] to control and wait on it.
     pub fn spawn(
         app: App,
         terminal_handle: TerminalHandle,
@@ -43,14 +47,16 @@ impl AppActor {
         input_handle: InputHandle,
         event_rx: mpsc::Receiver<InputEvent>,
     ) -> AppHandle {
+        let (msg_tx, msg_rx) = mpsc::channel(DEFAULT_APP_MSG_CHANNEL_SIZE);
         let actor = Self {
             app,
             terminal_handle,
             ui_handle,
             input_handle,
             event_rx,
+            msg_rx,
         };
-        AppHandle::new(tokio::spawn(actor.run()))
+        AppHandle::new(tokio::spawn(actor.run()), msg_tx)
     }
 
     async fn run(mut self) -> color_eyre::Result<()> {
@@ -69,20 +75,35 @@ impl AppActor {
                 .await
                 .map_err(terminal_error)?;
 
-            match self.event_rx.recv().await {
-                Some(input) => {
-                    match on_input(&mut self.app, input, &self.terminal_handle, &mut loading)
-                        .await?
-                    {
-                        ControlFlow::Continue(()) => {}
-                        ControlFlow::Break(()) => return Ok(()),
+            tokio::select! {
+                input = self.event_rx.recv() => match input {
+                    Some(event) => {
+                        match on_input(&mut self.app, event, &self.terminal_handle, &mut loading)
+                            .await?
+                        {
+                            ControlFlow::Continue(()) => {}
+                            ControlFlow::Break(()) => return Ok(()),
+                        }
+                        self.input_handle
+                            .update_context(self.app.input_context())
+                            .await
+                            .ok();
                     }
-                    self.input_handle
-                        .update_context(self.app.input_context())
-                        .await
-                        .ok();
-                }
-                None => return Ok(()),
+                    None => return Ok(()),
+                },
+                msg = self.msg_rx.recv() => match msg {
+                    Some(AppMessage::Shutdown { reply_to }) => {
+                        reply_to.send(()).ok();
+                        return Ok(());
+                    }
+                    Some(AppMessage::GetViewModel { reply_to }) => {
+                        reply_to.send(self.app.present()).ok();
+                    }
+                    Some(AppMessage::GetInputContext { reply_to }) => {
+                        reply_to.send(self.app.input_context()).ok();
+                    }
+                    Some(AppMessage::Initialize) | Some(AppMessage::Input { .. }) | None => {}
+                },
             }
         }
     }
@@ -123,4 +144,127 @@ async fn on_input(
         }
     }
     Ok(ControlFlow::Continue(()))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use tokio::sync::mpsc;
+
+    use crate::{
+        app::{
+            screens::{
+                bookmarked::BookmarkedPatchsetsState, mail_list::MailingListSelectionState,
+                CurrentScreen,
+            },
+            state::{AppState, ConfigUiState, LoreUiState, NavigationState, UserLoreState},
+            AppServices,
+        },
+        config::ConfigState,
+        infrastructure::{
+            env::MockEnvTrait, file_system::MockFileSystemTrait, shell::MockShellTrait,
+        },
+        input::{handle::InputHandle, messages::InputMessage},
+        lore::{application::handle::LoreApiHandle, domain::mailing_list::MailingList},
+        render::handle::RenderHandle,
+        terminal::{actor::TerminalActor, messages::TerminalFrame, session::MockTerminalSessionApi},
+        ui::actor::UiActor,
+    };
+
+    use super::*;
+
+    struct NullConfigService;
+
+    impl crate::config::ConfigServiceApi for NullConfigService {
+        fn snapshot(&self) -> crate::config::ConfigSnapshot {
+            ConfigState::default().to_snapshot()
+        }
+
+        fn validate_update(
+            &self,
+            _: crate::config::ConfigUpdateDraft,
+        ) -> Result<crate::config::ValidatedConfigUpdate, crate::config::ConfigError> {
+            unimplemented!()
+        }
+
+        fn apply_update(
+            &mut self,
+            _: crate::config::ValidatedConfigUpdate,
+        ) -> Result<crate::config::ConfigSnapshot, crate::config::ConfigError> {
+            unimplemented!()
+        }
+    }
+
+    fn minimal_app() -> App {
+        let (lore_tx, _lore_rx) = mpsc::channel(1);
+        let (render_tx, _render_rx) = mpsc::channel(1);
+
+        let dummy_list = MailingList::new("test-list", "Test list");
+
+        App {
+            state: AppState {
+                navigation: NavigationState {
+                    current_screen: CurrentScreen::MailingListSelection,
+                },
+                lore: LoreUiState {
+                    mailing_list_selection: MailingListSelectionState {
+                        mailing_lists: vec![dummy_list.clone()],
+                        target_list: String::new(),
+                        possible_mailing_lists: vec![dummy_list],
+                        highlighted_list_index: 0,
+                    },
+                    latest_patchsets: None,
+                    details: None,
+                },
+                user_state: UserLoreState {
+                    bookmarked_patchsets: BookmarkedPatchsetsState {
+                        bookmarked_patchsets: vec![],
+                        patchset_index: 0,
+                    },
+                    reviewed_patchsets: HashMap::new(),
+                },
+                config_state: ConfigUiState { edit_config: None },
+                config: ConfigState::default().to_snapshot(),
+                popup: None,
+            },
+            services: AppServices {
+                lore_api: LoreApiHandle::new(lore_tx),
+                render: RenderHandle::new(render_tx),
+                shell: Box::new(MockShellTrait::new()),
+                fs: Box::new(MockFileSystemTrait::new()),
+                env: Box::new(MockEnvTrait::new()),
+                config: Box::new(NullConfigService),
+            },
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn shutdown_message_stops_actor_and_returns_ok() {
+        let mut session = MockTerminalSessionApi::new();
+        session
+            .expect_draw()
+            .withf(|frame| matches!(frame, TerminalFrame::Main(_)))
+            .times(1..)
+            .returning(|_| Ok(()));
+
+        let terminal_handle = TerminalActor::spawn(Box::new(session));
+        let ui_handle = UiActor::spawn();
+
+        let (_event_tx, event_rx) = mpsc::channel::<InputEvent>(1);
+        let (input_tx, _input_rx) = mpsc::channel::<InputMessage>(1);
+        let input_handle = InputHandle::new(input_tx);
+
+        let handle = AppActor::spawn(
+            minimal_app(),
+            terminal_handle,
+            ui_handle,
+            input_handle,
+            event_rx,
+        );
+
+        handle.shutdown().await;
+        let result = handle.run_until_done().await;
+        assert!(result.is_ok());
+    }
 }
