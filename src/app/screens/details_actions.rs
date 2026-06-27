@@ -1,6 +1,3 @@
-use ansi_to_tui::IntoText;
-use ratatui::text::Text;
-
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -24,14 +21,14 @@ pub struct PatchsetDetailsState {
     pub representative_patch: Patch,
     /// Raw patches as plain text files
     pub raw_patches: Vec<String>,
-    /// Patches in the format to be displayed as preview
-    pub patches_preview: Vec<Text<'static>>,
+    /// ANSI-rendered text for each patch entry, converted to ratatui `Text` by
+    /// the ViewModel projection rather than stored as a UI type.
+    pub patches_preview: Vec<String>,
     /// Indicates if patchset has a cover letter
     pub has_cover_letter: bool,
     /// Which patches to reply
     pub patches_to_reply: Vec<bool>,
-    /// Path to applicable .mbx of patchset
-    #[allow(dead_code)]
+    /// Path to the .mbx file used by `git am` when applying the patchset.
     pub patchset_path: String,
     pub preview_index: usize,
     pub preview_scroll_offset: usize,
@@ -65,8 +62,8 @@ impl PatchsetDetailsState {
         rendered_preview: RenderedPatchsetPreview,
         is_patchset_bookmarked: bool,
         last_screen: CurrentScreen,
-    ) -> color_eyre::Result<Self> {
-        let mut patches_preview: Vec<Text> = Vec::new();
+    ) -> Self {
+        let mut patches_preview: Vec<String> = Vec::new();
         let mut reviewed_by: Vec<HashSet<Author>> = Vec::new();
         let mut tested_by: Vec<HashSet<Author>> = Vec::new();
         let mut acked_by: Vec<HashSet<Author>> = Vec::new();
@@ -79,13 +76,13 @@ impl PatchsetDetailsState {
             reviewed_by.push(tag_summary.reviewed_by.clone());
             tested_by.push(tag_summary.tested_by.clone());
             acked_by.push(tag_summary.acked_by.clone());
-            patches_preview.push(entry.rendered_text.as_str().into_text()?);
+            patches_preview.push(entry.rendered_text.clone());
         }
 
         let has_cover_letter = representative_patch.number_in_series() == 0;
         let patches_to_reply = vec![false; details.raw_patches.len()];
 
-        Ok(Self {
+        Self {
             representative_patch,
             raw_patches: details.raw_patches,
             patchset_path: details.patchset_path,
@@ -105,7 +102,7 @@ impl PatchsetDetailsState {
             tested_by,
             acked_by,
             last_screen,
-        })
+        }
     }
 
     pub fn preview_next_patch(&mut self) {
@@ -127,7 +124,7 @@ impl PatchsetDetailsState {
     /// Scroll `n` lines down
     pub fn preview_scroll_down(&mut self, n: usize) {
         // TODO: Support for renderers (only considers base preview string)
-        let number_of_lines = self.patches_preview[self.preview_index].height();
+        let number_of_lines = self.patches_preview[self.preview_index].lines().count();
         if (self.preview_scroll_offset + n) <= number_of_lines {
             self.preview_scroll_offset += n;
         }
@@ -141,8 +138,8 @@ impl PatchsetDetailsState {
     /// Scroll to the last line
     pub fn go_to_last_line(&mut self) {
         // TODO: Support for renderers (only considers base preview string)
-        let number_of_lines = self.patches_preview[self.preview_index].height();
-        self.preview_scroll_offset = number_of_lines - LAST_LINE_PADDING;
+        let number_of_lines = self.patches_preview[self.preview_index].lines().count();
+        self.preview_scroll_offset = number_of_lines.saturating_sub(LAST_LINE_PADDING);
     }
 
     /// Scroll to first line

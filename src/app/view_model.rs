@@ -7,6 +7,7 @@
 //! about the presentation before `UiCore` translates them into paint-ready
 //! `UiScene` nodes.
 
+use ansi_to_tui::IntoText;
 use ratatui::text::Text;
 
 use super::{
@@ -359,7 +360,11 @@ fn project_details(state: &AppState) -> PatchsetDetailsViewModel {
             acked_by: details.acked_by[i].len(),
         },
         staged_to_reply,
-        preview_entries: details.patches_preview.clone(),
+        preview_entries: details
+            .patches_preview
+            .iter()
+            .map(|s| s.as_str().into_text().unwrap_or_default())
+            .collect(),
         preview_index: i,
         preview_scroll_offset: details.preview_scroll_offset,
         preview_pan: details.preview_pan,

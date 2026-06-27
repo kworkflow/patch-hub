@@ -235,7 +235,7 @@ impl App {
             rendered_preview,
             is_patchset_bookmarked,
             self.state.navigation.current_screen.clone(),
-        )?);
+        ));
 
         Ok(B4Result::PatchFound)
     }
