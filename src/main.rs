@@ -41,6 +41,7 @@ use std::{ops::ControlFlow, sync::Arc};
 use terminal::{actor::TerminalActor, session::CrosstermTerminalSession};
 use tokio::sync::mpsc;
 use tracing::{event, Level};
+use ui::actor::UiActor;
 
 /// Verifies required and optional external binaries before the TUI runs.
 ///
@@ -123,6 +124,7 @@ async fn main() -> color_eyre::Result<()> {
     }
 
     let terminal_handle = TerminalActor::spawn(Box::new(CrosstermTerminalSession::new(init()?)));
+    let ui_handle = UiActor::spawn();
 
     // Build shared infrastructure dependencies for LoreService
     let net = Arc::new(UreqNetClient::new());
@@ -183,7 +185,15 @@ async fn main() -> color_eyre::Result<()> {
         .await
         .map_err(|e| eyre!("{e}"))?;
 
-    run_app(app, terminal_handle.clone(), input_handle, app_input_rx).await?;
+    run_app(
+        app,
+        terminal_handle.clone(),
+        ui_handle.clone(),
+        input_handle,
+        app_input_rx,
+    )
+    .await?;
+    ui_handle.shutdown().await;
     terminal_handle
         .shutdown()
         .await

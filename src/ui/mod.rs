@@ -1,6 +1,9 @@
+pub mod actor;
 pub mod core;
 pub mod errors;
+pub mod handle;
 pub mod loading_screen;
+pub mod messages;
 pub mod painter;
 pub mod scene;
 mod screens;
