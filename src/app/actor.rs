@@ -189,7 +189,7 @@ impl AppActor {
                                 reply_to.send(self.app.input_context()).ok();
                                 Outcome::Continue
                             }
-                            Some(AppMessage::Input { .. }) | None => Outcome::Continue,
+                            None => Outcome::Continue,
                         }
                     }
                     None => Outcome::Continue,
