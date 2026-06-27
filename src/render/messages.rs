@@ -9,12 +9,14 @@ pub enum RenderMessage {
         request: RenderPatchsetRequest,
         reply: oneshot::Sender<RenderResult<RenderedPatchsetPreview>>,
     },
+    Shutdown,
 }
 
 impl RenderMessage {
     pub fn name(&self) -> &'static str {
         match self {
             RenderMessage::RenderPatchsetPreview { .. } => "RenderPatchsetPreview",
+            RenderMessage::Shutdown => "Shutdown",
         }
     }
 }

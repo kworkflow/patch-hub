@@ -1,3 +1,5 @@
+use std::ops::ControlFlow;
+
 use tokio::{
     sync::{mpsc, oneshot},
     task,
@@ -37,12 +39,14 @@ impl RenderActor {
     pub async fn run(mut self) {
         tracing::info!("render actor started");
         while let Some(message) = self.rx.recv().await {
-            self.handle_message(message).await;
+            if let ControlFlow::Break(()) = self.handle_message(message).await {
+                break;
+            }
         }
         tracing::info!("render actor stopped");
     }
 
-    async fn handle_message(&mut self, message: RenderMessage) {
+    async fn handle_message(&mut self, message: RenderMessage) -> ControlFlow<()> {
         let message_name = message.name();
         tracing::debug!(message = message_name, "render request received");
 
@@ -59,6 +63,11 @@ impl RenderActor {
                     .await
                     .and_then(|result| result);
                 send_render_reply(message_name, reply, result);
+                ControlFlow::Continue(())
+            }
+            RenderMessage::Shutdown => {
+                tracing::debug!("render actor shutting down");
+                ControlFlow::Break(())
             }
         }
     }

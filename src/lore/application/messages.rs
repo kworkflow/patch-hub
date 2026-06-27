@@ -60,6 +60,7 @@ pub enum LoreApiMessage {
         git_send_email_options: String,
         reply: oneshot::Sender<LoreApiResult<Vec<ShellCommand>>>,
     },
+    Shutdown,
 }
 
 impl LoreApiMessage {
@@ -73,6 +74,7 @@ impl LoreApiMessage {
             LoreApiMessage::SaveReviewed { .. } => "SaveReviewed",
             LoreApiMessage::GetGitSignature { .. } => "GetGitSignature",
             LoreApiMessage::PrepareReplyCommands { .. } => "PrepareReplyCommands",
+            LoreApiMessage::Shutdown => "Shutdown",
         }
     }
 }

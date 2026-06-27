@@ -115,8 +115,8 @@ async fn main() -> color_eyre::Result<()> {
         Box::new(OsFileSystem),
         Box::new(OsShell),
         Box::new(env),
-        lore_api,
-        render,
+        lore_api.clone(),
+        render.clone(),
     )?;
     let (app_input_tx, app_input_rx) = mpsc::channel::<InputEvent>(64);
     let input_handle = InputActor::spawn(terminal_handle.clone(), app.input_context());
@@ -125,6 +125,13 @@ async fn main() -> color_eyre::Result<()> {
         .await
         .map_err(|e| eyre!("{e}"))?;
 
+    // Shutdown ordering:
+    //  1. AppActor — exits when the user quits (input channel closes)
+    //  2. LoreApiActor — no further requests once App is gone
+    //  3. RenderActor  — no further requests once App is gone
+    //  4. UiActor      — no further scene builds once App is gone
+    //  5. TerminalActor — restores the terminal last so the screen stays usable
+    //                     during the steps above
     AppActor::spawn(
         app,
         terminal_handle.clone(),
@@ -134,6 +141,8 @@ async fn main() -> color_eyre::Result<()> {
     )
     .run_until_done()
     .await?;
+    lore_api.shutdown().await;
+    render.shutdown().await;
     ui_handle.shutdown().await;
     terminal_handle
         .shutdown()

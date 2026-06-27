@@ -15,6 +15,15 @@ impl RenderHandle {
         Self { tx }
     }
 
+    /// Signals the actor to stop processing messages and exit its run loop.
+    ///
+    /// Callers should invoke this after the last request that uses this handle has
+    /// completed. Dropping all clones of the handle also stops the actor, but
+    /// calling `shutdown` makes the intent explicit and allows ordered teardown.
+    pub async fn shutdown(&self) {
+        self.tx.send(RenderMessage::Shutdown).await.ok();
+    }
+
     pub async fn render_patchset_preview(
         &self,
         request: RenderPatchsetRequest,
