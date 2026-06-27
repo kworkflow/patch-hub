@@ -1,10 +1,9 @@
 use std::ops::ControlFlow;
 
 use crate::{
-    app::{screens::CurrentScreen, App},
+    app::{popup::AppPopup, screens::CurrentScreen, App},
     handler::LoadingIndicator,
     input::event::InputEvent,
-    ui::popup::{help::HelpPopUpBuilder, PopUp},
 };
 
 pub async fn handle_mailing_list_selection(
@@ -92,9 +91,8 @@ pub async fn handle_mailing_list_selection(
     Ok(ControlFlow::Continue(()))
 }
 
-// TODO: Move this to a more appropriate place
-pub fn generate_help_popup() -> Box<dyn PopUp> {
-    let popup = HelpPopUpBuilder::new()
+pub fn generate_help_popup() -> AppPopup {
+    AppPopup::help()
         .title("Mailing List Selection")
         .description("This is the mailing list selection screen.\nYou can select a mailing list by typing the name of the list.")
         .keybind("ESC", "Exit")
@@ -105,7 +103,5 @@ pub fn generate_help_popup() -> Box<dyn PopUp> {
         .keybind("F1", "Show bookmarked patchsets")
         .keybind("F2", "Edit config options")
         .keybind("F5", "Refresh lists")
-        .build();
-
-    Box::new(popup)
+        .build()
 }

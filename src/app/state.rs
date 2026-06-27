@@ -1,13 +1,15 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    app::screens::{
-        bookmarked::BookmarkedPatchsetsState, details_actions::PatchsetDetailsState,
-        edit_config::EditConfigState, latest::LatestPatchsetsState,
-        mail_list::MailingListSelectionState, CurrentScreen,
+    app::{
+        popup::AppPopup,
+        screens::{
+            bookmarked::BookmarkedPatchsetsState, details_actions::PatchsetDetailsState,
+            edit_config::EditConfigState, latest::LatestPatchsetsState,
+            mail_list::MailingListSelectionState, CurrentScreen,
+        },
     },
     config::ConfigSnapshot,
-    ui::popup::PopUp,
 };
 
 /// Navigation-only state: which screen is active.
@@ -45,5 +47,5 @@ pub struct AppState {
     pub user_state: UserLoreState,
     pub config_state: ConfigUiState,
     pub config: ConfigSnapshot,
-    pub popup: Option<Box<dyn PopUp>>,
+    pub popup: Option<AppPopup>,
 }

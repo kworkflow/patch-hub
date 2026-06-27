@@ -1,12 +1,12 @@
 mod bookmarked;
 mod details_actions;
 mod edit_config;
+pub mod errors;
 mod latest;
 pub mod loading_screen;
 mod mail_list;
 mod navigation_bar;
 pub mod popup;
-pub mod errors;
 pub mod scene;
 pub mod theme;
 
@@ -19,6 +19,7 @@ use ratatui::{
 };
 
 use crate::app::{screens::CurrentScreen, AppViewModel};
+use popup::render_popup;
 
 pub fn draw_ui(f: &mut Frame, vm: &AppViewModel<'_>) {
     // Clear the whole screen for sanitizing reasons
@@ -47,11 +48,11 @@ pub fn draw_ui(f: &mut Frame, vm: &AppViewModel<'_>) {
 
     navigation_bar::render(f, vm, chunks[2]);
 
-    vm.state.popup.as_ref().inspect(|p| {
-        let (x, y) = p.dimensions();
+    if let Some(popup) = vm.state.popup.as_ref() {
+        let (x, y) = popup.dimensions();
         let rect = centered_rect(x, y, f.area());
-        p.render(f, rect);
-    });
+        render_popup(f, popup, rect);
+    }
 }
 
 fn render_title(f: &mut Frame, chunk: Rect) {

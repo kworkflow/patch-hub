@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod errors;
 pub mod input;
+pub mod popup;
 pub mod render_snapshot;
 pub mod screens;
 pub mod state;
@@ -29,7 +30,6 @@ use crate::{
         domain::patch::Patch,
     },
     render::{handle::RenderHandle, RenderPatchsetRequest},
-    ui::popup::info_popup::InfoPopUp,
 };
 use screens::{
     bookmarked::BookmarkedPatchsetsState,
@@ -391,8 +391,8 @@ impl App {
                 &*self.services.shell,
                 &self.state.config,
             ) {
-                Ok(msg) => InfoPopUp::generate_info_popup("Patchset Apply Success", &msg),
-                Err(msg) => InfoPopUp::generate_info_popup("Patchset Apply Fail", &msg),
+                Ok(msg) => popup::AppPopup::info("Patchset Apply Success", msg),
+                Err(msg) => popup::AppPopup::info("Patchset Apply Fail", msg),
             };
 
             self.state.popup = Some(popup);

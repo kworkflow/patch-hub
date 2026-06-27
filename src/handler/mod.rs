@@ -109,7 +109,7 @@ async fn input_handling(
         if input == InputEvent::ClosePopup {
             app.state.popup = None;
         } else {
-            popup.handle(input)?;
+            popup.handle_scroll(input);
         }
     } else {
         match app.state.navigation.current_screen {

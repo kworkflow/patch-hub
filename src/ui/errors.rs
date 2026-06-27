@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Errors produced by the UI actor boundary.
 #[derive(thiserror::Error, Debug)]
 pub enum UiError {

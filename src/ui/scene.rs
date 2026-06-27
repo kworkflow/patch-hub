@@ -1,6 +1,10 @@
 //! Scene types produced by [`super::core::UiCore`] and consumed by
 //! [`super::painter`].
 //!
+//! These types are not yet wired into the runtime pipeline; the allow below
+//! will be removed once `UiCore` and `painter` are introduced.
+#![allow(dead_code)]
+//!
 //! A `UiScene` is a fully projected, paint-ready snapshot of application
 //! state. Nothing inside this module reads from `App`, `AppState`, or any
 //! actor handle — it is pure presentation data.

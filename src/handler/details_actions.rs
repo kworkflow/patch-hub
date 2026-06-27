@@ -3,10 +3,9 @@ use std::time::Duration;
 use ratatui::crossterm::event::KeyCode;
 
 use crate::{
-    app::{screens::CurrentScreen, App},
+    app::{popup::AppPopup, screens::CurrentScreen, App},
     input::event::{InputEvent, ScrollAmount},
     terminal::handle::TerminalHandle,
-    ui::popup::{help::HelpPopUpBuilder, review_trailers::ReviewTrailersPopUp, PopUp},
 };
 
 const USER_IO_ENTER_POLL_TIMEOUT: Duration = Duration::from_millis(200);
@@ -73,7 +72,7 @@ pub async fn handle_patchset_details(
             patchset_details_and_actions.toggle_reply_with_reviewed_by_action(true);
         }
         InputEvent::ShowReviewTrailers => {
-            let popup = ReviewTrailersPopUp::generate_trailers_popup(patchset_details_and_actions);
+            let popup = AppPopup::review_trailers(patchset_details_and_actions);
             app.state.popup = Some(popup);
         }
         InputEvent::ConsolidatePatchsetActions => {
@@ -108,8 +107,8 @@ async fn preview_scroll_lines(
     })
 }
 
-pub fn generate_help_popup() -> Box<dyn PopUp> {
-    let popup = HelpPopUpBuilder::new()
+pub fn generate_help_popup() -> AppPopup {
+    AppPopup::help()
         .title("Patchset Details and Actions")
         .description("This screen displays the details of a patchset and allows you to perform actions on it.\nA series of actions are available to you, they are:\n - Bookmark: Save the patchset for later\n - Reply with Reviewed-by: Reply to the patchset with a Reviewed-by tag")
         .keybind("ESC", "Exit")
@@ -129,7 +128,5 @@ pub fn generate_help_popup() -> Box<dyn PopUp> {
         .keybind("r", "Toggle reply with Reviewed-by action")
         .keybind("Shift+r", "Toggle reply with Reviewed-by action for all patches")
         .keybind("Ctrl+t", "Show code-review trailers details")
-        .build();
-
-    Box::new(popup)
+        .build()
 }

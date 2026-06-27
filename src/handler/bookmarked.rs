@@ -1,8 +1,7 @@
 use crate::{
-    app::{screens::CurrentScreen, App, B4Result},
+    app::{popup::AppPopup, screens::CurrentScreen, App, B4Result},
     handler::LoadingIndicator,
     input::event::InputEvent,
-    ui::popup::{help::HelpPopUpBuilder, info_popup::InfoPopUp, PopUp},
 };
 
 pub async fn handle_bookmarked_patchsets(
@@ -45,8 +44,9 @@ pub async fn handle_bookmarked_patchsets(
                         app.set_current_screen(CurrentScreen::PatchsetDetails);
                     }
                     B4Result::PatchNotFound(err_cause) => {
-                        app.state.popup = Some(InfoPopUp::generate_info_popup(
-                            "Error",&format!("The selected patchset couldn't be retrieved.\nReason: {err_cause}\nPlease choose another patchset.")
+                        app.state.popup = Some(AppPopup::info(
+                            "Error",
+                            format!("The selected patchset couldn't be retrieved.\nReason: {err_cause}\nPlease choose another patchset."),
                         ));
                         app.set_current_screen(CurrentScreen::BookmarkedPatchsets);
                     }
@@ -58,8 +58,8 @@ pub async fn handle_bookmarked_patchsets(
     Ok(())
 }
 
-pub fn generate_help_popup() -> Box<dyn PopUp> {
-    let popup = HelpPopUpBuilder::new()
+pub fn generate_help_popup() -> AppPopup {
+    AppPopup::help()
         .title("Bookmarked Patchsets")
         .description("This screen shows all the patchsets you have bookmarked.\nThis is quite useful to keep track of patchsets you are interested in take a look later.")
         .keybind("ESC", "Exit")
@@ -67,7 +67,5 @@ pub fn generate_help_popup() -> Box<dyn PopUp> {
         .keybind("?", "Show this help screen")
         .keybind("j/🡇", "Down")
         .keybind("k/🡅", "Up")
-        .build();
-
-    Box::new(popup)
+        .build()
 }
