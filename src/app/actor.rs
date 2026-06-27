@@ -202,7 +202,7 @@ async fn on_input(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, sync::Arc};
 
     use tokio::sync::mpsc;
 
@@ -221,8 +221,22 @@ mod tests {
             env::MockEnvTrait, file_system::MockFileSystemTrait, shell::MockShellTrait,
         },
         input::{event::InputEvent, handle::InputHandle, messages::InputMessage},
-        lore::{application::handle::LoreApiHandle, domain::mailing_list::MailingList},
-        render::handle::RenderHandle,
+        lore::{
+            application::{
+                actor::LoreApiActor,
+                cache::CacheTtl,
+                handle::LoreApiHandle,
+                service::LoreService,
+            },
+            domain::mailing_list::MailingList,
+            infrastructure::{
+                http_lore_client::{MockFeedGateway, MockListsGateway, MockPatchHtmlGateway},
+                patchset_fetcher::MockPatchsetFetcher,
+                patchset_parser::MockPatchsetParser,
+                persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
+            },
+        },
+        render::{actor::RenderActor, handle::RenderHandle, ShellRenderService},
         terminal::{
             actor::TerminalActor, messages::TerminalFrame, session::MockTerminalSessionApi,
         },
@@ -331,6 +345,93 @@ mod tests {
         drop(event_tx);
         let result = handle.run_until_done().await;
         assert!(result.is_ok());
+    }
+
+    fn spawn_real_lore_api(list: MailingList) -> LoreApiHandle {
+        let mut lists_store = MockMailingListsCacheStore::new();
+        lists_store
+            .expect_load_available_lists()
+            .returning(move || Ok(vec![list.clone()]));
+        let mut user_state = MockUserLoreStateStore::new();
+        user_state
+            .expect_load_bookmarked_patchsets()
+            .returning(|| Ok(vec![]));
+        user_state
+            .expect_load_reviewed_patchsets()
+            .returning(|| Ok(HashMap::new()));
+
+        let service = LoreService::new(
+            Arc::new(MockListsGateway::new()),
+            Arc::new(MockFeedGateway::new()),
+            Arc::new(MockPatchHtmlGateway::new()),
+            Arc::new(lists_store),
+            Arc::new(user_state),
+            Arc::new(MockPatchsetFetcher::new()),
+            Arc::new(MockPatchsetParser::new()),
+            Arc::new(MockFileSystemTrait::new()),
+            Arc::new(MockShellTrait::new()),
+            CacheTtl::default(),
+        );
+        LoreApiActor::spawn(service)
+    }
+
+    fn spawn_real_render() -> RenderHandle {
+        RenderActor::spawn(Box::new(ShellRenderService::new(Arc::new(
+            MockShellTrait::new(),
+        ))))
+    }
+
+    /// Verifies that AppActor, LoreApiActor, and RenderActor can be wired
+    /// together, go through a full bootstrap cycle, and all shut down cleanly
+    /// in the documented order when the input channel closes.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn three_actor_lifecycle_stops_cleanly() {
+        let dummy_list = MailingList::new("test-list", "Test list");
+        let lore_api = spawn_real_lore_api(dummy_list.clone());
+        let render = spawn_real_render();
+
+        let bootstrap = lore_api
+            .get_bootstrap_data()
+            .await
+            .expect("bootstrap must succeed with mock infrastructure");
+        assert_eq!(1, bootstrap.mailing_lists.len());
+
+        let mut env = MockEnvTrait::new();
+        env.expect_which().returning(|_| true);
+
+        let mut session = MockTerminalSessionApi::new();
+        session
+            .expect_draw()
+            .withf(|frame| matches!(frame, TerminalFrame::Main(_)))
+            .times(1..)
+            .returning(|_| Ok(()));
+        let terminal_handle = TerminalActor::spawn(Box::new(session));
+        let ui_handle = UiActor::spawn();
+
+        let app = App::new(
+            Box::new(NullConfigService),
+            bootstrap,
+            Box::new(MockFileSystemTrait::new()),
+            Box::new(MockShellTrait::new()),
+            Box::new(env),
+            lore_api.clone(),
+            render.clone(),
+        )
+        .expect("App::new must succeed");
+
+        let (event_tx, event_rx) = mpsc::channel::<InputEvent>(1);
+        let (input_tx, _input_rx) = mpsc::channel::<InputMessage>(1);
+        let input_handle = InputHandle::new(input_tx);
+
+        let handle = AppActor::spawn(app, terminal_handle, ui_handle, input_handle, event_rx);
+
+        // Closing the input channel stops AppActor.
+        drop(event_tx);
+        assert!(handle.run_until_done().await.is_ok());
+
+        // Explicit shutdown in documented order: LoreAPI then Render.
+        lore_api.shutdown().await;
+        render.shutdown().await;
     }
 
     #[tokio::test(flavor = "multi_thread")]
