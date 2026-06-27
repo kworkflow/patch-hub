@@ -6,6 +6,9 @@ pub mod loading_screen;
 mod mail_list;
 mod navigation_bar;
 pub mod popup;
+pub mod errors;
+pub mod scene;
+pub mod theme;
 
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
