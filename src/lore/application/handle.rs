@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Some protocol methods are reserved for future App flows.
-
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -73,18 +71,8 @@ impl LoreApiHandle {
         .await
     }
 
-    pub async fn load_bookmarks(&self) -> LoreApiResult<Vec<Patch>> {
-        self.request_result(|reply| LoreApiMessage::LoadBookmarks { reply })
-            .await
-    }
-
     pub async fn save_bookmarks(&self, bookmarks: Vec<Patch>) -> LoreApiResult<()> {
         self.request_result(|reply| LoreApiMessage::SaveBookmarks { bookmarks, reply })
-            .await
-    }
-
-    pub async fn load_reviewed(&self) -> LoreApiResult<HashMap<String, HashSet<usize>>> {
-        self.request_result(|reply| LoreApiMessage::LoadReviewed { reply })
             .await
     }
 

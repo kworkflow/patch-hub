@@ -101,26 +101,10 @@ impl LoreApiActor {
                     .and_then(|result| result);
                 send_lore_reply(message_name, reply, result);
             }
-            LoreApiMessage::LoadBookmarks { reply } => {
-                tracing::debug!("loading bookmarked patchsets");
-                let result = self
-                    .with_core(|core| core.load_bookmarked_patchsets())
-                    .await
-                    .and_then(|result| result);
-                send_lore_reply(message_name, reply, result);
-            }
             LoreApiMessage::SaveBookmarks { bookmarks, reply } => {
                 tracing::debug!(count = bookmarks.len(), "saving bookmarked patchsets");
                 let result = self
                     .with_core(move |core| core.save_bookmarked_patchsets(&bookmarks))
-                    .await
-                    .and_then(|result| result);
-                send_lore_reply(message_name, reply, result);
-            }
-            LoreApiMessage::LoadReviewed { reply } => {
-                tracing::debug!("loading reviewed patchsets");
-                let result = self
-                    .with_core(|core| core.load_reviewed_patchsets())
                     .await
                     .and_then(|result| result);
                 send_lore_reply(message_name, reply, result);

@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Follow-up commits wire the remaining message variants.
-
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -41,15 +39,9 @@ pub enum LoreApiMessage {
         cache_mode: CacheMode,
         reply: oneshot::Sender<LoreApiResult<PatchsetDetails>>,
     },
-    LoadBookmarks {
-        reply: oneshot::Sender<LoreApiResult<Vec<Patch>>>,
-    },
     SaveBookmarks {
         bookmarks: Vec<Patch>,
         reply: oneshot::Sender<LoreApiResult<()>>,
-    },
-    LoadReviewed {
-        reply: oneshot::Sender<LoreApiResult<HashMap<String, HashSet<usize>>>>,
     },
     SaveReviewed {
         reviewed: HashMap<String, HashSet<usize>>,
@@ -77,9 +69,7 @@ impl LoreApiMessage {
             LoreApiMessage::FetchAvailableLists { .. } => "FetchAvailableLists",
             LoreApiMessage::FetchFeedPage { .. } => "FetchFeedPage",
             LoreApiMessage::FetchPatchsetDetails { .. } => "FetchPatchsetDetails",
-            LoreApiMessage::LoadBookmarks { .. } => "LoadBookmarks",
             LoreApiMessage::SaveBookmarks { .. } => "SaveBookmarks",
-            LoreApiMessage::LoadReviewed { .. } => "LoadReviewed",
             LoreApiMessage::SaveReviewed { .. } => "SaveReviewed",
             LoreApiMessage::GetGitSignature { .. } => "GetGitSignature",
             LoreApiMessage::PrepareReplyCommands { .. } => "PrepareReplyCommands",

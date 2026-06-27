@@ -6,7 +6,7 @@ use tokio::{
 use crate::render::{
     handle::RenderHandle,
     messages::{RenderMessage, RenderResult},
-    RenderError, RenderPatchsetRequest, RenderServiceApi,
+    RenderError, RenderServiceApi,
 };
 
 pub const DEFAULT_RENDER_CHANNEL_SIZE: usize = 32;
@@ -58,35 +58,6 @@ impl RenderActor {
                     .with_core(move |core| core.render_patchset_preview(request))
                     .await
                     .and_then(|result| result);
-                send_render_reply(message_name, reply, result);
-            }
-            RenderMessage::RenderSinglePatch {
-                raw_patch,
-                patch_renderer,
-                cover_renderer,
-                reply,
-            } => {
-                tracing::debug!(
-                    patch_renderer = %patch_renderer,
-                    cover_renderer = %cover_renderer,
-                    "rendering single patch preview"
-                );
-                let result = self
-                    .with_core(move |core| {
-                        let request = RenderPatchsetRequest::new(
-                            vec![raw_patch],
-                            patch_renderer,
-                            cover_renderer,
-                        );
-                        core.render_patchset_preview(request)
-                    })
-                    .await
-                    .and_then(|result| result)
-                    .and_then(|preview| {
-                        preview.entries.into_iter().next().ok_or_else(|| {
-                            RenderError::Failed("render returned no preview entries".to_string())
-                        })
-                    });
                 send_render_reply(message_name, reply, result);
             }
         }
@@ -169,39 +140,5 @@ mod tests {
         assert_eq!(rendered.entries.len(), 2);
         assert!(rendered.entries[0].rendered_text.contains("+line"));
         assert!(rendered.entries[1].rendered_text.contains("-line"));
-    }
-
-    #[tokio::test]
-    async fn render_single_patch_returns_first_preview_entry() {
-        let handle = spawn_test_actor();
-
-        let rendered = handle
-            .render_single_patch(
-                "subject\n\nbody\n---\n+line\n".to_string(),
-                PatchRenderer::Default,
-                CoverRenderer::Default,
-            )
-            .await
-            .expect("default renderers should not spawn");
-
-        assert!(rendered.rendered_text.contains("+line"));
-    }
-
-    #[tokio::test]
-    async fn render_actor_handles_sequential_requests() {
-        let handle = spawn_test_actor();
-
-        for content in ["+first", "+second"] {
-            let rendered = handle
-                .render_single_patch(
-                    format!("subject\n\nbody\n---\n{content}\n"),
-                    PatchRenderer::Default,
-                    CoverRenderer::Default,
-                )
-                .await
-                .expect("default renderers should not spawn");
-
-            assert!(rendered.rendered_text.contains(content));
-        }
     }
 }

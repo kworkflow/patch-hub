@@ -1,13 +1,8 @@
-#![allow(dead_code)] // Some protocol methods are reserved for future App flows.
-
 use tokio::sync::{mpsc, oneshot};
 
-use crate::{
-    render::{
-        messages::{RenderMessage, RenderResult},
-        RenderError, RenderPatchsetRequest, RenderedPatchPreview, RenderedPatchsetPreview,
-    },
-    render_prefs::{CoverRenderer, PatchRenderer},
+use crate::render::{
+    messages::{RenderMessage, RenderResult},
+    RenderError, RenderPatchsetRequest, RenderedPatchsetPreview,
 };
 
 #[derive(Clone)]
@@ -26,21 +21,6 @@ impl RenderHandle {
     ) -> RenderResult<RenderedPatchsetPreview> {
         self.request_result(|reply| RenderMessage::RenderPatchsetPreview { request, reply })
             .await
-    }
-
-    pub async fn render_single_patch(
-        &self,
-        raw_patch: String,
-        patch_renderer: PatchRenderer,
-        cover_renderer: CoverRenderer,
-    ) -> RenderResult<RenderedPatchPreview> {
-        self.request_result(|reply| RenderMessage::RenderSinglePatch {
-            raw_patch,
-            patch_renderer,
-            cover_renderer,
-            reply,
-        })
-        .await
     }
 
     async fn request_result<T>(
