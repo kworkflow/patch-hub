@@ -13,7 +13,6 @@ pub mod transitions;
 pub mod updates;
 pub mod view_model;
 
-
 use color_eyre::eyre::{bail, eyre};
 use tracing::{event, Level};
 

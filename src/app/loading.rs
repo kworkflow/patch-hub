@@ -84,7 +84,9 @@ pub(crate) fn terminal_error(error: TerminalError) -> color_eyre::Report {
 
 #[cfg(test)]
 mod tests {
-    use crate::terminal::{actor::TerminalActor, messages::TerminalFrame, session::MockTerminalSessionApi};
+    use crate::terminal::{
+        actor::TerminalActor, messages::TerminalFrame, session::MockTerminalSessionApi,
+    };
 
     use super::*;
 

@@ -5,6 +5,8 @@ use crate::{
     input::event::InputEvent,
 };
 
+use tracing::debug;
+
 pub async fn handle_mailing_list_selection(
     app: &mut App,
     input: InputEvent,
@@ -32,6 +34,7 @@ pub async fn handle_mailing_list_selection(
                     .target_list()
                     .to_string();
 
+                debug!(list = list_name, "fetching latest patchsets");
                 loading.start(format!("Fetching patchsets from {list_name}"));
                 let result = app.fetch_latest_current_page().await;
                 loading.stop()?;
@@ -43,6 +46,7 @@ pub async fn handle_mailing_list_selection(
             }
         }
         InputEvent::RefreshMailingLists => {
+            debug!("refreshing available mailing lists");
             loading.start("Refreshing lists".to_string());
             let result = app.refresh_mailing_lists().await;
             loading.stop()?;

@@ -7,10 +7,8 @@ use crate::{
     app::{
         errors::AppError,
         flows::{
-            bookmarked::handle_bookmarked_patchsets,
-            details_actions::handle_patchset_details,
-            edit_config::handle_edit_config,
-            latest::handle_latest_patchsets,
+            bookmarked::handle_bookmarked_patchsets, details_actions::handle_patchset_details,
+            edit_config::handle_edit_config, latest::handle_latest_patchsets,
             mail_list::handle_mailing_list_selection,
         },
         handle::AppHandle,
@@ -50,6 +48,10 @@ impl AppActor {
         input_handle: InputHandle,
         event_rx: mpsc::Receiver<InputEvent>,
     ) -> AppHandle {
+        tracing::debug!(
+            channel_size = DEFAULT_APP_MSG_CHANNEL_SIZE,
+            "spawning app actor"
+        );
         let (msg_tx, msg_rx) = mpsc::channel(DEFAULT_APP_MSG_CHANNEL_SIZE);
         let actor = Self {
             app,
@@ -72,7 +74,10 @@ impl AppActor {
         let config = &self.app.state.config;
 
         if !env.which("b4") {
-            event!(Level::ERROR, "b4 is not installed, patchsets cannot be downloaded");
+            event!(
+                Level::ERROR,
+                "b4 is not installed, patchsets cannot be downloaded"
+            );
             return Err(AppError::Dependencies(
                 "b4 is not installed; patchsets cannot be downloaded".to_string(),
             ));
@@ -114,7 +119,14 @@ impl AppActor {
     }
 
     async fn run(mut self) -> color_eyre::Result<()> {
-        self.initialize()?;
+        tracing::info!("app actor started");
+
+        let init_result = self.initialize();
+        if let Err(ref e) = init_result {
+            tracing::warn!(error = %e, "app actor initialization failed");
+        }
+        init_result?;
+        tracing::info!("app actor initialized");
 
         let mut loading = TerminalLoadingIndicator::new(self.terminal_handle.clone());
 
@@ -131,40 +143,72 @@ impl AppActor {
                 .await
                 .map_err(terminal_error)?;
 
-            tokio::select! {
+            enum Outcome {
+                Continue,
+                UpdateContext,
+                Stop,
+            }
+
+            let outcome = tokio::select! {
                 input = self.event_rx.recv() => match input {
                     Some(event) => {
                         match on_input(&mut self.app, event, &self.terminal_handle, &mut loading)
                             .await?
                         {
-                            ControlFlow::Continue(()) => {}
-                            ControlFlow::Break(()) => return Ok(()),
+                            ControlFlow::Continue(()) => Outcome::UpdateContext,
+                            ControlFlow::Break(()) => Outcome::Stop,
                         }
-                        self.input_handle
-                            .update_context(self.app.input_context())
-                            .await
-                            .ok();
                     }
-                    None => return Ok(()),
+                    None => {
+                        tracing::info!("input channel closed; app actor stopping");
+                        Outcome::Stop
+                    }
                 },
                 msg = self.msg_rx.recv() => match msg {
-                    Some(AppMessage::Shutdown { reply_to }) => {
-                        reply_to.send(()).ok();
-                        return Ok(());
+                    Some(ref m) => {
+                        tracing::debug!(message = m.name(), "app message received");
+                        match msg {
+                            Some(AppMessage::Shutdown { reply_to }) => {
+                                tracing::debug!("app actor shutting down");
+                                reply_to.send(()).ok();
+                                Outcome::Stop
+                            }
+                            Some(AppMessage::Initialize { reply_to }) => {
+                                let result = self.initialize();
+                                if let Err(ref e) = result {
+                                    tracing::warn!(error = %e, "re-initialization failed");
+                                }
+                                reply_to.send(result).ok();
+                                Outcome::Continue
+                            }
+                            Some(AppMessage::GetViewModel { reply_to }) => {
+                                reply_to.send(self.app.present()).ok();
+                                Outcome::Continue
+                            }
+                            Some(AppMessage::GetInputContext { reply_to }) => {
+                                reply_to.send(self.app.input_context()).ok();
+                                Outcome::Continue
+                            }
+                            Some(AppMessage::Input { .. }) | None => Outcome::Continue,
+                        }
                     }
-                    Some(AppMessage::Initialize { reply_to }) => {
-                        reply_to.send(self.initialize()).ok();
-                    }
-                    Some(AppMessage::GetViewModel { reply_to }) => {
-                        reply_to.send(self.app.present()).ok();
-                    }
-                    Some(AppMessage::GetInputContext { reply_to }) => {
-                        reply_to.send(self.app.input_context()).ok();
-                    }
-                    Some(AppMessage::Input { .. }) | None => {}
+                    None => Outcome::Continue,
                 },
+            };
+
+            match outcome {
+                Outcome::Stop => break,
+                Outcome::UpdateContext => {
+                    self.input_handle
+                        .update_context(self.app.input_context())
+                        .await
+                        .ok();
+                }
+                Outcome::Continue => {}
             }
         }
+        tracing::info!("app actor stopped");
+        Ok(())
     }
 }
 
@@ -181,6 +225,7 @@ async fn on_input(
             popup.handle_scroll(input);
         }
     } else {
+        tracing::debug!(screen = ?app.state.navigation.current_screen, "dispatching input to screen handler");
         match app.state.navigation.current_screen {
             CurrentScreen::MailingListSelection => {
                 match handle_mailing_list_selection(app, input, loading).await? {
@@ -228,7 +273,9 @@ mod tests {
         input::{handle::InputHandle, messages::InputMessage},
         lore::{application::handle::LoreApiHandle, domain::mailing_list::MailingList},
         render::handle::RenderHandle,
-        terminal::{actor::TerminalActor, messages::TerminalFrame, session::MockTerminalSessionApi},
+        terminal::{
+            actor::TerminalActor, messages::TerminalFrame, session::MockTerminalSessionApi,
+        },
         ui::actor::UiActor,
     };
 

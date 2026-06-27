@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use ratatui::crossterm::event::KeyCode;
+use tracing::debug;
 
 use crate::{
     app::{popup::AppPopup, screens::CurrentScreen, App},
@@ -76,6 +77,10 @@ pub async fn handle_patchset_details(
             app.state.popup = Some(popup);
         }
         InputEvent::ConsolidatePatchsetActions => {
+            debug!(
+                requires_user_io = patchset_details_and_actions.actions_require_user_io(),
+                "consolidating patchset actions"
+            );
             if patchset_details_and_actions.actions_require_user_io() {
                 terminal_handle.setup_user_io().await?;
                 app.consolidate_patchset_actions().await?;

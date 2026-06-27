@@ -7,7 +7,6 @@ use crate::{
     input::{context::InputContext, event::InputEvent},
 };
 
-#[allow(dead_code)]
 /// Typed message protocol for the `AppActor`.
 ///
 /// External callers communicate with the actor exclusively through these
@@ -19,6 +18,7 @@ pub enum AppMessage {
     },
 
     /// Inject a synthetic input event for processing.
+    #[allow(dead_code)]
     Input {
         event: InputEvent,
         reply_to: oneshot::Sender<color_eyre::Result<ControlFlow<()>>>,
@@ -35,7 +35,17 @@ pub enum AppMessage {
     },
 
     /// Request the actor to stop its run loop and exit cleanly.
-    Shutdown {
-        reply_to: oneshot::Sender<()>,
-    },
+    Shutdown { reply_to: oneshot::Sender<()> },
+}
+
+impl AppMessage {
+    pub fn name(&self) -> &'static str {
+        match self {
+            AppMessage::Initialize { .. } => "Initialize",
+            AppMessage::Input { .. } => "Input",
+            AppMessage::GetViewModel { .. } => "GetViewModel",
+            AppMessage::GetInputContext { .. } => "GetInputContext",
+            AppMessage::Shutdown { .. } => "Shutdown",
+        }
+    }
 }

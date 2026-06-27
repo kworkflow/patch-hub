@@ -1,3 +1,5 @@
+use tracing::debug;
+
 use crate::{
     app::{loading::LoadingIndicator, popup::AppPopup, screens::CurrentScreen, App, B4Result},
     input::event::InputEvent,
@@ -42,6 +44,7 @@ pub async fn handle_latest_patchsets(
                 .unwrap()
                 .target_list()
                 .to_string();
+            debug!(list = list_name, "fetching next page of patchsets");
             loading.start(format!("Fetching patchsets from {list_name}"));
             app.state
                 .lore
@@ -64,6 +67,7 @@ pub async fn handle_latest_patchsets(
             app.fetch_latest_current_page().await?;
         }
         InputEvent::OpenPatchsetDetails => {
+            debug!("loading patchset details from latest");
             loading.start("Loading patchset".to_string());
             let result = app.open_patchset_details().await;
             loading.stop()?;

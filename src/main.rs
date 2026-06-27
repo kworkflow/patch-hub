@@ -40,7 +40,6 @@ use tokio::sync::mpsc;
 use tracing::{event, Level};
 use ui::actor::UiActor;
 
-
 #[tokio::main]
 async fn main() -> color_eyre::Result<()> {
     // file writer guards should be propagated to main() so the logging thread lives enough

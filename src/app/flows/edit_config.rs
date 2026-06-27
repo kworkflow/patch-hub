@@ -1,3 +1,5 @@
+use tracing::debug;
+
 use crate::{
     app::{popup::AppPopup, screens::CurrentScreen, App},
     input::event::InputEvent,
@@ -30,6 +32,7 @@ pub fn handle_edit_config(app: &mut App, input: InputEvent) -> color_eyre::Resul
                     app.state.popup = Some(popup);
                 }
                 InputEvent::SaveConfig => {
+                    debug!("saving edited configuration");
                     app.consolidate_edit_config()?;
                     app.reset_edit_config();
                     app.set_current_screen(CurrentScreen::MailingListSelection);
