@@ -11,7 +11,7 @@ pub mod updates;
 pub mod view_model;
 
 use color_eyre::eyre::{bail, eyre};
-use tracing::{event, Level};
+use tracing::{debug, event, info, warn, Level};
 
 use std::path::PathBuf;
 
@@ -155,9 +155,17 @@ impl App {
         let lore_api = &self.services.lore_api;
         let latest_patchsets = &mut self.state.lore.latest_patchsets;
         if let Some(patchsets) = latest_patchsets.as_mut() {
-            patchsets
+            let list = patchsets.target_list().to_string();
+            let page = patchsets.page_number();
+            debug!(list, page, "fetching latest patchsets page");
+            let result = patchsets
                 .fetch_current_page(lore_api, CacheMode::UseCache)
-                .await
+                .await;
+            match &result {
+                Ok(()) => debug!(list, page, "latest patchsets page fetched"),
+                Err(e) => warn!(list, page, error = %e, "failed to fetch latest patchsets page"),
+            }
+            result
         } else {
             Ok(())
         }
@@ -165,11 +173,18 @@ impl App {
 
     /// Refreshes available mailing lists and updates [`LoreUiState::mailing_list_selection`].
     pub async fn refresh_mailing_lists(&mut self) -> color_eyre::Result<()> {
-        self.state
+        debug!("refreshing mailing lists");
+        let result = self
+            .state
             .lore
             .mailing_list_selection
             .refresh_available_mailing_lists(&self.services.lore_api, CacheMode::Refresh)
-            .await
+            .await;
+        match &result {
+            Ok(()) => debug!("mailing lists refreshed"),
+            Err(e) => warn!(error = %e, "failed to refresh mailing lists"),
+        }
+        result
     }
 
     /// Loads patchset details into [`LoreUiState::details`].
@@ -206,6 +221,9 @@ impl App {
             screen => bail!(format!("Invalid screen passed as argument {screen:?}")),
         };
 
+        let msg_id = &representative_patch.message_id().href;
+        debug!(msg_id, "fetching patchset details from LoreAPI");
+
         let details = match self
             .services
             .lore_api
@@ -213,10 +231,14 @@ impl App {
             .await
         {
             Ok(d) => d,
-            Err(LoreError::PatchNotFound(err)) => return Ok(B4Result::PatchNotFound(err)),
+            Err(LoreError::PatchNotFound(err)) => {
+                warn!(msg_id, reason = err, "patchset not found");
+                return Ok(B4Result::PatchNotFound(err));
+            }
             Err(e) => bail!("{e:#?}"),
         };
 
+        debug!(msg_id, patches = details.raw_patches.len(), "rendering patchset preview");
         let render_request = RenderPatchsetRequest::new(
             details.raw_patches.clone(),
             *self.state.config.patch_renderer(),
@@ -229,6 +251,7 @@ impl App {
             .await
             .map_err(|e| eyre!("{e}"))?;
 
+        debug!(msg_id, "patchset details loaded");
         self.state.lore.details = Some(PatchsetDetailsState::from_rendered_preview(
             representative_patch,
             details,
@@ -251,9 +274,11 @@ impl App {
     ///
     /// Panics if [`LoreUiState::details`] is `None`.
     pub async fn consolidate_patchset_actions(&mut self) -> color_eyre::Result<()> {
+        debug!("consolidating patchset actions");
         self.sync_patchset_bookmark().await?;
         self.execute_reviewed_reply().await?;
         self.execute_apply_patchset();
+        debug!("patchset actions consolidated");
         Ok(())
     }
 
@@ -266,13 +291,16 @@ impl App {
             .expect("invariant: details must be loaded before consolidating patchset actions");
         let representative_patch = &details.representative_patch;
         let patchset_actions = &details.patchset_actions;
+        let msg_id = &representative_patch.message_id().href;
 
         if let Some(true) = patchset_actions.get(&PatchsetAction::Bookmark) {
+            debug!(msg_id, "bookmarking patchset");
             self.state
                 .user_state
                 .bookmarked_patchsets
                 .bookmark_selected_patch(representative_patch);
         } else {
+            debug!(msg_id, "unbookmarking patchset");
             self.state
                 .user_state
                 .bookmarked_patchsets
@@ -290,6 +318,7 @@ impl App {
             )
             .await
             .map_err(|e| eyre!("{e:#?}"))?;
+        debug!(msg_id, "bookmark state persisted");
         Ok(())
     }
 
@@ -306,6 +335,7 @@ impl App {
         let patches_to_reply = details.patches_to_reply.clone();
 
         if let Some(true) = patchset_actions.get(&PatchsetAction::ReplyWithReviewedBy) {
+            debug!(msg_id = representative_patch.message_id().href, "executing reviewed-by reply");
             let mut successful_indexes = self
                 .state
                 .user_state
@@ -378,6 +408,10 @@ impl App {
                 .await
                 .map_err(|e| eyre!("{e:#?}"))?;
 
+            info!(
+                msg_id = representative_patch.message_id().href,
+                "reviewed-by reply sent and state persisted"
+            );
             self.state
                 .lore
                 .details
@@ -398,6 +432,7 @@ impl App {
             .patchset_actions
             .get(&PatchsetAction::Apply)
         {
+            debug!("applying patchset via git-am");
             let popup = match self
                 .state
                 .lore
@@ -433,10 +468,12 @@ impl App {
     /// Applies edited values from [`ConfigUiState::edit_config`] into [`AppState::config`].
     pub fn consolidate_edit_config(&mut self) -> color_eyre::Result<()> {
         if let Some(edit_config) = &self.state.config_state.edit_config {
+            debug!("validating and applying config update");
             let draft = edit_config.to_update_draft();
             let validated = self.services.config.validate_update(draft)?;
             let snapshot = self.services.config.apply_update(validated)?;
             self.state.config = snapshot;
+            info!("configuration updated and persisted");
         }
         Ok(())
     }
