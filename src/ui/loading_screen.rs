@@ -7,7 +7,7 @@ use ratatui::{
 
 use std::fmt::Display;
 
-use super::centered_rect;
+use super::painter::centered_rect;
 
 const SPINNER: [char; 8] = [
     '\u{1F311}',

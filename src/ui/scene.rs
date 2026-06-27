@@ -1,62 +1,27 @@
 //! Scene types produced by [`super::core::UiCore`] and consumed by
 //! [`super::painter`].
 //!
-//! These types are not yet wired into the runtime pipeline; the allow below
-//! will be removed once `UiCore` and `painter` are introduced.
-#![allow(dead_code)]
-//!
 //! A `UiScene` is a fully projected, paint-ready snapshot of application
 //! state. Nothing inside this module reads from `App`, `AppState`, or any
 //! actor handle — it is pure presentation data.
 
 use ratatui::text::{Span, Text};
 
+// Shared presentation-row types live in the app view-model layer. Re-export
+// them here so callers within `ui/` only import from `scene`.
+pub use crate::app::view_model::{
+    ConfigEntryRow, MailingListEntry, PatchSummaryRow, TagTrailerCounts,
+};
+
 // ---------------------------------------------------------------------------
 // Mailing-list selection
 // ---------------------------------------------------------------------------
-
-/// One mailing list row in the selection screen.
-#[derive(Clone, Debug)]
-pub struct MailingListEntry {
-    pub name: String,
-    pub description: String,
-}
-
-/// Validity of the text the user has typed into the mailing-list filter box.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum TargetListStatus {
-    /// Nothing typed yet.
-    Empty,
-    /// The typed string is the name of an existing list.
-    ExactMatch,
-    /// The typed string is a prefix of at least one existing list.
-    PrefixMatch,
-    /// The typed string matches no list.
-    NoMatch,
-}
 
 /// Scene for the mailing-list selection screen.
 #[derive(Clone, Debug)]
 pub struct MailingListScene {
     pub entries: Vec<MailingListEntry>,
     pub highlighted_index: usize,
-    pub target_list: String,
-    pub target_list_status: TargetListStatus,
-}
-
-// ---------------------------------------------------------------------------
-// Shared patchset summary row (used by Latest and Bookmarked screens)
-// ---------------------------------------------------------------------------
-
-/// A single row in a patchset list.
-#[derive(Clone, Debug)]
-pub struct PatchSummaryRow {
-    pub title: String,
-    pub author_name: String,
-    pub version: u32,
-    pub total_in_series: u32,
-    /// Absolute index within the full (possibly paginated) list.
-    pub absolute_index: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -79,29 +44,19 @@ pub struct BookmarkedScene {
 pub struct LatestScene {
     pub rows: Vec<PatchSummaryRow>,
     pub selected_index: usize,
-    pub page_number: usize,
-    pub target_list: String,
 }
 
 // ---------------------------------------------------------------------------
 // Patchset details
 // ---------------------------------------------------------------------------
 
-/// Pre-computed review-trailer counts for a single patch.
-#[derive(Clone, Debug)]
-pub struct TagTrailerCounts {
-    pub reviewed_by: usize,
-    pub tested_by: usize,
-    pub acked_by: usize,
-}
-
 /// Scene for the patchset-details-and-actions screen.
 #[derive(Clone, Debug)]
 pub struct PatchsetDetailsScene {
     pub patch_title: String,
     pub author_name: String,
-    pub version: u32,
-    pub patch_count: u32,
+    pub version: usize,
+    pub patch_count: usize,
     pub last_updated: String,
     /// Trailer counts for the currently previewed patch.
     pub tag_trailer_counts: TagTrailerCounts,
@@ -127,24 +82,10 @@ pub struct PatchsetDetailsScene {
 // Edit config
 // ---------------------------------------------------------------------------
 
-/// One row in the edit-config form.
-#[derive(Clone, Debug)]
-pub struct ConfigEntryRow {
-    pub label: String,
-    pub value: String,
-    pub is_highlighted: bool,
-    /// Whether this row is currently being typed into.
-    pub is_editing: bool,
-    /// The in-progress text while editing (only meaningful when `is_editing`).
-    pub edit_cursor_value: String,
-}
-
 /// Scene for the edit-configuration screen.
 #[derive(Clone, Debug)]
 pub struct EditConfigScene {
     pub entries: Vec<ConfigEntryRow>,
-    /// Whether any row is in editing mode.
-    pub is_editing_mode: bool,
 }
 
 // ---------------------------------------------------------------------------

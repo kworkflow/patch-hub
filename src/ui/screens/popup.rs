@@ -1,10 +1,3 @@
-//! Popup rendering for the UI layer.
-//!
-//! Each popup variant is represented in the view model as a concrete
-//! [`PopupViewModel`]; this module provides the single `render_popup`
-//! function that paints any variant onto a Ratatui frame by dispatching on
-//! `PopupViewBody`.
-
 use ratatui::{
     layout::Alignment,
     style::{Color, Modifier, Style, Stylize},
@@ -13,43 +6,78 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::view_model::{PopupViewBody, PopupViewModel};
+use crate::{
+    app::view_model::{PopupViewBody, PopupViewModel},
+    ui::scene::{PopupBody, PopupScene},
+};
 
-/// Paint `popup` centred inside `chunk`.
-pub fn render_popup(f: &mut Frame, popup: &PopupViewModel, chunk: ratatui::layout::Rect) {
-    match &popup.body {
-        PopupViewBody::Text(body) => render_info(f, &popup.title, body, popup.scroll_offset, chunk),
+// ---------------------------------------------------------------------------
+// Builder
+// ---------------------------------------------------------------------------
+
+pub fn build_scene(vm: &PopupViewModel) -> PopupScene {
+    let body = match &vm.body {
+        PopupViewBody::Text(text) => PopupBody::Text(text.clone()),
         PopupViewBody::Keybinds {
             description,
             formatted_keybinds,
-        } => render_help(
-            f,
-            &popup.title,
-            description.as_deref(),
-            formatted_keybinds,
-            popup.scroll_offset,
-            chunk,
-        ),
+        } => PopupBody::Keybinds {
+            description: description.clone(),
+            formatted_keybinds: formatted_keybinds.clone(),
+        },
         PopupViewBody::ReviewTrailers {
             reviewed_by,
             tested_by,
             acked_by,
-        } => render_review_trailers(
+        } => PopupBody::ReviewTrailers {
+            reviewed_by: reviewed_by.clone(),
+            tested_by: tested_by.clone(),
+            acked_by: acked_by.clone(),
+        },
+    };
+
+    PopupScene {
+        title: vm.title.clone(),
+        body,
+        scroll_offset: vm.scroll_offset,
+        dimensions: vm.dimensions,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Painter
+// ---------------------------------------------------------------------------
+
+pub fn paint(f: &mut Frame, scene: &PopupScene, chunk: ratatui::layout::Rect) {
+    match &scene.body {
+        PopupBody::Text(body) => paint_info(f, &scene.title, body, scene.scroll_offset, chunk),
+        PopupBody::Keybinds {
+            description,
+            formatted_keybinds,
+        } => paint_help(
+            f,
+            &scene.title,
+            description.as_deref(),
+            formatted_keybinds,
+            scene.scroll_offset,
+            chunk,
+        ),
+        PopupBody::ReviewTrailers {
+            reviewed_by,
+            tested_by,
+            acked_by,
+        } => paint_review_trailers(
             f,
             reviewed_by,
             tested_by,
             acked_by,
-            popup.scroll_offset,
+            scene.scroll_offset,
             chunk,
         ),
     }
 }
 
-// ---------------------------------------------------------------------------
-// Info popup
-// ---------------------------------------------------------------------------
-
-fn render_info(
+fn paint_info(
     f: &mut Frame,
     title: &str,
     body: &str,
@@ -78,11 +106,7 @@ fn render_info(
     f.render_widget(paragraph, chunk);
 }
 
-// ---------------------------------------------------------------------------
-// Help popup
-// ---------------------------------------------------------------------------
-
-fn render_help(
+fn paint_help(
     f: &mut Frame,
     title: &str,
     description: Option<&str>,
@@ -118,11 +142,7 @@ fn render_help(
     f.render_widget(paragraph, chunk);
 }
 
-// ---------------------------------------------------------------------------
-// Review-trailers popup
-// ---------------------------------------------------------------------------
-
-fn render_review_trailers(
+fn paint_review_trailers(
     f: &mut Frame,
     reviewed_by: &str,
     tested_by: &str,

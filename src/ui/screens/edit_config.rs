@@ -6,9 +6,23 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::view_model::EditConfigViewModel;
+use crate::{app::view_model::EditConfigViewModel, ui::scene::EditConfigScene};
 
-pub fn render_main(f: &mut Frame, vm: &EditConfigViewModel, chunk: Rect) {
+// ---------------------------------------------------------------------------
+// Builder
+// ---------------------------------------------------------------------------
+
+pub fn build_scene(vm: &EditConfigViewModel) -> EditConfigScene {
+    EditConfigScene {
+        entries: vm.entries.clone(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Painter
+// ---------------------------------------------------------------------------
+
+pub fn paint(f: &mut Frame, scene: &EditConfigScene, chunk: Rect) {
     let mut constraints = Vec::new();
 
     for _ in 0..(chunk.height / 3) {
@@ -20,7 +34,7 @@ pub fn render_main(f: &mut Frame, vm: &EditConfigViewModel, chunk: Rect) {
         .constraints(constraints)
         .split(chunk);
 
-    for (i, entry) in vm.entries.iter().enumerate() {
+    for (i, entry) in scene.entries.iter().enumerate() {
         if i + 1 > config_chunks.len() {
             break;
         }
@@ -57,7 +71,11 @@ pub fn render_main(f: &mut Frame, vm: &EditConfigViewModel, chunk: Rect) {
     }
 }
 
-pub fn mode_footer_text(vm: &EditConfigViewModel) -> Vec<Span<'static>> {
+// ---------------------------------------------------------------------------
+// Navigation-bar helpers
+// ---------------------------------------------------------------------------
+
+pub fn mode_spans(vm: &EditConfigViewModel) -> Vec<Span<'static>> {
     vec![if vm.is_editing_mode {
         Span::styled("Editing...", Style::default().fg(Color::LightYellow))
     } else {
@@ -65,7 +83,7 @@ pub fn mode_footer_text(vm: &EditConfigViewModel) -> Vec<Span<'static>> {
     }]
 }
 
-pub fn keys_hint(vm: &EditConfigViewModel) -> Span<'static> {
+pub fn keys_hint_span(vm: &EditConfigViewModel) -> Span<'static> {
     if vm.is_editing_mode {
         Span::styled(
             "(ESC) cancel | (ENTER) confirm",

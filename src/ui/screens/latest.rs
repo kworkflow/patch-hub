@@ -6,12 +6,27 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::view_model::BookmarkedViewModel;
+use crate::{app::view_model::LatestPatchsetsViewModel, ui::scene::LatestScene};
 
-pub fn render_main(f: &mut Frame, vm: &BookmarkedViewModel, chunk: Rect) {
+// ---------------------------------------------------------------------------
+// Builder
+// ---------------------------------------------------------------------------
+
+pub fn build_scene(vm: &LatestPatchsetsViewModel) -> LatestScene {
+    LatestScene {
+        rows: vm.rows.clone(),
+        selected_index: vm.selected_index,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Painter
+// ---------------------------------------------------------------------------
+
+pub fn paint(f: &mut Frame, scene: &LatestScene, chunk: Rect) {
     let mut list_items = Vec::<ListItem>::new();
 
-    for row in &vm.rows {
+    for row in &scene.rows {
         let patch_title = format!("{:width$}", row.title, width = 70);
         let patch_title = format!("{:.width$}", patch_title, width = 70);
         let patch_author = format!("{:width$}", row.author_name, width = 30);
@@ -45,21 +60,28 @@ pub fn render_main(f: &mut Frame, vm: &BookmarkedViewModel, chunk: Rect) {
         .highlight_spacing(HighlightSpacing::Always);
 
     let mut list_state = ListState::default();
-    list_state.select(Some(vm.selected_index));
+    list_state.select(Some(scene.selected_index));
 
     f.render_stateful_widget(list, chunk, &mut list_state);
 }
 
-pub fn mode_footer_text() -> Vec<Span<'static>> {
+// ---------------------------------------------------------------------------
+// Navigation-bar helpers
+// ---------------------------------------------------------------------------
+
+pub fn mode_spans(vm: &LatestPatchsetsViewModel) -> Vec<Span<'static>> {
     vec![Span::styled(
-        "Bookmarked Patchsets",
+        format!(
+            "Latest Patchsets from {} (page {})",
+            vm.target_list, vm.page_number
+        ),
         Style::default().fg(Color::Green),
     )]
 }
 
-pub fn keys_hint() -> Span<'static> {
+pub fn keys_hint_span() -> Span<'static> {
     Span::styled(
-        "(ESC / q) to return | (ENTER) to select | (?) help",
+        "(ESC / q) to return | (ENTER) to select | ( h / 🡄 ) previous page | ( l / 🡆 ) next page | (?) help",
         Style::default().fg(Color::Red),
     )
 }

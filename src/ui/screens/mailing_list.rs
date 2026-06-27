@@ -6,12 +6,30 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::view_model::{MailingListSelectionViewModel, TargetListStatus};
+use crate::{
+    app::view_model::{MailingListSelectionViewModel, TargetListStatus},
+    ui::scene::MailingListScene,
+};
 
-pub fn render_main(f: &mut Frame, vm: &MailingListSelectionViewModel, chunk: Rect) {
+// ---------------------------------------------------------------------------
+// Builder
+// ---------------------------------------------------------------------------
+
+pub fn build_scene(vm: &MailingListSelectionViewModel) -> MailingListScene {
+    MailingListScene {
+        entries: vm.entries.clone(),
+        highlighted_index: vm.highlighted_index,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Painter
+// ---------------------------------------------------------------------------
+
+pub fn paint(f: &mut Frame, scene: &MailingListScene, chunk: Rect) {
     let mut list_items = Vec::<ListItem>::new();
 
-    for entry in &vm.entries {
+    for entry in &scene.entries {
         list_items.push(ListItem::new(
             Line::from(vec![
                 Span::styled(entry.name.clone(), Style::default().fg(Color::Magenta)),
@@ -21,7 +39,7 @@ pub fn render_main(f: &mut Frame, vm: &MailingListSelectionViewModel, chunk: Rec
                 ),
             ])
             .centered(),
-        ))
+        ));
     }
 
     let list_block = Block::default()
@@ -41,12 +59,16 @@ pub fn render_main(f: &mut Frame, vm: &MailingListSelectionViewModel, chunk: Rec
         .highlight_spacing(HighlightSpacing::Always);
 
     let mut list_state = ListState::default();
-    list_state.select(Some(vm.highlighted_index));
+    list_state.select(Some(scene.highlighted_index));
 
     f.render_stateful_widget(list, chunk, &mut list_state);
 }
 
-pub fn mode_footer_text(vm: &MailingListSelectionViewModel) -> Vec<Span<'static>> {
+// ---------------------------------------------------------------------------
+// Navigation-bar helpers
+// ---------------------------------------------------------------------------
+
+pub fn mode_spans(vm: &MailingListSelectionViewModel) -> Vec<Span<'static>> {
     let text_area = match vm.target_list_status {
         TargetListStatus::Empty => {
             Span::styled("type the target list", Style::default().fg(Color::DarkGray))
@@ -69,7 +91,7 @@ pub fn mode_footer_text(vm: &MailingListSelectionViewModel) -> Vec<Span<'static>
     ]
 }
 
-pub fn keys_hint() -> Span<'static> {
+pub fn keys_hint_span() -> Span<'static> {
     Span::styled(
         "(ESC) to quit | (ENTER) to confirm | (?) help",
         Style::default().fg(Color::Red),

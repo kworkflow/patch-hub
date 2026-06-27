@@ -1,99 +1,17 @@
-mod bookmarked;
-mod details_actions;
-mod edit_config;
+mod core;
 pub mod errors;
-mod latest;
 pub mod loading_screen;
-mod mail_list;
-mod navigation_bar;
-pub mod popup;
+mod painter;
 pub mod scene;
+mod screens;
 pub mod theme;
 
-use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Style, Stylize},
-    text::Text,
-    widgets::{Block, Borders, Clear, Paragraph},
-    Frame,
-};
+use crate::app::view_model::AppViewModel;
 
-use crate::app::view_model::{AppViewModel, ScreenViewModel};
-use popup::render_popup;
-
-pub fn draw_ui(f: &mut Frame, vm: &AppViewModel) {
-    // Clear the whole screen for sanitizing reasons
-    f.render_widget(Clear, f.area());
-
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(1),
-            Constraint::Length(3),
-        ])
-        .split(f.area());
-
-    render_title(f, chunks[0]);
-
-    match &vm.screen {
-        ScreenViewModel::MailingListSelection(mls_vm) => {
-            mail_list::render_main(f, mls_vm, chunks[1])
-        }
-        ScreenViewModel::Bookmarked(b_vm) => bookmarked::render_main(f, b_vm, chunks[1]),
-        ScreenViewModel::Latest(l_vm) => latest::render_main(f, l_vm, chunks[1]),
-        ScreenViewModel::PatchsetDetails(pd_vm) => {
-            details_actions::render_main(f, pd_vm, chunks[1])
-        }
-        ScreenViewModel::EditConfig(ec_vm) => edit_config::render_main(f, ec_vm, chunks[1]),
+pub fn draw_ui(f: &mut ratatui::Frame, vm: &AppViewModel) {
+    let ui_core = core::UiCore::new();
+    match ui_core.build_scene(vm) {
+        Ok(scene) => painter::paint(f, &scene),
+        Err(e) => tracing::error!("failed to build ui scene: {e}"),
     }
-
-    navigation_bar::render(f, vm, chunks[2]);
-
-    if let Some(popup) = vm.popup.as_ref() {
-        let (x, y) = popup.dimensions;
-        let rect = centered_rect(x, y, f.area());
-        render_popup(f, popup, rect);
-    }
-}
-
-fn render_title(f: &mut Frame, chunk: Rect) {
-    let title_block = Block::default()
-        .borders(Borders::ALL)
-        .style(Style::default())
-        .title_alignment(Alignment::Center);
-
-    let title_content: String = "patch-hub".to_string();
-
-    let title = Paragraph::new(Text::styled(
-        title_content,
-        Style::default().fg(Color::Green).bold(),
-    ))
-    .centered()
-    .block(title_block);
-
-    f.render_widget(title, chunk);
-}
-
-/// helper function to create a centered rect using up certain percentage of the available rect `r`
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    // Cut the given rectangle into three vertical pieces
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(r);
-
-    // Then cut the middle vertical piece into three width-wise pieces
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(popup_layout[1])[1] // Return the middle chunk
 }
