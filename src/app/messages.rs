@@ -3,7 +3,7 @@ use std::ops::ControlFlow;
 use tokio::sync::oneshot;
 
 use crate::{
-    app::view_model::AppViewModel,
+    app::{errors::AppError, view_model::AppViewModel},
     input::{context::InputContext, event::InputEvent},
 };
 
@@ -14,7 +14,9 @@ use crate::{
 /// variants rather than touching `App` state directly.
 pub enum AppMessage {
     /// Request the actor to perform startup validation.
-    Initialize,
+    Initialize {
+        reply_to: oneshot::Sender<Result<(), AppError>>,
+    },
 
     /// Inject a synthetic input event for processing.
     Input {

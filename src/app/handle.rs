@@ -4,7 +4,7 @@ use tokio::{
 };
 
 use crate::{
-    app::{messages::AppMessage, view_model::AppViewModel},
+    app::{errors::AppError, messages::AppMessage, view_model::AppViewModel},
     input::context::InputContext,
 };
 
@@ -22,6 +22,13 @@ pub struct AppHandle {
 impl AppHandle {
     pub fn new(join: JoinHandle<color_eyre::Result<()>>, tx: mpsc::Sender<AppMessage>) -> Self {
         Self { join, tx }
+    }
+
+    /// Requests the actor to run startup validation and returns the result.
+    pub async fn initialize(&self) -> Result<(), AppError> {
+        self.request(|reply_to| AppMessage::Initialize { reply_to })
+            .await
+            .unwrap_or(Err(AppError::Input("actor channel closed".to_string())))
     }
 
     /// Requests the actor to stop its run loop and waits for acknowledgement.
