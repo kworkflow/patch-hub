@@ -7,6 +7,7 @@
 //! every state mutation. [`handle::InputHandle`] is the cloneable public
 //! interface to the actor.
 
+pub mod actor;
 pub mod bindings;
 pub mod context;
 pub mod errors;

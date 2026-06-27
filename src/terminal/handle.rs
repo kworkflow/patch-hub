@@ -31,7 +31,7 @@ impl TerminalHandle {
             .await
     }
 
-    #[allow(dead_code)] // Reserved for Phase 10 non-blocking input polling.
+    #[allow(dead_code)] // Used by InputActor; wired to runtime in phase 10 Commit 3.
     pub async fn poll_event(&self, timeout: Duration) -> TerminalResult<Option<TerminalEvent>> {
         self.request_result(|reply| TerminalMessage::PollEvent { timeout, reply })
             .await
