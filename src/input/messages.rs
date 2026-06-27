@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Wired to runtime in Commit 3 (phase 10).
-
 use tokio::sync::mpsc;
 
 use crate::input::{context::InputContext, event::InputEvent};

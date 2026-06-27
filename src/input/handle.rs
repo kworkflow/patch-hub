@@ -1,12 +1,7 @@
-#![allow(dead_code)] // Wired to runtime in Commit 3 (phase 10).
-
 use tokio::sync::mpsc;
 
 use crate::input::{
-    context::InputContext,
-    errors::InputError,
-    event::InputEvent,
-    messages::InputMessage,
+    context::InputContext, errors::InputError, event::InputEvent, messages::InputMessage,
 };
 
 /// Cloneable handle to the Input actor.
@@ -40,14 +35,15 @@ impl InputHandle {
     }
 
     /// Requests the actor to stop its event loop.
+    ///
+    /// Dropping all clones of the handle achieves the same effect because the
+    /// actor's receive channel closes when its last sender is gone.
+    #[allow(dead_code)]
     pub async fn shutdown(&self) -> Result<(), InputError> {
         self.send(InputMessage::Shutdown).await
     }
 
     async fn send(&self, message: InputMessage) -> Result<(), InputError> {
-        self.tx
-            .send(message)
-            .await
-            .map_err(|_| InputError::Closed)
+        self.tx.send(message).await.map_err(|_| InputError::Closed)
     }
 }

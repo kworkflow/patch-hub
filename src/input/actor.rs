@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Wired to runtime in Commit 3 (phase 10).
-
 use std::time::Duration;
 
 use tokio::sync::mpsc;
@@ -183,10 +181,7 @@ mod tests {
         // First call returns None so the actor can process the context update
         // before the key arrives.  Second call returns the Esc key.
         // Remaining calls time-out.
-        session
-            .expect_poll_event()
-            .times(1)
-            .returning(|_| Ok(None));
+        session.expect_poll_event().times(1).returning(|_| Ok(None));
         session
             .expect_poll_event()
             .times(1)
@@ -199,7 +194,10 @@ mod tests {
         input_handle.subscribe_app(sub_tx).await.unwrap();
         // In MailingListSelection, Esc maps to Quit. Switch to PatchsetDetails
         // so Esc maps to Back instead.
-        input_handle.update_context(details_context()).await.unwrap();
+        input_handle
+            .update_context(details_context())
+            .await
+            .unwrap();
 
         let received = sub_rx.recv().await;
         assert_eq!(received, Some(InputEvent::Back));

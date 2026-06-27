@@ -13,11 +13,11 @@ use std::{
     time::Duration,
 };
 
-use tokio::task::JoinHandle;
+use tokio::{sync::mpsc, task::JoinHandle};
 
 use crate::{
     app::{screens::CurrentScreen, App},
-    input::{event::InputEvent, mapper::InputMapper},
+    input::{event::InputEvent, handle::InputHandle},
     terminal::{handle::TerminalHandle, messages::TerminalFrame, TerminalError},
 };
 
@@ -136,8 +136,12 @@ async fn input_handling(
     Ok(ControlFlow::Continue(()))
 }
 
-pub async fn run_app(mut app: App, terminal_handle: TerminalHandle) -> color_eyre::Result<()> {
-    let mut input_mapper = InputMapper::default();
+pub async fn run_app(
+    mut app: App,
+    terminal_handle: TerminalHandle,
+    input_handle: InputHandle,
+    mut app_input_rx: mpsc::Receiver<InputEvent>,
+) -> color_eyre::Result<()> {
     let mut loading = TerminalLoadingIndicator::new(terminal_handle.clone());
 
     loop {
@@ -148,14 +152,15 @@ pub async fn run_app(mut app: App, terminal_handle: TerminalHandle) -> color_eyr
             .await
             .map_err(terminal_error)?;
 
-        if let Some(terminal_event) = terminal_handle.read_event().await.map_err(terminal_error)? {
-            let input = input_mapper.map_terminal_event(terminal_event, &app.input_context());
-            if let Some(input) = input {
+        match app_input_rx.recv().await {
+            Some(input) => {
                 match input_handling(&mut app, input, &terminal_handle, &mut loading).await? {
                     ControlFlow::Continue(()) => {}
                     ControlFlow::Break(()) => return Ok(()),
                 }
+                input_handle.update_context(app.input_context()).await.ok();
             }
+            None => return Ok(()), // InputActor stopped
         }
     }
 }
