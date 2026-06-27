@@ -1,3 +1,14 @@
+//! Application orchestration: state, screen flows, view-model projection, and the
+//! central [`AppActor`](crate::app::actor::AppActor) run loop.
+//!
+//! [`App`] holds [`AppState`] (navigation, lore UI state, user data, config
+//! snapshot) and [`AppServices`] (typed handles to
+//! [`LoreApiHandle`](crate::lore::application::handle::LoreApiHandle),
+//! [`RenderHandle`](crate::render::handle::RenderHandle), plus injected
+//! infrastructure traits). Screen-specific input is dispatched from
+//! [`AppActor`](crate::app::actor::AppActor) into [`crate::app::flows`];
+//! presentation data crosses the UI boundary only through [`AppViewModel`] via
+//! [`App::present`].
 pub mod actor;
 pub mod errors;
 pub(crate) mod flows;
@@ -206,7 +217,9 @@ impl App {
                     .lore
                     .latest_patchsets
                     .as_ref()
-                    .expect("invariant: latest_patchsets must be initialised before opening details")
+                    .expect(
+                        "invariant: latest_patchsets must be initialised before opening details",
+                    )
                     .get_selected_patchset();
                 if !self
                     .state
@@ -238,7 +251,11 @@ impl App {
             Err(e) => bail!("{e:#?}"),
         };
 
-        debug!(msg_id, patches = details.raw_patches.len(), "rendering patchset preview");
+        debug!(
+            msg_id,
+            patches = details.raw_patches.len(),
+            "rendering patchset preview"
+        );
         let render_request = RenderPatchsetRequest::new(
             details.raw_patches.clone(),
             *self.state.config.patch_renderer(),
@@ -335,7 +352,10 @@ impl App {
         let patches_to_reply = details.patches_to_reply.clone();
 
         if let Some(true) = patchset_actions.get(&PatchsetAction::ReplyWithReviewedBy) {
-            debug!(msg_id = representative_patch.message_id().href, "executing reviewed-by reply");
+            debug!(
+                msg_id = representative_patch.message_id().href,
+                "executing reviewed-by reply"
+            );
             let mut successful_indexes = self
                 .state
                 .user_state
@@ -439,8 +459,11 @@ impl App {
                 .details
                 .as_ref()
                 .expect("invariant: details must be loaded before applying patchset")
-                .apply_patchset(&*self.services.fs, &*self.services.shell, &self.state.config)
-            {
+                .apply_patchset(
+                    &*self.services.fs,
+                    &*self.services.shell,
+                    &self.state.config,
+                ) {
                 Ok(msg) => popup::AppPopup::info("Patchset Apply Success", msg),
                 Err(msg) => popup::AppPopup::info("Patchset Apply Fail", msg),
             };

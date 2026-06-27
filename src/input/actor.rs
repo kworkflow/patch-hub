@@ -1,3 +1,15 @@
+//! Input mediation actor: polls the terminal and maps raw events to semantic
+//! [`InputEvent`](crate::input::event::InputEvent) values for the application.
+//!
+//! A dedicated pump subtask calls
+//! [`TerminalHandle::poll_event`](crate::terminal::handle::TerminalHandle::poll_event)
+//! so an in-flight poll is never abandoned when a control message wins the
+//! select race. Mapped events are delivered to the subscriber channel
+//! registered via
+//! [`InputHandle::subscribe_app`](crate::input::handle::InputHandle::subscribe_app);
+//! context updates from
+//! [`InputHandle::update_context`](crate::input::handle::InputHandle::update_context)
+//! change key bindings without restarting the pump.
 use std::time::Duration;
 
 use tokio::sync::mpsc;
@@ -250,10 +262,11 @@ mod tests {
     async fn terminal_poll_error_stops_input_actor_and_closes_subscriber() {
         let mut session = MockTerminalSessionApi::new();
         // First poll returns an error; the pump detects it and stops.
-        session
-            .expect_poll_event()
-            .times(1)
-            .returning(|_| Err(TerminalError::Session("simulated terminal failure".to_string())));
+        session.expect_poll_event().times(1).returning(|_| {
+            Err(TerminalError::Session(
+                "simulated terminal failure".to_string(),
+            ))
+        });
 
         let (input_handle, _terminal_handle) = spawn_test_actor(session, mailing_list_context());
         let (sub_tx, mut sub_rx) = mpsc::channel::<InputEvent>(8);

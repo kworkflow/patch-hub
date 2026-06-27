@@ -1,3 +1,13 @@
+//! UI presentation actor: builds [`UiScene`](crate::ui::scene::UiScene) values
+//! from [`AppViewModel`](crate::app::view_model::AppViewModel) on a dedicated task.
+//!
+//! [`AppActor`](crate::app::actor::AppActor) calls
+//! [`UiHandle::build_scene`](crate::ui::handle::UiHandle::build_scene) each frame;
+//! this actor runs [`UiCore::build_scene`](crate::ui::core::UiCore::build_scene)
+//! and returns an owned scene for the terminal draw path. Presentation logic stays
+//! out of [`AppState`](crate::app::state::AppState): the app layer projects domain
+//! state into [`AppViewModel`](crate::app::view_model::AppViewModel) before
+//! crossing this boundary.
 use std::ops::ControlFlow;
 
 use tokio::sync::{mpsc, oneshot};

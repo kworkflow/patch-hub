@@ -1,3 +1,14 @@
+//! Central orchestration actor: owns [`App`] and drives the main render/input loop.
+//!
+//! Each frame: process system updates → project state to [`AppViewModel`] via
+//! [`UiHandle`](crate::ui::handle::UiHandle) → draw through
+//! [`TerminalHandle`](crate::terminal::handle::TerminalHandle) → await the next
+//! [`InputEvent`](crate::input::event::InputEvent) from the channel registered
+//! with [`InputHandle`](crate::input::handle::InputHandle).
+//!
+//! The actor stops when the input event channel closes (user quit) or when
+//! initialization or I/O returns an unrecoverable error. Startup dependency
+//! checks run inside [`AppActor::run`] before the first frame.
 use std::ops::ControlFlow;
 
 use tracing::{event, Level};
@@ -223,10 +234,7 @@ mod tests {
         input::{event::InputEvent, handle::InputHandle, messages::InputMessage},
         lore::{
             application::{
-                actor::LoreApiActor,
-                cache::CacheTtl,
-                handle::LoreApiHandle,
-                service::LoreService,
+                actor::LoreApiActor, cache::CacheTtl, handle::LoreApiHandle, service::LoreService,
             },
             domain::mailing_list::MailingList,
             infrastructure::{

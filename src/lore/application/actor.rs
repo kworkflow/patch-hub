@@ -1,3 +1,10 @@
+//! Lore domain actor: serializes access to [`LoreService`] on a dedicated task.
+//!
+//! All lore I/O (mailing lists, feed pages, patchset details, bookmarks,
+//! reviewed state, git reply preparation) goes through
+//! [`LoreApiHandle`](crate::lore::application::handle::LoreApiHandle) as typed
+//! request/reply messages. Heavy work runs on a blocking thread pool via
+//! [`LoreApiActor::with_core`]; callers never touch [`LoreService`] directly.
 use std::ops::ControlFlow;
 
 use tokio::{
