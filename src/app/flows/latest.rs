@@ -1,10 +1,9 @@
 use crate::{
-    app::{popup::AppPopup, screens::CurrentScreen, App, B4Result},
-    handler::LoadingIndicator,
+    app::{loading::LoadingIndicator, popup::AppPopup, screens::CurrentScreen, App, B4Result},
     input::event::InputEvent,
 };
 
-pub async fn handle_bookmarked_patchsets(
+pub async fn handle_latest_patchsets(
     app: &mut App,
     input: InputEvent,
     loading: &mut dyn LoadingIndicator,
@@ -15,30 +14,60 @@ pub async fn handle_bookmarked_patchsets(
             app.state.popup = Some(popup);
         }
         InputEvent::Back => {
-            app.state.user_state.bookmarked_patchsets.patchset_index = 0;
+            app.reset_latest_patchsets();
             app.set_current_screen(CurrentScreen::MailingListSelection);
         }
         InputEvent::NavigateDown => {
             app.state
-                .user_state
-                .bookmarked_patchsets
+                .lore
+                .latest_patchsets
+                .as_mut()
+                .unwrap()
                 .select_below_patchset();
         }
         InputEvent::NavigateUp => {
             app.state
-                .user_state
-                .bookmarked_patchsets
+                .lore
+                .latest_patchsets
+                .as_mut()
+                .unwrap()
                 .select_above_patchset();
+        }
+        InputEvent::NextPage => {
+            let list_name = app
+                .state
+                .lore
+                .latest_patchsets
+                .as_ref()
+                .unwrap()
+                .target_list()
+                .to_string();
+            loading.start(format!("Fetching patchsets from {list_name}"));
+            app.state
+                .lore
+                .latest_patchsets
+                .as_mut()
+                .unwrap()
+                .increment_page();
+            let result = app.fetch_latest_current_page().await;
+            loading.stop()?;
+            result?;
+        }
+        InputEvent::PreviousPage => {
+            app.state
+                .lore
+                .latest_patchsets
+                .as_mut()
+                .unwrap()
+                .decrement_page();
+            // Reload from cache (no network call since LoreAPI caches all pages)
+            app.fetch_latest_current_page().await?;
         }
         InputEvent::OpenPatchsetDetails => {
             loading.start("Loading patchset".to_string());
             let result = app.open_patchset_details().await;
             loading.stop()?;
             if result.is_ok() {
-                // If a patchset has been bookmarked UI, this means that
-                // b4 was successful in fetching it, so it shouldn't be
-                // necessary to handle this, but we can't assume that a
-                // patchset in this list was bookmarked through the UI
                 match result.unwrap() {
                     B4Result::PatchFound => {
                         app.set_current_screen(CurrentScreen::PatchsetDetails);
@@ -48,7 +77,7 @@ pub async fn handle_bookmarked_patchsets(
                             "Error",
                             format!("The selected patchset couldn't be retrieved.\nReason: {err_cause}\nPlease choose another patchset."),
                         ));
-                        app.set_current_screen(CurrentScreen::BookmarkedPatchsets);
+                        app.set_current_screen(CurrentScreen::LatestPatchsets);
                     }
                 }
             }
@@ -60,12 +89,14 @@ pub async fn handle_bookmarked_patchsets(
 
 pub fn generate_help_popup() -> AppPopup {
     AppPopup::help()
-        .title("Bookmarked Patchsets")
-        .description("This screen shows all the patchsets you have bookmarked.\nThis is quite useful to keep track of patchsets you are interested in take a look later.")
+        .title("Latest Patchsets")
+        .description("This screen allows you to see a list of the latest patchsets from a mailing list.\nYou might also be able to view the details of a patchset.")
         .keybind("ESC", "Exit")
         .keybind("ENTER", "See details of the selected patchset")
         .keybind("?", "Show this help screen")
         .keybind("j/🡇", "Down")
         .keybind("k/🡅", "Up")
+        .keybind("l/🡆", "Next page")
+        .keybind("h/🡄", "Previous page")
         .build()
 }

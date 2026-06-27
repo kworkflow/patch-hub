@@ -1,7 +1,6 @@
 mod app;
 mod cli;
 mod config;
-mod handler;
 mod infrastructure;
 mod input;
 mod lore;

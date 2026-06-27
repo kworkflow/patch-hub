@@ -1,8 +1,7 @@
 use std::ops::ControlFlow;
 
 use crate::{
-    app::{popup::AppPopup, screens::CurrentScreen, App},
-    handler::LoadingIndicator,
+    app::{loading::LoadingIndicator, popup::AppPopup, screens::CurrentScreen, App},
     input::event::InputEvent,
 };
 

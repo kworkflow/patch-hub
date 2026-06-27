@@ -1,7 +1,4 @@
-use crate::{
-    app::{screens::CurrentScreen, App},
-    handler::LoadingIndicator,
-};
+use crate::app::{loading::LoadingIndicator, screens::CurrentScreen, App};
 
 impl App {
     /// Processes app-driven updates that are not direct user input.
