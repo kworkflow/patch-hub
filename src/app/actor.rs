@@ -1,6 +1,5 @@
 use std::ops::ControlFlow;
 
-use tokio::sync::mpsc;
 use tracing::{event, Level};
 
 use crate::{
@@ -13,7 +12,6 @@ use crate::{
         },
         handle::AppHandle,
         loading::{terminal_error, TerminalLoadingIndicator},
-        messages::AppMessage,
         screens::CurrentScreen,
         App,
     },
@@ -23,45 +21,40 @@ use crate::{
     ui::handle::UiHandle,
 };
 
-pub const DEFAULT_APP_MSG_CHANNEL_SIZE: usize = 32;
-
 /// Owns `App` state and drives the main application loop on a dedicated task.
 ///
 /// Constructed via [`AppActor::spawn`], which moves all owned resources into
 /// the actor and returns an [`AppHandle`] to the caller.
+///
+/// The actor runs until the input event channel closes (the user requested
+/// exit via the normal key binding) or an unrecoverable error occurs.
 pub struct AppActor {
     app: App,
     terminal_handle: TerminalHandle,
     ui_handle: UiHandle,
     input_handle: InputHandle,
-    event_rx: mpsc::Receiver<InputEvent>,
-    msg_rx: mpsc::Receiver<AppMessage>,
+    event_rx: tokio::sync::mpsc::Receiver<InputEvent>,
 }
 
 impl AppActor {
     /// Moves all resources into a new `AppActor`, spawns it on the Tokio
-    /// runtime, and returns an [`AppHandle`] to control and wait on it.
+    /// runtime, and returns an [`AppHandle`] to wait on it.
     pub fn spawn(
         app: App,
         terminal_handle: TerminalHandle,
         ui_handle: UiHandle,
         input_handle: InputHandle,
-        event_rx: mpsc::Receiver<InputEvent>,
+        event_rx: tokio::sync::mpsc::Receiver<InputEvent>,
     ) -> AppHandle {
-        tracing::debug!(
-            channel_size = DEFAULT_APP_MSG_CHANNEL_SIZE,
-            "spawning app actor"
-        );
-        let (msg_tx, msg_rx) = mpsc::channel(DEFAULT_APP_MSG_CHANNEL_SIZE);
+        tracing::debug!("spawning app actor");
         let actor = Self {
             app,
             terminal_handle,
             ui_handle,
             input_handle,
             event_rx,
-            msg_rx,
         };
-        AppHandle::new(tokio::spawn(actor.run()), msg_tx)
+        AppHandle::new(tokio::spawn(actor.run()))
     }
 
     /// Verifies required and optional external binaries.
@@ -143,70 +136,27 @@ impl AppActor {
                 .await
                 .map_err(terminal_error)?;
 
-            enum Outcome {
-                Continue,
-                UpdateContext,
-                Stop,
-            }
-
-            let outcome = tokio::select! {
-                input = self.event_rx.recv() => match input {
-                    Some(event) => {
-                        match on_input(&mut self.app, event, &self.terminal_handle, &mut loading)
-                            .await?
-                        {
-                            ControlFlow::Continue(()) => Outcome::UpdateContext,
-                            ControlFlow::Break(()) => Outcome::Stop,
+            match self.event_rx.recv().await {
+                Some(event) => {
+                    match on_input(&mut self.app, event, &self.terminal_handle, &mut loading)
+                        .await?
+                    {
+                        ControlFlow::Continue(()) => {
+                            self.input_handle
+                                .update_context(self.app.input_context())
+                                .await
+                                .ok();
                         }
+                        ControlFlow::Break(()) => break,
                     }
-                    None => {
-                        tracing::info!("input channel closed; app actor stopping");
-                        Outcome::Stop
-                    }
-                },
-                msg = self.msg_rx.recv() => match msg {
-                    Some(ref m) => {
-                        tracing::debug!(message = m.name(), "app message received");
-                        match msg {
-                            Some(AppMessage::Shutdown { reply_to }) => {
-                                tracing::debug!("app actor shutting down");
-                                reply_to.send(()).ok();
-                                Outcome::Stop
-                            }
-                            Some(AppMessage::Initialize { reply_to }) => {
-                                let result = self.initialize();
-                                if let Err(ref e) = result {
-                                    tracing::warn!(error = %e, "re-initialization failed");
-                                }
-                                reply_to.send(result).ok();
-                                Outcome::Continue
-                            }
-                            Some(AppMessage::GetViewModel { reply_to }) => {
-                                reply_to.send(self.app.present()).ok();
-                                Outcome::Continue
-                            }
-                            Some(AppMessage::GetInputContext { reply_to }) => {
-                                reply_to.send(self.app.input_context()).ok();
-                                Outcome::Continue
-                            }
-                            None => Outcome::Continue,
-                        }
-                    }
-                    None => Outcome::Continue,
-                },
-            };
-
-            match outcome {
-                Outcome::Stop => break,
-                Outcome::UpdateContext => {
-                    self.input_handle
-                        .update_context(self.app.input_context())
-                        .await
-                        .ok();
                 }
-                Outcome::Continue => {}
+                None => {
+                    tracing::info!("input channel closed; app actor stopping");
+                    break;
+                }
             }
         }
+
         tracing::info!("app actor stopped");
         Ok(())
     }
@@ -270,7 +220,7 @@ mod tests {
         infrastructure::{
             env::MockEnvTrait, file_system::MockFileSystemTrait, shell::MockShellTrait,
         },
-        input::{handle::InputHandle, messages::InputMessage},
+        input::{event::InputEvent, handle::InputHandle, messages::InputMessage},
         lore::{application::handle::LoreApiHandle, domain::mailing_list::MailingList},
         render::handle::RenderHandle,
         terminal::{
@@ -353,7 +303,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn shutdown_message_stops_actor_and_returns_ok() {
+    async fn input_channel_close_stops_actor_and_returns_ok() {
         let mut session = MockTerminalSessionApi::new();
         session
             .expect_draw()
@@ -364,7 +314,7 @@ mod tests {
         let terminal_handle = TerminalActor::spawn(Box::new(session));
         let ui_handle = UiActor::spawn();
 
-        let (_event_tx, event_rx) = mpsc::channel::<InputEvent>(1);
+        let (event_tx, event_rx) = mpsc::channel::<InputEvent>(1);
         let (input_tx, _input_rx) = mpsc::channel::<InputMessage>(1);
         let input_handle = InputHandle::new(input_tx);
 
@@ -376,7 +326,9 @@ mod tests {
             event_rx,
         );
 
-        handle.shutdown().await;
+        // Dropping the sender closes the channel; the actor stops after one
+        // render frame when event_rx.recv() returns None.
+        drop(event_tx);
         let result = handle.run_until_done().await;
         assert!(result.is_ok());
     }
