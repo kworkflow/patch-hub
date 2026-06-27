@@ -18,10 +18,10 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{screens::CurrentScreen, AppViewModel};
+use crate::app::view_model::{AppViewModel, ScreenViewModel};
 use popup::render_popup;
 
-pub fn draw_ui(f: &mut Frame, vm: &AppViewModel<'_>) {
+pub fn draw_ui(f: &mut Frame, vm: &AppViewModel) {
     // Clear the whole screen for sanitizing reasons
     f.render_widget(Clear, f.area());
 
@@ -36,20 +36,22 @@ pub fn draw_ui(f: &mut Frame, vm: &AppViewModel<'_>) {
 
     render_title(f, chunks[0]);
 
-    match vm.state.navigation.current_screen {
-        CurrentScreen::MailingListSelection => mail_list::render_main(f, vm, chunks[1]),
-        CurrentScreen::BookmarkedPatchsets => {
-            bookmarked::render_main(f, &vm.state.user_state.bookmarked_patchsets, chunks[1])
+    match &vm.screen {
+        ScreenViewModel::MailingListSelection(mls_vm) => {
+            mail_list::render_main(f, mls_vm, chunks[1])
         }
-        CurrentScreen::LatestPatchsets => latest::render_main(f, vm, chunks[1]),
-        CurrentScreen::PatchsetDetails => details_actions::render_main(f, vm, chunks[1]),
-        CurrentScreen::EditConfig => edit_config::render_main(f, vm, chunks[1]),
+        ScreenViewModel::Bookmarked(b_vm) => bookmarked::render_main(f, b_vm, chunks[1]),
+        ScreenViewModel::Latest(l_vm) => latest::render_main(f, l_vm, chunks[1]),
+        ScreenViewModel::PatchsetDetails(pd_vm) => {
+            details_actions::render_main(f, pd_vm, chunks[1])
+        }
+        ScreenViewModel::EditConfig(ec_vm) => edit_config::render_main(f, ec_vm, chunks[1]),
     }
 
     navigation_bar::render(f, vm, chunks[2]);
 
-    if let Some(popup) = vm.state.popup.as_ref() {
-        let (x, y) = popup.dimensions();
+    if let Some(popup) = vm.popup.as_ref() {
+        let (x, y) = popup.dimensions;
         let rect = centered_rect(x, y, f.area());
         render_popup(f, popup, rect);
     }

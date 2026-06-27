@@ -1,4 +1,4 @@
-use super::{App, AppState, AppViewModel};
+use super::{view_model, App, AppState, AppViewModel};
 
 /// Owned application state snapshot for terminal actor drawing.
 #[derive(Clone)]
@@ -11,8 +11,8 @@ impl AppRenderSnapshot {
         Self { state }
     }
 
-    pub fn to_view_model(&self) -> AppViewModel<'_> {
-        AppViewModel { state: &self.state }
+    pub fn to_view_model(&self) -> AppViewModel {
+        view_model::project_state(&self.state)
     }
 }
 

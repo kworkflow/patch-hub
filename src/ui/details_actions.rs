@@ -6,22 +6,13 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{
-    screens::details_actions::{PatchsetAction, PatchsetDetailsState},
-    AppViewModel,
-};
+use crate::app::view_model::{PatchsetDetailsViewModel, TagTrailerCounts};
 
-/// Returns a `Line` type that represents a line containing stats about reply
-/// trailers. It currently considers the _Reviewed-by_, _Tested-by_, and
-/// _Acked-by_ trailers and colors them depending if they are 0 or not.  Example
-/// of line returned:
-///
-/// _**Reviewed-by: 1 | Tested-by: 0 | Acked-by: 2**_
-fn review_trailers_details(details_actions: &PatchsetDetailsState) -> Line<'static> {
-    let i = details_actions.preview_index;
-
-    let resolve_color = |n_trailers: usize| -> Style {
-        if n_trailers == 0 {
+/// Returns a `Line` with Reviewed-by / Tested-by / Acked-by trailer counts
+/// coloured green when non-zero, white when zero.
+fn review_trailers_details(counts: &TagTrailerCounts) -> Line<'static> {
+    let resolve_color = |n: usize| -> Style {
+        if n == 0 {
             Style::default().fg(Color::White)
         } else {
             Style::default().fg(Color::Green)
@@ -31,97 +22,56 @@ fn review_trailers_details(details_actions: &PatchsetDetailsState) -> Line<'stat
     Line::from(vec![
         Span::styled("Reviewed-by: ", Style::default().fg(Color::Cyan)),
         Span::styled(
-            details_actions.reviewed_by[i].len().to_string(),
-            resolve_color(details_actions.reviewed_by[i].len()),
+            counts.reviewed_by.to_string(),
+            resolve_color(counts.reviewed_by),
         ),
         Span::styled(" | Tested-by: ", Style::default().fg(Color::Cyan)),
         Span::styled(
-            details_actions.tested_by[i].len().to_string(),
-            resolve_color(details_actions.tested_by[i].len()),
+            counts.tested_by.to_string(),
+            resolve_color(counts.tested_by),
         ),
         Span::styled(" | Acked-by: ", Style::default().fg(Color::Cyan)),
-        Span::styled(
-            details_actions.acked_by[i].len().to_string(),
-            resolve_color(details_actions.acked_by[i].len()),
-        ),
+        Span::styled(counts.acked_by.to_string(), resolve_color(counts.acked_by)),
     ])
 }
 
 fn render_details_and_actions(
     f: &mut Frame,
-    vm: &AppViewModel<'_>,
+    vm: &PatchsetDetailsViewModel,
     details_chunk: Rect,
     actions_chunk: Rect,
 ) {
-    let patchset_details_and_actions = vm.state.lore.details.as_ref().unwrap();
-
-    let mut staged_to_reply = String::new();
-    if let Some(true) = patchset_details_and_actions
-        .patchset_actions
-        .get(&PatchsetAction::ReplyWithReviewedBy)
-    {
-        staged_to_reply.push('(');
-        let number_offset = if patchset_details_and_actions.has_cover_letter {
-            0
-        } else {
-            1
-        };
-        let patches_to_reply_numbers: Vec<usize> = patchset_details_and_actions
-            .patches_to_reply
-            .iter()
-            .enumerate()
-            .filter_map(|(i, &val)| if val { Some(i + number_offset) } else { None })
-            .collect();
-        for number in patches_to_reply_numbers {
-            staged_to_reply.push_str(&format!("{number}, "));
-        }
-        staged_to_reply.pop();
-        staged_to_reply = format!("{})", &staged_to_reply[..staged_to_reply.len() - 1]);
-    }
-
-    let patchset_details = &patchset_details_and_actions.representative_patch;
     let mut patchset_details = vec![
         Line::from(vec![
             Span::styled(r#"  Title: "#, Style::default().fg(Color::Cyan)),
-            Span::styled(
-                patchset_details.title().to_string(),
-                Style::default().fg(Color::White),
-            ),
+            Span::styled(vm.patch_title.clone(), Style::default().fg(Color::White)),
         ]),
         Line::from(vec![
             Span::styled("Author: ", Style::default().fg(Color::Cyan)),
-            Span::styled(
-                patchset_details.author().name.to_string(),
-                Style::default().fg(Color::White),
-            ),
+            Span::styled(vm.author_name.clone(), Style::default().fg(Color::White)),
         ]),
         Line::from(vec![
             Span::styled("Version: ", Style::default().fg(Color::Cyan)),
-            Span::styled(
-                format!("{}", patchset_details.version()),
-                Style::default().fg(Color::White),
-            ),
+            Span::styled(format!("{}", vm.version), Style::default().fg(Color::White)),
         ]),
         Line::from(vec![
             Span::styled("Patch count: ", Style::default().fg(Color::Cyan)),
             Span::styled(
-                format!("{}", patchset_details.total_in_series()),
+                format!("{}", vm.patch_count),
                 Style::default().fg(Color::White),
             ),
         ]),
         Line::from(vec![
             Span::styled("Last updated: ", Style::default().fg(Color::Cyan)),
-            Span::styled(
-                patchset_details.updated().to_string(),
-                Style::default().fg(Color::White),
-            ),
+            Span::styled(vm.last_updated.clone(), Style::default().fg(Color::White)),
         ]),
-        review_trailers_details(patchset_details_and_actions),
+        review_trailers_details(&vm.tag_trailer_counts),
     ];
-    if !staged_to_reply.is_empty() {
+
+    if let Some(staged) = &vm.staged_to_reply {
         patchset_details.push(Line::from(vec![
             Span::styled("Staged to reply: ", Style::default().fg(Color::Cyan)),
-            Span::styled(staged_to_reply, Style::default().fg(Color::White)),
+            Span::styled(staged.clone(), Style::default().fg(Color::White)),
         ]));
     }
 
@@ -138,11 +88,10 @@ fn render_details_and_actions(
 
     f.render_widget(patchset_details, details_chunk);
 
-    let patchset_actions = &patchset_details_and_actions.patchset_actions;
     // TODO: Create a function to produce new action lines
     let patchset_actions = vec![
         Line::from(vec![
-            if *patchset_actions.get(&PatchsetAction::Bookmark).unwrap() {
+            if vm.is_bookmarked {
                 Span::styled("[x] ", Style::default().fg(Color::Green))
             } else {
                 Span::styled("[ ] ", Style::default().fg(Color::Cyan))
@@ -157,7 +106,7 @@ fn render_details_and_actions(
             Span::styled("ookmark", Style::default().fg(Color::Cyan)),
         ]),
         Line::from(vec![
-            if *patchset_actions.get(&PatchsetAction::Apply).unwrap() {
+            if vm.is_apply_staged {
                 Span::styled("[x] ", Style::default().fg(Color::Green))
             } else {
                 Span::styled("[ ] ", Style::default().fg(Color::Cyan))
@@ -172,11 +121,7 @@ fn render_details_and_actions(
             Span::styled("pply", Style::default().fg(Color::Cyan)),
         ]),
         Line::from(vec![
-            if *patchset_details_and_actions
-                .patches_to_reply
-                .get(patchset_details_and_actions.preview_index)
-                .unwrap()
-            {
+            if vm.is_current_patch_reply_staged {
                 Span::styled("[x] ", Style::default().fg(Color::Green))
             } else {
                 Span::styled("[ ] ", Style::default().fg(Color::Cyan))
@@ -204,35 +149,8 @@ fn render_details_and_actions(
     f.render_widget(patchset_actions, actions_chunk);
 }
 
-fn render_preview(f: &mut Frame, vm: &AppViewModel<'_>, chunk: Rect) {
-    let patchset_details_and_actions = vm.state.lore.details.as_ref().unwrap();
-
-    let preview_index = patchset_details_and_actions.preview_index;
-
-    let representative_patch_message_id = &patchset_details_and_actions
-        .representative_patch
-        .message_id()
-        .href;
-    let mut preview_title = String::from(" Preview ");
-    if matches!(
-        vm.state
-            .user_state
-            .reviewed_patchsets
-            .get(representative_patch_message_id),
-        Some(successful_indexes) if successful_indexes.contains(&preview_index)
-    ) {
-        preview_title = " Preview [REVIEWED-BY] ".to_string();
-    } else if *patchset_details_and_actions
-        .patches_to_reply
-        .get(preview_index)
-        .unwrap()
-    {
-        preview_title = " Preview [REVIEWED-BY]* ".to_string();
-    };
-
-    let preview_offset = patchset_details_and_actions.preview_scroll_offset;
-    let preview_pan = patchset_details_and_actions.preview_pan;
-    let patch_preview = patchset_details_and_actions.patches_preview[preview_index].clone();
+fn render_preview(f: &mut Frame, vm: &PatchsetDetailsViewModel, chunk: Rect) {
+    let patch_preview = vm.preview_entries[vm.preview_index].clone();
 
     let patch_preview = Paragraph::new(patch_preview)
         .block(
@@ -240,20 +158,19 @@ fn render_preview(f: &mut Frame, vm: &AppViewModel<'_>, chunk: Rect) {
                 .borders(Borders::ALL)
                 .border_type(ratatui::widgets::BorderType::Double)
                 .title(
-                    Line::styled(preview_title, Style::default().fg(Color::Green)).left_aligned(),
+                    Line::styled(vm.preview_title.clone(), Style::default().fg(Color::Green))
+                        .left_aligned(),
                 )
                 .padding(Padding::vertical(1)),
         )
         .left_aligned()
-        .scroll((preview_offset as u16, preview_pan as u16));
+        .scroll((vm.preview_scroll_offset as u16, vm.preview_pan as u16));
 
     f.render_widget(patch_preview, chunk);
 }
 
-pub fn render_main(f: &mut Frame, vm: &AppViewModel<'_>, chunk: Rect) {
-    let patchset_details_and_actions = vm.state.lore.details.as_ref().unwrap();
-
-    if patchset_details_and_actions.preview_fullscreen {
+pub fn render_main(f: &mut Frame, vm: &PatchsetDetailsViewModel, chunk: Rect) {
+    if vm.preview_fullscreen {
         render_preview(f, vm, chunk);
     } else {
         let chunks = Layout::default()

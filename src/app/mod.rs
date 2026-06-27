@@ -429,4 +429,14 @@ impl App {
     pub fn set_current_screen(&mut self, new_current_screen: CurrentScreen) {
         self.state.navigation.current_screen = new_current_screen;
     }
+
+    /// Projects the current [`AppState`] into an owned [`AppViewModel`].
+    ///
+    /// This is the primary way for the orchestration layer to hand off
+    /// presentation data to the UI actor without exposing raw `AppState`.
+    /// Called by `run_app` once the UI actor is introduced (Commit 11.6).
+    #[allow(dead_code)]
+    pub fn present(&self) -> AppViewModel {
+        view_model::project_state(&self.state)
+    }
 }

@@ -152,6 +152,7 @@ impl AppPopup {
     }
 
     /// `(width_percent, height_percent)` used for the centred popup rect.
+    #[allow(dead_code)]
     pub fn dimensions(&self) -> (u16, u16) {
         match self {
             AppPopup::Info { dimensions, .. }

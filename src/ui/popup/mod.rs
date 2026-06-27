@@ -1,10 +1,9 @@
 //! Popup rendering for the UI layer.
 //!
-//! The old `PopUp` trait object is gone. Each popup variant is represented
-//! in `AppState` as a concrete `AppPopup` enum; this module provides the
-//! single `render_popup` function that paints any variant onto a Ratatui
-//! frame. The per-variant rendering logic mirrors what the old concrete types
-//! did, without the dynamic dispatch overhead.
+//! Each popup variant is represented in the view model as a concrete
+//! [`PopupViewModel`]; this module provides the single `render_popup`
+//! function that paints any variant onto a Ratatui frame by dispatching on
+//! `PopupViewBody`.
 
 use ratatui::{
     layout::Alignment,
@@ -14,38 +13,35 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::popup::AppPopup;
+use crate::app::view_model::{PopupViewBody, PopupViewModel};
 
 /// Paint `popup` centred inside `chunk`.
-pub fn render_popup(f: &mut Frame, popup: &AppPopup, chunk: ratatui::layout::Rect) {
-    match popup {
-        AppPopup::Info {
-            title,
-            body,
-            scroll,
-            ..
-        } => render_info(f, title, body, *scroll, chunk),
-        AppPopup::Help {
-            title,
+pub fn render_popup(f: &mut Frame, popup: &PopupViewModel, chunk: ratatui::layout::Rect) {
+    match &popup.body {
+        PopupViewBody::Text(body) => render_info(f, &popup.title, body, popup.scroll_offset, chunk),
+        PopupViewBody::Keybinds {
             description,
             formatted_keybinds,
-            scroll,
-            ..
         } => render_help(
             f,
-            title.as_deref(),
+            &popup.title,
             description.as_deref(),
             formatted_keybinds,
-            *scroll,
+            popup.scroll_offset,
             chunk,
         ),
-        AppPopup::ReviewTrailers {
+        PopupViewBody::ReviewTrailers {
             reviewed_by,
             tested_by,
             acked_by,
-            scroll,
-            ..
-        } => render_review_trailers(f, reviewed_by, tested_by, acked_by, *scroll, chunk),
+        } => render_review_trailers(
+            f,
+            reviewed_by,
+            tested_by,
+            acked_by,
+            popup.scroll_offset,
+            chunk,
+        ),
     }
 }
 
@@ -88,16 +84,14 @@ fn render_info(
 
 fn render_help(
     f: &mut Frame,
-    title: Option<&str>,
+    title: &str,
     description: Option<&str>,
     formatted_keybinds: &str,
     scroll: (u16, u16),
     chunk: ratatui::layout::Rect,
 ) {
-    let title_str = title.unwrap_or("Help").to_string();
-
     let block = Block::default()
-        .title(title_str)
+        .title(title.to_string())
         .title_alignment(Alignment::Center)
         .title_style(Style::default().bold().blue())
         .title_bottom(Line::styled(

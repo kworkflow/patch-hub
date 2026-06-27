@@ -5,12 +5,10 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
-use tracing::{event, Level};
 
-use crate::app::AppViewModel;
+use crate::app::view_model::EditConfigViewModel;
 
-pub fn render_main(f: &mut Frame, vm: &AppViewModel<'_>, chunk: Rect) {
-    let edit_config = vm.state.config_state.edit_config.as_ref().unwrap();
+pub fn render_main(f: &mut Frame, vm: &EditConfigViewModel, chunk: Rect) {
     let mut constraints = Vec::new();
 
     for _ in 0..(chunk.height / 3) {
@@ -22,37 +20,32 @@ pub fn render_main(f: &mut Frame, vm: &AppViewModel<'_>, chunk: Rect) {
         .constraints(constraints)
         .split(chunk);
 
-    let highlighted_entry = edit_config.highlighted();
-    for i in 0..edit_config.config_count() {
+    for (i, entry) in vm.entries.iter().enumerate() {
         if i + 1 > config_chunks.len() {
             break;
         }
 
-        let (config, value) = match edit_config.config(i) {
-            Some((cfg, val)) => (cfg, val),
-            None => {
-                event!(Level::ERROR, "Invalid configuration index: {}", i);
-                return;
-            }
-        };
-
-        let value = Line::from(if edit_config.is_editing() && i == highlighted_entry {
+        let value = Line::from(if entry.is_editing {
             vec![
-                Span::styled(edit_config.curr_edit().to_string(), Style::default()),
+                Span::styled(entry.edit_cursor_value.clone(), Style::default()),
                 Span::styled(" ", Style::default().bg(Color::White)),
             ]
         } else {
-            vec![Span::from(value)]
+            vec![Span::from(entry.value.clone())]
         });
 
         let config_entry = Paragraph::new(value)
             .centered()
-            .block(Block::default().borders(Borders::ALL).title(config))
-            .style(if i == highlighted_entry && edit_config.is_editing() {
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(entry.label.clone()),
+            )
+            .style(if entry.is_editing {
                 Style::default()
                     .fg(Color::LightYellow)
                     .add_modifier(Modifier::BOLD)
-            } else if i == highlighted_entry {
+            } else if entry.is_highlighted {
                 Style::default()
                     .fg(Color::DarkGray)
                     .add_modifier(Modifier::BOLD)
@@ -64,25 +57,24 @@ pub fn render_main(f: &mut Frame, vm: &AppViewModel<'_>, chunk: Rect) {
     }
 }
 
-pub fn mode_footer_text<'a>(vm: &'a AppViewModel<'a>) -> Vec<Span<'a>> {
-    let edit_config_state = vm.state.config_state.edit_config.as_ref().unwrap();
-    vec![if edit_config_state.is_editing() {
+pub fn mode_footer_text(vm: &EditConfigViewModel) -> Vec<Span<'static>> {
+    vec![if vm.is_editing_mode {
         Span::styled("Editing...", Style::default().fg(Color::LightYellow))
     } else {
         Span::styled("Edit Configurations", Style::default().fg(Color::Green))
     }]
 }
 
-pub fn keys_hint<'a>(vm: &'a AppViewModel<'a>) -> Span<'a> {
-    let edit_config_state = vm.state.config_state.edit_config.as_ref().unwrap();
-    match edit_config_state.is_editing() {
-        true => Span::styled(
+pub fn keys_hint(vm: &EditConfigViewModel) -> Span<'static> {
+    if vm.is_editing_mode {
+        Span::styled(
             "(ESC) cancel | (ENTER) confirm",
             Style::default().fg(Color::Red),
-        ),
-        false => Span::styled(
+        )
+    } else {
+        Span::styled(
             "(ESC / q) exit | (ENTER) edit | (jk| 🡇 🡅 ) down up",
             Style::default().fg(Color::Red),
-        ),
+        )
     }
 }

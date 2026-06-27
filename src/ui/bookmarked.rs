@@ -6,26 +6,21 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::screens::bookmarked::BookmarkedPatchsetsState;
+use crate::app::view_model::BookmarkedViewModel;
 
-pub fn render_main(f: &mut Frame, bookmarked_patchsets: &BookmarkedPatchsetsState, chunk: Rect) {
-    let patchset_index = bookmarked_patchsets.patchset_index;
+pub fn render_main(f: &mut Frame, vm: &BookmarkedViewModel, chunk: Rect) {
     let mut list_items = Vec::<ListItem>::new();
 
-    for (index, patch) in bookmarked_patchsets.bookmarked_patchsets.iter().enumerate() {
-        let patch_title = format!("{:width$}", patch.title(), width = 70);
+    for row in &vm.rows {
+        let patch_title = format!("{:width$}", row.title, width = 70);
         let patch_title = format!("{:.width$}", patch_title, width = 70);
-        let patch_author = format!("{:width$}", patch.author().name, width = 30);
+        let patch_author = format!("{:width$}", row.author_name, width = 30);
         let patch_author = format!("{:.width$}", patch_author, width = 30);
         list_items.push(ListItem::new(
             Line::from(Span::styled(
                 format!(
                     "{:03}. V{:02} | #{:02} | {} | {}",
-                    index,
-                    patch.version(),
-                    patch.total_in_series(),
-                    patch_title,
-                    patch_author
+                    row.absolute_index, row.version, row.total_in_series, patch_title, patch_author
                 ),
                 Style::default().fg(Color::Yellow),
             ))
@@ -50,7 +45,7 @@ pub fn render_main(f: &mut Frame, bookmarked_patchsets: &BookmarkedPatchsetsStat
         .highlight_spacing(HighlightSpacing::Always);
 
     let mut list_state = ListState::default();
-    list_state.select(Some(patchset_index));
+    list_state.select(Some(vm.selected_index));
 
     f.render_stateful_widget(list, chunk, &mut list_state);
 }

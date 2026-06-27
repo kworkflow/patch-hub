@@ -6,21 +6,17 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::AppViewModel;
+use crate::app::view_model::{MailingListSelectionViewModel, TargetListStatus};
 
-pub fn render_main(f: &mut Frame, vm: &AppViewModel<'_>, chunk: Rect) {
-    let highlighted_list_index = vm.state.lore.mailing_list_selection.highlighted_list_index;
+pub fn render_main(f: &mut Frame, vm: &MailingListSelectionViewModel, chunk: Rect) {
     let mut list_items = Vec::<ListItem>::new();
 
-    for mailing_list in &vm.state.lore.mailing_list_selection.possible_mailing_lists {
+    for entry in &vm.entries {
         list_items.push(ListItem::new(
             Line::from(vec![
+                Span::styled(entry.name.clone(), Style::default().fg(Color::Magenta)),
                 Span::styled(
-                    mailing_list.name().to_string(),
-                    Style::default().fg(Color::Magenta),
-                ),
-                Span::styled(
-                    format!(" - {}", mailing_list.description()),
+                    format!(" - {}", entry.description),
                     Style::default().fg(Color::White),
                 ),
             ])
@@ -45,44 +41,27 @@ pub fn render_main(f: &mut Frame, vm: &AppViewModel<'_>, chunk: Rect) {
         .highlight_spacing(HighlightSpacing::Always);
 
     let mut list_state = ListState::default();
-    list_state.select(Some(highlighted_list_index));
+    list_state.select(Some(vm.highlighted_index));
 
     f.render_stateful_widget(list, chunk, &mut list_state);
 }
 
-pub fn mode_footer_text<'a>(vm: &'a AppViewModel<'a>) -> Vec<Span<'a>> {
-    let mut text_area = Span::default();
-
-    if vm.state.lore.mailing_list_selection.target_list.is_empty() {
-        text_area = Span::styled("type the target list", Style::default().fg(Color::DarkGray))
-    } else {
-        for mailing_list in &vm.state.lore.mailing_list_selection.mailing_lists {
-            if mailing_list
-                .name()
-                .eq(&vm.state.lore.mailing_list_selection.target_list)
-            {
-                text_area = Span::styled(
-                    &vm.state.lore.mailing_list_selection.target_list,
-                    Style::default().fg(Color::Green),
-                );
-                break;
-            } else if mailing_list
-                .name()
-                .starts_with(&vm.state.lore.mailing_list_selection.target_list)
-            {
-                text_area = Span::styled(
-                    &vm.state.lore.mailing_list_selection.target_list,
-                    Style::default().fg(Color::LightCyan),
-                );
-            }
+pub fn mode_footer_text(vm: &MailingListSelectionViewModel) -> Vec<Span<'static>> {
+    let text_area = match vm.target_list_status {
+        TargetListStatus::Empty => {
+            Span::styled("type the target list", Style::default().fg(Color::DarkGray))
         }
-        if text_area.content.is_empty() {
-            text_area = Span::styled(
-                &vm.state.lore.mailing_list_selection.target_list,
-                Style::default().fg(Color::Red),
-            );
+        TargetListStatus::ExactMatch => {
+            Span::styled(vm.target_list.clone(), Style::default().fg(Color::Green))
         }
-    }
+        TargetListStatus::PrefixMatch => Span::styled(
+            vm.target_list.clone(),
+            Style::default().fg(Color::LightCyan),
+        ),
+        TargetListStatus::NoMatch => {
+            Span::styled(vm.target_list.clone(), Style::default().fg(Color::Red))
+        }
+    };
 
     vec![
         Span::styled("Target List: ", Style::default().fg(Color::Green)),
