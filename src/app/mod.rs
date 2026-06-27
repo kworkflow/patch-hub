@@ -1,9 +1,11 @@
 pub mod commands;
 pub mod errors;
 pub mod input;
+pub mod messages;
 pub mod popup;
 pub mod screens;
 pub mod state;
+pub mod transitions;
 pub mod updates;
 pub mod view_model;
 
