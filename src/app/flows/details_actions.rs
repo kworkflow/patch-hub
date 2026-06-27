@@ -16,7 +16,12 @@ pub async fn handle_patchset_details(
     input: InputEvent,
     terminal_handle: &TerminalHandle,
 ) -> color_eyre::Result<()> {
-    let patchset_details_and_actions = app.state.lore.details.as_mut().unwrap();
+    let patchset_details_and_actions = app
+        .state
+        .lore
+        .details
+        .as_mut()
+        .expect("invariant: details must be loaded before handling patchset details input");
 
     match input {
         InputEvent::OpenHelp => {

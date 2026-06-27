@@ -191,7 +191,7 @@ impl App {
                     .lore
                     .latest_patchsets
                     .as_ref()
-                    .unwrap()
+                    .expect("invariant: latest_patchsets must be initialised before opening details")
                     .get_selected_patchset();
                 if !self
                     .state
@@ -258,7 +258,12 @@ impl App {
     }
 
     async fn sync_patchset_bookmark(&mut self) -> color_eyre::Result<()> {
-        let details = self.state.lore.details.as_ref().unwrap();
+        let details = self
+            .state
+            .lore
+            .details
+            .as_ref()
+            .expect("invariant: details must be loaded before consolidating patchset actions");
         let representative_patch = &details.representative_patch;
         let patchset_actions = &details.patchset_actions;
 
@@ -289,7 +294,12 @@ impl App {
     }
 
     async fn execute_reviewed_reply(&mut self) -> color_eyre::Result<()> {
-        let details = self.state.lore.details.as_ref().unwrap();
+        let details = self
+            .state
+            .lore
+            .details
+            .as_ref()
+            .expect("invariant: details must be loaded before executing reviewed reply");
         let representative_patch = details.representative_patch.clone();
         let patchset_actions = &details.patchset_actions;
         let raw_patches = details.raw_patches.clone();
@@ -372,7 +382,7 @@ impl App {
                 .lore
                 .details
                 .as_mut()
-                .unwrap()
+                .expect("invariant: details must be loaded before resetting reply action")
                 .reset_reply_with_reviewed_by_action();
         }
         Ok(())
@@ -384,15 +394,18 @@ impl App {
             .lore
             .details
             .as_ref()
-            .unwrap()
+            .expect("invariant: details must be loaded before executing apply patchset")
             .patchset_actions
             .get(&PatchsetAction::Apply)
         {
-            let popup = match self.state.lore.details.as_ref().unwrap().apply_patchset(
-                &*self.services.fs,
-                &*self.services.shell,
-                &self.state.config,
-            ) {
+            let popup = match self
+                .state
+                .lore
+                .details
+                .as_ref()
+                .expect("invariant: details must be loaded before applying patchset")
+                .apply_patchset(&*self.services.fs, &*self.services.shell, &self.state.config)
+            {
                 Ok(msg) => popup::AppPopup::info("Patchset Apply Success", msg),
                 Err(msg) => popup::AppPopup::info("Patchset Apply Fail", msg),
             };
@@ -403,7 +416,7 @@ impl App {
                 .lore
                 .details
                 .as_mut()
-                .unwrap()
+                .expect("invariant: details must be loaded before toggling apply action")
                 .toggle_apply_action();
         }
     }

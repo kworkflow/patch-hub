@@ -15,7 +15,8 @@ pub fn resolve_config_path(env: &dyn EnvTrait) -> String {
     env.var("PATCH_HUB_CONFIG_PATH").unwrap_or_else(|_| {
         format!(
             "{}/{}",
-            env.var("HOME").unwrap(),
+            env.var("HOME")
+                .expect("invariant: HOME environment variable must be set"),
             DEFAULT_CONFIG_PATH_SUFFIX
         )
     })

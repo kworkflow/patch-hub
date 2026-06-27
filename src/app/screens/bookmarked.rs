@@ -20,7 +20,7 @@ impl BookmarkedPatchsetsState {
     pub fn get_selected_patchset(&self) -> Patch {
         self.bookmarked_patchsets
             .get(self.patchset_index)
-            .unwrap()
+            .expect("invariant: patchset_index must be within bookmarked_patchsets bounds")
             .clone()
     }
 

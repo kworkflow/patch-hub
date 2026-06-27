@@ -94,7 +94,10 @@ impl LatestPatchsetsState {
     }
 
     pub fn get_selected_patchset(&self) -> Patch {
-        self.current_page.get(self.patchset_index).unwrap().clone()
+        self.current_page
+            .get(self.patchset_index)
+            .expect("invariant: patchset_index must be within current_page bounds")
+            .clone()
     }
 
     pub fn get_current_patch_feed_page(&self) -> Option<Vec<&Patch>> {
