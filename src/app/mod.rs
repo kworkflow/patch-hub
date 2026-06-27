@@ -2,7 +2,6 @@ pub mod commands;
 pub mod errors;
 pub mod input;
 pub mod popup;
-pub mod render_snapshot;
 pub mod screens;
 pub mod state;
 pub mod updates;
@@ -434,8 +433,6 @@ impl App {
     ///
     /// This is the primary way for the orchestration layer to hand off
     /// presentation data to the UI actor without exposing raw `AppState`.
-    /// Called by `run_app` once the UI actor is introduced (Commit 11.6).
-    #[allow(dead_code)]
     pub fn present(&self) -> AppViewModel {
         view_model::project_state(&self.state)
     }

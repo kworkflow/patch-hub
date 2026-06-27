@@ -19,6 +19,7 @@ use crate::{
     app::{screens::CurrentScreen, App},
     input::{event::InputEvent, handle::InputHandle},
     terminal::{handle::TerminalHandle, messages::TerminalFrame, TerminalError},
+    ui::core::UiCore,
 };
 
 use bookmarked::handle_bookmarked_patchsets;
@@ -147,8 +148,12 @@ pub async fn run_app(
     loop {
         app.process_system_updates(&mut loading).await?;
 
+        let vm = app.present();
+        let scene = UiCore::new()
+            .build_scene(&vm)
+            .map_err(|e| color_eyre::eyre::eyre!("{e}"))?;
         terminal_handle
-            .draw(TerminalFrame::Main(Box::new(app.render_snapshot())))
+            .draw(TerminalFrame::Main(Box::new(scene)))
             .await
             .map_err(terminal_error)?;
 

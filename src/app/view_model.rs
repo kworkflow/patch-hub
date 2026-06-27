@@ -1,13 +1,11 @@
 //! Owned, typed presentation projections.
 //!
 //! [`AppViewModel`] is built from [`super::state::AppState`] by
-//! [`project_state`], which is called from both
-//! [`super::render_snapshot::AppRenderSnapshot::to_view_model`] and
-//! [`super::App::present`].
+//! [`project_state`], which is called via [`super::App::present`].
 //!
 //! These types sit at the *application* layer: they represent what `App` knows
-//! about the presentation before `UiCore` (Commit 11.4) translates them into
-//! paint-ready `UiScene` nodes.
+//! about the presentation before `UiCore` translates them into paint-ready
+//! `UiScene` nodes.
 
 use ratatui::text::Text;
 
@@ -176,8 +174,7 @@ pub enum ScreenViewModel {
 
 /// Owned, typed projection of [`AppState`] for one TUI frame.
 ///
-/// Built by [`project_state`]; consumed by [`crate::ui::draw_ui`] and —
-/// once introduced — by `UiCore::build_scene`.
+/// Built by [`project_state`]; consumed by `UiCore::build_scene`.
 #[derive(Clone, Debug)]
 pub struct AppViewModel {
     pub screen: ScreenViewModel,
@@ -190,8 +187,7 @@ pub struct AppViewModel {
 
 /// Projects `state` into an owned [`AppViewModel`].
 ///
-/// Called by both [`super::App::present`] and
-/// [`super::render_snapshot::AppRenderSnapshot::to_view_model`].
+/// Called via [`super::App::present`].
 pub fn project_state(state: &AppState) -> AppViewModel {
     let screen = project_screen(state);
     let popup = state.popup.as_ref().map(project_popup);

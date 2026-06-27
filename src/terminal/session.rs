@@ -13,7 +13,7 @@ use crate::{
         messages::{TerminalFrame, TerminalResult},
         TerminalError,
     },
-    ui::{draw_ui, loading_screen::draw_loading_screen},
+    ui::{loading_screen::draw_loading_screen, painter},
 };
 
 /// Stateful terminal session owned by the terminal actor.
@@ -56,9 +56,8 @@ impl CrosstermTerminalSession {
 impl TerminalSessionApi for CrosstermTerminalSession {
     fn draw(&mut self, frame: TerminalFrame) -> TerminalResult<()> {
         match frame {
-            TerminalFrame::Main(snapshot) => {
-                self.terminal
-                    .draw(|f| draw_ui(f, &snapshot.to_view_model()))?;
+            TerminalFrame::Main(scene) => {
+                self.terminal.draw(|f| painter::paint(f, &scene))?;
             }
             TerminalFrame::Loading(title) => {
                 self.terminal.draw(|f| draw_loading_screen(f, &title))?;
