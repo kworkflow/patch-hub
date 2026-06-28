@@ -4,8 +4,6 @@ use crate::infrastructure::file_system::FileSystemError;
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
-    #[error("failed to load config: {0}")]
-    Load(String),
     #[error("failed to save config: {0}")]
     Save(String),
     #[error("invalid page size: {0}")]

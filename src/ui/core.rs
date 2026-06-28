@@ -2,25 +2,20 @@
 //!
 //! `UiCore` transforms an [`AppViewModel`] into a paint-ready [`UiScene`] by
 //! dispatching to per-screen builders and composing the navigation bar and
-//! optional popup. It holds a [`UiTheme`] so future styling policy can be
-//! applied centrally without touching individual screen painters.
+//! optional popup.
 
 use crate::app::view_model::{AppViewModel, ScreenViewModel};
 use crate::ui::{
     errors::UiError,
     scene::{NavigationBarScene, UiBody, UiScene},
     screens,
-    theme::UiTheme,
 };
 
-pub struct UiCore {
-    #[allow(dead_code)]
-    theme: UiTheme,
-}
+pub struct UiCore;
 
 impl UiCore {
     pub fn new() -> Self {
-        Self { theme: UiTheme }
+        Self
     }
 
     /// Transform `vm` into a fully projected [`UiScene`] ready for painting.

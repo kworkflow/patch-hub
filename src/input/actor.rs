@@ -96,7 +96,12 @@ impl InputActor {
                         tracing::debug!(?context, "input context updated");
                         self.context = context;
                     }
-                    Some(InputMessage::Shutdown) | None => {
+                    #[cfg(test)]
+                    Some(InputMessage::Shutdown) => {
+                        tracing::info!("input actor stopping");
+                        break;
+                    }
+                    None => {
                         tracing::info!("input actor stopping");
                         break;
                     }

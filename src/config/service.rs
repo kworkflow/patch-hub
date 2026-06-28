@@ -9,7 +9,7 @@ use crate::config::state::{normalize_derived_paths, ConfigState};
 use crate::config::update::{ConfigUpdateDraft, ValidatedConfigUpdate};
 use crate::infrastructure::{env::EnvTrait, file_system::FileSystemTrait};
 
-/// Public surface for configuration (maps to a future `ConfigActor` protocol).
+/// Public surface for configuration.
 pub trait ConfigServiceApi: Send + Sync {
     fn snapshot(&self) -> ConfigSnapshot;
     fn validate_update(

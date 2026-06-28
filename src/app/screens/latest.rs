@@ -39,11 +39,6 @@ impl LatestPatchsetsState {
         self.patchset_index
     }
 
-    #[allow(dead_code)]
-    pub fn page_size(&self) -> usize {
-        self.page_size
-    }
-
     pub async fn fetch_current_page(
         &mut self,
         lore_api: &LoreApiHandle,

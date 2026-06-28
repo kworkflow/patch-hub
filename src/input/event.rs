@@ -4,12 +4,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TerminalEvent {
     Key(KeyInput),
-    Resize {
-        width: u16,
-        height: u16,
-    },
-    #[allow(dead_code)] // Reserved for future non-blocking refresh loops.
-    Tick,
+    Resize { width: u16, height: u16 },
 }
 
 /// Key data kept close to crossterm while avoiding `KeyEvent` outside input.
@@ -92,7 +87,6 @@ pub enum InputEvent {
     TogglePreviewFullscreen,
     ShowReviewTrailers,
     Resize { width: u16, height: u16 },
-    Tick,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

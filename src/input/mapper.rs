@@ -41,7 +41,6 @@ impl InputMapper {
         match event {
             TerminalEvent::Key(key) => self.map_key_input(key, context),
             TerminalEvent::Resize { width, height } => Some(InputEvent::Resize { width, height }),
-            TerminalEvent::Tick => Some(InputEvent::Tick),
         }
     }
 
@@ -386,10 +385,6 @@ mod tests {
                 width: 120,
                 height: 40,
             })
-        );
-        assert_eq!(
-            mapper.map_terminal_event(TerminalEvent::Tick, &context),
-            Some(InputEvent::Tick)
         );
     }
 }

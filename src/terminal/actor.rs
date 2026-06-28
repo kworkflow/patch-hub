@@ -62,6 +62,7 @@ impl TerminalActor {
                     .and_then(|result| result);
                 send_terminal_reply(message_name, reply, result);
             }
+            #[cfg(test)]
             TerminalMessage::ReadEvent { reply } => {
                 let result = self
                     .with_session(|session| session.read_event())
