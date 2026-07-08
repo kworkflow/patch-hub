@@ -57,6 +57,12 @@ pub struct KernelTree {
     branch: String,
 }
 
+impl KernelTree {
+    pub fn new(path: String, branch: String) -> Self {
+        Self { path, branch }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         let home = env::var("HOME").unwrap_or_else(|_| {
@@ -151,6 +157,10 @@ impl Config {
         self.page_size
     }
 
+    pub fn add_kernel_tree(&mut self, id: String, kernel_tree: KernelTree) {
+        self.kernel_trees.insert(id, kernel_tree);
+    }
+
     pub fn set_page_size(&mut self, page_size: usize) {
         self.page_size = page_size;
     }
@@ -174,6 +184,10 @@ impl Config {
 
     pub fn set_git_am_option(&mut self, git_am_options: String) {
         self.git_am_options = git_am_options;
+    }
+
+    pub fn set_target_kernel_tree(&mut self, kernel_tree_id: Option<String>) {
+        self.target_kernel_tree = kernel_tree_id;
     }
 
     #[allow(dead_code)]

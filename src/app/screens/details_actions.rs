@@ -232,15 +232,35 @@ impl DetailsActions {
     /// that kernel tree is a valid git directory.
     ///
     /// Returns the a valid `KernelTree` or a `String` with the error message on failure.
-    fn validate_kernel_tree<'a>(&self, config: &'a Config) -> Result<&'a KernelTree, String> {
+    fn validate_kernel_tree(&self, config: &mut Config) -> Result<KernelTree, String> {
         let kernel_tree_id = if let Some(target) = config.target_kernel_tree() {
-            target
+            target.clone()
         } else {
-            return Err("target kernel tree unset".to_string());
+            let kernel_tree_path = self.get_current_kernel_tree()?;
+            let kernel_tree_id = kernel_tree_path
+                .split('/')
+                .last()
+                .unwrap_or("default")
+                .to_string();
+            let current_branch = self.get_current_branch(&KernelTree::new(
+                kernel_tree_path.clone(),
+                "".to_string(),
+            ))?;
+
+            config.set_target_kernel_tree(Some(kernel_tree_id.clone()));
+            config.add_kernel_tree(
+                kernel_tree_id.clone(),
+                KernelTree::new(kernel_tree_path, current_branch),
+            );
+            config
+                .save_patch_hub_config()
+                .map_err(|e| format!("failed to save config: {e}"))?;
+
+            config.target_kernel_tree().as_ref().unwrap().clone()
         };
 
-        let kernel_tree = if let Some(tree) = config.get_kernel_tree(kernel_tree_id) {
-            tree
+        let kernel_tree = if let Some(tree) = config.get_kernel_tree(&kernel_tree_id) {
+            tree.clone()
         } else {
             return Err(format!("invalid target kernel tree '{kernel_tree_id}'"));
         };
@@ -316,6 +336,32 @@ impl DetailsActions {
         }
 
         Ok(())
+    }
+
+    /// Get the current kernel tree
+    ///
+    /// Returns the kernel tree path as a `String` or a `String` with the error message on failure
+    fn get_current_kernel_tree(&self) -> Result<String, String> {
+        if Command::new("make")
+                .args(["-s", "kernelversion"])
+                .output()
+                .map_err(|_| "failed to get current kernel tree state".to_string())?
+                .status
+                .success()
+        {
+            let output = Command::new("git")
+                .args(["rev-parse", "--show-toplevel"])
+                .output()
+                .map_err(|_| "failed to get current kernel tree path".to_string())?;
+
+            if output.status.success() {
+                Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+            } else {
+                Err("not in a valid kernel tree".to_string())
+            }
+        } else {
+            Err("not in a valid kernel tree".to_string())
+        }
     }
 
     /// Get the current branch of the supplied kernel tree
@@ -435,15 +481,15 @@ impl DetailsActions {
     /// Returns a `Result<String, String>` containing either the success or the error message.
     /// # TODO:
     /// - Add unit tests
-    pub fn apply_patchset(&self, config: &Config) -> Result<String, String> {
+    pub fn apply_patchset(&self, config: &mut Config) -> Result<String, String> {
         let kernel_tree = self.validate_kernel_tree(config)?;
-        self.check_git_state(kernel_tree)?;
+        self.check_git_state(&kernel_tree)?;
 
-        let original_branch = self.get_current_branch(kernel_tree)?;
-        let target_branch = self.create_target_branch(kernel_tree, config)?;
+        let original_branch = self.get_current_branch(&kernel_tree)?;
+        let target_branch = self.create_target_branch(&kernel_tree, config)?;
 
-        let git_am_result = self.run_git_am(kernel_tree, config);
-        self.switch_to_branch(kernel_tree, &original_branch)?;
+        let git_am_result = self.run_git_am(&kernel_tree, config);
+        self.switch_to_branch(&kernel_tree, &original_branch)?;
 
         match git_am_result {
             Ok(_) => {
