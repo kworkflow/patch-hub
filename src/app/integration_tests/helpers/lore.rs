@@ -6,6 +6,7 @@ use tokio::{spawn, sync::mpsc};
 use crate::lore::{
     application::{
         dto::{PatchTagSummary, PatchsetDetails},
+        errors::LoreError,
         handle::LoreApiHandle,
         messages::LoreApiMessage,
     },
@@ -22,6 +23,26 @@ pub(crate) fn lore_handle_with_successful_patch_flow() -> LoreApiHandle {
                 }
                 LoreApiMessage::FetchPatchsetDetails { reply, .. } => {
                     reply.send(Ok(sample_patchset_details())).ok();
+                }
+                LoreApiMessage::Shutdown => break,
+                other => panic!("unexpected lore message: {}", other.name()),
+            }
+        }
+    });
+    LoreApiHandle::new(tx)
+}
+
+pub(crate) fn lore_handle_with_patch_details_failure() -> LoreApiHandle {
+    let (tx, mut rx) = mpsc::channel(8);
+    spawn(async move {
+        while let Some(message) = rx.recv().await {
+            match message {
+                LoreApiMessage::FetchPatchsetDetails { reply, .. } => {
+                    reply
+                        .send(Err(LoreError::ActorUnavailable(
+                            "lore actor unavailable in test".to_string(),
+                        )))
+                        .ok();
                 }
                 LoreApiMessage::Shutdown => break,
                 other => panic!("unexpected lore message: {}", other.name()),
