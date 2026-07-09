@@ -30,7 +30,6 @@ use std::path::PathBuf;
 use crate::{
     config::{ConfigHandle, ConfigSnapshot},
     infrastructure::{
-        env::EnvTrait,
         file_system::FileSystemTrait,
         monitoring::logging::garbage_collector::collect_garbage,
         shell::{ShellCommand, ShellTrait},
@@ -62,7 +61,6 @@ pub struct AppServices {
     pub render: RenderHandle,
     pub shell: Box<dyn ShellTrait>,
     pub fs: Box<dyn FileSystemTrait>,
-    pub env: Box<dyn EnvTrait>,
     pub config: ConfigHandle,
 }
 
@@ -93,7 +91,6 @@ impl App {
         bootstrap: BootstrapLoreData,
         fs: Box<dyn FileSystemTrait>,
         shell: Box<dyn ShellTrait>,
-        env: Box<dyn EnvTrait>,
         lore_api: LoreApiHandle,
         render: RenderHandle,
     ) -> color_eyre::Result<Self> {
@@ -131,7 +128,6 @@ impl App {
                 render,
                 shell,
                 fs,
-                env,
                 config: config_handle,
             },
         })

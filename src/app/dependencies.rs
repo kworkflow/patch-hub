@@ -1,9 +1,7 @@
 use tracing::{event, Level};
 
 use crate::{
-    app::errors::AppError,
-    config::ConfigSnapshot,
-    infrastructure::env::EnvTrait,
+    app::errors::AppError, config::ConfigSnapshot, infrastructure::env::EnvTrait,
     render_prefs::PatchRenderer,
 };
 

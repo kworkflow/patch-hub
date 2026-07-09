@@ -123,7 +123,6 @@ async fn main() -> color_eyre::Result<()> {
         bootstrap,
         Box::new(OsFileSystem),
         Box::new(OsShell),
-        Box::new(env),
         lore_api.clone(),
         render.clone(),
     )?;

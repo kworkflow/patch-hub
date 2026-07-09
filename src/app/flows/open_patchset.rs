@@ -3,10 +3,7 @@ use crate::app::{popup::AppPopup, screens::CurrentScreen, App, B4Result};
 #[derive(Debug, PartialEq)]
 enum OpenPatchsetAction {
     ShowDetails,
-    ShowError {
-        origin: CurrentScreen,
-        body: String,
-    },
+    ShowError { origin: CurrentScreen, body: String },
 }
 
 pub(super) fn apply_open_patchset_result(
@@ -52,10 +49,8 @@ mod tests {
 
     #[test]
     fn patch_found_opens_details() {
-        let action = resolve_open_patchset_result(
-            CurrentScreen::LatestPatchsets,
-            Ok(B4Result::PatchFound),
-        );
+        let action =
+            resolve_open_patchset_result(CurrentScreen::LatestPatchsets, Ok(B4Result::PatchFound));
 
         assert_eq!(OpenPatchsetAction::ShowDetails, action);
     }

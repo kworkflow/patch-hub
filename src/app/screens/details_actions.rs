@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use ansi_to_tui::IntoText;
+
 use crate::{
     config::{ConfigSnapshot, KernelTree},
     infrastructure::{
@@ -47,6 +49,10 @@ pub struct PatchsetDetailsState {
 }
 
 const LAST_LINE_PADDING: usize = 10;
+
+fn rendered_preview_height(preview: &str) -> usize {
+    preview.into_text().unwrap_or_default().height()
+}
 
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub enum PatchsetAction {
@@ -123,8 +129,7 @@ impl PatchsetDetailsState {
 
     /// Scroll `n` lines down
     pub fn preview_scroll_down(&mut self, n: usize) {
-        // TODO: Support for renderers (only considers base preview string)
-        let number_of_lines = self.patches_preview[self.preview_index].lines().count();
+        let number_of_lines = rendered_preview_height(&self.patches_preview[self.preview_index]);
         if (self.preview_scroll_offset + n) <= number_of_lines {
             self.preview_scroll_offset += n;
         }
@@ -137,8 +142,7 @@ impl PatchsetDetailsState {
 
     /// Scroll to the last line
     pub fn go_to_last_line(&mut self) {
-        // TODO: Support for renderers (only considers base preview string)
-        let number_of_lines = self.patches_preview[self.preview_index].lines().count();
+        let number_of_lines = rendered_preview_height(&self.patches_preview[self.preview_index]);
         self.preview_scroll_offset = number_of_lines.saturating_sub(LAST_LINE_PADDING);
     }
 
@@ -471,5 +475,82 @@ impl PatchsetDetailsState {
         },
             Err(e) => Err(format!( "`git am` failed\n{}{}", &original_branch, e))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{HashMap, HashSet};
+
+    use serde_xml_rs::from_str;
+
+    use super::*;
+
+    fn test_patch() -> Patch {
+        from_str(
+            r#"
+            <entry xmlns:thr="http://purl.org/syndication/thread/1.0">
+                <author>
+                    <name>Foo Bar</name>
+                    <email>foo@bar.foo.bar</email>
+                </author>
+                <title>[PATCH 1/1] test patch</title>
+                <updated>2024-07-06T19:15:48Z</updated>
+                <link href="http://lore.kernel.org/some-list/1234-1-foo@bar.foo.bar" />
+                <id>urn:uuid:123-abcd-1f2a3b</id>
+                <content></content>
+            </entry>
+        "#,
+        )
+        .expect("test patch XML should deserialize")
+    }
+
+    fn details_state_with_preview(preview: &str) -> PatchsetDetailsState {
+        PatchsetDetailsState {
+            representative_patch: test_patch(),
+            raw_patches: vec!["raw patch".to_string()],
+            patches_preview: vec![preview.to_string()],
+            has_cover_letter: false,
+            patches_to_reply: vec![false],
+            patchset_path: "/tmp/patchset.mbx".to_string(),
+            preview_index: 0,
+            preview_scroll_offset: 0,
+            preview_pan: 0,
+            preview_fullscreen: false,
+            patchset_actions: HashMap::from([
+                (PatchsetAction::Bookmark, false),
+                (PatchsetAction::ReplyWithReviewedBy, false),
+                (PatchsetAction::Apply, false),
+            ]),
+            reviewed_by: vec![HashSet::new()],
+            tested_by: vec![HashSet::new()],
+            acked_by: vec![HashSet::new()],
+            last_screen: CurrentScreen::LatestPatchsets,
+        }
+    }
+
+    #[test]
+    fn rendered_height_accounts_for_rendered_text_projection() {
+        let preview = "\u{1b}[32mrendered line\u{1b}[0m\nsecond line";
+
+        assert_eq!(2, rendered_preview_height(preview));
+    }
+
+    #[test]
+    fn preview_scroll_down_uses_rendered_height() {
+        let mut state = details_state_with_preview("\u{1b}[32mrendered line\u{1b}[0m\nsecond line");
+
+        state.preview_scroll_down(2);
+
+        assert_eq!(2, state.preview_scroll_offset);
+    }
+
+    #[test]
+    fn go_to_last_line_saturates_for_short_rendered_preview() {
+        let mut state = details_state_with_preview("short preview");
+
+        state.go_to_last_line();
+
+        assert_eq!(0, state.preview_scroll_offset);
     }
 }

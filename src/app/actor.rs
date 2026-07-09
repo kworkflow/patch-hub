@@ -163,9 +163,7 @@ mod tests {
             AppServices,
         },
         config::{ConfigHandle, ConfigState},
-        infrastructure::{
-            env::MockEnvTrait, file_system::MockFileSystemTrait, shell::MockShellTrait,
-        },
+        infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
         input::{event::InputEvent, handle::InputHandle, messages::InputMessage},
         lore::{
             application::{
@@ -193,7 +191,7 @@ mod tests {
         ConfigHandle::new(config_tx)
     }
 
-    fn minimal_app_with_env(env: MockEnvTrait) -> App {
+    fn minimal_app() -> App {
         let (lore_tx, _lore_rx) = mpsc::channel(1);
         let (render_tx, _render_rx) = mpsc::channel(1);
 
@@ -230,16 +228,9 @@ mod tests {
                 render: RenderHandle::new(render_tx),
                 shell: Box::new(MockShellTrait::new()),
                 fs: Box::new(MockFileSystemTrait::new()),
-                env: Box::new(env),
                 config: dummy_config_handle(),
             },
         }
-    }
-
-    fn minimal_app() -> App {
-        let mut env = MockEnvTrait::new();
-        env.expect_which().returning(|_| true);
-        minimal_app_with_env(env)
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -322,9 +313,6 @@ mod tests {
             .expect("bootstrap must succeed with mock infrastructure");
         assert_eq!(1, bootstrap.mailing_lists.len());
 
-        let mut env = MockEnvTrait::new();
-        env.expect_which().returning(|_| true);
-
         let mut session = MockTerminalSessionApi::new();
         session
             .expect_draw()
@@ -340,7 +328,6 @@ mod tests {
             bootstrap,
             Box::new(MockFileSystemTrait::new()),
             Box::new(MockShellTrait::new()),
-            Box::new(env),
             lore_api.clone(),
             render.clone(),
         )
@@ -360,5 +347,4 @@ mod tests {
         lore_api.shutdown().await;
         render.shutdown().await;
     }
-
 }
