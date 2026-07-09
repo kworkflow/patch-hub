@@ -351,28 +351,20 @@ impl App {
             .details
             .as_ref()
             .expect("invariant: details must be loaded before executing reviewed reply");
-        let representative_patch = details.representative_patch.clone();
-        let patchset_actions = &details.patchset_actions;
-        let raw_patches = details.raw_patches.clone();
-        let patches_to_reply = details.patches_to_reply.clone();
-
-        if let Some(true) = patchset_actions.get(&PatchsetAction::ReplyWithReviewedBy) {
-            debug!(
-                msg_id = representative_patch.message_id().href,
-                "executing reviewed-by reply"
-            );
+        if patchset_action_selected(details, &PatchsetAction::ReplyWithReviewedBy) {
+            let message_id = details.representative_patch.message_id().href.clone();
+            debug!(msg_id = message_id, "executing reviewed-by reply");
             let successful_indexes = self
                 .state
                 .user_state
                 .reviewed_patchsets
-                .remove(&representative_patch.message_id().href)
+                .remove(&message_id)
                 .unwrap_or_default();
-            let request = ReviewedReplyRequest {
-                raw_patches,
-                patches_to_reply,
+            let request = reviewed_reply_request(
+                details,
                 successful_indexes,
-                git_send_email_options: self.state.config.git_send_email_options().to_string(),
-            };
+                self.state.config.git_send_email_options().to_string(),
+            );
             let result = execute_reviewed_reply_action(
                 request,
                 &self.services.lore_api,
@@ -380,10 +372,10 @@ impl App {
             )
             .await?;
 
-            self.state.user_state.reviewed_patchsets.insert(
-                representative_patch.message_id().href.clone(),
-                result.into_successful_indexes(),
-            );
+            self.state
+                .user_state
+                .reviewed_patchsets
+                .insert(message_id.clone(), result.into_successful_indexes());
 
             self.services
                 .lore_api
@@ -392,7 +384,7 @@ impl App {
                 .map_err(|e| eyre!("{e:#?}"))?;
 
             info!(
-                msg_id = representative_patch.message_id().href,
+                msg_id = message_id,
                 "reviewed-by reply sent and state persisted"
             );
             self.state
@@ -406,26 +398,16 @@ impl App {
     }
 
     fn execute_apply_patchset(&mut self) {
-        if let Some(true) = self
+        let details = self
             .state
             .lore
             .details
             .as_ref()
-            .expect("invariant: details must be loaded before executing apply patchset")
-            .patchset_actions
-            .get(&PatchsetAction::Apply)
-        {
+            .expect("invariant: details must be loaded before executing apply patchset");
+
+        if patchset_action_selected(details, &PatchsetAction::Apply) {
             debug!("applying patchset via git-am");
-            let details = self
-                .state
-                .lore
-                .details
-                .as_ref()
-                .expect("invariant: details must be loaded before applying patchset");
-            let request = ApplyPatchsetRequest {
-                patch_title: details.representative_patch.title().clone(),
-                patchset_path: details.patchset_path.clone(),
-            };
+            let request = apply_patchset_request(details);
             let popup = match apply_patchset(
                 &request,
                 &*self.services.fs,
@@ -483,5 +465,125 @@ impl App {
     /// presentation data to the UI actor without exposing raw `AppState`.
     pub fn present(&self) -> AppViewModel {
         view_model::project_state(&self.state)
+    }
+}
+
+fn patchset_action_selected(details: &PatchsetDetailsState, action: &PatchsetAction) -> bool {
+    matches!(details.patchset_actions.get(action), Some(true))
+}
+
+fn reviewed_reply_request(
+    details: &PatchsetDetailsState,
+    successful_indexes: std::collections::HashSet<usize>,
+    git_send_email_options: String,
+) -> ReviewedReplyRequest {
+    ReviewedReplyRequest {
+        raw_patches: details.raw_patches.clone(),
+        patches_to_reply: details.patches_to_reply.clone(),
+        successful_indexes,
+        git_send_email_options,
+    }
+}
+
+fn apply_patchset_request(details: &PatchsetDetailsState) -> ApplyPatchsetRequest {
+    ApplyPatchsetRequest {
+        patch_title: details.representative_patch.title().clone(),
+        patchset_path: details.patchset_path.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{HashMap, HashSet};
+
+    use serde_xml_rs::from_str;
+
+    use super::*;
+
+    fn test_patch() -> Patch {
+        from_str(
+            r#"
+            <entry xmlns:thr="http://purl.org/syndication/thread/1.0">
+                <author>
+                    <name>Foo Bar</name>
+                    <email>foo@bar.foo.bar</email>
+                </author>
+                <title>[PATCH 1/1] test patch</title>
+                <updated>2024-07-06T19:15:48Z</updated>
+                <link href="http://lore.kernel.org/some-list/1234-1-foo@bar.foo.bar" />
+                <id>urn:uuid:123-abcd-1f2a3b</id>
+                <content></content>
+            </entry>
+        "#,
+        )
+        .expect("test patch XML should deserialize")
+    }
+
+    fn details_state() -> PatchsetDetailsState {
+        PatchsetDetailsState {
+            representative_patch: test_patch(),
+            raw_patches: vec!["raw patch 0".to_string(), "raw patch 1".to_string()],
+            patches_preview: vec!["preview 0".to_string(), "preview 1".to_string()],
+            has_cover_letter: false,
+            patches_to_reply: vec![false, true],
+            patchset_path: "/tmp/patchset.mbx".to_string(),
+            preview_index: 0,
+            preview_scroll_offset: 0,
+            preview_pan: 0,
+            preview_fullscreen: false,
+            patchset_actions: HashMap::from([
+                (PatchsetAction::Bookmark, false),
+                (PatchsetAction::ReplyWithReviewedBy, true),
+                (PatchsetAction::Apply, true),
+            ]),
+            reviewed_by: vec![HashSet::new(), HashSet::new()],
+            tested_by: vec![HashSet::new(), HashSet::new()],
+            acked_by: vec![HashSet::new(), HashSet::new()],
+            last_screen: CurrentScreen::LatestPatchsets,
+        }
+    }
+
+    #[test]
+    fn patchset_action_selected_reads_action_map() {
+        let mut details = details_state();
+
+        assert!(patchset_action_selected(&details, &PatchsetAction::Apply));
+        assert!(patchset_action_selected(
+            &details,
+            &PatchsetAction::ReplyWithReviewedBy
+        ));
+
+        details
+            .patchset_actions
+            .insert(PatchsetAction::Apply, false);
+
+        assert!(!patchset_action_selected(&details, &PatchsetAction::Apply));
+    }
+
+    #[test]
+    fn reviewed_reply_request_copies_reply_inputs() {
+        let details = details_state();
+        let request = reviewed_reply_request(
+            &details,
+            HashSet::from([4usize]),
+            "--dry-run --suppress-cc=all".to_string(),
+        );
+
+        assert_eq!(details.raw_patches, request.raw_patches);
+        assert_eq!(details.patches_to_reply, request.patches_to_reply);
+        assert_eq!(HashSet::from([4]), request.successful_indexes);
+        assert_eq!(
+            "--dry-run --suppress-cc=all",
+            request.git_send_email_options
+        );
+    }
+
+    #[test]
+    fn apply_patchset_request_copies_apply_inputs() {
+        let details = details_state();
+        let request = apply_patchset_request(&details);
+
+        assert_eq!("[PATCH 1/1] test patch", request.patch_title);
+        assert_eq!("/tmp/patchset.mbx", request.patchset_path);
     }
 }
