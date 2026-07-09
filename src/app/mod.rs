@@ -23,6 +23,9 @@ pub mod state;
 pub mod updates;
 pub mod view_model;
 
+#[cfg(test)]
+mod integration_tests;
+
 use color_eyre::{
     eyre::{bail, eyre},
     Result,
