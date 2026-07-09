@@ -31,10 +31,7 @@ use tracing::{debug, event, info, warn, Level};
 
 use crate::{
     app::actions::{
-        apply::{apply_patchset, ApplyPatchsetRequest},
-        reviewed_reply::{
-            execute_reviewed_reply as execute_reviewed_reply_action, ReviewedReplyRequest,
-        },
+        apply::ApplyPatchsetRequest, reviewed_reply::ReviewedReplyRequest, PatchsetActionService,
     },
     config::{ConfigHandle, ConfigSnapshot},
     infrastructure::{
@@ -365,12 +362,12 @@ impl App {
                 successful_indexes,
                 self.state.config.git_send_email_options().to_string(),
             );
-            let result = execute_reviewed_reply_action(
-                request,
-                &self.services.lore_api,
+            let action_service = PatchsetActionService::new(
+                &*self.services.fs,
                 &*self.services.shell,
-            )
-            .await?;
+                &self.services.lore_api,
+            );
+            let result = action_service.execute_reviewed_reply(request).await?;
 
             self.state
                 .user_state
@@ -408,12 +405,12 @@ impl App {
         if patchset_action_selected(details, &PatchsetAction::Apply) {
             debug!("applying patchset via git-am");
             let request = apply_patchset_request(details);
-            let popup = match apply_patchset(
-                &request,
+            let action_service = PatchsetActionService::new(
                 &*self.services.fs,
                 &*self.services.shell,
-                &self.state.config,
-            ) {
+                &self.services.lore_api,
+            );
+            let popup = match action_service.apply_patchset(&request, &self.state.config) {
                 Ok(msg) => popup::AppPopup::info("Patchset Apply Success", msg),
                 Err(msg) => popup::AppPopup::info("Patchset Apply Fail", msg),
             };
