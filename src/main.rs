@@ -128,14 +128,16 @@ async fn main() -> color_eyre::Result<()> {
         .subscribe_app(app_input_tx)
         .await
         .map_err(|e| eyre!("{e}"))?;
+    let input_shutdown_handle = input_handle.clone();
 
     // Shutdown ordering:
     //  1. AppActor — exits when the user quits (input channel closes)
-    //  2. ConfigActor — no further configuration requests once App is gone
-    //  3. LoreApiActor — no further requests once App is gone
-    //  4. RenderActor  — no further requests once App is gone
-    //  5. UiActor      — no further scene builds once App is gone
-    //  6. TerminalActor — restores the terminal last so the screen stays usable
+    //  2. InputActor — no further terminal input is needed once App is gone
+    //  3. ConfigActor — no further configuration requests once App is gone
+    //  4. LoreApiActor — no further requests once App is gone
+    //  5. RenderActor  — no further requests once App is gone
+    //  6. UiActor      — no further scene builds once App is gone
+    //  7. TerminalActor — restores the terminal last so the screen stays usable
     //                     during the steps above
     AppActor::spawn(
         app,
@@ -146,6 +148,10 @@ async fn main() -> color_eyre::Result<()> {
     )
     .run_until_done()
     .await?;
+    input_shutdown_handle
+        .shutdown()
+        .await
+        .map_err(|e| eyre!("{e}"))?;
     config_handle.shutdown().await;
     lore_api.shutdown().await;
     render.shutdown().await;

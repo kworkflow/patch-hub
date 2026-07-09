@@ -38,7 +38,6 @@ impl InputHandle {
     ///
     /// Dropping all clones of the handle achieves the same effect because the
     /// actor's receive channel closes when its last sender is gone.
-    #[cfg(test)]
     pub async fn shutdown(&self) -> Result<(), InputError> {
         self.send(InputMessage::Shutdown).await
     }
