@@ -17,7 +17,6 @@ pub use errors::ConfigError;
 pub use handle::ConfigHandle;
 pub use repository::{resolve_config_path, ConfigRepository, JsonConfigRepository};
 pub(crate) use service::bootstrap_parts;
-pub use service::{ConfigService, ConfigServiceApi};
 pub use state::{normalize_derived_paths, ConfigSnapshot, ConfigState, KernelTree};
 pub use update::{ConfigUpdateDraft, ValidatedConfigUpdate};
 

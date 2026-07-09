@@ -4,29 +4,9 @@ use crate::config::env_overrides;
 use crate::config::errors::ConfigError;
 use crate::config::parsing::{parse_cover_renderer, parse_patch_renderer};
 use crate::config::repository::{ConfigRepository, JsonConfigRepository};
-use crate::config::state::ConfigSnapshot;
 use crate::config::state::{normalize_derived_paths, ConfigState};
 use crate::config::update::{ConfigUpdateDraft, ValidatedConfigUpdate};
 use crate::infrastructure::{env::EnvTrait, file_system::FileSystemTrait};
-
-/// Public surface for configuration.
-#[allow(dead_code)]
-pub trait ConfigServiceApi: Send + Sync {
-    fn snapshot(&self) -> ConfigSnapshot;
-    fn validate_update(
-        &self,
-        draft: ConfigUpdateDraft,
-    ) -> Result<ValidatedConfigUpdate, ConfigError>;
-    fn apply_update(
-        &mut self,
-        update: ValidatedConfigUpdate,
-    ) -> Result<ConfigSnapshot, ConfigError>;
-}
-
-pub struct ConfigService<FS: FileSystemTrait> {
-    repo: JsonConfigRepository<FS>,
-    state: ConfigState,
-}
 
 /// Loads file or defaults, saves, applies env overrides, normalizes paths, and ensures directories.
 pub(crate) fn bootstrap_parts<FS: FileSystemTrait>(
@@ -171,39 +151,4 @@ fn validate_dir(fs: &dyn FileSystemTrait, dir_path: &str) -> Result<(), ConfigEr
     fs.create_dir_all(path)
         .map_err(|_| ConfigError::InvalidDirectory(dir_path.to_string()))?;
     Ok(())
-}
-
-impl<FS: FileSystemTrait + Send + Sync> ConfigService<FS> {
-    /// Bootstrap configuration: load file or defaults, persist, apply env overrides, ensure dirs.
-    ///
-    /// Loads file or defaults, saves, applies env overrides, ensures directories exist.
-    #[allow(dead_code)]
-    pub fn bootstrap(env: &dyn EnvTrait, fs: FS) -> Result<Self, ConfigError> {
-        let (state, repo) = bootstrap_parts(env, fs)?;
-        Ok(Self { repo, state })
-    }
-}
-
-impl<FS: FileSystemTrait + Send + Sync> ConfigServiceApi for ConfigService<FS> {
-    fn snapshot(&self) -> ConfigSnapshot {
-        self.state.to_snapshot()
-    }
-
-    fn validate_update(
-        &self,
-        draft: ConfigUpdateDraft,
-    ) -> Result<ValidatedConfigUpdate, ConfigError> {
-        validate_update(draft, self.repo.fs())
-    }
-
-    fn apply_update(
-        &mut self,
-        update: ValidatedConfigUpdate,
-    ) -> Result<ConfigSnapshot, ConfigError> {
-        self.state.apply_update(&update);
-        normalize_derived_paths(&mut self.state);
-        ensure_directories(&self.state, self.repo.fs())?;
-        self.repo.save(&self.state)?;
-        Ok(self.state.to_snapshot())
-    }
 }
