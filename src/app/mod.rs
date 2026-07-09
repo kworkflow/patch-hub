@@ -29,15 +29,17 @@ use color_eyre::{
 };
 use tracing::{debug, event, info, warn, Level};
 
-use std::{path::PathBuf, str};
-
 use crate::{
-    app::actions::apply::{apply_patchset, ApplyPatchsetRequest},
+    app::actions::{
+        apply::{apply_patchset, ApplyPatchsetRequest},
+        reviewed_reply::{
+            execute_reviewed_reply as execute_reviewed_reply_action, ReviewedReplyRequest,
+        },
+    },
     config::{ConfigHandle, ConfigSnapshot},
     infrastructure::{
-        file_system::FileSystemTrait,
-        monitoring::logging::garbage_collector::collect_garbage,
-        shell::{ShellCommand, ShellTrait},
+        file_system::FileSystemTrait, monitoring::logging::garbage_collector::collect_garbage,
+        shell::ShellTrait,
     },
     lore::{
         application::{
@@ -359,70 +361,28 @@ impl App {
                 msg_id = representative_patch.message_id().href,
                 "executing reviewed-by reply"
             );
-            let mut successful_indexes = self
+            let successful_indexes = self
                 .state
                 .user_state
                 .reviewed_patchsets
                 .remove(&representative_patch.message_id().href)
                 .unwrap_or_default();
-
-            let (git_user_name, git_user_email) = self
-                .services
-                .lore_api
-                .get_git_signature(String::new())
-                .await
-                .map_err(|e| eyre!("{e:#?}"))?;
-
-            if git_user_name.is_empty() || git_user_email.is_empty() {
-                println!("`git config user.name` or `git config user.email` not set\nAborting...");
-            } else {
-                let mktemp_cmd = ShellCommand::new("mktemp").arg("--directory");
-                let tmp_out = self
-                    .services
-                    .shell
-                    .execute(&mktemp_cmd)
-                    .map_err(|e| eyre!("failed to create temp directory: {}", e))?;
-                let tmp_dir_str = str::from_utf8(&tmp_out.stdout)
-                    .map_err(|e| eyre!("invalid utf-8 in temp dir path: {}", e))?
-                    .trim()
-                    .to_string();
-                let tmp_dir = PathBuf::from(tmp_dir_str);
-
-                let git_signature = format!("{git_user_name} <{git_user_email}>");
-                let git_reply_commands = self
-                    .services
-                    .lore_api
-                    .prepare_reply_commands(
-                        tmp_dir,
-                        "all".to_string(),
-                        raw_patches,
-                        patches_to_reply.clone(),
-                        git_signature,
-                        self.state.config.git_send_email_options().to_string(),
-                    )
-                    .await
-                    .map_err(|e| eyre!("{e:#?}"))?;
-
-                let reply_indexes: Vec<usize> = patches_to_reply
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, &val)| if val { Some(i) } else { None })
-                    .collect();
-                for (i, command) in git_reply_commands.into_iter().enumerate() {
-                    let success = self
-                        .services
-                        .shell
-                        .spawn_interactive(&command)
-                        .unwrap_or(false);
-                    if success {
-                        successful_indexes.insert(reply_indexes[i]);
-                    }
-                }
-            }
+            let request = ReviewedReplyRequest {
+                raw_patches,
+                patches_to_reply,
+                successful_indexes,
+                git_send_email_options: self.state.config.git_send_email_options().to_string(),
+            };
+            let result = execute_reviewed_reply_action(
+                request,
+                &self.services.lore_api,
+                &*self.services.shell,
+            )
+            .await?;
 
             self.state.user_state.reviewed_patchsets.insert(
                 representative_patch.message_id().href.clone(),
-                successful_indexes,
+                result.into_successful_indexes(),
             );
 
             self.services
