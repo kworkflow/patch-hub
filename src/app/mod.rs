@@ -9,6 +9,7 @@
 //! [`AppActor`](crate::app::actor::AppActor) into [`crate::app::flows`];
 //! presentation data crosses the UI boundary only through [`AppViewModel`] via
 //! [`App::present`].
+pub(crate) mod actions;
 pub mod actor;
 pub(crate) mod dependencies;
 pub mod errors;
@@ -31,6 +32,7 @@ use tracing::{debug, event, info, warn, Level};
 use std::{path::PathBuf, str};
 
 use crate::{
+    app::actions::apply::{apply_patchset, ApplyPatchsetRequest},
     config::{ConfigHandle, ConfigSnapshot},
     infrastructure::{
         file_system::FileSystemTrait,
@@ -454,17 +456,22 @@ impl App {
             .get(&PatchsetAction::Apply)
         {
             debug!("applying patchset via git-am");
-            let popup = match self
+            let details = self
                 .state
                 .lore
                 .details
                 .as_ref()
-                .expect("invariant: details must be loaded before applying patchset")
-                .apply_patchset(
-                    &*self.services.fs,
-                    &*self.services.shell,
-                    &self.state.config,
-                ) {
+                .expect("invariant: details must be loaded before applying patchset");
+            let request = ApplyPatchsetRequest {
+                patch_title: details.representative_patch.title().clone(),
+                patchset_path: details.patchset_path.clone(),
+            };
+            let popup = match apply_patchset(
+                &request,
+                &*self.services.fs,
+                &*self.services.shell,
+                &self.state.config,
+            ) {
                 Ok(msg) => popup::AppPopup::info("Patchset Apply Success", msg),
                 Err(msg) => popup::AppPopup::info("Patchset Apply Fail", msg),
             };
