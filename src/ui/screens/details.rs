@@ -10,11 +10,6 @@ use crate::{
     app::view_model::PatchsetDetailsViewModel,
     ui::scene::{PatchsetDetailsScene, TagTrailerCounts},
 };
-
-// ---------------------------------------------------------------------------
-// Builder
-// ---------------------------------------------------------------------------
-
 pub fn build_scene(vm: &PatchsetDetailsViewModel) -> PatchsetDetailsScene {
     PatchsetDetailsScene {
         patch_title: vm.patch_title.clone(),
@@ -35,10 +30,6 @@ pub fn build_scene(vm: &PatchsetDetailsViewModel) -> PatchsetDetailsScene {
         is_current_patch_reply_staged: vm.is_current_patch_reply_staged,
     }
 }
-
-// ---------------------------------------------------------------------------
-// Painter
-// ---------------------------------------------------------------------------
 
 pub fn paint(f: &mut Frame, scene: &PatchsetDetailsScene, chunk: Rect) {
     if scene.preview_fullscreen {
@@ -231,10 +222,6 @@ fn paint_preview(f: &mut Frame, scene: &PatchsetDetailsScene, chunk: Rect) {
 
     f.render_widget(patch_preview, chunk);
 }
-
-// ---------------------------------------------------------------------------
-// Navigation-bar helpers
-// ---------------------------------------------------------------------------
 
 pub fn mode_spans() -> Vec<Span<'static>> {
     vec![Span::styled(

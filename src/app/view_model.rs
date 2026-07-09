@@ -16,10 +16,6 @@ use super::{
     state::AppState,
 };
 
-// ---------------------------------------------------------------------------
-// Shared row / helper types
-// ---------------------------------------------------------------------------
-
 /// One mailing list entry shown in the selection list.
 #[derive(Clone, Debug)]
 pub struct MailingListEntry {
@@ -70,10 +66,6 @@ pub struct ConfigEntryRow {
     /// In-progress text while editing; empty when not editing this row.
     pub edit_cursor_value: String,
 }
-
-// ---------------------------------------------------------------------------
-// Per-screen view models
-// ---------------------------------------------------------------------------
 
 #[derive(Clone, Debug)]
 pub struct MailingListSelectionViewModel {
@@ -129,10 +121,6 @@ pub struct EditConfigViewModel {
     pub is_editing_mode: bool,
 }
 
-// ---------------------------------------------------------------------------
-// Popup view model
-// ---------------------------------------------------------------------------
-
 #[derive(Clone, Debug)]
 pub enum PopupViewBody {
     Text(String),
@@ -156,10 +144,6 @@ pub struct PopupViewModel {
     pub dimensions: (u16, u16),
 }
 
-// ---------------------------------------------------------------------------
-// Discriminated screen enum
-// ---------------------------------------------------------------------------
-
 #[derive(Clone, Debug)]
 pub enum ScreenViewModel {
     MailingListSelection(MailingListSelectionViewModel),
@@ -168,10 +152,6 @@ pub enum ScreenViewModel {
     PatchsetDetails(PatchsetDetailsViewModel),
     EditConfig(EditConfigViewModel),
 }
-
-// ---------------------------------------------------------------------------
-// Top-level view model
-// ---------------------------------------------------------------------------
 
 /// Owned, typed projection of [`AppState`] for one TUI frame.
 ///
@@ -182,10 +162,6 @@ pub struct AppViewModel {
     pub popup: Option<PopupViewModel>,
 }
 
-// ---------------------------------------------------------------------------
-// Projection – public entry point
-// ---------------------------------------------------------------------------
-
 /// Projects `state` into an owned [`AppViewModel`].
 ///
 /// Called via [`super::App::present`].
@@ -194,11 +170,6 @@ pub fn project_state(state: &AppState) -> AppViewModel {
     let popup = state.popup.as_ref().map(project_popup);
     AppViewModel { screen, popup }
 }
-
-// ---------------------------------------------------------------------------
-// Private per-screen projectors
-// ---------------------------------------------------------------------------
-
 fn project_screen(state: &AppState) -> ScreenViewModel {
     match state.navigation.current_screen {
         CurrentScreen::MailingListSelection => {

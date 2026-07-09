@@ -8,20 +8,12 @@ use ratatui::{
 
 use crate::{app::view_model::BookmarkedViewModel, ui::scene::BookmarkedScene};
 
-// ---------------------------------------------------------------------------
-// Builder
-// ---------------------------------------------------------------------------
-
 pub fn build_scene(vm: &BookmarkedViewModel) -> BookmarkedScene {
     BookmarkedScene {
         rows: vm.rows.clone(),
         selected_index: vm.selected_index,
     }
 }
-
-// ---------------------------------------------------------------------------
-// Painter
-// ---------------------------------------------------------------------------
 
 pub fn paint(f: &mut Frame, scene: &BookmarkedScene, chunk: Rect) {
     let mut list_items = Vec::<ListItem>::new();
@@ -64,10 +56,6 @@ pub fn paint(f: &mut Frame, scene: &BookmarkedScene, chunk: Rect) {
 
     f.render_stateful_widget(list, chunk, &mut list_state);
 }
-
-// ---------------------------------------------------------------------------
-// Navigation-bar helpers
-// ---------------------------------------------------------------------------
 
 pub fn mode_spans() -> Vec<Span<'static>> {
     vec![Span::styled(

@@ -11,10 +11,6 @@ use crate::{
     lore::domain::patch::Author,
 };
 
-// ---------------------------------------------------------------------------
-// Main enum
-// ---------------------------------------------------------------------------
-
 /// Concrete, cloneable popup state stored in `AppState`.
 #[derive(Clone, Debug)]
 pub enum AppPopup {
@@ -44,10 +40,6 @@ pub enum AppPopup {
 }
 
 impl AppPopup {
-    // -----------------------------------------------------------------------
-    // Factories
-    // -----------------------------------------------------------------------
-
     /// Create an informational text popup.
     pub fn info(title: impl Into<String>, body: impl Into<String>) -> Self {
         let title = title.into();
@@ -111,11 +103,6 @@ impl AppPopup {
             dimensions: (50, 40),
         }
     }
-
-    // -----------------------------------------------------------------------
-    // Input handling
-    // -----------------------------------------------------------------------
-
     /// Advance scroll position in response to a navigation input.
     ///
     /// All popup variants share identical two-axis scroll semantics.
@@ -155,11 +142,6 @@ impl AppPopup {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Help builder
-// ---------------------------------------------------------------------------
-
 /// Fluent builder for `AppPopup::Help`.
 ///
 /// Mirrors the API of the old `HelpPopUpBuilder` so handler call sites change

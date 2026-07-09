@@ -10,21 +10,12 @@ use crate::{
     app::view_model::{MailingListSelectionViewModel, TargetListStatus},
     ui::scene::MailingListScene,
 };
-
-// ---------------------------------------------------------------------------
-// Builder
-// ---------------------------------------------------------------------------
-
 pub fn build_scene(vm: &MailingListSelectionViewModel) -> MailingListScene {
     MailingListScene {
         entries: vm.entries.clone(),
         highlighted_index: vm.highlighted_index,
     }
 }
-
-// ---------------------------------------------------------------------------
-// Painter
-// ---------------------------------------------------------------------------
 
 pub fn paint(f: &mut Frame, scene: &MailingListScene, chunk: Rect) {
     let mut list_items = Vec::<ListItem>::new();
@@ -63,10 +54,6 @@ pub fn paint(f: &mut Frame, scene: &MailingListScene, chunk: Rect) {
 
     f.render_stateful_widget(list, chunk, &mut list_state);
 }
-
-// ---------------------------------------------------------------------------
-// Navigation-bar helpers
-// ---------------------------------------------------------------------------
 
 pub fn mode_spans(vm: &MailingListSelectionViewModel) -> Vec<Span<'static>> {
     let text_area = match vm.target_list_status {

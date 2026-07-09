@@ -10,11 +10,6 @@ use crate::{
     app::view_model::{PopupViewBody, PopupViewModel},
     ui::scene::{PopupBody, PopupScene},
 };
-
-// ---------------------------------------------------------------------------
-// Builder
-// ---------------------------------------------------------------------------
-
 pub fn build_scene(vm: &PopupViewModel) -> PopupScene {
     let body = match &vm.body {
         PopupViewBody::Text(text) => PopupBody::Text(text.clone()),
@@ -43,10 +38,6 @@ pub fn build_scene(vm: &PopupViewModel) -> PopupScene {
         dimensions: vm.dimensions,
     }
 }
-
-// ---------------------------------------------------------------------------
-// Painter
-// ---------------------------------------------------------------------------
 
 pub fn paint(f: &mut Frame, scene: &PopupScene, chunk: Rect) {
     match &scene.body {

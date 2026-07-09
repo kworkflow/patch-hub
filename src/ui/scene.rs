@@ -13,20 +13,12 @@ pub use crate::app::view_model::{
     ConfigEntryRow, MailingListEntry, PatchSummaryRow, TagTrailerCounts,
 };
 
-// ---------------------------------------------------------------------------
-// Mailing-list selection
-// ---------------------------------------------------------------------------
-
 /// Scene for the mailing-list selection screen.
 #[derive(Clone, Debug)]
 pub struct MailingListScene {
     pub entries: Vec<MailingListEntry>,
     pub highlighted_index: usize,
 }
-
-// ---------------------------------------------------------------------------
-// Bookmarked patchsets
-// ---------------------------------------------------------------------------
 
 /// Scene for the bookmarked-patchsets screen.
 #[derive(Clone, Debug)]
@@ -35,20 +27,12 @@ pub struct BookmarkedScene {
     pub selected_index: usize,
 }
 
-// ---------------------------------------------------------------------------
-// Latest patchsets
-// ---------------------------------------------------------------------------
-
 /// Scene for the latest-patchsets screen.
 #[derive(Clone, Debug)]
 pub struct LatestScene {
     pub rows: Vec<PatchSummaryRow>,
     pub selected_index: usize,
 }
-
-// ---------------------------------------------------------------------------
-// Patchset details
-// ---------------------------------------------------------------------------
 
 /// Scene for the patchset-details-and-actions screen.
 #[derive(Clone, Debug)]
@@ -78,19 +62,11 @@ pub struct PatchsetDetailsScene {
     pub is_current_patch_reply_staged: bool,
 }
 
-// ---------------------------------------------------------------------------
-// Edit config
-// ---------------------------------------------------------------------------
-
 /// Scene for the edit-configuration screen.
 #[derive(Clone, Debug)]
 pub struct EditConfigScene {
     pub entries: Vec<ConfigEntryRow>,
 }
-
-// ---------------------------------------------------------------------------
-// Discriminated body
-// ---------------------------------------------------------------------------
 
 /// Which screen's scene the body carries.
 #[derive(Clone, Debug)]
@@ -102,10 +78,6 @@ pub enum UiBody {
     EditConfig(EditConfigScene),
 }
 
-// ---------------------------------------------------------------------------
-// Navigation bar
-// ---------------------------------------------------------------------------
-
 /// Pre-computed navigation-bar content.
 ///
 /// `mode_spans` is a list of styled text spans that together form the left
@@ -116,10 +88,6 @@ pub struct NavigationBarScene {
     pub mode_spans: Vec<Span<'static>>,
     pub keys_hint: Span<'static>,
 }
-
-// ---------------------------------------------------------------------------
-// Popup
-// ---------------------------------------------------------------------------
 
 /// Structured body for each popup variant.
 #[derive(Clone, Debug)]
@@ -148,10 +116,6 @@ pub struct PopupScene {
     /// `(width_percent, height_percent)` of the terminal area.
     pub dimensions: (u16, u16),
 }
-
-// ---------------------------------------------------------------------------
-// Top-level scene
-// ---------------------------------------------------------------------------
 
 /// The complete, paint-ready visual snapshot for one TUI frame.
 #[derive(Clone, Debug)]
