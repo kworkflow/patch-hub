@@ -201,7 +201,7 @@ async fn on_input(
                 handle_patchset_details(app, input, terminal_handle).await?;
             }
             CurrentScreen::EditConfig => {
-                handle_edit_config(app, input)?;
+                handle_edit_config(app, input).await?;
             }
             CurrentScreen::LatestPatchsets => {
                 handle_latest_patchsets(app, input, loading).await?;
@@ -227,7 +227,7 @@ mod tests {
             state::{AppState, ConfigUiState, LoreUiState, NavigationState, UserLoreState},
             AppServices,
         },
-        config::ConfigState,
+        config::{ConfigHandle, ConfigState},
         infrastructure::{
             env::MockEnvTrait, file_system::MockFileSystemTrait, shell::MockShellTrait,
         },
@@ -253,26 +253,9 @@ mod tests {
 
     use super::*;
 
-    struct NullConfigService;
-
-    impl crate::config::ConfigServiceApi for NullConfigService {
-        fn snapshot(&self) -> crate::config::ConfigSnapshot {
-            ConfigState::default().to_snapshot()
-        }
-
-        fn validate_update(
-            &self,
-            _: crate::config::ConfigUpdateDraft,
-        ) -> Result<crate::config::ValidatedConfigUpdate, crate::config::ConfigError> {
-            unimplemented!()
-        }
-
-        fn apply_update(
-            &mut self,
-            _: crate::config::ValidatedConfigUpdate,
-        ) -> Result<crate::config::ConfigSnapshot, crate::config::ConfigError> {
-            unimplemented!()
-        }
+    fn dummy_config_handle() -> ConfigHandle {
+        let (config_tx, _config_rx) = mpsc::channel(1);
+        ConfigHandle::new(config_tx)
     }
 
     fn minimal_app_with_env(env: MockEnvTrait) -> App {
@@ -313,7 +296,7 @@ mod tests {
                 shell: Box::new(MockShellTrait::new()),
                 fs: Box::new(MockFileSystemTrait::new()),
                 env: Box::new(env),
-                config: Box::new(NullConfigService),
+                config: dummy_config_handle(),
             },
         }
     }
@@ -417,7 +400,8 @@ mod tests {
         let ui_handle = UiActor::spawn();
 
         let app = App::new(
-            Box::new(NullConfigService),
+            ConfigState::default().to_snapshot(),
+            dummy_config_handle(),
             bootstrap,
             Box::new(MockFileSystemTrait::new()),
             Box::new(MockShellTrait::new()),

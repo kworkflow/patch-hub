@@ -10,6 +10,7 @@ use crate::config::update::{ConfigUpdateDraft, ValidatedConfigUpdate};
 use crate::infrastructure::{env::EnvTrait, file_system::FileSystemTrait};
 
 /// Public surface for configuration.
+#[allow(dead_code)]
 pub trait ConfigServiceApi: Send + Sync {
     fn snapshot(&self) -> ConfigSnapshot;
     fn validate_update(
@@ -176,6 +177,7 @@ impl<FS: FileSystemTrait + Send + Sync> ConfigService<FS> {
     /// Bootstrap configuration: load file or defaults, persist, apply env overrides, ensure dirs.
     ///
     /// Loads file or defaults, saves, applies env overrides, ensures directories exist.
+    #[allow(dead_code)]
     pub fn bootstrap(env: &dyn EnvTrait, fs: FS) -> Result<Self, ConfigError> {
         let (state, repo) = bootstrap_parts(env, fs)?;
         Ok(Self { repo, state })

@@ -14,7 +14,7 @@ use app::{actor::AppActor, App};
 use clap::Parser;
 use cli::Cli;
 use color_eyre::eyre::eyre;
-use config::{ConfigService, ConfigServiceApi};
+use config::{bootstrap_parts, ConfigActor};
 use infrastructure::{
     env::OsEnv,
     file_system::OsFileSystem,
@@ -55,9 +55,8 @@ async fn main() -> color_eyre::Result<()> {
     infrastructure::errors::install_hooks()?;
 
     let env = OsEnv;
-    let config_service: Box<dyn ConfigServiceApi> =
-        Box::new(ConfigService::bootstrap(&env, OsFileSystem).map_err(|e| eyre!(e))?);
-    let config = config_service.snapshot();
+    let (config_state, config_repo) = bootstrap_parts(&env, OsFileSystem).map_err(|e| eyre!(e))?;
+    let config = config_state.to_snapshot();
 
     // with the config we can update log directory
     let _guards = multi_log_file_writer.update_log_writer_with_config(
@@ -71,6 +70,7 @@ async fn main() -> color_eyre::Result<()> {
         ControlFlow::Continue(()) => {}
     }
 
+    let config_handle = ConfigActor::spawn(config_state, config_repo);
     let terminal_handle = TerminalActor::spawn(Box::new(CrosstermTerminalSession::new(init()?)));
     let ui_handle = UiActor::spawn();
 
@@ -110,7 +110,11 @@ async fn main() -> color_eyre::Result<()> {
     let bootstrap = lore_api.get_bootstrap_data().await.unwrap_or_default();
 
     let app = App::new(
-        config_service,
+        config_handle
+            .get_snapshot()
+            .await
+            .map_err(|error| eyre!("{error}"))?,
+        config_handle.clone(),
         bootstrap,
         Box::new(OsFileSystem),
         Box::new(OsShell),
@@ -127,10 +131,11 @@ async fn main() -> color_eyre::Result<()> {
 
     // Shutdown ordering:
     //  1. AppActor — exits when the user quits (input channel closes)
-    //  2. LoreApiActor — no further requests once App is gone
-    //  3. RenderActor  — no further requests once App is gone
-    //  4. UiActor      — no further scene builds once App is gone
-    //  5. TerminalActor — restores the terminal last so the screen stays usable
+    //  2. ConfigActor — no further configuration requests once App is gone
+    //  3. LoreApiActor — no further requests once App is gone
+    //  4. RenderActor  — no further requests once App is gone
+    //  5. UiActor      — no further scene builds once App is gone
+    //  6. TerminalActor — restores the terminal last so the screen stays usable
     //                     during the steps above
     AppActor::spawn(
         app,
@@ -141,6 +146,7 @@ async fn main() -> color_eyre::Result<()> {
     )
     .run_until_done()
     .await?;
+    config_handle.shutdown().await;
     lore_api.shutdown().await;
     render.shutdown().await;
     ui_handle.shutdown().await;

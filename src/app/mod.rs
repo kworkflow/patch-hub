@@ -27,7 +27,7 @@ use tracing::{debug, event, info, warn, Level};
 use std::path::PathBuf;
 
 use crate::{
-    config::ConfigServiceApi,
+    config::{ConfigHandle, ConfigSnapshot},
     infrastructure::{
         env::EnvTrait,
         file_system::FileSystemTrait,
@@ -62,7 +62,7 @@ pub struct AppServices {
     pub shell: Box<dyn ShellTrait>,
     pub fs: Box<dyn FileSystemTrait>,
     pub env: Box<dyn EnvTrait>,
-    pub config: Box<dyn ConfigServiceApi>,
+    pub config: ConfigHandle,
 }
 
 /// Result type signalling whether a patchset was successfully loaded.
@@ -78,14 +78,17 @@ pub struct App {
 }
 
 impl App {
-    /// Creates a new instance of `App`. Configuration comes from [`ConfigServiceApi::snapshot`];
-    /// Lore bootstrap uses already-warmed cache from `lore_service`.
+    /// Creates a new instance of `App`.
+    ///
+    /// Configuration starts from the already-bootstrapped snapshot owned by the
+    /// Config actor. Lore bootstrap uses already-warmed cache from `lore_service`.
     ///
     /// # Returns
     ///
     /// `App` instance with loading configurations and app data.
     pub fn new(
-        config_service: Box<dyn ConfigServiceApi>,
+        config: ConfigSnapshot,
+        config_handle: ConfigHandle,
         bootstrap: BootstrapLoreData,
         fs: Box<dyn FileSystemTrait>,
         shell: Box<dyn ShellTrait>,
@@ -93,8 +96,6 @@ impl App {
         lore_api: LoreApiHandle,
         render: RenderHandle,
     ) -> color_eyre::Result<Self> {
-        let config = config_service.snapshot();
-
         event!(Level::INFO, "patch-hub started");
         collect_garbage(&config);
 
@@ -130,7 +131,7 @@ impl App {
                 shell,
                 fs,
                 env,
-                config: config_service,
+                config: config_handle,
             },
         })
     }
@@ -489,12 +490,16 @@ impl App {
     }
 
     /// Applies edited values from [`ConfigUiState::edit_config`] into [`AppState::config`].
-    pub fn consolidate_edit_config(&mut self) -> color_eyre::Result<()> {
+    pub async fn consolidate_edit_config(&mut self) -> color_eyre::Result<()> {
         if let Some(edit_config) = &self.state.config_state.edit_config {
             debug!("validating and applying config update");
             let draft = edit_config.to_update_draft();
-            let validated = self.services.config.validate_update(draft)?;
-            let snapshot = self.services.config.apply_update(validated)?;
+            let snapshot = self
+                .services
+                .config
+                .validate_and_apply(draft)
+                .await
+                .map_err(|e| eyre!("{e:#?}"))?;
             self.state.config = snapshot;
             info!("configuration updated and persisted");
         }
