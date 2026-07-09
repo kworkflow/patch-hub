@@ -52,6 +52,25 @@ pub(crate) fn lore_handle_with_patch_details_failure() -> LoreApiHandle {
     LoreApiHandle::new(tx)
 }
 
+pub(crate) fn lore_handle_with_persistence() -> LoreApiHandle {
+    let (tx, mut rx) = mpsc::channel(8);
+    spawn(async move {
+        while let Some(message) = rx.recv().await {
+            match message {
+                LoreApiMessage::SaveBookmarks { reply, .. } => {
+                    reply.send(Ok(())).ok();
+                }
+                LoreApiMessage::SaveReviewed { reply, .. } => {
+                    reply.send(Ok(())).ok();
+                }
+                LoreApiMessage::Shutdown => break,
+                other => panic!("unexpected lore message: {}", other.name()),
+            }
+        }
+    });
+    LoreApiHandle::new(tx)
+}
+
 pub(crate) fn sample_mailing_list() -> MailingList {
     MailingList::new("test-list", "Test list")
 }

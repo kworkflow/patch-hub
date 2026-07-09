@@ -1,6 +1,7 @@
 mod flow_errors;
 mod flow_navigation;
 mod helpers;
+mod patchset_actions;
 
 use crate::app::{loading::LoadingIndicator, screens::CurrentScreen};
 

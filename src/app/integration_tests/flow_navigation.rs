@@ -52,13 +52,9 @@ async fn latest_list_opens_details_and_back_returns_to_latest() {
     );
     assert!(harness.app.state.lore.details.is_some());
 
-    handle_patchset_details(
-        &mut harness.app,
-        InputEvent::Back,
-        &dummy_terminal_handle(),
-    )
-    .await
-    .unwrap();
+    handle_patchset_details(&mut harness.app, InputEvent::Back, &dummy_terminal_handle())
+        .await
+        .unwrap();
 
     assert_eq!(
         CurrentScreen::LatestPatchsets,
@@ -101,13 +97,9 @@ async fn bookmarked_list_opens_details_and_back_returns_to_bookmarks() {
     );
     assert!(harness.app.state.lore.details.is_some());
 
-    handle_patchset_details(
-        &mut harness.app,
-        InputEvent::Back,
-        &dummy_terminal_handle(),
-    )
-    .await
-    .unwrap();
+    handle_patchset_details(&mut harness.app, InputEvent::Back, &dummy_terminal_handle())
+        .await
+        .unwrap();
 
     assert_eq!(
         CurrentScreen::BookmarkedPatchsets,

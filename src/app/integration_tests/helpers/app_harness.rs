@@ -17,9 +17,7 @@ pub(crate) struct AppHarness {
 
 impl AppHarness {
     pub(crate) fn new() -> Self {
-        Self {
-            app: minimal_app(),
-        }
+        Self { app: minimal_app() }
     }
 
     pub(crate) fn with_handles(lore_api: LoreApiHandle, render: RenderHandle) -> Self {
