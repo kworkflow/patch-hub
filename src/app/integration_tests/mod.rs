@@ -1,3 +1,4 @@
+mod flow_navigation;
 mod helpers;
 
 use crate::app::{loading::LoadingIndicator, screens::CurrentScreen};

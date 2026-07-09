@@ -1,11 +1,35 @@
 use std::collections::HashSet;
 
 use serde_xml_rs::from_str;
+use tokio::{spawn, sync::mpsc};
 
 use crate::lore::{
-    application::dto::{PatchTagSummary, PatchsetDetails},
+    application::{
+        dto::{PatchTagSummary, PatchsetDetails},
+        handle::LoreApiHandle,
+        messages::LoreApiMessage,
+    },
     domain::{mailing_list::MailingList, patch::Patch},
 };
+
+pub(crate) fn lore_handle_with_successful_patch_flow() -> LoreApiHandle {
+    let (tx, mut rx) = mpsc::channel(8);
+    spawn(async move {
+        while let Some(message) = rx.recv().await {
+            match message {
+                LoreApiMessage::FetchFeedPage { reply, .. } => {
+                    reply.send(Ok(vec![sample_patch()])).ok();
+                }
+                LoreApiMessage::FetchPatchsetDetails { reply, .. } => {
+                    reply.send(Ok(sample_patchset_details())).ok();
+                }
+                LoreApiMessage::Shutdown => break,
+                other => panic!("unexpected lore message: {}", other.name()),
+            }
+        }
+    });
+    LoreApiHandle::new(tx)
+}
 
 pub(crate) fn sample_mailing_list() -> MailingList {
     MailingList::new("test-list", "Test list")
