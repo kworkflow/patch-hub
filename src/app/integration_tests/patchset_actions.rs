@@ -1,7 +1,9 @@
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, HashSet, VecDeque},
     sync::{Arc, Mutex},
 };
+
+use tokio::{spawn, sync::mpsc};
 
 use crate::{
     app::{
@@ -16,6 +18,9 @@ use crate::{
     infrastructure::{
         file_system::MockFileSystemTrait,
         shell::{MockShellTrait, ShellCommand, ShellOutput},
+    },
+    lore::application::{
+        cache::BootstrapLoreData, handle::LoreApiHandle, messages::LoreApiMessage,
     },
 };
 
@@ -86,24 +91,108 @@ async fn apply_failure_sets_failure_popup_and_resets_apply_action() {
     );
 }
 
+#[tokio::test]
+async fn reviewed_reply_success_records_persists_and_resets_reply_action() {
+    let saved_reviewed = Arc::new(Mutex::new(None));
+    let lore_api = reviewed_reply_lore_handle(Arc::clone(&saved_reviewed));
+    let mut shell = MockShellTrait::new();
+    shell
+        .expect_execute()
+        .withf(|cmd| cmd.program == "mktemp" && cmd.args == ["--directory"])
+        .times(1)
+        .returning(|_| Ok(output("/tmp/reviewed-reply\n", "", true)));
+    shell
+        .expect_spawn_interactive()
+        .times(1)
+        .returning(|_| Ok(true));
+    let mut app = app_with_reviewed_reply_details(shell, lore_api);
+    let message_id = selected_message_id(&app);
+
+    app.consolidate_patchset_actions().await.unwrap();
+
+    assert_reply_action_reset(&app);
+    assert_eq!(
+        HashSet::from([0]),
+        app.state.user_state.reviewed_patchsets[&message_id]
+    );
+    let saved = saved_reviewed
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("reviewed state should be persisted");
+    assert_eq!(HashSet::from([0]), saved[&message_id]);
+}
+
+#[tokio::test]
+async fn reviewed_reply_failure_does_not_record_failed_index() {
+    let saved_reviewed = Arc::new(Mutex::new(None));
+    let lore_api = reviewed_reply_lore_handle(Arc::clone(&saved_reviewed));
+    let mut shell = MockShellTrait::new();
+    shell
+        .expect_execute()
+        .withf(|cmd| cmd.program == "mktemp" && cmd.args == ["--directory"])
+        .times(1)
+        .returning(|_| Ok(output("/tmp/reviewed-reply\n", "", true)));
+    shell
+        .expect_spawn_interactive()
+        .times(1)
+        .returning(|_| Ok(false));
+    let mut app = app_with_reviewed_reply_details(shell, lore_api);
+    let message_id = selected_message_id(&app);
+
+    app.consolidate_patchset_actions().await.unwrap();
+
+    assert_reply_action_reset(&app);
+    assert!(app.state.user_state.reviewed_patchsets[&message_id].is_empty());
+    let saved = saved_reviewed
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("reviewed state should be persisted");
+    assert!(saved[&message_id].is_empty());
+}
+
 fn app_with_apply_details(fs: MockFileSystemTrait, shell: MockShellTrait) -> App {
+    app_with_details(
+        fs,
+        shell,
+        lore_handle_with_persistence(),
+        apply_details_state(),
+    )
+}
+
+fn app_with_reviewed_reply_details(shell: MockShellTrait, lore_api: LoreApiHandle) -> App {
+    app_with_details(
+        MockFileSystemTrait::new(),
+        shell,
+        lore_api,
+        reviewed_reply_details_state(),
+    )
+}
+
+fn app_with_details(
+    fs: MockFileSystemTrait,
+    shell: MockShellTrait,
+    lore_api: LoreApiHandle,
+    details: PatchsetDetailsState,
+) -> App {
     let mut app = App::new(
         apply_config(),
         dummy_config_handle(),
-        crate::lore::application::cache::BootstrapLoreData {
+        BootstrapLoreData {
             mailing_lists: vec![sample_mailing_list()],
             bookmarks: vec![],
             reviewed: Default::default(),
         },
         Box::new(fs),
         Box::new(shell),
-        lore_handle_with_persistence(),
+        lore_api,
         dummy_render_handle(),
     )
     .expect("app should build");
 
     app.state.navigation.current_screen = CurrentScreen::PatchsetDetails;
-    app.state.lore.details = Some(apply_details_state());
+    app.state.lore.details = Some(details);
     app
 }
 
@@ -117,6 +206,55 @@ fn apply_details_state() -> PatchsetDetailsState {
     );
     details.toggle_apply_action();
     details
+}
+
+fn reviewed_reply_details_state() -> PatchsetDetailsState {
+    let mut details = PatchsetDetailsState::from_rendered_preview(
+        sample_patch(),
+        sample_patchset_details(),
+        sample_rendered_preview(),
+        false,
+        CurrentScreen::LatestPatchsets,
+    );
+    details.toggle_reply_with_reviewed_by_action(false);
+    details
+}
+
+fn reviewed_reply_lore_handle(
+    saved_reviewed: Arc<Mutex<Option<HashMap<String, HashSet<usize>>>>>,
+) -> LoreApiHandle {
+    let (tx, mut rx) = mpsc::channel(8);
+    spawn(async move {
+        while let Some(message) = rx.recv().await {
+            match message {
+                LoreApiMessage::SaveBookmarks { reply, .. } => {
+                    reply.send(Ok(())).ok();
+                }
+                LoreApiMessage::GetGitSignature { reply, .. } => {
+                    reply
+                        .send(Ok((
+                            "Reviewer".to_string(),
+                            "reviewer@example.com".to_string(),
+                        )))
+                        .ok();
+                }
+                LoreApiMessage::PrepareReplyCommands { reply, .. } => {
+                    reply
+                        .send(Ok(vec![
+                            ShellCommand::new("git").args(["send-email", "--annotate"])
+                        ]))
+                        .ok();
+                }
+                LoreApiMessage::SaveReviewed { reviewed, reply } => {
+                    *saved_reviewed.lock().unwrap() = Some(reviewed);
+                    reply.send(Ok(())).ok();
+                }
+                LoreApiMessage::Shutdown => break,
+                other => panic!("unexpected lore message: {}", other.name()),
+            }
+        }
+    });
+    LoreApiHandle::new(tx)
 }
 
 fn apply_config() -> ConfigSnapshot {
@@ -189,6 +327,34 @@ fn assert_apply_action(app: &App, expected: bool) {
         Some(&expected),
         details.patchset_actions.get(&PatchsetAction::Apply)
     );
+}
+
+fn selected_message_id(app: &App) -> String {
+    app.state
+        .lore
+        .details
+        .as_ref()
+        .expect("details should remain loaded")
+        .representative_patch
+        .message_id()
+        .href
+        .clone()
+}
+
+fn assert_reply_action_reset(app: &App) {
+    let details = app
+        .state
+        .lore
+        .details
+        .as_ref()
+        .expect("details should remain loaded");
+    assert_eq!(
+        Some(&false),
+        details
+            .patchset_actions
+            .get(&PatchsetAction::ReplyWithReviewedBy)
+    );
+    assert_eq!(vec![false], details.patches_to_reply);
 }
 
 fn assert_info_popup_contains(popup: Option<&AppPopup>, expected_title: &str, expected: &[&str]) {
