@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use ansi_to_tui::IntoText;
+use chrono::Utc;
 
 use crate::{
     config::{ConfigSnapshot, KernelTree},
@@ -390,7 +391,7 @@ impl PatchsetDetailsState {
         let target_branch_name = format!(
             "{}{}",
             config.git_am_branch_prefix(),
-            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S")
+            Utc::now().format("%Y-%m-%d-%H-%M-%S")
         );
 
         let out = shell

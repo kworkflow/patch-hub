@@ -1,3 +1,5 @@
+use color_eyre::Result;
+
 use crate::app::{popup::AppPopup, screens::CurrentScreen, App, B4Result};
 
 #[derive(Debug, PartialEq)]
@@ -9,7 +11,7 @@ enum OpenPatchsetAction {
 pub(super) fn apply_open_patchset_result(
     app: &mut App,
     origin: CurrentScreen,
-    result: color_eyre::Result<B4Result>,
+    result: Result<B4Result>,
 ) {
     match resolve_open_patchset_result(origin, result) {
         OpenPatchsetAction::ShowDetails => {
@@ -24,7 +26,7 @@ pub(super) fn apply_open_patchset_result(
 
 fn resolve_open_patchset_result(
     origin: CurrentScreen,
-    result: color_eyre::Result<B4Result>,
+    result: Result<B4Result>,
 ) -> OpenPatchsetAction {
     match result {
         Ok(B4Result::PatchFound) => OpenPatchsetAction::ShowDetails,

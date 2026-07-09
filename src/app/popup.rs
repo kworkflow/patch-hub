@@ -4,7 +4,12 @@
 //! Each variant owns all data required to present the popup and tracks scroll
 //! position so the presentation layer receives a read-only snapshot.
 
-use crate::{app::screens::details_actions::PatchsetDetailsState, input::event::InputEvent};
+use std::collections::HashSet;
+
+use crate::{
+    app::screens::details_actions::PatchsetDetailsState, input::event::InputEvent,
+    lore::domain::patch::Author,
+};
 
 // ---------------------------------------------------------------------------
 // Main enum
@@ -76,18 +81,17 @@ impl AppPopup {
         let i = details.preview_index;
         let mut columns: usize = 0;
 
-        let mut format_section =
-            |authors: &std::collections::HashSet<crate::lore::domain::patch::Author>| -> String {
-                let mut text = String::new();
-                for author in authors {
-                    let line = format!(" - {author}\n");
-                    if line.len() > columns {
-                        columns = line.len();
-                    }
-                    text.push_str(&line);
+        let mut format_section = |authors: &HashSet<Author>| -> String {
+            let mut text = String::new();
+            for author in authors {
+                let line = format!(" - {author}\n");
+                if line.len() > columns {
+                    columns = line.len();
                 }
-                text
-            };
+                text.push_str(&line);
+            }
+            text
+        };
 
         let reviewed_by = format_section(&details.reviewed_by[i]);
         let tested_by = format_section(&details.tested_by[i]);

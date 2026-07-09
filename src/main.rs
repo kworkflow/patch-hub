@@ -13,14 +13,14 @@ mod ui;
 use app::{actor::AppActor, dependencies::check_external_deps, App};
 use clap::Parser;
 use cli::Cli;
-use color_eyre::eyre::eyre;
+use color_eyre::{eyre::eyre, Result};
 use config::{bootstrap_parts, ConfigActor};
 use infrastructure::{
     env::OsEnv,
-    file_system::OsFileSystem,
+    file_system::{FileSystemTrait, OsFileSystem},
     monitoring::{init_monitoring, InitMonitoringProduct},
     net::UreqNetClient,
-    shell::OsShell,
+    shell::{OsShell, ShellTrait},
     terminal::init,
 };
 use input::{actor::InputActor, event::InputEvent};
@@ -41,7 +41,7 @@ use tracing::{event, Level};
 use ui::actor::UiActor;
 
 #[tokio::main]
-async fn main() -> color_eyre::Result<()> {
+async fn main() -> Result<()> {
     // file writer guards should be propagated to main() so the logging thread lives enough
     let InitMonitoringProduct {
         logging_guards_by_file_name,
@@ -78,8 +78,8 @@ async fn main() -> color_eyre::Result<()> {
 
     // Build shared infrastructure dependencies for LoreService
     let net = Arc::new(UreqNetClient::new());
-    let fs_arc: Arc<dyn infrastructure::file_system::FileSystemTrait> = Arc::new(OsFileSystem);
-    let shell_arc: Arc<dyn infrastructure::shell::ShellTrait> = Arc::new(OsShell);
+    let fs_arc: Arc<dyn FileSystemTrait> = Arc::new(OsFileSystem);
+    let shell_arc: Arc<dyn ShellTrait> = Arc::new(OsShell);
 
     let gateway = Arc::new(HttpLoreGateway::new(net));
     let persistence = Arc::new(FileLorePersistence::new(

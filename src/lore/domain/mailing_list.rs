@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use derive_getters::Getters;
 use serde::{Deserialize, Serialize};
 
@@ -17,13 +19,13 @@ impl MailingList {
 }
 
 impl Ord for MailingList {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         self.name.cmp(&other.name)
     }
 }
 
 impl PartialOrd for MailingList {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }

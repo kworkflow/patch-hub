@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use mockall::automock;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
@@ -116,7 +116,7 @@ fn wait_for_key_press_from_session(
     key: KeyCode,
     timeout: Duration,
 ) -> TerminalResult<bool> {
-    let started_at = std::time::Instant::now();
+    let started_at = Instant::now();
 
     while started_at.elapsed() < timeout {
         let elapsed = started_at.elapsed();

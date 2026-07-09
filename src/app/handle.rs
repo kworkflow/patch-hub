@@ -1,3 +1,4 @@
+use color_eyre::Result;
 use tokio::task::JoinHandle;
 
 /// Handle to the `AppActor` task.
@@ -6,17 +7,17 @@ use tokio::task::JoinHandle;
 /// The actor runs until the input event channel closes (user exits) or an
 /// unrecoverable error propagates from the run loop.
 pub struct AppHandle {
-    join: JoinHandle<color_eyre::Result<()>>,
+    join: JoinHandle<Result<()>>,
 }
 
 impl AppHandle {
-    pub(crate) fn new(join: JoinHandle<color_eyre::Result<()>>) -> Self {
+    pub(crate) fn new(join: JoinHandle<Result<()>>) -> Self {
         Self { join }
     }
 
     /// Blocks the caller until the actor task completes, propagating any error
     /// returned by the actor's run loop.
-    pub async fn run_until_done(self) -> color_eyre::Result<()> {
+    pub async fn run_until_done(self) -> Result<()> {
         self.join.await?
     }
 }

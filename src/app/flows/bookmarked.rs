@@ -1,5 +1,7 @@
 use tracing::debug;
 
+use color_eyre::Result;
+
 use crate::{
     app::{loading::LoadingIndicator, popup::AppPopup, screens::CurrentScreen, App},
     input::event::InputEvent,
@@ -11,7 +13,7 @@ pub async fn handle_bookmarked_patchsets(
     app: &mut App,
     input: InputEvent,
     loading: &mut dyn LoadingIndicator,
-) -> color_eyre::Result<()> {
+) -> Result<()> {
     match input {
         InputEvent::OpenHelp => {
             let popup = generate_help_popup();

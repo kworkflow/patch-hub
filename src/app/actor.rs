@@ -11,6 +11,9 @@
 //! actor is spawned.
 use std::ops::ControlFlow;
 
+use color_eyre::{eyre::eyre, Result};
+use tokio::{spawn, sync::mpsc};
+
 use crate::{
     app::{
         flows::{
@@ -40,7 +43,7 @@ pub struct AppActor {
     terminal_handle: TerminalHandle,
     ui_handle: UiHandle,
     input_handle: InputHandle,
-    event_rx: tokio::sync::mpsc::Receiver<InputEvent>,
+    event_rx: mpsc::Receiver<InputEvent>,
 }
 
 impl AppActor {
@@ -51,7 +54,7 @@ impl AppActor {
         terminal_handle: TerminalHandle,
         ui_handle: UiHandle,
         input_handle: InputHandle,
-        event_rx: tokio::sync::mpsc::Receiver<InputEvent>,
+        event_rx: mpsc::Receiver<InputEvent>,
     ) -> AppHandle {
         tracing::debug!("spawning app actor");
         let actor = Self {
@@ -61,10 +64,10 @@ impl AppActor {
             input_handle,
             event_rx,
         };
-        AppHandle::new(tokio::spawn(actor.run()))
+        AppHandle::new(spawn(actor.run()))
     }
 
-    async fn run(mut self) -> color_eyre::Result<()> {
+    async fn run(mut self) -> Result<()> {
         tracing::info!("app actor started");
         tracing::info!("app actor initialized");
 
@@ -77,7 +80,7 @@ impl AppActor {
                 .ui_handle
                 .build_scene(self.app.present())
                 .await
-                .map_err(|e| color_eyre::eyre::eyre!("{e}"))?;
+                .map_err(|e| eyre!("{e}"))?;
             self.terminal_handle
                 .draw(TerminalFrame::Main(Box::new(scene)))
                 .await
@@ -114,7 +117,7 @@ async fn on_input(
     input: InputEvent,
     terminal_handle: &TerminalHandle,
     loading: &mut TerminalLoadingIndicator,
-) -> color_eyre::Result<ControlFlow<()>> {
+) -> Result<ControlFlow<()>> {
     if let Some(popup) = app.state.popup.as_mut() {
         if input == InputEvent::ClosePopup {
             app.state.popup = None;

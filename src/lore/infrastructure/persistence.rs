@@ -1,4 +1,6 @@
 use mockall::automock;
+use serde::{de::DeserializeOwned, Serialize};
+use serde_json::{from_reader, to_writer};
 
 use std::{
     collections::{HashMap, HashSet},
@@ -58,7 +60,7 @@ impl FileLorePersistence {
         }
     }
 
-    fn atomic_write_json<T: serde::Serialize + ?Sized>(
+    fn atomic_write_json<T: Serialize + ?Sized>(
         &self,
         value: &T,
         path: &str,
@@ -70,15 +72,15 @@ impl FileLorePersistence {
         let tmp_path = format!("{path}.tmp");
         {
             let writer = self.fs.create_writer(Path::new(&tmp_path))?;
-            serde_json::to_writer(writer, value).map_err(io::Error::from)?;
+            to_writer(writer, value).map_err(io::Error::from)?;
         }
         self.fs.rename(Path::new(&tmp_path), Path::new(path))?;
         Ok(())
     }
 
-    fn read_json<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T, FileSystemError> {
+    fn read_json<T: DeserializeOwned>(&self, path: &str) -> Result<T, FileSystemError> {
         let reader = self.fs.open_bufreader(Path::new(path))?;
-        serde_json::from_reader(reader)
+        from_reader(reader)
             .map_err(io::Error::from)
             .map_err(FileSystemError::from)
     }

@@ -2,7 +2,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState},
+    widgets::{Block, BorderType, Borders, HighlightSpacing, List, ListItem, ListState},
     Frame,
 };
 
@@ -45,7 +45,7 @@ pub fn paint(f: &mut Frame, scene: &LatestScene, chunk: Rect) {
 
     let list_block = Block::default()
         .borders(Borders::ALL)
-        .border_type(ratatui::widgets::BorderType::Double)
+        .border_type(BorderType::Double)
         .style(Style::default());
 
     let list = List::new(list_items)

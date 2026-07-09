@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use color_eyre::Result;
 use ratatui::crossterm::event::KeyCode;
 use tracing::debug;
 
@@ -15,7 +16,7 @@ pub async fn handle_patchset_details(
     app: &mut App,
     input: InputEvent,
     terminal_handle: &TerminalHandle,
-) -> color_eyre::Result<()> {
+) -> Result<()> {
     let patchset_details_and_actions = app
         .state
         .lore
@@ -108,7 +109,7 @@ pub async fn handle_patchset_details(
 async fn preview_scroll_lines(
     amount: ScrollAmount,
     terminal_handle: &TerminalHandle,
-) -> color_eyre::Result<usize> {
+) -> Result<usize> {
     let (_, height) = terminal_handle.size().await?;
     Ok(match amount {
         ScrollAmount::Line => 1,

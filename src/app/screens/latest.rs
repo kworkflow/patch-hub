@@ -1,4 +1,4 @@
-use color_eyre::eyre::bail;
+use color_eyre::{eyre::bail, Result};
 
 use crate::lore::{
     application::{cache::CacheMode, errors::LoreError, handle::LoreApiHandle},
@@ -43,7 +43,7 @@ impl LatestPatchsetsState {
         &mut self,
         lore_api: &LoreApiHandle,
         mode: CacheMode,
-    ) -> color_eyre::Result<()> {
+    ) -> Result<()> {
         match lore_api
             .fetch_feed_page(
                 self.target_list.clone(),

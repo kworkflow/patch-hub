@@ -8,9 +8,12 @@
 //! out of [`AppState`](crate::app::state::AppState): the app layer projects domain
 //! state into [`AppViewModel`](crate::app::view_model::AppViewModel) before
 //! crossing this boundary.
-use std::ops::ControlFlow;
+use std::{mem, ops::ControlFlow};
 
-use tokio::sync::{mpsc, oneshot};
+use tokio::{
+    spawn,
+    sync::{mpsc, oneshot},
+};
 
 use crate::ui::{
     core::UiCore,
@@ -36,7 +39,7 @@ impl UiActor {
     pub fn spawn() -> UiHandle {
         let (tx, rx) = mpsc::channel(DEFAULT_UI_CHANNEL_SIZE);
         tracing::debug!(channel_size = DEFAULT_UI_CHANNEL_SIZE, "spawning ui actor");
-        tokio::spawn(Self::new(rx).run());
+        spawn(Self::new(rx).run());
         UiHandle::new(tx)
     }
 
@@ -57,7 +60,7 @@ impl UiActor {
         match message {
             UiMessage::BuildScene { app_view, reply_to } => {
                 tracing::debug!(
-                    screen = ?std::mem::discriminant(&app_view.screen),
+                    screen = ?mem::discriminant(&app_view.screen),
                     has_popup = app_view.popup.is_some(),
                     "building ui scene"
                 );

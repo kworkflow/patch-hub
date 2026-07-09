@@ -22,10 +22,13 @@ pub mod state;
 pub mod updates;
 pub mod view_model;
 
-use color_eyre::eyre::{bail, eyre};
+use color_eyre::{
+    eyre::{bail, eyre},
+    Result,
+};
 use tracing::{debug, event, info, warn, Level};
 
-use std::path::PathBuf;
+use std::{path::PathBuf, str};
 
 use crate::{
     config::{ConfigHandle, ConfigSnapshot},
@@ -93,7 +96,7 @@ impl App {
         shell: Box<dyn ShellTrait>,
         lore_api: LoreApiHandle,
         render: RenderHandle,
-    ) -> color_eyre::Result<Self> {
+    ) -> Result<Self> {
         event!(Level::INFO, "patch-hub started");
         collect_garbage(&config);
 
@@ -160,7 +163,7 @@ impl App {
     }
 
     /// Fetches (or re-fetches) the current page of latest patchsets from Lore.
-    pub async fn fetch_latest_current_page(&mut self) -> color_eyre::Result<()> {
+    pub async fn fetch_latest_current_page(&mut self) -> Result<()> {
         let lore_api = &self.services.lore_api;
         let latest_patchsets = &mut self.state.lore.latest_patchsets;
         if let Some(patchsets) = latest_patchsets.as_mut() {
@@ -181,7 +184,7 @@ impl App {
     }
 
     /// Refreshes available mailing lists and updates [`LoreUiState::mailing_list_selection`].
-    pub async fn refresh_mailing_lists(&mut self) -> color_eyre::Result<()> {
+    pub async fn refresh_mailing_lists(&mut self) -> Result<()> {
         debug!("refreshing mailing lists");
         let result = self
             .state
@@ -197,7 +200,7 @@ impl App {
     }
 
     /// Loads patchset details into [`LoreUiState::details`].
-    pub async fn open_patchset_details(&mut self) -> color_eyre::Result<B4Result> {
+    pub async fn open_patchset_details(&mut self) -> Result<B4Result> {
         let representative_patch: Patch;
         let mut is_patchset_bookmarked = true;
 
@@ -288,7 +291,7 @@ impl App {
     /// # Panics
     ///
     /// Panics if [`LoreUiState::details`] is `None`.
-    pub async fn consolidate_patchset_actions(&mut self) -> color_eyre::Result<()> {
+    pub async fn consolidate_patchset_actions(&mut self) -> Result<()> {
         debug!("consolidating patchset actions");
         self.sync_patchset_bookmark().await?;
         self.execute_reviewed_reply().await?;
@@ -297,7 +300,7 @@ impl App {
         Ok(())
     }
 
-    async fn sync_patchset_bookmark(&mut self) -> color_eyre::Result<()> {
+    async fn sync_patchset_bookmark(&mut self) -> Result<()> {
         let details = self
             .state
             .lore
@@ -337,7 +340,7 @@ impl App {
         Ok(())
     }
 
-    async fn execute_reviewed_reply(&mut self) -> color_eyre::Result<()> {
+    async fn execute_reviewed_reply(&mut self) -> Result<()> {
         let details = self
             .state
             .lore
@@ -377,7 +380,7 @@ impl App {
                     .shell
                     .execute(&mktemp_cmd)
                     .map_err(|e| eyre!("failed to create temp directory: {}", e))?;
-                let tmp_dir_str = std::str::from_utf8(&tmp_out.stdout)
+                let tmp_dir_str = str::from_utf8(&tmp_out.stdout)
                     .map_err(|e| eyre!("invalid utf-8 in temp dir path: {}", e))?
                     .trim()
                     .to_string();
@@ -487,7 +490,7 @@ impl App {
     }
 
     /// Applies edited values from [`ConfigUiState::edit_config`] into [`AppState::config`].
-    pub async fn consolidate_edit_config(&mut self) -> color_eyre::Result<()> {
+    pub async fn consolidate_edit_config(&mut self) -> Result<()> {
         if let Some(edit_config) = &self.state.config_state.edit_config {
             debug!("validating and applying config update");
             let draft = edit_config.to_update_draft();

@@ -1,7 +1,10 @@
 use derive_getters::Getters;
 use patch_hub_proc_macros::serde_individual_default;
 use serde::Serialize;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    env,
+};
 
 use crate::config::update::ValidatedConfigUpdate;
 use crate::infrastructure::env::EnvTrait;
@@ -39,7 +42,7 @@ pub struct ConfigState {
 
 impl Default for ConfigState {
     fn default() -> Self {
-        let home = std::env::var("HOME").unwrap_or_else(|_| {
+        let home = env::var("HOME").unwrap_or_else(|_| {
             eprintln!("$HOME environment variable not set, using current directory");
             ".".to_string()
         });

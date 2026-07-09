@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use serde_json::to_writer_pretty;
+
 use crate::config::errors::ConfigError;
 use crate::config::state::ConfigState;
 use crate::config::DEFAULT_CONFIG_PATH_SUFFIX;
@@ -57,8 +59,7 @@ impl<FS: FileSystemTrait> ConfigRepository for JsonConfigRepository<FS> {
                 .fs
                 .create_writer(Path::new(&tmp_filename))
                 .map_err(ConfigError::from)?;
-            serde_json::to_writer_pretty(tmp_file, state)
-                .map_err(|e| ConfigError::Save(e.to_string()))?;
+            to_writer_pretty(tmp_file, state).map_err(|e| ConfigError::Save(e.to_string()))?;
         }
         self.fs
             .rename(Path::new(&tmp_filename), config_path)

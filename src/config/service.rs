@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use serde_json::from_str;
+
 use crate::config::env_overrides;
 use crate::config::errors::ConfigError;
 use crate::config::parsing::{parse_cover_renderer, parse_patch_renderer};
@@ -32,7 +34,7 @@ fn load_initial_state<FS: FileSystemTrait>(
     let fs = repo.fs();
     if fs.is_file(Path::new(path)) {
         match fs.read_to_string(Path::new(path)) {
-            Ok(file_contents) => match serde_json::from_str(&file_contents) {
+            Ok(file_contents) => match from_str(&file_contents) {
                 Ok(config) => return config,
                 Err(e) => eprintln!("Failed to parse config file {path}: {e}"),
             },

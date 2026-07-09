@@ -1,9 +1,11 @@
 use std::{
     collections::HashMap,
-    fs::{File, OpenOptions},
-    io::Write,
+    fs::{self, File, OpenOptions},
+    io::{self, Write},
     path::Path,
     sync::{Arc, Mutex},
+    thread,
+    time::Duration,
 };
 
 use tracing::{event, Level};
@@ -68,7 +70,7 @@ impl MultiLogFileWriter {
             if let Some(current_guard) = current_guards_by_file_name.remove(file_name) {
                 drop(current_guard);
                 // making sure we'll flush everything by the time we copy old file contents
-                std::thread::sleep(std::time::Duration::from_millis(50));
+                thread::sleep(Duration::from_millis(50));
             }
 
             let (file_writer, file_writer_guard) =
@@ -104,7 +106,7 @@ impl MultiLogFileWriter {
         };
         if let Some(parent_dir) = Path::new(&new_log_file_path).parent() {
             // Create new log dir if it doesn't exist
-            std::fs::create_dir_all(parent_dir).expect("to create dir");
+            fs::create_dir_all(parent_dir).expect("to create dir");
         }
         let Ok(mut new_log_file_content) = OpenOptions::new()
             .create(true)
@@ -119,7 +121,7 @@ impl MultiLogFileWriter {
             return;
         };
 
-        let copy_result = std::io::copy(&mut old_log_file_content, &mut new_log_file_content);
+        let copy_result = io::copy(&mut old_log_file_content, &mut new_log_file_content);
         if let Err(err) = copy_result {
             event!(Level::ERROR, "Could not copy old file logs: {}", err);
         };
@@ -127,7 +129,7 @@ impl MultiLogFileWriter {
 }
 
 impl Write for MultiLogFileWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         for writer in self.writer_by_file_name.values() {
             writer
                 .lock()
@@ -138,7 +140,7 @@ impl Write for MultiLogFileWriter {
         Ok(buf.len())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         for writer in self.writer_by_file_name.values() {
             writer
                 .lock()

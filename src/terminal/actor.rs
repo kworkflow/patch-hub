@@ -6,6 +6,7 @@
 //! e.g. crossterm) is moved into the actor at spawn time so no other component
 //! holds the terminal directly.
 use tokio::{
+    spawn,
     sync::{mpsc, oneshot},
     task,
 };
@@ -38,7 +39,7 @@ impl TerminalActor {
             channel_size = DEFAULT_TERMINAL_CHANNEL_SIZE,
             "spawning terminal actor"
         );
-        tokio::spawn(Self::new(session, rx).run());
+        spawn(Self::new(session, rx).run());
         TerminalHandle::new(tx)
     }
 

@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use chrono::Local;
 use multi_log_file_writer::{create_non_blocking_writer, get_fmt_layer, MultiLogFileWriter};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{reload::Handle, Layer, Registry};
@@ -43,10 +44,7 @@ pub fn init_logging_layer() -> InitLoggingLayerProduct {
 }
 
 fn init_logging_file_writers() -> InitLoggingFileWritersProduct {
-    let timestamp_log_file_name = format!(
-        "patch-hub_{}.log",
-        chrono::Local::now().format("%Y%m%d-%H%M%S")
-    );
+    let timestamp_log_file_name = format!("patch-hub_{}.log", Local::now().format("%Y%m%d-%H%M%S"));
 
     // logging thread should be non-blocking so it does not interfere with the rest of the application
     let (timestamp_log_writer, timestamp_log_writer_guard) =

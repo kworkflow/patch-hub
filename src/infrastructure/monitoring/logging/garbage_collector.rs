@@ -2,6 +2,8 @@
 //!
 //! This module is responsible for cleaning up the log files.
 
+use std::{fs, time::SystemTime};
+
 use tracing::{event, Level};
 
 use crate::config::ConfigSnapshot;
@@ -13,9 +15,9 @@ pub fn collect_garbage(config: &ConfigSnapshot) {
         return;
     }
 
-    let now = std::time::SystemTime::now();
+    let now = SystemTime::now();
     let logs_path = config.logs_path();
-    let Ok(logs) = std::fs::read_dir(logs_path) else {
+    let Ok(logs) = fs::read_dir(logs_path) else {
         event!(
             Level::ERROR,
             "Failed to read the logs directory during garbage collection"
@@ -43,7 +45,7 @@ pub fn collect_garbage(config: &ConfigSnapshot) {
         };
         let age = age.as_secs() / 60 / 60 / 24;
 
-        if age as usize > config.max_log_age() && std::fs::remove_file(log.path()).is_err() {
+        if age as usize > config.max_log_age() && fs::remove_file(log.path()).is_err() {
             event!(
                 Level::WARN,
                 "Failed to remove the log file: {}",
