@@ -1,9 +1,11 @@
 use tracing::debug;
 
 use crate::{
-    app::{loading::LoadingIndicator, popup::AppPopup, screens::CurrentScreen, App, B4Result},
+    app::{loading::LoadingIndicator, popup::AppPopup, screens::CurrentScreen, App},
     input::event::InputEvent,
 };
+
+use super::open_patchset::apply_open_patchset_result;
 
 pub async fn handle_bookmarked_patchsets(
     app: &mut App,
@@ -39,20 +41,7 @@ pub async fn handle_bookmarked_patchsets(
             // If a patchset has been bookmarked via the UI, b4 was already
             // successful for it, but patchsets may also arrive here from
             // other sources where the fetch could fail.
-            if let Ok(b4_result) = result {
-                match b4_result {
-                    B4Result::PatchFound => {
-                        app.set_current_screen(CurrentScreen::PatchsetDetails);
-                    }
-                    B4Result::PatchNotFound(err_cause) => {
-                        app.state.popup = Some(AppPopup::info(
-                            "Error",
-                            format!("The selected patchset couldn't be retrieved.\nReason: {err_cause}\nPlease choose another patchset."),
-                        ));
-                        app.set_current_screen(CurrentScreen::BookmarkedPatchsets);
-                    }
-                }
-            }
+            apply_open_patchset_result(app, CurrentScreen::BookmarkedPatchsets, result);
         }
         _ => {}
     }
