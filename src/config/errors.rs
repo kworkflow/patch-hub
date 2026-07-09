@@ -4,6 +4,9 @@ use crate::infrastructure::file_system::FileSystemError;
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
+    #[allow(dead_code)]
+    #[error("config actor unavailable: {0}")]
+    ActorUnavailable(String),
     #[error("failed to save config: {0}")]
     Save(String),
     #[error("invalid page size: {0}")]
