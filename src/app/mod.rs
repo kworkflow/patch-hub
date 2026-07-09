@@ -10,6 +10,7 @@
 //! presentation data crosses the UI boundary only through [`AppViewModel`] via
 //! [`App::present`].
 pub mod actor;
+pub(crate) mod dependencies;
 pub mod errors;
 pub(crate) mod flows;
 pub mod handle;

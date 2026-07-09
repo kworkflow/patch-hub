@@ -6,16 +6,13 @@
 //! [`InputEvent`](crate::input::event::InputEvent) from the channel registered
 //! with [`InputHandle`](crate::input::handle::InputHandle).
 //!
-//! The actor stops when the input event channel closes (user quit) or when
-//! initialization or I/O returns an unrecoverable error. Startup dependency
-//! checks run inside [`AppActor::run`] before the first frame.
+//! The actor stops when the input event channel closes (user quit) or when I/O
+//! returns an unrecoverable error. Startup dependency checks run before this
+//! actor is spawned.
 use std::ops::ControlFlow;
-
-use tracing::{event, Level};
 
 use crate::{
     app::{
-        errors::AppError,
         flows::{
             bookmarked::handle_bookmarked_patchsets, details_actions::handle_patchset_details,
             edit_config::handle_edit_config, latest::handle_latest_patchsets,
@@ -27,7 +24,6 @@ use crate::{
         App,
     },
     input::{event::InputEvent, handle::InputHandle},
-    render_prefs::PatchRenderer,
     terminal::{handle::TerminalHandle, messages::TerminalFrame},
     ui::handle::UiHandle,
 };
@@ -68,68 +64,8 @@ impl AppActor {
         AppHandle::new(tokio::spawn(actor.run()))
     }
 
-    /// Verifies required and optional external binaries.
-    ///
-    /// A missing `b4` is a hard failure; all other missing binaries only emit
-    /// warnings. This replicates the former `check_external_deps` free function
-    /// that lived in `main.rs`.
-    fn initialize(&self) -> Result<(), AppError> {
-        let env = &*self.app.services.env;
-        let config = &self.app.state.config;
-
-        if !env.which("b4") {
-            event!(
-                Level::ERROR,
-                "b4 is not installed, patchsets cannot be downloaded"
-            );
-            return Err(AppError::Dependencies(
-                "b4 is not installed; patchsets cannot be downloaded".to_string(),
-            ));
-        }
-
-        if !env.which("git") {
-            event!(Level::WARN, "git is not installed, send-email won't work");
-        }
-
-        match config.patch_renderer() {
-            PatchRenderer::Bat => {
-                if !env.which("bat") {
-                    event!(
-                        Level::WARN,
-                        "bat is not installed, patch rendering will fallback to default"
-                    );
-                }
-            }
-            PatchRenderer::Delta => {
-                if !env.which("delta") {
-                    event!(
-                        Level::WARN,
-                        "delta is not installed, patch rendering will fallback to default",
-                    );
-                }
-            }
-            PatchRenderer::DiffSoFancy => {
-                if !env.which("diff-so-fancy") {
-                    event!(
-                        Level::WARN,
-                        "diff-so-fancy is not installed, patch rendering will fallback to default",
-                    );
-                }
-            }
-            _ => {}
-        }
-
-        Ok(())
-    }
-
     async fn run(mut self) -> color_eyre::Result<()> {
         tracing::info!("app actor started");
-
-        let init_result = self.initialize();
-        if let Err(ref e) = init_result {
-            tracing::warn!(error = %e, "app actor initialization failed");
-        }
-        init_result?;
         tracing::info!("app actor initialized");
 
         let mut loading = TerminalLoadingIndicator::new(self.terminal_handle.clone());
@@ -219,7 +155,6 @@ mod tests {
 
     use crate::{
         app::{
-            errors::AppError,
             screens::{
                 bookmarked::BookmarkedPatchsetsState, mail_list::MailingListSelectionState,
                 CurrentScreen,
@@ -426,35 +361,4 @@ mod tests {
         render.shutdown().await;
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn missing_b4_causes_actor_to_return_dependencies_error() {
-        let mut env = MockEnvTrait::new();
-        env.expect_which()
-            .withf(|name| name == "b4")
-            .returning(|_| false);
-
-        let mut session = MockTerminalSessionApi::new();
-        session.expect_draw().returning(|_| Ok(()));
-
-        let terminal_handle = TerminalActor::spawn(Box::new(session));
-        let ui_handle = UiActor::spawn();
-
-        let (_event_tx, event_rx) = mpsc::channel::<InputEvent>(1);
-        let (input_tx, _input_rx) = mpsc::channel::<InputMessage>(1);
-        let input_handle = InputHandle::new(input_tx);
-
-        let handle = AppActor::spawn(
-            minimal_app_with_env(env),
-            terminal_handle,
-            ui_handle,
-            input_handle,
-            event_rx,
-        );
-
-        let result = handle.run_until_done().await;
-        let err = result.unwrap_err();
-        assert!(err
-            .downcast_ref::<AppError>()
-            .is_some_and(|e| matches!(e, AppError::Dependencies(_))));
-    }
 }
