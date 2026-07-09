@@ -169,12 +169,10 @@ mod tests {
     #[test]
     fn record_successful_reply_indexes_treats_shell_error_as_failure() {
         let mut shell = MockShellTrait::new();
-        shell.expect_spawn_interactive().times(1).returning(|_| {
-            Err(ShellError::IoError(io::Error::new(
-                io::ErrorKind::Other,
-                "failed",
-            )))
-        });
+        shell
+            .expect_spawn_interactive()
+            .times(1)
+            .returning(|_| Err(ShellError::IoError(io::Error::other("failed"))));
         let mut successful_indexes = HashSet::new();
 
         record_successful_reply_indexes(

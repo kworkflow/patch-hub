@@ -35,6 +35,9 @@ use super::helpers::{
 const KERNEL_TREE_PATH: &str = "/kernel";
 const BASE_BRANCH: &str = "main";
 
+type ReviewedState = HashMap<String, HashSet<usize>>;
+type SharedReviewedState = Arc<Mutex<Option<ReviewedState>>>;
+
 #[tokio::test]
 async fn apply_success_sets_success_popup_and_resets_apply_action() {
     let (shell, _calls) = shell_with_outputs(vec![
@@ -220,9 +223,7 @@ fn reviewed_reply_details_state() -> PatchsetDetailsState {
     details
 }
 
-fn reviewed_reply_lore_handle(
-    saved_reviewed: Arc<Mutex<Option<HashMap<String, HashSet<usize>>>>>,
-) -> LoreApiHandle {
+fn reviewed_reply_lore_handle(saved_reviewed: SharedReviewedState) -> LoreApiHandle {
     let (tx, mut rx) = mpsc::channel(8);
     spawn(async move {
         while let Some(message) = rx.recv().await {
