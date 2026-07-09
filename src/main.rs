@@ -107,7 +107,10 @@ async fn main() -> color_eyre::Result<()> {
         shell_arc.clone(),
         CacheTtl::default(),
     ));
-    let bootstrap = lore_api.get_bootstrap_data().await.unwrap_or_default();
+    let bootstrap = lore_api
+        .get_bootstrap_data()
+        .await
+        .map_err(|error| eyre!("failed to bootstrap Lore data: {error}"))?;
 
     let app = App::new(
         config_handle
