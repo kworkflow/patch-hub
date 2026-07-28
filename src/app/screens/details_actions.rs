@@ -231,38 +231,35 @@ impl DetailsActions {
     /// Checks if there is a `target_kernel_tree` and if it is in `Config::kernel_trees` and if
     /// that kernel tree is a valid git directory.
     ///
-    /// Returns the a valid `KernelTree` or a `String` with the error message on failure.
-    fn validate_kernel_tree(&self, config: &mut Config) -> Result<KernelTree, String> {
-        let kernel_tree_id = if let Some(target) = config.target_kernel_tree() {
-            target.clone()
+    /// Returns the a valid `KernelTree` and whether it was auto-detected.
+    fn validate_kernel_tree(&self, config: &mut Config) -> Result<(KernelTree, bool), String> {
+        let (kernel_tree, is_autodetected) = if let Some(target) = config.target_kernel_tree() {
+            (config.get_kernel_tree(target)
+                .ok_or_else(|| format!("invalid target kernel tree '{target}'"))?.clone(), false)
         } else {
             let kernel_tree_path = self.get_current_kernel_tree()?;
-            let kernel_tree_id = kernel_tree_path
-                .split('/')
-                .last()
-                .unwrap_or("default")
-                .to_string();
             let current_branch = self.get_current_branch(&KernelTree::new(
                 kernel_tree_path.clone(),
                 "".to_string(),
             ))?;
+            let kernel_tree = KernelTree::new(kernel_tree_path, current_branch);
+
+            let kernel_tree_id = kernel_tree.path()
+                .split('/')
+                .last()
+                .unwrap_or("default")
+                .to_string();
 
             config.set_target_kernel_tree(Some(kernel_tree_id.clone()));
             config.add_kernel_tree(
-                kernel_tree_id.clone(),
-                KernelTree::new(kernel_tree_path, current_branch),
+               kernel_tree_id.clone(),
+               kernel_tree.clone(),
             );
             config
-                .save_patch_hub_config()
-                .map_err(|e| format!("failed to save config: {e}"))?;
+               .save_patch_hub_config()
+               .map_err(|e| format!("failed to save config: {e}"))?;
 
-            config.target_kernel_tree().as_ref().unwrap().clone()
-        };
-
-        let kernel_tree = if let Some(tree) = config.get_kernel_tree(&kernel_tree_id) {
-            tree.clone()
-        } else {
-            return Err(format!("invalid target kernel tree '{kernel_tree_id}'"));
+            (kernel_tree, true)
         };
 
         let kernel_tree_path = Path::new(kernel_tree.path());
@@ -272,7 +269,7 @@ impl DetailsActions {
             return Err(format!("{} isn't a git repository", kernel_tree.path()));
         }
 
-        Ok(kernel_tree)
+        Ok((kernel_tree, is_autodetected))
     }
 
     // Ensures the kernel directory is not currently in another git operation,
@@ -482,7 +479,7 @@ impl DetailsActions {
     /// # TODO:
     /// - Add unit tests
     pub fn apply_patchset(&self, config: &mut Config) -> Result<String, String> {
-        let kernel_tree = self.validate_kernel_tree(config)?;
+        let (kernel_tree, is_autodetected) = self.validate_kernel_tree(config)?;
         self.check_git_state(&kernel_tree)?;
 
         let original_branch = self.get_current_branch(&kernel_tree)?;
@@ -493,7 +490,11 @@ impl DetailsActions {
 
         match git_am_result {
             Ok(_) => {
-                Ok(format!(" Patchset '{}' applied successfully!\n\n - Kernel Tree: '{}'\n\n - Base Branch: '{}'\n\n - Applied branch: '{}'", self.representative_patch.title(), kernel_tree.path(), kernel_tree.branch(), &target_branch))
+                Ok(format!(" Patchset '{}' applied successfully!\n\n - Kernel Tree: '{}'{}\n\n - Base Branch: '{}'{}\n\n - Applied branch: '{}'",
+                    self.representative_patch.title(),
+                    kernel_tree.path(), if is_autodetected { " (auto-detected)" } else { "" },
+                    kernel_tree.branch(), if is_autodetected { " (auto-detected)" } else { "" },
+                    &target_branch))
         },
             Err(e) => Err(format!( "`git am` failed\n{}{}", &original_branch, e))
         }
