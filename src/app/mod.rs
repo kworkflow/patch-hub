@@ -337,7 +337,7 @@ impl App {
                 .details_actions
                 .as_ref()
                 .unwrap()
-                .apply_patchset(&self.config)
+                .apply_patchset(&mut self.config)
             {
                 Ok(msg) => InfoPopUp::generate_info_popup("Patchset Apply Success", &msg),
                 Err(msg) => InfoPopUp::generate_info_popup("Patchset Apply Fail", &msg),
