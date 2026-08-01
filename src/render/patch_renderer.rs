@@ -1,8 +1,10 @@
 use color_eyre::eyre::eyre;
 use tracing::{event, Level};
 
-use crate::infrastructure::shell::{ShellCommand, ShellTrait};
-pub use crate::render_prefs::PatchRenderer;
+use crate::{
+    infrastructure::shell::{ShellCommand, ShellTrait},
+    render_prefs::PatchRenderer,
+};
 
 /// Cleans patch contents before rendering for preview. Currently, it only trims
 /// the trailing signature delimiter (the `--` at the end of the patch) if it

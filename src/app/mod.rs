@@ -1,20 +1,13 @@
 pub mod commands;
-pub mod cover_renderer;
 pub mod errors;
-pub mod patch_renderer;
 pub mod screens;
 pub mod state;
 pub mod view_model;
 
-use ansi_to_tui::IntoText;
 use color_eyre::eyre::{bail, eyre};
-use ratatui::text::Text;
 use tracing::{event, Level};
 
-use std::{
-    collections::{HashMap, HashSet},
-    path::PathBuf,
-};
+use std::path::PathBuf;
 
 use crate::{
     config::ConfigServiceApi,
@@ -22,7 +15,6 @@ use crate::{
         env::EnvTrait,
         file_system::FileSystemTrait,
         monitoring::logging::garbage_collector::collect_garbage,
-        render::RenderServiceApi,
         shell::{ShellCommand, ShellTrait},
     },
     lore::{
@@ -31,8 +23,9 @@ use crate::{
             errors::LoreError,
             handle::LoreApiHandle,
         },
-        domain::patch::{Author, Patch},
+        domain::patch::Patch,
     },
+    render::{handle::RenderHandle, RenderPatchsetRequest},
     ui::popup::info_popup::InfoPopUp,
 };
 use screens::{
@@ -49,7 +42,7 @@ pub use view_model::AppViewModel;
 /// Injected capabilities used by `App` orchestration (not screen state).
 pub struct AppServices {
     pub lore_api: LoreApiHandle,
-    pub render: Box<dyn RenderServiceApi>,
+    pub render: RenderHandle,
     pub shell: Box<dyn ShellTrait>,
     pub fs: Box<dyn FileSystemTrait>,
     pub env: Box<dyn EnvTrait>,
@@ -82,7 +75,7 @@ impl App {
         shell: Box<dyn ShellTrait>,
         env: Box<dyn EnvTrait>,
         lore_api: LoreApiHandle,
-        render: Box<dyn RenderServiceApi>,
+        render: RenderHandle,
     ) -> color_eyre::Result<Self> {
         let config = config_service.snapshot();
 
@@ -219,52 +212,25 @@ impl App {
             Err(e) => bail!("{e:#?}"),
         };
 
-        let preview_lines = self
+        let render_request = RenderPatchsetRequest::new(
+            details.raw_patches.clone(),
+            *self.state.config.patch_renderer(),
+            *self.state.config.cover_renderer(),
+        );
+        let rendered_preview = self
             .services
             .render
-            .render_patchset_preview(
-                &details.raw_patches,
-                self.state.config.patch_renderer(),
-                self.state.config.cover_renderer(),
-            )
+            .render_patchset_preview(render_request)
+            .await
             .map_err(|e| eyre!("{e}"))?;
 
-        let mut patches_preview: Vec<Text> = Vec::new();
-        let mut reviewed_by: Vec<HashSet<Author>> = Vec::new();
-        let mut tested_by: Vec<HashSet<Author>> = Vec::new();
-        let mut acked_by: Vec<HashSet<Author>> = Vec::new();
-
-        for (line, tag_summary) in preview_lines.iter().zip(details.tag_summary.iter()) {
-            reviewed_by.push(tag_summary.reviewed_by.clone());
-            tested_by.push(tag_summary.tested_by.clone());
-            acked_by.push(tag_summary.acked_by.clone());
-            patches_preview.push(line.as_str().into_text()?);
-        }
-
-        let has_cover_letter = representative_patch.number_in_series() == 0;
-        let patches_to_reply = vec![false; details.raw_patches.len()];
-
-        self.state.lore.details = Some(PatchsetDetailsState {
+        self.state.lore.details = Some(PatchsetDetailsState::from_rendered_preview(
             representative_patch,
-            raw_patches: details.raw_patches,
-            patchset_path: details.patchset_path,
-            patches_preview,
-            patches_to_reply,
-            has_cover_letter,
-            preview_index: 0,
-            preview_scroll_offset: 0,
-            preview_pan: 0,
-            preview_fullscreen: false,
-            patchset_actions: HashMap::from([
-                (PatchsetAction::Bookmark, is_patchset_bookmarked),
-                (PatchsetAction::ReplyWithReviewedBy, false),
-                (PatchsetAction::Apply, false),
-            ]),
-            reviewed_by,
-            tested_by,
-            acked_by,
-            last_screen: self.state.navigation.current_screen.clone(),
-        });
+            details,
+            rendered_preview,
+            is_patchset_bookmarked,
+            self.state.navigation.current_screen.clone(),
+        )?);
 
         Ok(B4Result::PatchFound)
     }

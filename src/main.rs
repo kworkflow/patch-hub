@@ -5,10 +5,11 @@ mod handler;
 mod infrastructure;
 mod lore;
 mod macros;
+mod render;
 mod render_prefs;
 mod ui;
 
-use app::{patch_renderer::PatchRenderer, App};
+use app::App;
 use clap::Parser;
 use cli::Cli;
 use color_eyre::eyre::{bail, eyre};
@@ -19,7 +20,6 @@ use infrastructure::{
     file_system::OsFileSystem,
     monitoring::{init_monitoring, InitMonitoringProduct},
     net::UreqNetClient,
-    render::{RenderServiceApi, ShellRenderService},
     shell::OsShell,
     terminal::{init, restore},
 };
@@ -32,6 +32,8 @@ use lore::{
         persistence::{FileLorePersistence, MailingListsCacheStore, UserLoreStateStore},
     },
 };
+use render::{actor::RenderActor, ShellRenderService};
+use render_prefs::PatchRenderer;
 use std::{ops::ControlFlow, sync::Arc};
 use tracing::{event, Level};
 
@@ -135,7 +137,7 @@ async fn main() -> color_eyre::Result<()> {
     ));
     let parser = Arc::new(MboxPatchsetParser::new(fs_arc.clone()));
 
-    let render: Box<dyn RenderServiceApi> = Box::new(ShellRenderService::new(shell_arc.clone()));
+    let render = RenderActor::spawn(Box::new(ShellRenderService::new(shell_arc.clone())));
 
     let lore_api = LoreApiActor::spawn(LoreService::new(
         gateway.clone(),
