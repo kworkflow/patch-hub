@@ -21,4 +21,7 @@ pub enum LoreError {
 
     #[error("feed ended")]
     EndOfFeed,
+
+    #[error("lore api actor unavailable: {0}")]
+    ActorUnavailable(String),
 }

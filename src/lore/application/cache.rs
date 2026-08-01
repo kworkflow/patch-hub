@@ -182,7 +182,7 @@ impl Default for LoreCache {
 
 // ── Bootstrap result ──────────────────────────────────────────────────────────
 
-/// Data returned by `LoreServiceApi::warm_bootstrap_cache`, used to initialise
+/// Data returned by `LoreService::warm_bootstrap_cache`, used to initialise
 /// `App` without it knowing about persistence paths or network policy.
 #[derive(Default)]
 pub struct BootstrapLoreData {

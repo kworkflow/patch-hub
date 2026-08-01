@@ -13,7 +13,7 @@ use tracing::{event, Level};
 
 use std::{
     collections::{HashMap, HashSet},
-    path::Path,
+    path::PathBuf,
 };
 
 use crate::{
@@ -26,7 +26,11 @@ use crate::{
         shell::{ShellCommand, ShellTrait},
     },
     lore::{
-        application::{api::LoreServiceApi, cache::CacheMode, errors::LoreError},
+        application::{
+            cache::{BootstrapLoreData, CacheMode},
+            errors::LoreError,
+            handle::LoreApiHandle,
+        },
         domain::patch::{Author, Patch},
     },
     ui::popup::info_popup::InfoPopUp,
@@ -44,7 +48,7 @@ pub use view_model::AppViewModel;
 
 /// Injected capabilities used by `App` orchestration (not screen state).
 pub struct AppServices {
-    pub lore: Box<dyn LoreServiceApi>,
+    pub lore_api: LoreApiHandle,
     pub render: Box<dyn RenderServiceApi>,
     pub shell: Box<dyn ShellTrait>,
     pub fs: Box<dyn FileSystemTrait>,
@@ -73,13 +77,13 @@ impl App {
     /// `App` instance with loading configurations and app data.
     pub fn new(
         config_service: Box<dyn ConfigServiceApi>,
+        bootstrap: BootstrapLoreData,
         fs: Box<dyn FileSystemTrait>,
         shell: Box<dyn ShellTrait>,
         env: Box<dyn EnvTrait>,
-        mut lore_service: Box<dyn LoreServiceApi>,
+        lore_api: LoreApiHandle,
         render: Box<dyn RenderServiceApi>,
     ) -> color_eyre::Result<Self> {
-        let bootstrap = lore_service.warm_bootstrap_cache().unwrap_or_default();
         let config = config_service.snapshot();
 
         event!(Level::INFO, "patch-hub started");
@@ -112,7 +116,7 @@ impl App {
                 popup: None,
             },
             services: AppServices {
-                lore: lore_service,
+                lore_api,
                 render,
                 shell,
                 fs,
@@ -149,26 +153,29 @@ impl App {
     }
 
     /// Fetches (or re-fetches) the current page of latest patchsets from Lore.
-    pub fn fetch_latest_current_page(&mut self) -> color_eyre::Result<()> {
-        let lore = self.services.lore.as_mut();
+    pub async fn fetch_latest_current_page(&mut self) -> color_eyre::Result<()> {
+        let lore_api = &self.services.lore_api;
         let latest_patchsets = &mut self.state.lore.latest_patchsets;
         if let Some(patchsets) = latest_patchsets.as_mut() {
-            patchsets.fetch_current_page(lore, CacheMode::UseCache)
+            patchsets
+                .fetch_current_page(lore_api, CacheMode::UseCache)
+                .await
         } else {
             Ok(())
         }
     }
 
     /// Refreshes available mailing lists and updates [`LoreUiState::mailing_list_selection`].
-    pub fn refresh_mailing_lists(&mut self) -> color_eyre::Result<()> {
+    pub async fn refresh_mailing_lists(&mut self) -> color_eyre::Result<()> {
         self.state
             .lore
             .mailing_list_selection
-            .refresh_available_mailing_lists(self.services.lore.as_mut(), CacheMode::Refresh)
+            .refresh_available_mailing_lists(&self.services.lore_api, CacheMode::Refresh)
+            .await
     }
 
     /// Loads patchset details into [`LoreUiState::details`].
-    pub fn open_patchset_details(&mut self) -> color_eyre::Result<B4Result> {
+    pub async fn open_patchset_details(&mut self) -> color_eyre::Result<B4Result> {
         let representative_patch: Patch;
         let mut is_patchset_bookmarked = true;
 
@@ -203,8 +210,9 @@ impl App {
 
         let details = match self
             .services
-            .lore
-            .fetch_patchset_details(&representative_patch, CacheMode::UseCache)
+            .lore_api
+            .fetch_patchset_details(representative_patch.clone(), CacheMode::UseCache)
+            .await
         {
             Ok(d) => d,
             Err(LoreError::PatchNotFound(err)) => return Ok(B4Result::PatchNotFound(err)),
@@ -271,14 +279,14 @@ impl App {
     /// # Panics
     ///
     /// Panics if [`LoreUiState::details`] is `None`.
-    pub fn consolidate_patchset_actions(&mut self) -> color_eyre::Result<()> {
-        self.sync_patchset_bookmark()?;
-        self.execute_reviewed_reply()?;
+    pub async fn consolidate_patchset_actions(&mut self) -> color_eyre::Result<()> {
+        self.sync_patchset_bookmark().await?;
+        self.execute_reviewed_reply().await?;
         self.execute_apply_patchset();
         Ok(())
     }
 
-    fn sync_patchset_bookmark(&mut self) -> color_eyre::Result<()> {
+    async fn sync_patchset_bookmark(&mut self) -> color_eyre::Result<()> {
         let details = self.state.lore.details.as_ref().unwrap();
         let representative_patch = &details.representative_patch;
         let patchset_actions = &details.patchset_actions;
@@ -296,19 +304,20 @@ impl App {
         }
 
         self.services
-            .lore
-            .save_bookmarked_patchsets(
-                &self
-                    .state
+            .lore_api
+            .save_bookmarks(
+                self.state
                     .user_state
                     .bookmarked_patchsets
-                    .bookmarked_patchsets,
+                    .bookmarked_patchsets
+                    .clone(),
             )
+            .await
             .map_err(|e| eyre!("{e:#?}"))?;
         Ok(())
     }
 
-    fn execute_reviewed_reply(&mut self) -> color_eyre::Result<()> {
+    async fn execute_reviewed_reply(&mut self) -> color_eyre::Result<()> {
         let details = self.state.lore.details.as_ref().unwrap();
         let representative_patch = details.representative_patch.clone();
         let patchset_actions = &details.patchset_actions;
@@ -323,7 +332,12 @@ impl App {
                 .remove(&representative_patch.message_id().href)
                 .unwrap_or_default();
 
-            let (git_user_name, git_user_email) = self.services.lore.get_git_signature("");
+            let (git_user_name, git_user_email) = self
+                .services
+                .lore_api
+                .get_git_signature(String::new())
+                .await
+                .map_err(|e| eyre!("{e:#?}"))?;
 
             if git_user_name.is_empty() || git_user_email.is_empty() {
                 println!("`git config user.name` or `git config user.email` not set\nAborting...");
@@ -338,20 +352,21 @@ impl App {
                     .map_err(|e| eyre!("invalid utf-8 in temp dir path: {}", e))?
                     .trim()
                     .to_string();
-                let tmp_dir = Path::new(&tmp_dir_str);
+                let tmp_dir = PathBuf::from(tmp_dir_str);
 
                 let git_signature = format!("{git_user_name} <{git_user_email}>");
                 let git_reply_commands = self
                     .services
-                    .lore
+                    .lore_api
                     .prepare_reply_commands(
                         tmp_dir,
-                        "all",
-                        &raw_patches,
-                        &patches_to_reply,
-                        &git_signature,
-                        self.state.config.git_send_email_options(),
+                        "all".to_string(),
+                        raw_patches,
+                        patches_to_reply.clone(),
+                        git_signature,
+                        self.state.config.git_send_email_options().to_string(),
                     )
+                    .await
                     .map_err(|e| eyre!("{e:#?}"))?;
 
                 let reply_indexes: Vec<usize> = patches_to_reply
@@ -377,8 +392,9 @@ impl App {
             );
 
             self.services
-                .lore
-                .save_reviewed_patchsets(&self.state.user_state.reviewed_patchsets)
+                .lore_api
+                .save_reviewed(self.state.user_state.reviewed_patchsets.clone())
+                .await
                 .map_err(|e| eyre!("{e:#?}"))?;
 
             self.state

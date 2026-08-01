@@ -24,7 +24,7 @@ use infrastructure::{
     terminal::{init, restore},
 };
 use lore::{
-    application::{api::LoreServiceApi, cache::CacheTtl, service::LoreService},
+    application::{actor::LoreApiActor, cache::CacheTtl, service::LoreService},
     infrastructure::{
         http_lore_client::HttpLoreGateway,
         patchset_fetcher::B4PatchsetFetcher,
@@ -84,7 +84,8 @@ fn check_external_deps(env: &dyn EnvTrait, config: &ConfigSnapshot) -> bool {
     app_can_run
 }
 
-fn main() -> color_eyre::Result<()> {
+#[tokio::main]
+async fn main() -> color_eyre::Result<()> {
     // file writer guards should be propagated to main() so the logging thread lives enough
     let InitMonitoringProduct {
         logging_guards_by_file_name,
@@ -136,25 +137,27 @@ fn main() -> color_eyre::Result<()> {
 
     let render: Box<dyn RenderServiceApi> = Box::new(ShellRenderService::new(shell_arc.clone()));
 
-    let lore_service: Box<dyn LoreServiceApi> = Box::new(LoreService::new(
+    let lore_api = LoreApiActor::spawn(LoreService::new(
         gateway.clone(),
         gateway.clone(),
         gateway.clone(),
         persistence.clone() as Arc<dyn MailingListsCacheStore>,
         persistence.clone() as Arc<dyn UserLoreStateStore>,
-        fetcher,
-        parser,
-        fs_arc,
-        shell_arc,
+        fetcher.clone(),
+        parser.clone(),
+        fs_arc.clone(),
+        shell_arc.clone(),
         CacheTtl::default(),
     ));
+    let bootstrap = lore_api.get_bootstrap_data().await.unwrap_or_default();
 
     let app = App::new(
         config_service,
+        bootstrap,
         Box::new(OsFileSystem),
         Box::new(OsShell),
         Box::new(env),
-        lore_service,
+        lore_api,
         render,
     )?;
     if !check_external_deps(&*app.services.env, &app.state.config) {
@@ -165,7 +168,7 @@ fn main() -> color_eyre::Result<()> {
         bail!("patch-hub cannot be executed because some dependencies are missing, check logs for more information");
     }
 
-    run_app(terminal, app)?;
+    run_app(terminal, app).await?;
     restore()?;
 
     event!(Level::INFO, "patch-hub finished");

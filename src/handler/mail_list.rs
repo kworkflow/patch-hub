@@ -12,7 +12,7 @@ use crate::{
     ui::popup::{help::HelpPopUpBuilder, PopUp},
 };
 
-pub fn handle_mailing_list_selection<B>(
+pub async fn handle_mailing_list_selection<B>(
     app: &mut App,
     key: KeyEvent,
     mut terminal: Terminal<B>,
@@ -45,7 +45,7 @@ where
                 terminal = loading_screen! {
                     terminal,
                     format!("Fetching patchsets from {}", list_name) => {
-                        let result = app.fetch_latest_current_page();
+                        let result = app.fetch_latest_current_page().await;
                         if result.is_ok() {
                             app.state.lore.mailing_list_selection.clear_target_list();
                             app.set_current_screen(CurrentScreen::LatestPatchsets);
@@ -59,7 +59,7 @@ where
             terminal = loading_screen! {
                 terminal,
                 "Refreshing lists" => {
-                    app.refresh_mailing_lists()
+                    app.refresh_mailing_lists().await
                 }
             };
         }
