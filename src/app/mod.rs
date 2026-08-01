@@ -9,7 +9,9 @@
 //! [`AppActor`](crate::app::actor::AppActor) into [`crate::app::flows`];
 //! presentation data crosses the UI boundary only through [`AppViewModel`] via
 //! [`App::present`].
+pub(crate) mod actions;
 pub mod actor;
+pub(crate) mod dependencies;
 pub mod errors;
 pub(crate) mod flows;
 pub mod handle;
@@ -21,18 +23,23 @@ pub mod state;
 pub mod updates;
 pub mod view_model;
 
-use color_eyre::eyre::{bail, eyre};
+#[cfg(test)]
+mod integration_tests;
+
+use color_eyre::{
+    eyre::{bail, eyre},
+    Result,
+};
 use tracing::{debug, event, info, warn, Level};
 
-use std::path::PathBuf;
-
 use crate::{
+    app::actions::{
+        apply::ApplyPatchsetRequest, reviewed_reply::ReviewedReplyRequest, PatchsetActionService,
+    },
     config::{ConfigHandle, ConfigSnapshot},
     infrastructure::{
-        env::EnvTrait,
-        file_system::FileSystemTrait,
-        monitoring::logging::garbage_collector::collect_garbage,
-        shell::{ShellCommand, ShellTrait},
+        file_system::FileSystemTrait, monitoring::logging::garbage_collector::collect_garbage,
+        shell::ShellTrait,
     },
     lore::{
         application::{
@@ -61,7 +68,6 @@ pub struct AppServices {
     pub render: RenderHandle,
     pub shell: Box<dyn ShellTrait>,
     pub fs: Box<dyn FileSystemTrait>,
-    pub env: Box<dyn EnvTrait>,
     pub config: ConfigHandle,
 }
 
@@ -92,10 +98,9 @@ impl App {
         bootstrap: BootstrapLoreData,
         fs: Box<dyn FileSystemTrait>,
         shell: Box<dyn ShellTrait>,
-        env: Box<dyn EnvTrait>,
         lore_api: LoreApiHandle,
         render: RenderHandle,
-    ) -> color_eyre::Result<Self> {
+    ) -> Result<Self> {
         event!(Level::INFO, "patch-hub started");
         collect_garbage(&config);
 
@@ -130,7 +135,6 @@ impl App {
                 render,
                 shell,
                 fs,
-                env,
                 config: config_handle,
             },
         })
@@ -163,7 +167,7 @@ impl App {
     }
 
     /// Fetches (or re-fetches) the current page of latest patchsets from Lore.
-    pub async fn fetch_latest_current_page(&mut self) -> color_eyre::Result<()> {
+    pub async fn fetch_latest_current_page(&mut self) -> Result<()> {
         let lore_api = &self.services.lore_api;
         let latest_patchsets = &mut self.state.lore.latest_patchsets;
         if let Some(patchsets) = latest_patchsets.as_mut() {
@@ -184,7 +188,7 @@ impl App {
     }
 
     /// Refreshes available mailing lists and updates [`LoreUiState::mailing_list_selection`].
-    pub async fn refresh_mailing_lists(&mut self) -> color_eyre::Result<()> {
+    pub async fn refresh_mailing_lists(&mut self) -> Result<()> {
         debug!("refreshing mailing lists");
         let result = self
             .state
@@ -200,7 +204,7 @@ impl App {
     }
 
     /// Loads patchset details into [`LoreUiState::details`].
-    pub async fn open_patchset_details(&mut self) -> color_eyre::Result<B4Result> {
+    pub async fn open_patchset_details(&mut self) -> Result<B4Result> {
         let representative_patch: Patch;
         let mut is_patchset_bookmarked = true;
 
@@ -291,7 +295,7 @@ impl App {
     /// # Panics
     ///
     /// Panics if [`LoreUiState::details`] is `None`.
-    pub async fn consolidate_patchset_actions(&mut self) -> color_eyre::Result<()> {
+    pub async fn consolidate_patchset_actions(&mut self) -> Result<()> {
         debug!("consolidating patchset actions");
         self.sync_patchset_bookmark().await?;
         self.execute_reviewed_reply().await?;
@@ -300,7 +304,7 @@ impl App {
         Ok(())
     }
 
-    async fn sync_patchset_bookmark(&mut self) -> color_eyre::Result<()> {
+    async fn sync_patchset_bookmark(&mut self) -> Result<()> {
         let details = self
             .state
             .lore
@@ -340,88 +344,38 @@ impl App {
         Ok(())
     }
 
-    async fn execute_reviewed_reply(&mut self) -> color_eyre::Result<()> {
+    async fn execute_reviewed_reply(&mut self) -> Result<()> {
         let details = self
             .state
             .lore
             .details
             .as_ref()
             .expect("invariant: details must be loaded before executing reviewed reply");
-        let representative_patch = details.representative_patch.clone();
-        let patchset_actions = &details.patchset_actions;
-        let raw_patches = details.raw_patches.clone();
-        let patches_to_reply = details.patches_to_reply.clone();
-
-        if let Some(true) = patchset_actions.get(&PatchsetAction::ReplyWithReviewedBy) {
-            debug!(
-                msg_id = representative_patch.message_id().href,
-                "executing reviewed-by reply"
-            );
-            let mut successful_indexes = self
+        if patchset_action_selected(details, &PatchsetAction::ReplyWithReviewedBy) {
+            let message_id = details.representative_patch.message_id().href.clone();
+            debug!(msg_id = message_id, "executing reviewed-by reply");
+            let successful_indexes = self
                 .state
                 .user_state
                 .reviewed_patchsets
-                .remove(&representative_patch.message_id().href)
+                .remove(&message_id)
                 .unwrap_or_default();
-
-            let (git_user_name, git_user_email) = self
-                .services
-                .lore_api
-                .get_git_signature(String::new())
-                .await
-                .map_err(|e| eyre!("{e:#?}"))?;
-
-            if git_user_name.is_empty() || git_user_email.is_empty() {
-                println!("`git config user.name` or `git config user.email` not set\nAborting...");
-            } else {
-                let mktemp_cmd = ShellCommand::new("mktemp").arg("--directory");
-                let tmp_out = self
-                    .services
-                    .shell
-                    .execute(&mktemp_cmd)
-                    .map_err(|e| eyre!("failed to create temp directory: {}", e))?;
-                let tmp_dir_str = std::str::from_utf8(&tmp_out.stdout)
-                    .map_err(|e| eyre!("invalid utf-8 in temp dir path: {}", e))?
-                    .trim()
-                    .to_string();
-                let tmp_dir = PathBuf::from(tmp_dir_str);
-
-                let git_signature = format!("{git_user_name} <{git_user_email}>");
-                let git_reply_commands = self
-                    .services
-                    .lore_api
-                    .prepare_reply_commands(
-                        tmp_dir,
-                        "all".to_string(),
-                        raw_patches,
-                        patches_to_reply.clone(),
-                        git_signature,
-                        self.state.config.git_send_email_options().to_string(),
-                    )
-                    .await
-                    .map_err(|e| eyre!("{e:#?}"))?;
-
-                let reply_indexes: Vec<usize> = patches_to_reply
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, &val)| if val { Some(i) } else { None })
-                    .collect();
-                for (i, command) in git_reply_commands.into_iter().enumerate() {
-                    let success = self
-                        .services
-                        .shell
-                        .spawn_interactive(&command)
-                        .unwrap_or(false);
-                    if success {
-                        successful_indexes.insert(reply_indexes[i]);
-                    }
-                }
-            }
-
-            self.state.user_state.reviewed_patchsets.insert(
-                representative_patch.message_id().href.clone(),
+            let request = reviewed_reply_request(
+                details,
                 successful_indexes,
+                self.state.config.git_send_email_options().to_string(),
             );
+            let action_service = PatchsetActionService::new(
+                &*self.services.fs,
+                &*self.services.shell,
+                &self.services.lore_api,
+            );
+            let result = action_service.execute_reviewed_reply(request).await?;
+
+            self.state
+                .user_state
+                .reviewed_patchsets
+                .insert(message_id.clone(), result.into_successful_indexes());
 
             self.services
                 .lore_api
@@ -430,7 +384,7 @@ impl App {
                 .map_err(|e| eyre!("{e:#?}"))?;
 
             info!(
-                msg_id = representative_patch.message_id().href,
+                msg_id = message_id,
                 "reviewed-by reply sent and state persisted"
             );
             self.state
@@ -444,27 +398,22 @@ impl App {
     }
 
     fn execute_apply_patchset(&mut self) {
-        if let Some(true) = self
+        let details = self
             .state
             .lore
             .details
             .as_ref()
-            .expect("invariant: details must be loaded before executing apply patchset")
-            .patchset_actions
-            .get(&PatchsetAction::Apply)
-        {
+            .expect("invariant: details must be loaded before executing apply patchset");
+
+        if patchset_action_selected(details, &PatchsetAction::Apply) {
             debug!("applying patchset via git-am");
-            let popup = match self
-                .state
-                .lore
-                .details
-                .as_ref()
-                .expect("invariant: details must be loaded before applying patchset")
-                .apply_patchset(
-                    &*self.services.fs,
-                    &*self.services.shell,
-                    &self.state.config,
-                ) {
+            let request = apply_patchset_request(details);
+            let action_service = PatchsetActionService::new(
+                &*self.services.fs,
+                &*self.services.shell,
+                &self.services.lore_api,
+            );
+            let popup = match action_service.apply_patchset(&request, &self.state.config) {
                 Ok(msg) => popup::AppPopup::info("Patchset Apply Success", msg),
                 Err(msg) => popup::AppPopup::info("Patchset Apply Fail", msg),
             };
@@ -490,7 +439,7 @@ impl App {
     }
 
     /// Applies edited values from [`ConfigUiState::edit_config`] into [`AppState::config`].
-    pub async fn consolidate_edit_config(&mut self) -> color_eyre::Result<()> {
+    pub async fn consolidate_edit_config(&mut self) -> Result<()> {
         if let Some(edit_config) = &self.state.config_state.edit_config {
             debug!("validating and applying config update");
             let draft = edit_config.to_update_draft();
@@ -516,5 +465,125 @@ impl App {
     /// presentation data to the UI actor without exposing raw `AppState`.
     pub fn present(&self) -> AppViewModel {
         view_model::project_state(&self.state)
+    }
+}
+
+fn patchset_action_selected(details: &PatchsetDetailsState, action: &PatchsetAction) -> bool {
+    matches!(details.patchset_actions.get(action), Some(true))
+}
+
+fn reviewed_reply_request(
+    details: &PatchsetDetailsState,
+    successful_indexes: std::collections::HashSet<usize>,
+    git_send_email_options: String,
+) -> ReviewedReplyRequest {
+    ReviewedReplyRequest {
+        raw_patches: details.raw_patches.clone(),
+        patches_to_reply: details.patches_to_reply.clone(),
+        successful_indexes,
+        git_send_email_options,
+    }
+}
+
+fn apply_patchset_request(details: &PatchsetDetailsState) -> ApplyPatchsetRequest {
+    ApplyPatchsetRequest {
+        patch_title: details.representative_patch.title().clone(),
+        patchset_path: details.patchset_path.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{HashMap, HashSet};
+
+    use serde_xml_rs::from_str;
+
+    use super::*;
+
+    fn test_patch() -> Patch {
+        from_str(
+            r#"
+            <entry xmlns:thr="http://purl.org/syndication/thread/1.0">
+                <author>
+                    <name>Foo Bar</name>
+                    <email>foo@bar.foo.bar</email>
+                </author>
+                <title>[PATCH 1/1] test patch</title>
+                <updated>2024-07-06T19:15:48Z</updated>
+                <link href="http://lore.kernel.org/some-list/1234-1-foo@bar.foo.bar" />
+                <id>urn:uuid:123-abcd-1f2a3b</id>
+                <content></content>
+            </entry>
+        "#,
+        )
+        .expect("test patch XML should deserialize")
+    }
+
+    fn details_state() -> PatchsetDetailsState {
+        PatchsetDetailsState {
+            representative_patch: test_patch(),
+            raw_patches: vec!["raw patch 0".to_string(), "raw patch 1".to_string()],
+            patches_preview: vec!["preview 0".to_string(), "preview 1".to_string()],
+            has_cover_letter: false,
+            patches_to_reply: vec![false, true],
+            patchset_path: "/tmp/patchset.mbx".to_string(),
+            preview_index: 0,
+            preview_scroll_offset: 0,
+            preview_pan: 0,
+            preview_fullscreen: false,
+            patchset_actions: HashMap::from([
+                (PatchsetAction::Bookmark, false),
+                (PatchsetAction::ReplyWithReviewedBy, true),
+                (PatchsetAction::Apply, true),
+            ]),
+            reviewed_by: vec![HashSet::new(), HashSet::new()],
+            tested_by: vec![HashSet::new(), HashSet::new()],
+            acked_by: vec![HashSet::new(), HashSet::new()],
+            last_screen: CurrentScreen::LatestPatchsets,
+        }
+    }
+
+    #[test]
+    fn patchset_action_selected_reads_action_map() {
+        let mut details = details_state();
+
+        assert!(patchset_action_selected(&details, &PatchsetAction::Apply));
+        assert!(patchset_action_selected(
+            &details,
+            &PatchsetAction::ReplyWithReviewedBy
+        ));
+
+        details
+            .patchset_actions
+            .insert(PatchsetAction::Apply, false);
+
+        assert!(!patchset_action_selected(&details, &PatchsetAction::Apply));
+    }
+
+    #[test]
+    fn reviewed_reply_request_copies_reply_inputs() {
+        let details = details_state();
+        let request = reviewed_reply_request(
+            &details,
+            HashSet::from([4usize]),
+            "--dry-run --suppress-cc=all".to_string(),
+        );
+
+        assert_eq!(details.raw_patches, request.raw_patches);
+        assert_eq!(details.patches_to_reply, request.patches_to_reply);
+        assert_eq!(HashSet::from([4]), request.successful_indexes);
+        assert_eq!(
+            "--dry-run --suppress-cc=all",
+            request.git_send_email_options
+        );
+    }
+
+    #[test]
+    fn apply_patchset_request_copies_apply_inputs() {
+        let details = details_state();
+        let request = apply_patchset_request(&details);
+
+        assert_eq!("[PATCH 1/1] test patch", request.patch_title);
+        assert_eq!("/tmp/patchset.mbx", request.patchset_path);
     }
 }

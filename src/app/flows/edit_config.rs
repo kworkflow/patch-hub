@@ -1,3 +1,4 @@
+use color_eyre::Result;
 use tracing::debug;
 
 use crate::{
@@ -5,7 +6,7 @@ use crate::{
     input::event::InputEvent,
 };
 
-pub async fn handle_edit_config(app: &mut App, input: InputEvent) -> color_eyre::Result<()> {
+pub async fn handle_edit_config(app: &mut App, input: InputEvent) -> Result<()> {
     let Some(is_editing) = app
         .state
         .config_state

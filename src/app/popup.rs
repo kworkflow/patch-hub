@@ -4,11 +4,12 @@
 //! Each variant owns all data required to present the popup and tracks scroll
 //! position so the presentation layer receives a read-only snapshot.
 
-use crate::{app::screens::details_actions::PatchsetDetailsState, input::event::InputEvent};
+use std::collections::HashSet;
 
-// ---------------------------------------------------------------------------
-// Main enum
-// ---------------------------------------------------------------------------
+use crate::{
+    app::screens::details_actions::PatchsetDetailsState, input::event::InputEvent,
+    lore::domain::patch::Author,
+};
 
 /// Concrete, cloneable popup state stored in `AppState`.
 #[derive(Clone, Debug)]
@@ -39,10 +40,6 @@ pub enum AppPopup {
 }
 
 impl AppPopup {
-    // -----------------------------------------------------------------------
-    // Factories
-    // -----------------------------------------------------------------------
-
     /// Create an informational text popup.
     pub fn info(title: impl Into<String>, body: impl Into<String>) -> Self {
         let title = title.into();
@@ -76,18 +73,17 @@ impl AppPopup {
         let i = details.preview_index;
         let mut columns: usize = 0;
 
-        let mut format_section =
-            |authors: &std::collections::HashSet<crate::lore::domain::patch::Author>| -> String {
-                let mut text = String::new();
-                for author in authors {
-                    let line = format!(" - {author}\n");
-                    if line.len() > columns {
-                        columns = line.len();
-                    }
-                    text.push_str(&line);
+        let mut format_section = |authors: &HashSet<Author>| -> String {
+            let mut text = String::new();
+            for author in authors {
+                let line = format!(" - {author}\n");
+                if line.len() > columns {
+                    columns = line.len();
                 }
-                text
-            };
+                text.push_str(&line);
+            }
+            text
+        };
 
         let reviewed_by = format_section(&details.reviewed_by[i]);
         let tested_by = format_section(&details.tested_by[i]);
@@ -107,11 +103,6 @@ impl AppPopup {
             dimensions: (50, 40),
         }
     }
-
-    // -----------------------------------------------------------------------
-    // Input handling
-    // -----------------------------------------------------------------------
-
     /// Advance scroll position in response to a navigation input.
     ///
     /// All popup variants share identical two-axis scroll semantics.
@@ -151,11 +142,6 @@ impl AppPopup {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Help builder
-// ---------------------------------------------------------------------------
-
 /// Fluent builder for `AppPopup::Help`.
 ///
 /// Mirrors the API of the old `HelpPopUpBuilder` so handler call sites change

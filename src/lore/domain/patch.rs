@@ -4,7 +4,7 @@ use derive_getters::Getters;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use std::fmt::Display;
+use std::fmt::{self, Display, Formatter};
 
 #[derive(Getters, Serialize, Deserialize, Debug, Clone)]
 pub struct PatchFeed {
@@ -39,7 +39,7 @@ pub struct Author {
 }
 
 impl Display for Author {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} <{}>", self.name, self.email)?;
         Ok(())
     }

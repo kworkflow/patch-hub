@@ -1,4 +1,9 @@
-use std::panic;
+use std::{error::Error, panic};
+
+use color_eyre::{
+    config::HookBuilder,
+    eyre::{set_hook, Result},
+};
 
 use super::terminal::restore;
 
@@ -8,8 +13,8 @@ use super::terminal::restore;
 /// Normal application shutdown restores the terminal through
 /// [`crate::terminal::handle::TerminalHandle::shutdown`]. These hooks keep a
 /// direct [`super::terminal::restore`] fallback for panics and fatal errors.
-pub fn install_hooks() -> color_eyre::Result<()> {
-    let (panic_hook, eyre_hook) = color_eyre::config::HookBuilder::default().into_hooks();
+pub fn install_hooks() -> Result<()> {
+    let (panic_hook, eyre_hook) = HookBuilder::default().into_hooks();
 
     // convert from a color_eyre PanicHook to a standard panic hook
     let panic_hook = panic_hook.into_panic_hook();
@@ -20,12 +25,10 @@ pub fn install_hooks() -> color_eyre::Result<()> {
 
     // convert from a color_eyre EyreHook to a eyre ErrorHook
     let eyre_hook = eyre_hook.into_eyre_hook();
-    color_eyre::eyre::set_hook(Box::new(
-        move |error: &(dyn std::error::Error + 'static)| {
-            restore().unwrap();
-            eyre_hook(error)
-        },
-    ))?;
+    set_hook(Box::new(move |error: &(dyn Error + 'static)| {
+        restore().unwrap();
+        eyre_hook(error)
+    }))?;
 
     Ok(())
 }

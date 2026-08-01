@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::Alignment,
+    layout::{Alignment, Rect},
     style::{Color, Modifier, Style, Stylize},
     text::Line,
     widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap},
@@ -10,11 +10,6 @@ use crate::{
     app::view_model::{PopupViewBody, PopupViewModel},
     ui::scene::{PopupBody, PopupScene},
 };
-
-// ---------------------------------------------------------------------------
-// Builder
-// ---------------------------------------------------------------------------
-
 pub fn build_scene(vm: &PopupViewModel) -> PopupScene {
     let body = match &vm.body {
         PopupViewBody::Text(text) => PopupBody::Text(text.clone()),
@@ -44,11 +39,7 @@ pub fn build_scene(vm: &PopupViewModel) -> PopupScene {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Painter
-// ---------------------------------------------------------------------------
-
-pub fn paint(f: &mut Frame, scene: &PopupScene, chunk: ratatui::layout::Rect) {
+pub fn paint(f: &mut Frame, scene: &PopupScene, chunk: Rect) {
     match &scene.body {
         PopupBody::Text(body) => paint_info(f, &scene.title, body, scene.scroll_offset, chunk),
         PopupBody::Keybinds {
@@ -77,13 +68,7 @@ pub fn paint(f: &mut Frame, scene: &PopupScene, chunk: ratatui::layout::Rect) {
     }
 }
 
-fn paint_info(
-    f: &mut Frame,
-    title: &str,
-    body: &str,
-    scroll: (u16, u16),
-    chunk: ratatui::layout::Rect,
-) {
+fn paint_info(f: &mut Frame, title: &str, body: &str, scroll: (u16, u16), chunk: Rect) {
     let bold_blue = Style::default()
         .add_modifier(Modifier::BOLD)
         .fg(Color::Blue);
@@ -112,7 +97,7 @@ fn paint_help(
     description: Option<&str>,
     formatted_keybinds: &str,
     scroll: (u16, u16),
-    chunk: ratatui::layout::Rect,
+    chunk: Rect,
 ) {
     let block = Block::default()
         .title(title.to_string())
@@ -148,7 +133,7 @@ fn paint_review_trailers(
     tested_by: &str,
     acked_by: &str,
     scroll: (u16, u16),
-    chunk: ratatui::layout::Rect,
+    chunk: Rect,
 ) {
     let header_style = Style::default()
         .fg(Color::Cyan)

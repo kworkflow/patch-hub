@@ -1,7 +1,11 @@
-use color_eyre::eyre::bail;
+use color_eyre::{eyre::bail, Report};
 use derive_getters::Getters;
 
-use std::{collections::HashMap, fmt::Display};
+use std::{
+    collections::HashMap,
+    fmt::{self, Display, Formatter},
+    mem,
+};
 
 use crate::config::{ConfigSnapshot, ConfigUpdateDraft};
 
@@ -109,7 +113,7 @@ impl EditConfigState {
     pub fn stage_edit(&mut self) {
         if let Ok(editable_config) = EditableConfig::try_from(self.highlighted) {
             self.config_buffer
-                .insert(editable_config, std::mem::take(&mut self.curr_edit));
+                .insert(editable_config, mem::take(&mut self.curr_edit));
         }
     }
 
@@ -150,7 +154,7 @@ enum EditableConfig {
 }
 
 impl TryFrom<usize> for EditableConfig {
-    type Error = color_eyre::Report;
+    type Error = Report;
 
     fn try_from(value: usize) -> Result<Self, Self::Error> {
         match value {
@@ -168,7 +172,7 @@ impl TryFrom<usize> for EditableConfig {
 }
 
 impl Display for EditableConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             EditableConfig::PageSize => write!(f, "Page Size"),
             EditableConfig::CacheDir => write!(f, "Cache Directory"),

@@ -2,15 +2,11 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState},
+    widgets::{Block, BorderType, Borders, HighlightSpacing, List, ListItem, ListState},
     Frame,
 };
 
 use crate::{app::view_model::LatestPatchsetsViewModel, ui::scene::LatestScene};
-
-// ---------------------------------------------------------------------------
-// Builder
-// ---------------------------------------------------------------------------
 
 pub fn build_scene(vm: &LatestPatchsetsViewModel) -> LatestScene {
     LatestScene {
@@ -18,10 +14,6 @@ pub fn build_scene(vm: &LatestPatchsetsViewModel) -> LatestScene {
         selected_index: vm.selected_index,
     }
 }
-
-// ---------------------------------------------------------------------------
-// Painter
-// ---------------------------------------------------------------------------
 
 pub fn paint(f: &mut Frame, scene: &LatestScene, chunk: Rect) {
     let mut list_items = Vec::<ListItem>::new();
@@ -45,7 +37,7 @@ pub fn paint(f: &mut Frame, scene: &LatestScene, chunk: Rect) {
 
     let list_block = Block::default()
         .borders(Borders::ALL)
-        .border_type(ratatui::widgets::BorderType::Double)
+        .border_type(BorderType::Double)
         .style(Style::default());
 
     let list = List::new(list_items)
@@ -64,10 +56,6 @@ pub fn paint(f: &mut Frame, scene: &LatestScene, chunk: Rect) {
 
     f.render_stateful_widget(list, chunk, &mut list_state);
 }
-
-// ---------------------------------------------------------------------------
-// Navigation-bar helpers
-// ---------------------------------------------------------------------------
 
 pub fn mode_spans(vm: &LatestPatchsetsViewModel) -> Vec<Span<'static>> {
     vec![Span::styled(

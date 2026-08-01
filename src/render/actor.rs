@@ -9,6 +9,7 @@
 use std::ops::ControlFlow;
 
 use tokio::{
+    spawn,
     sync::{mpsc, oneshot},
     task,
 };
@@ -40,7 +41,7 @@ impl RenderActor {
             channel_size = DEFAULT_RENDER_CHANNEL_SIZE,
             "spawning render actor"
         );
-        tokio::spawn(Self::new(core, rx).run());
+        spawn(Self::new(core, rx).run());
         RenderHandle::new(tx)
     }
 

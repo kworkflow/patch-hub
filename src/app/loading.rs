@@ -3,10 +3,16 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
+    thread,
     time::Duration,
 };
 
-use tokio::task::JoinHandle;
+use color_eyre::{eyre::eyre, Report, Result};
+use tokio::{
+    runtime::Handle,
+    spawn,
+    task::{block_in_place, JoinHandle},
+};
 
 use crate::terminal::{handle::TerminalHandle, messages::TerminalFrame, TerminalError};
 
@@ -14,7 +20,7 @@ pub(crate) const LOADING_FRAME_INTERVAL: Duration = Duration::from_millis(200);
 
 pub(crate) trait LoadingIndicator: Send {
     fn start(&mut self, title: String);
-    fn stop(&mut self) -> color_eyre::Result<()>;
+    fn stop(&mut self) -> Result<()>;
 }
 
 pub(crate) struct TerminalLoadingIndicator {
@@ -44,7 +50,7 @@ impl LoadingIndicator for TerminalLoadingIndicator {
         let terminal_handle = self.terminal_handle.clone();
 
         self.running = Some(running);
-        self.spinner_task = Some(tokio::spawn(async move {
+        self.spinner_task = Some(spawn(async move {
             while running_clone.load(Ordering::Relaxed) {
                 if terminal_handle
                     .draw(TerminalFrame::Loading(title.clone()))
@@ -54,14 +60,14 @@ impl LoadingIndicator for TerminalLoadingIndicator {
                     break;
                 }
 
-                std::thread::sleep(LOADING_FRAME_INTERVAL);
+                thread::sleep(LOADING_FRAME_INTERVAL);
             }
         }));
 
-        std::thread::sleep(LOADING_FRAME_INTERVAL);
+        thread::sleep(LOADING_FRAME_INTERVAL);
     }
 
-    fn stop(&mut self) -> color_eyre::Result<()> {
+    fn stop(&mut self) -> Result<()> {
         let Some(spinner_task) = self.spinner_task.take() else {
             return Ok(());
         };
@@ -70,16 +76,16 @@ impl LoadingIndicator for TerminalLoadingIndicator {
             running.store(false, Ordering::Relaxed);
         }
 
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async { spinner_task.await.ok() });
+        block_in_place(|| {
+            Handle::current().block_on(async { spinner_task.await.ok() });
         });
 
         Ok(())
     }
 }
 
-pub(crate) fn terminal_error(error: TerminalError) -> color_eyre::Report {
-    color_eyre::eyre::eyre!("{error}")
+pub(crate) fn terminal_error(error: TerminalError) -> Report {
+    eyre!("{error}")
 }
 
 #[cfg(test)]
@@ -102,7 +108,7 @@ mod tests {
         let mut loading = TerminalLoadingIndicator::new(handle);
 
         loading.start("Fetching mailing lists".to_string());
-        std::thread::sleep(LOADING_FRAME_INTERVAL);
+        thread::sleep(LOADING_FRAME_INTERVAL);
         loading.stop().unwrap();
     }
 }

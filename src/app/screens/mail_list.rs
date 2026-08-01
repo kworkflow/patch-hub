@@ -1,4 +1,4 @@
-use color_eyre::eyre::bail;
+use color_eyre::{eyre::bail, Result};
 
 use crate::lore::{
     application::{cache::CacheMode, handle::LoreApiHandle},
@@ -18,7 +18,7 @@ impl MailingListSelectionState {
         &mut self,
         lore_api: &LoreApiHandle,
         mode: CacheMode,
-    ) -> color_eyre::Result<()> {
+    ) -> Result<()> {
         match lore_api.fetch_available_lists(mode).await {
             Ok(available_mailing_lists) => {
                 self.mailing_lists = available_mailing_lists;

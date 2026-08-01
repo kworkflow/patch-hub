@@ -12,7 +12,7 @@
 //! change key bindings without restarting the pump.
 use std::time::Duration;
 
-use tokio::sync::mpsc;
+use tokio::{select, spawn, sync::mpsc};
 
 use crate::{
     input::{
@@ -43,7 +43,7 @@ impl InputActor {
             channel_size = DEFAULT_INPUT_CHANNEL_SIZE,
             "spawning input actor"
         );
-        tokio::spawn(
+        spawn(
             Self {
                 rx,
                 terminal_handle,
@@ -66,7 +66,7 @@ impl InputActor {
         // the TerminalActor already consumed it from the OS queue.
         let (event_tx, mut event_rx) = mpsc::channel::<TerminalEvent>(8);
         let terminal_handle = self.terminal_handle.clone();
-        tokio::spawn(async move {
+        spawn(async move {
             loop {
                 match terminal_handle.poll_event(EVENT_POLL_TIMEOUT).await {
                     Ok(Some(event)) => {
@@ -86,7 +86,7 @@ impl InputActor {
         });
 
         loop {
-            tokio::select! {
+            select! {
                 msg = self.rx.recv() => match msg {
                     Some(InputMessage::SubscribeApp { tx }) => {
                         tracing::debug!("app subscribed to input events");
@@ -96,7 +96,6 @@ impl InputActor {
                         tracing::debug!(?context, "input context updated");
                         self.context = context;
                     }
-                    #[cfg(test)]
                     Some(InputMessage::Shutdown) => {
                         tracing::info!("input actor stopping");
                         break;

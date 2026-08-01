@@ -1,7 +1,8 @@
 //! Patch and cover renderer preferences (serde + display), shared by config and rendering.
 
+use std::fmt::{self, Display, Formatter};
+
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]
 pub enum PatchRenderer {
@@ -39,7 +40,7 @@ impl From<&str> for PatchRenderer {
 }
 
 impl Display for PatchRenderer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             PatchRenderer::Default => write!(f, "default"),
             PatchRenderer::Bat => write!(f, "bat"),
@@ -77,7 +78,7 @@ impl From<&str> for CoverRenderer {
 }
 
 impl Display for CoverRenderer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             CoverRenderer::Default => write!(f, "default"),
             CoverRenderer::Bat => write!(f, "bat"),

@@ -10,17 +10,17 @@ mod render_prefs;
 mod terminal;
 mod ui;
 
-use app::{actor::AppActor, App};
+use app::{actor::AppActor, dependencies::check_external_deps, App};
 use clap::Parser;
 use cli::Cli;
-use color_eyre::eyre::eyre;
+use color_eyre::{eyre::eyre, Result};
 use config::{bootstrap_parts, ConfigActor};
 use infrastructure::{
     env::OsEnv,
-    file_system::OsFileSystem,
+    file_system::{FileSystemTrait, OsFileSystem},
     monitoring::{init_monitoring, InitMonitoringProduct},
     net::UreqNetClient,
-    shell::OsShell,
+    shell::{OsShell, ShellTrait},
     terminal::init,
 };
 use input::{actor::InputActor, event::InputEvent};
@@ -41,7 +41,7 @@ use tracing::{event, Level};
 use ui::actor::UiActor;
 
 #[tokio::main]
-async fn main() -> color_eyre::Result<()> {
+async fn main() -> Result<()> {
     // file writer guards should be propagated to main() so the logging thread lives enough
     let InitMonitoringProduct {
         logging_guards_by_file_name,
@@ -70,14 +70,16 @@ async fn main() -> color_eyre::Result<()> {
         ControlFlow::Continue(()) => {}
     }
 
+    check_external_deps(&env, &config)?;
+
     let config_handle = ConfigActor::spawn(config_state, config_repo);
     let terminal_handle = TerminalActor::spawn(Box::new(CrosstermTerminalSession::new(init()?)));
     let ui_handle = UiActor::spawn();
 
     // Build shared infrastructure dependencies for LoreService
     let net = Arc::new(UreqNetClient::new());
-    let fs_arc: Arc<dyn infrastructure::file_system::FileSystemTrait> = Arc::new(OsFileSystem);
-    let shell_arc: Arc<dyn infrastructure::shell::ShellTrait> = Arc::new(OsShell);
+    let fs_arc: Arc<dyn FileSystemTrait> = Arc::new(OsFileSystem);
+    let shell_arc: Arc<dyn ShellTrait> = Arc::new(OsShell);
 
     let gateway = Arc::new(HttpLoreGateway::new(net));
     let persistence = Arc::new(FileLorePersistence::new(
@@ -107,7 +109,10 @@ async fn main() -> color_eyre::Result<()> {
         shell_arc.clone(),
         CacheTtl::default(),
     ));
-    let bootstrap = lore_api.get_bootstrap_data().await.unwrap_or_default();
+    let bootstrap = lore_api
+        .get_bootstrap_data()
+        .await
+        .map_err(|error| eyre!("failed to bootstrap Lore data: {error}"))?;
 
     let app = App::new(
         config_handle
@@ -118,7 +123,6 @@ async fn main() -> color_eyre::Result<()> {
         bootstrap,
         Box::new(OsFileSystem),
         Box::new(OsShell),
-        Box::new(env),
         lore_api.clone(),
         render.clone(),
     )?;
@@ -128,14 +132,16 @@ async fn main() -> color_eyre::Result<()> {
         .subscribe_app(app_input_tx)
         .await
         .map_err(|e| eyre!("{e}"))?;
+    let input_shutdown_handle = input_handle.clone();
 
     // Shutdown ordering:
     //  1. AppActor — exits when the user quits (input channel closes)
-    //  2. ConfigActor — no further configuration requests once App is gone
-    //  3. LoreApiActor — no further requests once App is gone
-    //  4. RenderActor  — no further requests once App is gone
-    //  5. UiActor      — no further scene builds once App is gone
-    //  6. TerminalActor — restores the terminal last so the screen stays usable
+    //  2. InputActor — no further terminal input is needed once App is gone
+    //  3. ConfigActor — no further configuration requests once App is gone
+    //  4. LoreApiActor — no further requests once App is gone
+    //  5. RenderActor  — no further requests once App is gone
+    //  6. UiActor      — no further scene builds once App is gone
+    //  7. TerminalActor — restores the terminal last so the screen stays usable
     //                     during the steps above
     AppActor::spawn(
         app,
@@ -146,6 +152,10 @@ async fn main() -> color_eyre::Result<()> {
     )
     .run_until_done()
     .await?;
+    input_shutdown_handle
+        .shutdown()
+        .await
+        .map_err(|e| eyre!("{e}"))?;
     config_handle.shutdown().await;
     lore_api.shutdown().await;
     render.shutdown().await;

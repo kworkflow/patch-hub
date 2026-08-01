@@ -5,7 +5,10 @@
 //! and persists successful updates through [`JsonConfigRepository`](crate::config::JsonConfigRepository).
 use std::ops::ControlFlow;
 
-use tokio::sync::{mpsc, oneshot};
+use tokio::{
+    spawn,
+    sync::{mpsc, oneshot},
+};
 
 use crate::{
     config::{
@@ -45,7 +48,7 @@ where
             channel_size = DEFAULT_CONFIG_CHANNEL_SIZE,
             "spawning config actor"
         );
-        tokio::spawn(Self::new(state, repo, rx).run());
+        spawn(Self::new(state, repo, rx).run());
         ConfigHandle::new(tx)
     }
 

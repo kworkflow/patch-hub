@@ -1,12 +1,8 @@
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+
+use ansi_to_tui::IntoText;
 
 use crate::{
-    config::{ConfigSnapshot, KernelTree},
-    infrastructure::{
-        file_system::FileSystemTrait,
-        shell::{ShellCommand, ShellTrait},
-    },
     lore::{
         application::dto::PatchsetDetails,
         domain::patch::{Author, Patch},
@@ -47,6 +43,10 @@ pub struct PatchsetDetailsState {
 }
 
 const LAST_LINE_PADDING: usize = 10;
+
+fn rendered_preview_height(preview: &str) -> usize {
+    preview.into_text().unwrap_or_default().height()
+}
 
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub enum PatchsetAction {
@@ -123,8 +123,7 @@ impl PatchsetDetailsState {
 
     /// Scroll `n` lines down
     pub fn preview_scroll_down(&mut self, n: usize) {
-        // TODO: Support for renderers (only considers base preview string)
-        let number_of_lines = self.patches_preview[self.preview_index].lines().count();
+        let number_of_lines = rendered_preview_height(&self.patches_preview[self.preview_index]);
         if (self.preview_scroll_offset + n) <= number_of_lines {
             self.preview_scroll_offset += n;
         }
@@ -137,8 +136,7 @@ impl PatchsetDetailsState {
 
     /// Scroll to the last line
     pub fn go_to_last_line(&mut self) {
-        // TODO: Support for renderers (only considers base preview string)
-        let number_of_lines = self.patches_preview[self.preview_index].lines().count();
+        let number_of_lines = rendered_preview_height(&self.patches_preview[self.preview_index]);
         self.preview_scroll_offset = number_of_lines.saturating_sub(LAST_LINE_PADDING);
     }
 
@@ -219,257 +217,81 @@ impl PatchsetDetailsState {
     pub fn actions_require_user_io(&self) -> bool {
         self.patches_to_reply.contains(&true)
     }
+}
 
-    /// Checks if there is a `target_kernel_tree` and if it is in `Config::kernel_trees` and if
-    /// that kernel tree is a valid git directory.
-    ///
-    /// Returns the a valid `KernelTree` or a `String` with the error message on failure.
-    fn validate_kernel_tree<'a>(
-        &self,
-        fs: &dyn FileSystemTrait,
-        config: &'a ConfigSnapshot,
-    ) -> Result<&'a KernelTree, String> {
-        let kernel_tree_id = if let Some(target) = config.target_kernel_tree() {
-            target
-        } else {
-            return Err("target kernel tree unset".to_string());
-        };
+#[cfg(test)]
+mod tests {
+    use std::collections::{HashMap, HashSet};
 
-        let kernel_tree = if let Some(tree) = config.get_kernel_tree(kernel_tree_id) {
-            tree
-        } else {
-            return Err(format!("invalid target kernel tree '{kernel_tree_id}'"));
-        };
+    use serde_xml_rs::from_str;
 
-        let kernel_tree_path = Path::new(kernel_tree.path());
-        if !fs.is_dir(kernel_tree_path) {
-            return Err(format!("{} isn't a directory", kernel_tree.path()));
-        } else if !fs.is_dir(&kernel_tree_path.join(".git")) {
-            return Err(format!("{} isn't a git repository", kernel_tree.path()));
-        }
+    use super::*;
 
-        Ok(kernel_tree)
+    fn test_patch() -> Patch {
+        from_str(
+            r#"
+            <entry xmlns:thr="http://purl.org/syndication/thread/1.0">
+                <author>
+                    <name>Foo Bar</name>
+                    <email>foo@bar.foo.bar</email>
+                </author>
+                <title>[PATCH 1/1] test patch</title>
+                <updated>2024-07-06T19:15:48Z</updated>
+                <link href="http://lore.kernel.org/some-list/1234-1-foo@bar.foo.bar" />
+                <id>urn:uuid:123-abcd-1f2a3b</id>
+                <content></content>
+            </entry>
+        "#,
+        )
+        .expect("test patch XML should deserialize")
     }
 
-    // Ensures the kernel directory is not currently in another git operation,
-    // that it does not have unstaged or uncommited changes, and that the base branch
-    // is valid.
-    //
-    // Returns `()` on success and a `String` with an error message on failure.
-    fn check_git_state(
-        &self,
-        fs: &dyn FileSystemTrait,
-        shell: &dyn ShellTrait,
-        kernel_tree: &KernelTree,
-    ) -> Result<(), String> {
-        let kernel_tree_path = Path::new(kernel_tree.path());
-
-        if fs.is_dir(&kernel_tree_path.join(".git/rebase-merge")) {
-            return Err(
-                "rebase in progress. \nrun `git rebase --abort` before continuing".to_string(),
-            );
-        } else if fs.is_file(&kernel_tree_path.join(".git/MERGE_HEAD")) {
-            return Err(
-                "merge in progress. \nrun `git merge --abort` before continuing".to_string(),
-            );
-        } else if fs.is_file(&kernel_tree_path.join(".git/BISECT_LOG")) {
-            return Err(
-                "bisect in progress. \nrun `git bisect reset` before continuing".to_string(),
-            );
-        } else if fs.is_dir(&kernel_tree_path.join(".git/rebase-apply")) {
-            return Err(
-                "`git am` already in progress. \nrun `git am --abort` before continuing"
-                    .to_string(),
-            );
+    fn details_state_with_preview(preview: &str) -> PatchsetDetailsState {
+        PatchsetDetailsState {
+            representative_patch: test_patch(),
+            raw_patches: vec!["raw patch".to_string()],
+            patches_preview: vec![preview.to_string()],
+            has_cover_letter: false,
+            patches_to_reply: vec![false],
+            patchset_path: "/tmp/patchset.mbx".to_string(),
+            preview_index: 0,
+            preview_scroll_offset: 0,
+            preview_pan: 0,
+            preview_fullscreen: false,
+            patchset_actions: HashMap::from([
+                (PatchsetAction::Bookmark, false),
+                (PatchsetAction::ReplyWithReviewedBy, false),
+                (PatchsetAction::Apply, false),
+            ]),
+            reviewed_by: vec![HashSet::new()],
+            tested_by: vec![HashSet::new()],
+            acked_by: vec![HashSet::new()],
+            last_screen: CurrentScreen::LatestPatchsets,
         }
-
-        let status_out = shell
-            .execute(
-                &ShellCommand::new("git")
-                    .arg("-C")
-                    .arg(kernel_tree.path())
-                    .args(["status", "--porcelain"]),
-            )
-            .map_err(|e| format!("failed to check git status {e}"))?;
-
-        let status_output = String::from_utf8_lossy(&status_out.stdout);
-        if !status_output.is_empty() {
-            return Err(format!(
-                "there are staged and/or unstaged changes\n{status_output}"
-            ));
-        }
-
-        let show_ref_out = shell
-            .execute(
-                &ShellCommand::new("git")
-                    .arg("-C")
-                    .arg(kernel_tree.path())
-                    .args(["show-ref", "--verify", "--quiet"])
-                    .arg(format!("refs/heads/{}", kernel_tree.branch())),
-            )
-            .map_err(|e| format!("failed to verify branch: {e}"))?;
-
-        if !show_ref_out.success {
-            return Err(format!(
-                "invalid branch '{}' for '{}'",
-                kernel_tree.branch(),
-                kernel_tree.path()
-            ));
-        }
-
-        Ok(())
     }
 
-    /// Get the current branch of the supplied kernel tree
-    ///
-    /// Returns the branch name as a `String` or a `String` with the error message on failure
-    fn get_current_branch(
-        &self,
-        shell: &dyn ShellTrait,
-        kernel_tree: &KernelTree,
-    ) -> Result<String, String> {
-        let out = shell
-            .execute(
-                &ShellCommand::new("git")
-                    .arg("-C")
-                    .arg(kernel_tree.path())
-                    .args(["rev-parse", "--abbrev-ref", "HEAD"]),
-            )
-            .map_err(|e| format!("failed to get current branch: {e}"))?;
+    #[test]
+    fn rendered_height_accounts_for_rendered_text_projection() {
+        let preview = "\u{1b}[32mrendered line\u{1b}[0m\nsecond line";
 
-        let mut branch = String::from_utf8_lossy(&out.stdout).to_string();
-        branch.pop();
-        Ok(branch)
+        assert_eq!(2, rendered_preview_height(preview));
     }
 
-    /// Switch the supplied kernel tree to the supplied branch, if it exists.
-    ///
-    /// Returns `()` on sucess and a `String` with the error message on failure.
-    fn switch_to_branch(
-        &self,
-        shell: &dyn ShellTrait,
-        kernel_tree: &KernelTree,
-        branch: &str,
-    ) -> Result<(), String> {
-        let out = shell
-            .execute(
-                &ShellCommand::new("git")
-                    .arg("-C")
-                    .arg(kernel_tree.path())
-                    .args(["switch", branch]),
-            )
-            .map_err(|e| format!("failed to switch branch: {e}"))?;
+    #[test]
+    fn preview_scroll_down_uses_rendered_height() {
+        let mut state = details_state_with_preview("\u{1b}[32mrendered line\u{1b}[0m\nsecond line");
 
-        if !out.success {
-            return Err(format!(
-                "failed to switch to branch '{}': {}",
-                branch,
-                String::from_utf8_lossy(&out.stderr)
-            ));
-        }
+        state.preview_scroll_down(2);
 
-        Ok(())
+        assert_eq!(2, state.preview_scroll_offset);
     }
 
-    /// Create a new branch suffixed with the current timestamp.
-    ///
-    /// Returns a `String` with the branch name on success or the
-    /// error message on failure.
-    fn create_target_branch(
-        &self,
-        shell: &dyn ShellTrait,
-        kernel_tree: &KernelTree,
-        config: &ConfigSnapshot,
-    ) -> Result<String, String> {
-        self.switch_to_branch(shell, kernel_tree, kernel_tree.branch())?;
+    #[test]
+    fn go_to_last_line_saturates_for_short_rendered_preview() {
+        let mut state = details_state_with_preview("short preview");
 
-        let target_branch_name = format!(
-            "{}{}",
-            config.git_am_branch_prefix(),
-            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S")
-        );
+        state.go_to_last_line();
 
-        let out = shell
-            .execute(
-                &ShellCommand::new("git")
-                    .arg("-C")
-                    .arg(kernel_tree.path())
-                    .args(["checkout", "-b", &target_branch_name]),
-            )
-            .map_err(|e| format!("failed to create target branch: {e}"))?;
-
-        if !out.success {
-            return Err(format!(
-                "failed to create branch '{}': {}",
-                target_branch_name,
-                String::from_utf8_lossy(&out.stderr)
-            ));
-        }
-
-        Ok(target_branch_name)
-    }
-
-    /// Apply the selected patchset on the given `kernel_tree` with arguments from `Config`
-    ///
-    /// Returns `()` on sucess and a `String` containing the error message on failure.
-    fn run_git_am(
-        &self,
-        shell: &dyn ShellTrait,
-        kernel_tree: &KernelTree,
-        config: &ConfigSnapshot,
-    ) -> Result<(), String> {
-        let mut git_am_cmd = ShellCommand::new("git")
-            .arg("-C")
-            .arg(kernel_tree.path())
-            .args(["am", &self.patchset_path]);
-        for opt in config.git_am_options().split_whitespace() {
-            git_am_cmd = git_am_cmd.arg(opt);
-        }
-
-        let out = shell
-            .execute(&git_am_cmd)
-            .map_err(|e| format!("failed to execute git-am: {e}"))?;
-
-        if !out.success {
-            let _ = shell.execute(
-                &ShellCommand::new("git")
-                    .arg("-C")
-                    .arg(kernel_tree.path())
-                    .args(["am", "--abort"]),
-            );
-
-            return Err(String::from_utf8_lossy(&out.stderr).to_string());
-        }
-
-        Ok(())
-    }
-
-    /// Try to apply the patchset to a target kernel tree and returns a `String`
-    /// informing if the apply succeeded or failed and why.
-    ///
-    /// Returns a `Result<String, String>` containing either the success or the error message.
-    /// # TODO:
-    /// - Add unit tests
-    pub fn apply_patchset(
-        &self,
-        fs: &dyn FileSystemTrait,
-        shell: &dyn ShellTrait,
-        config: &ConfigSnapshot,
-    ) -> Result<String, String> {
-        let kernel_tree = self.validate_kernel_tree(fs, config)?;
-        self.check_git_state(fs, shell, kernel_tree)?;
-
-        let original_branch = self.get_current_branch(shell, kernel_tree)?;
-        let target_branch = self.create_target_branch(shell, kernel_tree, config)?;
-
-        let git_am_result = self.run_git_am(shell, kernel_tree, config);
-        self.switch_to_branch(shell, kernel_tree, &original_branch)?;
-
-        match git_am_result {
-            Ok(_) => {
-                Ok(format!(" Patchset '{}' applied successfully!\n\n - Kernel Tree: '{}'\n\n - Base Branch: '{}'\n\n - Applied branch: '{}'", self.representative_patch.title(), kernel_tree.path(), kernel_tree.branch(), &target_branch))
-        },
-            Err(e) => Err(format!( "`git am` failed\n{}{}", &original_branch, e))
-        }
+        assert_eq!(0, state.preview_scroll_offset);
     }
 }

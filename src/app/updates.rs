@@ -1,3 +1,5 @@
+use color_eyre::Result;
+
 use crate::app::{loading::LoadingIndicator, screens::CurrentScreen, App};
 
 impl App {
@@ -5,7 +7,7 @@ impl App {
     pub async fn process_system_updates(
         &mut self,
         loading: &mut (dyn LoadingIndicator + Send),
-    ) -> color_eyre::Result<()> {
+    ) -> Result<()> {
         match self.state.navigation.current_screen {
             CurrentScreen::MailingListSelection => {
                 if self

@@ -2,7 +2,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, HighlightSpacing, List, ListItem, ListState},
+    widgets::{Block, BorderType, Borders, HighlightSpacing, List, ListItem, ListState},
     Frame,
 };
 
@@ -10,21 +10,12 @@ use crate::{
     app::view_model::{MailingListSelectionViewModel, TargetListStatus},
     ui::scene::MailingListScene,
 };
-
-// ---------------------------------------------------------------------------
-// Builder
-// ---------------------------------------------------------------------------
-
 pub fn build_scene(vm: &MailingListSelectionViewModel) -> MailingListScene {
     MailingListScene {
         entries: vm.entries.clone(),
         highlighted_index: vm.highlighted_index,
     }
 }
-
-// ---------------------------------------------------------------------------
-// Painter
-// ---------------------------------------------------------------------------
 
 pub fn paint(f: &mut Frame, scene: &MailingListScene, chunk: Rect) {
     let mut list_items = Vec::<ListItem>::new();
@@ -44,7 +35,7 @@ pub fn paint(f: &mut Frame, scene: &MailingListScene, chunk: Rect) {
 
     let list_block = Block::default()
         .borders(Borders::ALL)
-        .border_type(ratatui::widgets::BorderType::Double)
+        .border_type(BorderType::Double)
         .style(Style::default());
 
     let list = List::new(list_items)
@@ -63,10 +54,6 @@ pub fn paint(f: &mut Frame, scene: &MailingListScene, chunk: Rect) {
 
     f.render_stateful_widget(list, chunk, &mut list_state);
 }
-
-// ---------------------------------------------------------------------------
-// Navigation-bar helpers
-// ---------------------------------------------------------------------------
 
 pub fn mode_spans(vm: &MailingListSelectionViewModel) -> Vec<Span<'static>> {
     let text_area = match vm.target_list_status {

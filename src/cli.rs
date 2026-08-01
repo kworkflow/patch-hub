@@ -1,5 +1,6 @@
 use clap::Parser;
-use color_eyre::eyre::eyre;
+use color_eyre::{eyre::eyre, Result};
+use serde_json::to_string_pretty;
 
 use std::ops::ControlFlow;
 
@@ -17,9 +18,9 @@ impl Cli {
     /// Resolves command line arguments that may finish before the TUI starts.
     ///
     /// Some arguments may finish the program early (returning `ControlFlow::Break`)
-    pub fn resolve(&self, config: &ConfigSnapshot) -> ControlFlow<color_eyre::Result<()>, ()> {
+    pub fn resolve(&self, config: &ConfigSnapshot) -> ControlFlow<Result<()>, ()> {
         if self.show_configs {
-            match serde_json::to_string_pretty(&config) {
+            match to_string_pretty(&config) {
                 Err(err) => return ControlFlow::Break(Err(eyre!(err))),
                 Ok(config) => println!("patch-hub configurations:\n{config}"),
             }

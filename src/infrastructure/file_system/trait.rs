@@ -1,7 +1,7 @@
 use mockall::automock;
 use thiserror::Error;
 
-use std::{io, path::Path};
+use std::{fs::Metadata, io, path::Path};
 
 #[derive(Debug, Error)]
 pub enum FileSystemError {
@@ -20,5 +20,5 @@ pub trait FileSystemTrait: Send + Sync {
     fn rename(&self, from: &Path, to: &Path) -> Result<(), FileSystemError>;
     fn create_writer(&self, path: &Path) -> Result<Box<dyn io::Write + Send>, FileSystemError>;
     fn open_bufreader(&self, path: &Path) -> Result<Box<dyn io::BufRead + Send>, FileSystemError>;
-    fn metadata(&self, path: &Path) -> Result<std::fs::Metadata, FileSystemError>;
+    fn metadata(&self, path: &Path) -> Result<Metadata, FileSystemError>;
 }

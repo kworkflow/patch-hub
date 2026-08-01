@@ -8,6 +8,7 @@
 use std::ops::ControlFlow;
 
 use tokio::{
+    spawn,
     sync::{mpsc, oneshot},
     task,
 };
@@ -37,7 +38,7 @@ impl LoreApiActor {
             channel_size = DEFAULT_LORE_API_CHANNEL_SIZE,
             "spawning lore api actor"
         );
-        tokio::spawn(Self::new(core, rx).run());
+        spawn(Self::new(core, rx).run());
         LoreApiHandle::new(tx)
     }
 

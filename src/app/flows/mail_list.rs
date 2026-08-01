@@ -1,17 +1,18 @@
 use std::ops::ControlFlow;
 
+use color_eyre::Result;
+use tracing::debug;
+
 use crate::{
     app::{loading::LoadingIndicator, popup::AppPopup, screens::CurrentScreen, App},
     input::event::InputEvent,
 };
 
-use tracing::debug;
-
 pub async fn handle_mailing_list_selection(
     app: &mut App,
     input: InputEvent,
     loading: &mut dyn LoadingIndicator,
-) -> color_eyre::Result<ControlFlow<(), ()>> {
+) -> Result<ControlFlow<(), ()>> {
     match input {
         InputEvent::OpenHelp => {
             let popup = generate_help_popup();

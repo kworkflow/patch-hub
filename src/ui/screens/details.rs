@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Padding, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Padding, Paragraph, Wrap},
     Frame,
 };
 
@@ -10,11 +10,6 @@ use crate::{
     app::view_model::PatchsetDetailsViewModel,
     ui::scene::{PatchsetDetailsScene, TagTrailerCounts},
 };
-
-// ---------------------------------------------------------------------------
-// Builder
-// ---------------------------------------------------------------------------
-
 pub fn build_scene(vm: &PatchsetDetailsViewModel) -> PatchsetDetailsScene {
     PatchsetDetailsScene {
         patch_title: vm.patch_title.clone(),
@@ -35,10 +30,6 @@ pub fn build_scene(vm: &PatchsetDetailsViewModel) -> PatchsetDetailsScene {
         is_current_patch_reply_staged: vm.is_current_patch_reply_staged,
     }
 }
-
-// ---------------------------------------------------------------------------
-// Painter
-// ---------------------------------------------------------------------------
 
 pub fn paint(f: &mut Frame, scene: &PatchsetDetailsScene, chunk: Rect) {
     if scene.preview_fullscreen {
@@ -139,7 +130,7 @@ fn paint_details_and_actions(
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_type(ratatui::widgets::BorderType::Double)
+                .border_type(BorderType::Double)
                 .title(Line::styled(" Details ", Style::default().fg(Color::Green)).left_aligned())
                 .padding(Padding::vertical(1)),
         )
@@ -200,7 +191,7 @@ fn paint_details_and_actions(
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_type(ratatui::widgets::BorderType::Double)
+                .border_type(BorderType::Double)
                 .title(Line::styled(" Actions ", Style::default().fg(Color::Green)).left_aligned())
                 .padding(Padding::vertical(1)),
         )
@@ -216,7 +207,7 @@ fn paint_preview(f: &mut Frame, scene: &PatchsetDetailsScene, chunk: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_type(ratatui::widgets::BorderType::Double)
+                .border_type(BorderType::Double)
                 .title(
                     Line::styled(
                         scene.preview_title.clone(),
@@ -231,10 +222,6 @@ fn paint_preview(f: &mut Frame, scene: &PatchsetDetailsScene, chunk: Rect) {
 
     f.render_widget(patch_preview, chunk);
 }
-
-// ---------------------------------------------------------------------------
-// Navigation-bar helpers
-// ---------------------------------------------------------------------------
 
 pub fn mode_spans() -> Vec<Span<'static>> {
     vec![Span::styled(

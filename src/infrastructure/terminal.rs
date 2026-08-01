@@ -15,6 +15,7 @@ use ratatui::{
     Terminal,
 };
 
+use color_eyre::Result;
 use std::io::{self, stdout, Stdout};
 
 /// A type alias for the terminal type used in this application
@@ -34,7 +35,7 @@ pub fn restore() -> io::Result<()> {
     Ok(())
 }
 
-pub(crate) fn setup_user_io<B: Backend>(terminal: &mut Terminal<B>) -> color_eyre::Result<()> {
+pub(crate) fn setup_user_io<B: Backend>(terminal: &mut Terminal<B>) -> Result<()> {
     terminal.clear()?;
     terminal.set_cursor_position(Position::new(0, 0))?;
     terminal.show_cursor()?;
@@ -42,7 +43,7 @@ pub(crate) fn setup_user_io<B: Backend>(terminal: &mut Terminal<B>) -> color_eyr
     Ok(())
 }
 
-pub(crate) fn teardown_user_io<B: Backend>(terminal: &mut Terminal<B>) -> color_eyre::Result<()> {
+pub(crate) fn teardown_user_io<B: Backend>(terminal: &mut Terminal<B>) -> Result<()> {
     enable_raw_mode()?;
     terminal.clear()?;
     Ok(())

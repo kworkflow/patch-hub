@@ -8,19 +8,11 @@ use ratatui::{
 
 use crate::{app::view_model::EditConfigViewModel, ui::scene::EditConfigScene};
 
-// ---------------------------------------------------------------------------
-// Builder
-// ---------------------------------------------------------------------------
-
 pub fn build_scene(vm: &EditConfigViewModel) -> EditConfigScene {
     EditConfigScene {
         entries: vm.entries.clone(),
     }
 }
-
-// ---------------------------------------------------------------------------
-// Painter
-// ---------------------------------------------------------------------------
 
 pub fn paint(f: &mut Frame, scene: &EditConfigScene, chunk: Rect) {
     let mut constraints = Vec::new();
@@ -70,10 +62,6 @@ pub fn paint(f: &mut Frame, scene: &EditConfigScene, chunk: Rect) {
         f.render_widget(config_entry, config_chunks[i]);
     }
 }
-
-// ---------------------------------------------------------------------------
-// Navigation-bar helpers
-// ---------------------------------------------------------------------------
 
 pub fn mode_spans(vm: &EditConfigViewModel) -> Vec<Span<'static>> {
     vec![if vm.is_editing_mode {

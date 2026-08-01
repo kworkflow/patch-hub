@@ -1,4 +1,4 @@
-use color_eyre::eyre::eyre;
+use color_eyre::{eyre::eyre, Result};
 use tracing::{event, Level};
 
 use crate::{
@@ -23,7 +23,7 @@ pub fn render_patch_preview(
     shell: &dyn ShellTrait,
     raw: &str,
     renderer: &PatchRenderer,
-) -> color_eyre::Result<String> {
+) -> Result<String> {
     let text = match renderer {
         PatchRenderer::Default => Ok(raw.to_string()),
         PatchRenderer::Bat => bat_patch_renderer(shell, raw),
@@ -43,7 +43,7 @@ pub fn render_patch_preview(
 /// # Tests
 ///
 /// [tests::test_bat_patch_renderer]
-fn bat_patch_renderer(shell: &dyn ShellTrait, patch: &str) -> color_eyre::Result<String> {
+fn bat_patch_renderer(shell: &dyn ShellTrait, patch: &str) -> Result<String> {
     let cleaned_patch = clean_patch_for_preview(patch);
 
     let cmd = ShellCommand::new("bat").args(["-pp", "-f", "-l", "patch"]);
@@ -67,7 +67,7 @@ fn bat_patch_renderer(shell: &dyn ShellTrait, patch: &str) -> color_eyre::Result
 /// # Tests
 ///
 /// [tests::test_delta_patch_renderer]
-fn delta_patch_renderer(shell: &dyn ShellTrait, patch: &str) -> color_eyre::Result<String> {
+fn delta_patch_renderer(shell: &dyn ShellTrait, patch: &str) -> Result<String> {
     let cleaned_patch = clean_patch_for_preview(patch);
 
     let cmd = ShellCommand::new("delta").args([
@@ -103,7 +103,7 @@ fn delta_patch_renderer(shell: &dyn ShellTrait, patch: &str) -> color_eyre::Resu
 /// # Tests
 ///
 /// [tests::test_diff_so_fancy_renderer]
-fn diff_so_fancy_renderer(shell: &dyn ShellTrait, patch: &str) -> color_eyre::Result<String> {
+fn diff_so_fancy_renderer(shell: &dyn ShellTrait, patch: &str) -> Result<String> {
     let cleaned_patch = clean_patch_for_preview(patch);
 
     let cmd = ShellCommand::new("diff-so-fancy");
