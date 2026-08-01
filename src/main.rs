@@ -25,6 +25,7 @@ use infrastructure::{
     shell::OsShell,
     terminal::init,
 };
+use input::{actor::InputActor, event::InputEvent};
 use lore::{
     application::{actor::LoreApiActor, cache::CacheTtl, service::LoreService},
     infrastructure::{
@@ -38,6 +39,7 @@ use render::{actor::RenderActor, ShellRenderService};
 use render_prefs::PatchRenderer;
 use std::{ops::ControlFlow, sync::Arc};
 use terminal::{actor::TerminalActor, session::CrosstermTerminalSession};
+use tokio::sync::mpsc;
 use tracing::{event, Level};
 
 /// Verifies required and optional external binaries before the TUI runs.
@@ -174,7 +176,14 @@ async fn main() -> color_eyre::Result<()> {
         bail!("patch-hub cannot be executed because some dependencies are missing, check logs for more information");
     }
 
-    run_app(app, terminal_handle.clone()).await?;
+    let (app_input_tx, app_input_rx) = mpsc::channel::<InputEvent>(64);
+    let input_handle = InputActor::spawn(terminal_handle.clone(), app.input_context());
+    input_handle
+        .subscribe_app(app_input_tx)
+        .await
+        .map_err(|e| eyre!("{e}"))?;
+
+    run_app(app, terminal_handle.clone(), input_handle, app_input_rx).await?;
     terminal_handle
         .shutdown()
         .await

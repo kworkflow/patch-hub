@@ -26,12 +26,17 @@ impl TerminalHandle {
             .await
     }
 
+    /// Reads the next raw terminal event, blocking until one arrives.
+    ///
+    /// The runtime event loop now receives input through [`InputHandle`] rather
+    /// than calling this directly. This method is kept for potential future use
+    /// in interactive sub-flows.
+    #[allow(dead_code)]
     pub async fn read_event(&self) -> TerminalResult<Option<TerminalEvent>> {
         self.request_result(|reply| TerminalMessage::ReadEvent { reply })
             .await
     }
 
-    #[allow(dead_code)] // Reserved for Phase 10 non-blocking input polling.
     pub async fn poll_event(&self, timeout: Duration) -> TerminalResult<Option<TerminalEvent>> {
         self.request_result(|reply| TerminalMessage::PollEvent { timeout, reply })
             .await

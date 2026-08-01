@@ -1,11 +1,11 @@
 //! Actor boundary for the Ratatui/Crossterm terminal session.
 //!
-//! Phase 9 makes this module the single owner of terminal session operations.
-//! The runtime pull loop in `handler::run_app` draws through
-//! [`handle::TerminalHandle::draw`] and reads input through
-//! [`handle::TerminalHandle::read_event`]. Phase 10 will introduce an
-//! `InputActor` that broadcasts terminal events instead of the current
-//! direct pull loop.
+//! This module is the single owner of terminal session operations. The runtime
+//! draws frames through [`handle::TerminalHandle::draw`]. Raw terminal events
+//! are delivered to the [`crate::input`] actor via
+//! [`handle::TerminalHandle::poll_event`]; the Input actor translates them into
+//! semantic [`crate::input::event::InputEvent`] values before forwarding them
+//! to the App.
 
 pub mod actor;
 pub mod errors;
