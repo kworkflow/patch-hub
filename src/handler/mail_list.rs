@@ -55,7 +55,7 @@ where
                 terminal,
                 "Refreshing lists" => {
                     app.mailing_list_selection
-                        .refresh_available_mailing_lists()
+                        .refresh_available_mailing_lists(&*app.fs)
                 }
             };
         }

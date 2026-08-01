@@ -2,11 +2,9 @@ use color_eyre::eyre::eyre;
 use serde::{Deserialize, Serialize};
 use tracing::{event, Level};
 
-use std::{
-    fmt::Display,
-    io::Write,
-    process::{Command, Stdio},
-};
+use std::fmt::Display;
+
+use crate::infrastructure::shell::{ShellCommand, ShellTrait};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]
 pub enum PatchRenderer {
@@ -54,12 +52,16 @@ impl Display for PatchRenderer {
     }
 }
 
-pub fn render_patch_preview(raw: &str, renderer: &PatchRenderer) -> color_eyre::Result<String> {
+pub fn render_patch_preview(
+    shell: &dyn ShellTrait,
+    raw: &str,
+    renderer: &PatchRenderer,
+) -> color_eyre::Result<String> {
     let text = match renderer {
         PatchRenderer::Default => Ok(raw.to_string()),
-        PatchRenderer::Bat => bat_patch_renderer(raw),
-        PatchRenderer::Delta => delta_patch_renderer(raw),
-        PatchRenderer::DiffSoFancy => diff_so_fancy_renderer(raw),
+        PatchRenderer::Bat => bat_patch_renderer(shell, raw),
+        PatchRenderer::Delta => delta_patch_renderer(shell, raw),
+        PatchRenderer::DiffSoFancy => diff_so_fancy_renderer(shell, raw),
     }?;
 
     Ok(text)
@@ -87,28 +89,19 @@ fn clean_patch_for_preview(patch: &str) -> String {
 /// # Tests
 ///
 /// [tests::test_bat_patch_renderer]
-fn bat_patch_renderer(patch: &str) -> color_eyre::Result<String> {
+fn bat_patch_renderer(shell: &dyn ShellTrait, patch: &str) -> color_eyre::Result<String> {
     let cleaned_patch = clean_patch_for_preview(patch);
 
-    let mut bat = Command::new("bat")
-        .arg("-pp")
-        .arg("-f")
-        .arg("-l")
-        .arg("patch")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
+    let cmd = ShellCommand::new("bat").args(["-pp", "-f", "-l", "patch"]);
+
+    let out = shell
+        .execute_with_stdin(&cmd, cleaned_patch.as_bytes())
         .map_err(|e| {
             event!(Level::ERROR, "Failed to spawn bat for patch preview: {}", e);
-            e
+            eyre!(e)
         })?;
 
-    bat.stdin
-        .as_mut()
-        .ok_or_else(|| eyre!("Failed to get stdin handle"))?
-        .write_all(cleaned_patch.as_bytes())?;
-    let output = bat.wait_with_output()?;
-    Ok(String::from_utf8(output.stdout)?)
+    Ok(String::from_utf8(out.stdout)?)
 }
 
 /// Renders a patch using the `delta` command line tool.
@@ -120,36 +113,31 @@ fn bat_patch_renderer(patch: &str) -> color_eyre::Result<String> {
 /// # Tests
 ///
 /// [tests::test_delta_patch_renderer]
-fn delta_patch_renderer(patch: &str) -> color_eyre::Result<String> {
+fn delta_patch_renderer(shell: &dyn ShellTrait, patch: &str) -> color_eyre::Result<String> {
     let cleaned_patch = clean_patch_for_preview(patch);
 
-    let mut delta = Command::new("delta")
-        .arg("--pager")
-        .arg("less")
-        .arg("--no-gitconfig")
-        .arg("--paging")
-        .arg("never")
-        .arg("-w")
-        .arg("130")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
+    let cmd = ShellCommand::new("delta").args([
+        "--pager",
+        "less",
+        "--no-gitconfig",
+        "--paging",
+        "never",
+        "-w",
+        "130",
+    ]);
+
+    let out = shell
+        .execute_with_stdin(&cmd, cleaned_patch.as_bytes())
         .map_err(|e| {
             event!(
                 Level::ERROR,
                 "Failed to spawn delta for patch preview: {}",
                 e
             );
-            e
+            eyre!(e)
         })?;
 
-    delta
-        .stdin
-        .as_mut()
-        .ok_or_else(|| eyre!("Failed to get stdin handle"))?
-        .write_all(cleaned_patch.as_bytes())?;
-    let output = delta.wait_with_output()?;
-    Ok(String::from_utf8(output.stdout)?)
+    Ok(String::from_utf8(out.stdout)?)
 }
 
 /// Renders a patch using the `diff-so-fancy` command line tool.
@@ -161,26 +149,21 @@ fn delta_patch_renderer(patch: &str) -> color_eyre::Result<String> {
 /// # Tests
 ///
 /// [tests::test_diff_so_fancy_renderer]
-fn diff_so_fancy_renderer(patch: &str) -> color_eyre::Result<String> {
+fn diff_so_fancy_renderer(shell: &dyn ShellTrait, patch: &str) -> color_eyre::Result<String> {
     let cleaned_patch = clean_patch_for_preview(patch);
 
-    let mut dsf = Command::new("diff-so-fancy")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
+    let cmd = ShellCommand::new("diff-so-fancy");
+
+    let out = shell
+        .execute_with_stdin(&cmd, cleaned_patch.as_bytes())
         .map_err(|e| {
             event!(
                 Level::ERROR,
                 "Failed to spawn diff-so-fancy for patch preview: {}",
                 e
             );
-            e
+            eyre!(e)
         })?;
 
-    dsf.stdin
-        .as_mut()
-        .ok_or_else(|| eyre!("Failed to get stdin handle"))?
-        .write_all(cleaned_patch.as_bytes())?;
-    let output = dsf.wait_with_output()?;
-    Ok(String::from_utf8(output.stdout)?)
+    Ok(String::from_utf8(out.stdout)?)
 }

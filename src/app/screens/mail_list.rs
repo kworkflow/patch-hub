@@ -1,7 +1,8 @@
 use color_eyre::eyre::bail;
 
-use crate::lore::{
-    lore_api_client::AvailableListsRequest, lore_session, mailing_list::MailingList,
+use crate::{
+    infrastructure::file_system::FileSystemTrait,
+    lore::{lore_api_client::AvailableListsRequest, lore_session, mailing_list::MailingList},
 };
 
 pub struct MailingListSelection {
@@ -14,7 +15,10 @@ pub struct MailingListSelection {
 }
 
 impl MailingListSelection {
-    pub fn refresh_available_mailing_lists(&mut self) -> color_eyre::Result<()> {
+    pub fn refresh_available_mailing_lists(
+        &mut self,
+        fs: &dyn FileSystemTrait,
+    ) -> color_eyre::Result<()> {
         match lore_session::fetch_available_lists(&*self.lore_api_client) {
             Ok(available_mailing_lists) => {
                 self.mailing_lists = available_mailing_lists;
@@ -26,7 +30,7 @@ impl MailingListSelection {
 
         self.clear_target_list();
 
-        lore_session::save_available_lists(&self.mailing_lists, &self.mailing_lists_path)?;
+        lore_session::save_available_lists(fs, &self.mailing_lists, &self.mailing_lists_path)?;
 
         Ok(())
     }

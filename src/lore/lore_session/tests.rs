@@ -1,12 +1,29 @@
 use io::Read;
-use std::fs;
+use std::{
+    fs::{self, File},
+    process::Command,
+};
 
-use crate::lore::{
-    lore_api_client::{MockBlockingLoreAPIClient, MockPatchFeedRequest},
-    patch::Author,
+use crate::{
+    infrastructure::{
+        file_system::OsFileSystem,
+        shell::{OsShell, ShellCommand},
+    },
+    lore::{
+        lore_api_client::{MockBlockingLoreAPIClient, MockPatchFeedRequest},
+        patch::Author,
+    },
 };
 
 use super::*;
+
+fn os_fs() -> OsFileSystem {
+    OsFileSystem
+}
+
+fn os_shell() -> OsShell {
+    OsShell
+}
 
 #[test]
 fn can_initialize_fresh_lore_session() {
@@ -134,11 +151,12 @@ fn should_process_multiple_representative_patches() {
 
 #[test]
 fn test_split_patchset_invalid_cases() {
-    let ret: Result<Vec<String>, String> = split_patchset("invalid/path");
+    let fs = os_fs();
+    let ret: Result<Vec<String>, String> = split_patchset(&fs, "invalid/path");
     assert_eq!(Err("invalid/path: Path doesn't exist".to_string()), ret);
 
     let ret: Result<Vec<String>, String> =
-        split_patchset("test_samples/lore_session/split_patchset/not_a_file");
+        split_patchset(&fs, "test_samples/lore_session/split_patchset/not_a_file");
     assert_eq!(
         Err("test_samples/lore_session/split_patchset/not_a_file: Not a file".to_string()),
         ret
@@ -148,6 +166,7 @@ fn test_split_patchset_invalid_cases() {
 #[test]
 fn should_split_patchset_without_cover_letter() {
     let ret: Result<Vec<String>, String> = split_patchset(
+        &os_fs(),
         "test_samples/lore_session/split_patchset/patchset_sample_without_cover_letter.mbx",
     );
 
@@ -183,8 +202,10 @@ fn should_split_patchset_without_cover_letter() {
 
 #[test]
 fn should_split_patchset_complete() {
-    let ret: Result<Vec<String>, String> =
-        split_patchset("test_samples/lore_session/split_patchset/patchset_sample_complete.mbx");
+    let ret: Result<Vec<String>, String> = split_patchset(
+        &os_fs(),
+        "test_samples/lore_session/split_patchset/patchset_sample_complete.mbx",
+    );
 
     if ret.is_err() {
         panic!("Should return a `Vec<String>` type");
@@ -387,9 +408,8 @@ fn should_generate_patch_reply_template() {
     )
 }
 
-fn commands_eq(cmd1: &Command, cmd2: &Command) -> bool {
-    cmd1.get_program() == cmd2.get_program()
-        && cmd1.get_args().collect::<Vec<_>>() == cmd2.get_args().collect::<Vec<_>>()
+fn commands_eq(cmd1: &ShellCommand, cmd2: &ShellCommand) -> bool {
+    cmd1.program == cmd2.program && cmd1.args == cmd2.args
 }
 
 #[test]
@@ -398,18 +418,24 @@ fn should_extract_git_reply_command_from_patch_html() {
         "test_samples/lore_session/extract_git_reply_command/patch_lore_sample.html",
     )
     .unwrap();
-    let mut expected_git_reply_command = Command::new("git");
-    expected_git_reply_command
-        .arg("send-email")
-        .arg("--dry-run")
-        .arg("--suppress-cc=all")
-        .arg("--in-reply-to=1234.567-3-john@johnson.com")
-        .arg("--to=foo@bar.com")
-        .arg("--cc=bar@foo.com")
-        .arg("--cc=foo@list.org")
-        .arg("--cc=bar@list.org");
+    let reply_path = "/tmp/some-reply.mbx";
+    let expected_git_reply_command = ShellCommand {
+        program: "git".to_string(),
+        args: vec![
+            "send-email".to_string(),
+            "--dry-run".to_string(),
+            "--suppress-cc=all".to_string(),
+            "--in-reply-to=1234.567-3-john@johnson.com".to_string(),
+            "--to=foo@bar.com".to_string(),
+            "--cc=bar@foo.com".to_string(),
+            "--cc=foo@list.org".to_string(),
+            "--cc=bar@list.org".to_string(),
+            reply_path.to_string(),
+        ],
+    };
 
-    let git_reply_command = extract_git_reply_command(&patch_html, "--dry-run --suppress-cc=all");
+    let git_reply_command =
+        extract_git_reply_command(&patch_html, "--dry-run --suppress-cc=all", reply_path);
 
     assert!(
         commands_eq(&expected_git_reply_command, &git_reply_command),
@@ -435,52 +461,52 @@ fn should_prepare_reply_patchset_with_reviewed_by() {
     let tmp_dir = Command::new("mktemp").arg("--directory").output().unwrap();
     let tmp_dir = Path::new(std::str::from_utf8(&tmp_dir.stdout).unwrap().trim());
 
-    let mut expected_git_reply_command_0 = Command::new("git");
-    expected_git_reply_command_0
-        .arg("send-email")
-        .arg("--dry-run") // Remove this after validating
-        .arg("--suppress-cc=all")
-        .arg("--in-reply-to=1234.567-0-foo@bar.foo.bar")
-        .arg("--to=foo@bar.foo.bar")
-        .arg(format!(
-            "{}/1234.567-0-foo@bar.foo.bar-reply.mbx",
-            tmp_dir.display()
-        ));
-    let mut expected_git_reply_command_1 = Command::new("git");
-    expected_git_reply_command_1
-        .arg("send-email")
-        .arg("--dry-run") // Remove this after validating
-        .arg("--suppress-cc=all")
-        .arg("--in-reply-to=1234.567-1-foo@bar.foo.bar")
-        .arg("--to=foo@bar.foo.bar")
-        .arg(format!(
-            "{}/1234.567-1-foo@bar.foo.bar-reply.mbx",
-            tmp_dir.display()
-        ));
-    let mut expected_git_reply_command_2 = Command::new("git");
-    expected_git_reply_command_2
-        .arg("send-email")
-        .arg("--dry-run") // Remove this after validating
-        .arg("--suppress-cc=all")
-        .arg("--in-reply-to=1234.567-2-foo@bar.foo.bar")
-        .arg("--to=foo@bar.foo.bar")
-        .arg(format!(
-            "{}/1234.567-2-foo@bar.foo.bar-reply.mbx",
-            tmp_dir.display()
-        ));
-    let mut expected_git_reply_command_3 = Command::new("git");
-    expected_git_reply_command_3
-        .arg("send-email")
-        .arg("--dry-run") // Remove this after validating
-        .arg("--suppress-cc=all")
-        .arg("--in-reply-to=1234.567-3-foo@bar.foo.bar")
-        .arg("--to=foo@bar.foo.bar")
-        .arg(format!(
-            "{}/1234.567-3-foo@bar.foo.bar-reply.mbx",
-            tmp_dir.display()
-        ));
+    let expected_git_reply_command_0 = ShellCommand {
+        program: "git".to_string(),
+        args: vec![
+            "send-email".to_string(),
+            "--dry-run".to_string(),
+            "--suppress-cc=all".to_string(),
+            "--in-reply-to=1234.567-0-foo@bar.foo.bar".to_string(),
+            "--to=foo@bar.foo.bar".to_string(),
+            format!("{}/1234.567-0-foo@bar.foo.bar-reply.mbx", tmp_dir.display()),
+        ],
+    };
+    let expected_git_reply_command_1 = ShellCommand {
+        program: "git".to_string(),
+        args: vec![
+            "send-email".to_string(),
+            "--dry-run".to_string(),
+            "--suppress-cc=all".to_string(),
+            "--in-reply-to=1234.567-1-foo@bar.foo.bar".to_string(),
+            "--to=foo@bar.foo.bar".to_string(),
+            format!("{}/1234.567-1-foo@bar.foo.bar-reply.mbx", tmp_dir.display()),
+        ],
+    };
+    let expected_git_reply_command_2 = ShellCommand {
+        program: "git".to_string(),
+        args: vec![
+            "send-email".to_string(),
+            "--dry-run".to_string(),
+            "--suppress-cc=all".to_string(),
+            "--in-reply-to=1234.567-2-foo@bar.foo.bar".to_string(),
+            "--to=foo@bar.foo.bar".to_string(),
+            format!("{}/1234.567-2-foo@bar.foo.bar-reply.mbx", tmp_dir.display()),
+        ],
+    };
+    let expected_git_reply_command_3 = ShellCommand {
+        program: "git".to_string(),
+        args: vec![
+            "send-email".to_string(),
+            "--dry-run".to_string(),
+            "--suppress-cc=all".to_string(),
+            "--in-reply-to=1234.567-3-foo@bar.foo.bar".to_string(),
+            "--to=foo@bar.foo.bar".to_string(),
+            format!("{}/1234.567-3-foo@bar.foo.bar-reply.mbx", tmp_dir.display()),
+        ],
+    };
 
-    let expected_git_reply_commands = vec![
+    let expected_git_reply_commands = [
         expected_git_reply_command_0,
         expected_git_reply_command_1,
         expected_git_reply_command_2,
@@ -515,6 +541,7 @@ fn should_prepare_reply_patchset_with_reviewed_by() {
     let patches_to_reply = vec![true; patches.len()];
 
     let git_reply_commands = prepare_reply_patchset_with_reviewed_by(
+        &os_fs(),
         &lore_api_client,
         tmp_dir,
         target_list,
@@ -589,7 +616,8 @@ fn should_get_local_git_signature() {
         .output()
         .unwrap();
 
-    let (git_user_name, git_user_email) = get_git_signature(mocked_git_repo.to_str().unwrap());
+    let (git_user_name, git_user_email) =
+        get_git_signature(&os_shell(), mocked_git_repo.to_str().unwrap());
 
     assert_eq!(
         "Foo Bar".to_owned(),

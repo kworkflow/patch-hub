@@ -3,7 +3,7 @@ use derive_getters::Getters;
 
 use std::{collections::HashMap, fmt::Display, path::Path};
 
-use crate::app::config::Config;
+use crate::{app::config::Config, infrastructure::file_system::FileSystemTrait};
 
 #[derive(Debug, Getters)]
 pub struct EditConfig {
@@ -138,13 +138,13 @@ impl EditConfig {
         }
     }
 
-    fn is_valid_dir(dir_path: &str) -> bool {
+    fn is_valid_dir(fs: &dyn FileSystemTrait, dir_path: &str) -> bool {
         let path_to_check = Path::new(dir_path);
 
-        if path_to_check.exists() && path_to_check.is_dir() {
+        if fs.exists(path_to_check) && fs.is_dir(path_to_check) {
             true
         } else {
-            std::fs::create_dir_all(path_to_check).is_ok()
+            fs.create_dir_all(path_to_check).is_ok()
         }
     }
 
@@ -153,9 +153,9 @@ impl EditConfig {
     /// # Errors
     ///
     /// Returns an error if the cache directory is not a valid directory
-    pub fn cache_dir(&mut self) -> Result<String, ()> {
+    pub fn cache_dir(&mut self, fs: &dyn FileSystemTrait) -> Result<String, ()> {
         let cache_dir = self.extract_config_buffer_val(&EditableConfig::CacheDir);
-        match Self::is_valid_dir(&cache_dir) {
+        match Self::is_valid_dir(fs, &cache_dir) {
             true => Ok(cache_dir),
             false => Err(()),
         }
@@ -166,9 +166,9 @@ impl EditConfig {
     /// # Errors
     ///
     /// Returns an error if the data directory is not a valid directory
-    pub fn data_dir(&mut self) -> Result<String, ()> {
+    pub fn data_dir(&mut self, fs: &dyn FileSystemTrait) -> Result<String, ()> {
         let data_dir = self.extract_config_buffer_val(&EditableConfig::DataDir);
-        match Self::is_valid_dir(&data_dir) {
+        match Self::is_valid_dir(fs, &data_dir) {
             true => Ok(data_dir),
             false => Err(()),
         }

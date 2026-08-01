@@ -4,10 +4,13 @@ use serde::{Deserialize, Serialize};
 
 use std::{
     collections::{HashMap, HashSet},
-    env,
-    fs::{self, File},
     io,
     path::Path,
+};
+
+use crate::infrastructure::{
+    env::EnvTrait,
+    file_system::{FileSystemError, FileSystemTrait},
 };
 
 pub const DEFAULT_CONFIG_PATH_SUFFIX: &str = ".config/patch-hub/config.json";
@@ -58,14 +61,35 @@ pub struct KernelTree {
 }
 
 impl Default for Config {
+    /// Produces a config whose path fields are derived from the real `HOME`
+    /// environment variable. This impl exists primarily to satisfy
+    /// `#[serde_individual_default]` for per-field serde defaults during
+    /// deserialization. For application startup, prefer
+    /// [`Config::new_with_defaults`] which accepts an [`EnvTrait`].
     fn default() -> Self {
-        let home = env::var("HOME").unwrap_or_else(|_| {
+        let home = std::env::var("HOME").unwrap_or_else(|_| {
             eprintln!("$HOME environment variable not set, using current directory");
             ".".to_string()
         });
+        Config::defaults_from_home(&home)
+    }
+}
+
+impl Config {
+    /// Builds a default `Config` whose path fields are derived from `HOME`
+    /// as returned by `env`. Use this instead of `Default::default()` in all
+    /// production paths.
+    fn new_with_defaults(env: &dyn EnvTrait) -> Self {
+        let home = env.var("HOME").unwrap_or_else(|_| {
+            eprintln!("$HOME environment variable not set, using current directory");
+            ".".to_string()
+        });
+        Config::defaults_from_home(&home)
+    }
+
+    fn defaults_from_home(home: &str) -> Self {
         let cache_dir = format!("{home}/.cache/patch_hub");
         let data_dir = format!("{home}/.local/share/patch_hub");
-
         Config {
             page_size: 30,
             patchsets_cache_dir: format!("{cache_dir}/patchsets"),
@@ -85,17 +109,15 @@ impl Default for Config {
             git_am_branch_prefix: String::from("patchset-"),
         }
     }
-}
 
-impl Config {
     /// Loads the configuration for patch-hub from the config file.
     ///
     /// Returns the default config if the config file is not found or if it's not a valid JSON.
-    fn load_file() -> Config {
-        let config_path = Config::get_config_path();
+    fn load_file(env: &dyn EnvTrait, fs: &dyn FileSystemTrait) -> Config {
+        let config_path = Config::get_config_path(env);
 
-        if Path::new(&config_path).is_file() {
-            match fs::read_to_string(&config_path) {
+        if fs.is_file(Path::new(&config_path)) {
+            match fs.read_to_string(Path::new(&config_path)) {
                 Ok(file_contents) => match serde_json::from_str(&file_contents) {
                     Ok(config) => return config,
                     Err(e) => eprintln!("Failed to parse config file {config_path}: {e}"),
@@ -106,27 +128,27 @@ impl Config {
             }
         }
 
-        Config::default()
+        Config::new_with_defaults(env)
     }
 
-    fn override_with_env_vars(&mut self) {
-        if let Ok(page_size) = env::var("PATCH_HUB_PAGE_SIZE") {
+    fn override_with_env_vars(&mut self, env: &dyn EnvTrait) {
+        if let Ok(page_size) = env.var("PATCH_HUB_PAGE_SIZE") {
             self.page_size = page_size.parse().unwrap();
         };
 
-        if let Ok(cache_dir) = env::var("PATCH_HUB_CACHE_DIR") {
+        if let Ok(cache_dir) = env.var("PATCH_HUB_CACHE_DIR") {
             self.set_cache_dir(cache_dir);
         };
 
-        if let Ok(data_dir) = env::var("PATCH_HUB_DATA_DIR") {
+        if let Ok(data_dir) = env.var("PATCH_HUB_DATA_DIR") {
             self.set_data_dir(data_dir);
         };
 
-        if let Ok(git_send_email_options) = env::var("PATCH_HUB_GIT_SEND_EMAIL_OPTIONS") {
+        if let Ok(git_send_email_options) = env.var("PATCH_HUB_GIT_SEND_EMAIL_OPTIONS") {
             self.git_send_email_options = git_send_email_options;
         };
 
-        if let Ok(patch_renderer) = env::var("PATCH_HUB_PATCH_RENDERER") {
+        if let Ok(patch_renderer) = env.var("PATCH_HUB_PATCH_RENDERER") {
             self.patch_renderer = patch_renderer.into();
         };
     }
@@ -137,12 +159,12 @@ impl Config {
     /// [tests::can_build_with_config_file]
     /// [tests::can_build_with_env_vars]
     /// [tests::test_config_precedence]
-    pub fn build() -> Self {
-        let mut config = Self::load_file();
-        config.save_patch_hub_config().unwrap_or_else(|e| {
+    pub fn build(env: &dyn EnvTrait, fs: &dyn FileSystemTrait) -> Self {
+        let mut config = Self::load_file(env, fs);
+        config.save_patch_hub_config(env, fs).unwrap_or_else(|e| {
             eprintln!("Failed to save default config: {e}");
         });
-        config.override_with_env_vars();
+        config.override_with_env_vars(env);
 
         config
     }
@@ -205,21 +227,24 @@ impl Config {
         self.max_log_age = max_log_age;
     }
 
-    pub fn save_patch_hub_config(&self) -> io::Result<()> {
-        let config_path = Config::get_config_path();
+    pub fn save_patch_hub_config(
+        &self,
+        env: &dyn EnvTrait,
+        fs: &dyn FileSystemTrait,
+    ) -> Result<(), FileSystemError> {
+        let config_path = Config::get_config_path(env);
 
         let config_path = Path::new(&config_path);
-        // We need to assure that the parent dir of `config_path` exists
         if let Some(parent_dir) = Path::parent(config_path) {
-            fs::create_dir_all(parent_dir)?;
+            fs.create_dir_all(parent_dir)?;
         }
 
         let tmp_filename = format!("{}.tmp", config_path.display());
         {
-            let tmp_file = File::create(&tmp_filename)?;
-            serde_json::to_writer_pretty(tmp_file, self)?;
+            let tmp_file = fs.create_writer(Path::new(&tmp_filename))?;
+            serde_json::to_writer_pretty(tmp_file, self).map_err(io::Error::from)?;
         }
-        fs::rename(tmp_filename, config_path)?;
+        fs.rename(Path::new(&tmp_filename), config_path)?;
         Ok(())
     }
 
@@ -227,19 +252,21 @@ impl Config {
     ///
     /// Resolves to env var PATCH_HUB_CONFIG_PATH, if set, and to env var HOME
     /// plus constant DEFAULT_CONFIG_PATH_SUFFIX, otherwise.
-    fn get_config_path() -> String {
-        env::var("PATCH_HUB_CONFIG_PATH").unwrap_or(format!(
-            "{}/{}",
-            env::var("HOME").unwrap(),
-            DEFAULT_CONFIG_PATH_SUFFIX
-        ))
+    fn get_config_path(env: &dyn EnvTrait) -> String {
+        env.var("PATCH_HUB_CONFIG_PATH").unwrap_or_else(|_| {
+            format!(
+                "{}/{}",
+                env.var("HOME").unwrap(),
+                DEFAULT_CONFIG_PATH_SUFFIX
+            )
+        })
     }
 
     /// Creates the needed directories if they don't exist.
     /// The directories are defined during the Config build.
     ///
     /// This function must be called as soon as the Config is built so no other function attempt to use an inexistent folder.
-    pub fn create_dirs(&self) {
+    pub fn create_dirs(&self, fs: &dyn FileSystemTrait) {
         let paths = vec![
             &self.cache_dir,
             &self.data_dir,
@@ -248,8 +275,8 @@ impl Config {
         ];
 
         for path in paths {
-            if fs::metadata(path).is_err() {
-                fs::create_dir_all(path).unwrap();
+            if fs.metadata(Path::new(path)).is_err() {
+                fs.create_dir_all(Path::new(path)).unwrap();
             }
         }
     }

@@ -12,9 +12,14 @@ use cli::Cli;
 use color_eyre::eyre::bail;
 use handler::run_app;
 use infrastructure::{
+    env::OsEnv,
+    file_system::OsFileSystem,
     monitoring::{init_monitoring, InitMonitoringProduct},
+    net::UreqNetClient,
+    shell::OsShell,
     terminal::{init, restore},
 };
+use lore::lore_api_client::BlockingLoreAPIClient;
 use std::ops::ControlFlow;
 use tracing::{event, Level};
 
@@ -32,8 +37,11 @@ fn main() -> color_eyre::Result<()> {
     infrastructure::errors::install_hooks()?;
     let mut terminal = init()?;
 
-    let config = Config::build();
-    config.create_dirs();
+    let fs = OsFileSystem;
+    let shell = OsShell;
+    let env = OsEnv;
+    let config = Config::build(&env, &fs);
+    config.create_dirs(&fs);
 
     // with the config we can update log directory
     let _guards = multi_log_file_writer.update_log_writer_with_config(
@@ -47,7 +55,13 @@ fn main() -> color_eyre::Result<()> {
         ControlFlow::Continue(t) => terminal = t,
     }
 
-    let app = App::new(config)?;
+    let app = App::new(
+        config,
+        Box::new(fs),
+        Box::new(shell),
+        Box::new(env),
+        BlockingLoreAPIClient::new(Box::new(UreqNetClient::new())),
+    )?;
     if !app.check_external_deps() {
         event!(
             Level::WARN,
