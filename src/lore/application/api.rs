@@ -8,7 +8,11 @@ use std::{
 use crate::{
     infrastructure::shell::ShellCommand,
     lore::{
-        application::{dto::PatchsetDetails, errors::LoreError},
+        application::{
+            cache::{BootstrapLoreData, CacheMode},
+            dto::PatchsetDetails,
+            errors::LoreError,
+        },
         domain::{mailing_list::MailingList, patch::Patch},
     },
 };
@@ -20,14 +24,16 @@ use crate::{
 /// implementation in a later phase.
 #[automock]
 pub trait LoreServiceApi {
-    // ── Persistence ──────────────────────────────────────────────────────────
+    // ── Mailing lists ─────────────────────────────────────────────────────────
 
-    /// Load available mailing lists from local cache.
-    fn load_available_lists(&self) -> Result<Vec<MailingList>, LoreError>;
+    /// Return available mailing lists according to `mode`:
+    ///
+    /// * `UseCache`  — in-memory hit → disk fallback → error (no network)
+    /// * `Refresh`   — unconditionally fetch from the network, persist, update cache
+    /// * `Bypass`    — fetch from the network without reading or writing cache
+    fn fetch_available_lists(&mut self, mode: CacheMode) -> Result<Vec<MailingList>, LoreError>;
 
-    /// Fetch all available mailing lists from the Lore network, sort them,
-    /// persist the result, and return the updated list.
-    fn refresh_available_lists(&self) -> Result<Vec<MailingList>, LoreError>;
+    // ── User state ────────────────────────────────────────────────────────────
 
     fn load_bookmarked_patchsets(&self) -> Result<Vec<Patch>, LoreError>;
     fn save_bookmarked_patchsets(&self, patchsets: &[Patch]) -> Result<(), LoreError>;
@@ -44,24 +50,32 @@ pub trait LoreServiceApi {
     ///
     /// Internally fetches more feed pages from the network as needed.
     /// Returns [`LoreError::EndOfFeed`] when the list is exhausted.
+    ///
+    /// * `UseCache`  — return from the in-memory index if not stale and already
+    ///   large enough; otherwise extend the index from the network.
+    /// * `Refresh`   — evict the cached index first, then fetch from the network.
+    /// * `Bypass`    — fetch from the network; the result is still accumulated
+    ///   in the in-memory index for subsequent pagination requests.
     fn fetch_next_patch_page(
         &mut self,
         target_list: &str,
         page_size: usize,
         page_number: usize,
+        mode: CacheMode,
     ) -> Result<Vec<Patch>, LoreError>;
-
-    /// Discard the cached feed state for `target_list` so the next call to
-    /// [`fetch_next_patch_page`] starts from the beginning.
-    fn reset_feed_cursor(&mut self, target_list: &str);
 
     // ── Patchset details ──────────────────────────────────────────────────────
 
     /// Download and parse `representative_patch`, returning the full patchset
     /// data needed to populate the details screen.
+    ///
+    /// * `UseCache`  — return from in-memory cache if present and not stale.
+    /// * `Refresh`   — evict the cached entry first, then re-download.
+    /// * `Bypass`    — download and return without reading or writing cache.
     fn fetch_patchset_details(
-        &self,
+        &mut self,
         representative_patch: &Patch,
+        mode: CacheMode,
     ) -> Result<PatchsetDetails, LoreError>;
 
     // ── Reply commands ────────────────────────────────────────────────────────
@@ -86,4 +100,14 @@ pub trait LoreServiceApi {
     /// Return `(user.name, user.email)` from `git config` for the given repo
     /// path.  Pass an empty string to use the global git config.
     fn get_git_signature(&self, git_repo_path: &str) -> (String, String);
+
+    // ── Bootstrap ─────────────────────────────────────────────────────────────
+
+    /// Warm the bootstrap cache and return all data needed to initialise `App`.
+    ///
+    /// Internally calls `fetch_available_lists(UseCache)`,
+    /// `load_bookmarked_patchsets`, and `load_reviewed_patchsets`.  Each
+    /// failure is logged and replaced with an empty default so that the caller
+    /// can treat this method as infallible in practice.
+    fn warm_bootstrap_cache(&mut self) -> Result<BootstrapLoreData, LoreError>;
 }

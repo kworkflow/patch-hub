@@ -1,6 +1,9 @@
 use color_eyre::eyre::bail;
 
-use crate::lore::{application::api::LoreServiceApi, domain::mailing_list::MailingList};
+use crate::lore::{
+    application::{api::LoreServiceApi, cache::CacheMode},
+    domain::mailing_list::MailingList,
+};
 
 pub struct MailingListSelection {
     pub mailing_lists: Vec<MailingList>,
@@ -12,9 +15,10 @@ pub struct MailingListSelection {
 impl MailingListSelection {
     pub fn refresh_available_mailing_lists(
         &mut self,
-        lore_service: &dyn LoreServiceApi,
+        lore_service: &mut dyn LoreServiceApi,
+        mode: CacheMode,
     ) -> color_eyre::Result<()> {
-        match lore_service.refresh_available_lists() {
+        match lore_service.fetch_available_lists(mode) {
             Ok(available_mailing_lists) => {
                 self.mailing_lists = available_mailing_lists;
             }

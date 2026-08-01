@@ -21,7 +21,7 @@ use crate::{
         shell::{ShellCommand, ShellTrait},
     },
     lore::{
-        application::{api::LoreServiceApi, errors::LoreError},
+        application::{api::LoreServiceApi, cache::CacheMode, errors::LoreError},
         domain::patch::{Author, Patch},
         infrastructure::patchset_parser::split_cover,
     },
@@ -89,11 +89,9 @@ impl App {
         fs: Box<dyn FileSystemTrait>,
         shell: Box<dyn ShellTrait>,
         env: Box<dyn EnvTrait>,
-        lore_service: Box<dyn LoreServiceApi>,
+        mut lore_service: Box<dyn LoreServiceApi>,
     ) -> color_eyre::Result<Self> {
-        let mailing_lists = lore_service.load_available_lists().unwrap_or_default();
-        let bookmarked_patchsets = lore_service.load_bookmarked_patchsets().unwrap_or_default();
-        let reviewed_patchsets = lore_service.load_reviewed_patchsets().unwrap_or_default();
+        let bootstrap = lore_service.warm_bootstrap_cache().unwrap_or_default();
 
         event!(Level::INFO, "patch-hub started");
         collect_garbage(&config);
@@ -101,19 +99,19 @@ impl App {
         Ok(App {
             current_screen: CurrentScreen::MailingListSelection,
             mailing_list_selection: MailingListSelection {
-                mailing_lists: mailing_lists.clone(),
+                mailing_lists: bootstrap.mailing_lists.clone(),
                 target_list: String::new(),
-                possible_mailing_lists: mailing_lists,
+                possible_mailing_lists: bootstrap.mailing_lists,
                 highlighted_list_index: 0,
             },
             latest_patchsets: None,
             details_actions: None,
             edit_config: None,
             bookmarked_patchsets: BookmarkedPatchsets {
-                bookmarked_patchsets,
+                bookmarked_patchsets: bootstrap.bookmarks,
                 patchset_index: 0,
             },
-            reviewed_patchsets,
+            reviewed_patchsets: bootstrap.reviewed,
             config,
             lore_service,
             popup: None,
@@ -133,17 +131,9 @@ impl App {
         self.latest_patchsets = Some(LatestPatchsets::new(target_list, self.config.page_size()));
     }
 
-    /// Sets field [App::latest_patchsets] to `None` and resets the feed cursor
-    /// in [App::lore_service] so the next visit fetches fresh data.
+    /// Sets field [App::latest_patchsets] to `None`.
     pub fn reset_latest_patchsets(&mut self) {
-        let target_list = self
-            .latest_patchsets
-            .as_ref()
-            .map(|p| p.target_list().to_string());
         self.latest_patchsets = None;
-        if let Some(list) = target_list {
-            self.lore_service.reset_feed_cursor(&list);
-        }
     }
 
     /// Fetches (or re-fetches) the current page of [App::latest_patchsets]
@@ -158,7 +148,7 @@ impl App {
             ..
         } = self;
         if let Some(patchsets) = latest_patchsets.as_mut() {
-            patchsets.fetch_current_page(lore_service.as_mut())
+            patchsets.fetch_current_page(lore_service.as_mut(), CacheMode::UseCache)
         } else {
             Ok(())
         }
@@ -175,7 +165,8 @@ impl App {
             mailing_list_selection,
             ..
         } = self;
-        mailing_list_selection.refresh_available_mailing_lists(lore_service.as_ref())
+        mailing_list_selection
+            .refresh_available_mailing_lists(lore_service.as_mut(), CacheMode::Refresh)
     }
 
     /// Initializes field [App::details_actions], from currently selected
@@ -208,7 +199,7 @@ impl App {
 
         let details = match self
             .lore_service
-            .fetch_patchset_details(&representative_patch)
+            .fetch_patchset_details(&representative_patch, CacheMode::UseCache)
         {
             Ok(d) => d,
             Err(LoreError::PatchNotFound(err)) => return Ok(B4Result::PatchNotFound(err)),

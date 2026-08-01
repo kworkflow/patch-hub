@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use crate::lore::domain::patch::{Author, Patch};
 
 /// Per-patch tag summary extracted from a raw patch's cover section.
+#[derive(Clone)]
 pub struct PatchTagSummary {
     pub reviewed_by: HashSet<Author>,
     pub tested_by: HashSet<Author>,
