@@ -1,7 +1,7 @@
 pub mod commands;
 pub mod errors;
 pub mod input;
-pub mod render_snapshot;
+pub mod popup;
 pub mod screens;
 pub mod state;
 pub mod updates;
@@ -29,7 +29,6 @@ use crate::{
         domain::patch::Patch,
     },
     render::{handle::RenderHandle, RenderPatchsetRequest},
-    ui::popup::info_popup::InfoPopUp,
 };
 use screens::{
     bookmarked::BookmarkedPatchsetsState,
@@ -391,8 +390,8 @@ impl App {
                 &*self.services.shell,
                 &self.state.config,
             ) {
-                Ok(msg) => InfoPopUp::generate_info_popup("Patchset Apply Success", &msg),
-                Err(msg) => InfoPopUp::generate_info_popup("Patchset Apply Fail", &msg),
+                Ok(msg) => popup::AppPopup::info("Patchset Apply Success", msg),
+                Err(msg) => popup::AppPopup::info("Patchset Apply Fail", msg),
             };
 
             self.state.popup = Some(popup);
@@ -428,5 +427,13 @@ impl App {
 
     pub fn set_current_screen(&mut self, new_current_screen: CurrentScreen) {
         self.state.navigation.current_screen = new_current_screen;
+    }
+
+    /// Projects the current [`AppState`] into an owned [`AppViewModel`].
+    ///
+    /// This is the primary way for the orchestration layer to hand off
+    /// presentation data to the UI actor without exposing raw `AppState`.
+    pub fn present(&self) -> AppViewModel {
+        view_model::project_state(&self.state)
     }
 }

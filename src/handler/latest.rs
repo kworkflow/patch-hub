@@ -1,8 +1,7 @@
 use crate::{
-    app::{screens::CurrentScreen, App, B4Result},
+    app::{popup::AppPopup, screens::CurrentScreen, App, B4Result},
     handler::LoadingIndicator,
     input::event::InputEvent,
-    ui::popup::{help::HelpPopUpBuilder, info_popup::InfoPopUp, PopUp},
 };
 
 pub async fn handle_latest_patchsets(
@@ -75,8 +74,9 @@ pub async fn handle_latest_patchsets(
                         app.set_current_screen(CurrentScreen::PatchsetDetails);
                     }
                     B4Result::PatchNotFound(err_cause) => {
-                        app.state.popup = Some(InfoPopUp::generate_info_popup(
-                            "Error",&format!("The selected patchset couldn't be retrieved.\nReason: {err_cause}\nPlease choose another patchset.")
+                        app.state.popup = Some(AppPopup::info(
+                            "Error",
+                            format!("The selected patchset couldn't be retrieved.\nReason: {err_cause}\nPlease choose another patchset."),
                         ));
                         app.set_current_screen(CurrentScreen::LatestPatchsets);
                     }
@@ -88,8 +88,8 @@ pub async fn handle_latest_patchsets(
     Ok(())
 }
 
-pub fn generate_help_popup() -> Box<dyn PopUp> {
-    let popup = HelpPopUpBuilder::new()
+pub fn generate_help_popup() -> AppPopup {
+    AppPopup::help()
         .title("Latest Patchsets")
         .description("This screen allows you to see a list of the latest patchsets from a mailing list.\nYou might also be able to view the details of a patchset.")
         .keybind("ESC", "Exit")
@@ -99,6 +99,5 @@ pub fn generate_help_popup() -> Box<dyn PopUp> {
         .keybind("k/🡅", "Up")
         .keybind("l/🡆", "Next page")
         .keybind("h/🡄", "Previous page")
-        .build();
-    Box::new(popup)
+        .build()
 }

@@ -1,7 +1,6 @@
 use crate::{
-    app::{screens::CurrentScreen, App},
+    app::{popup::AppPopup, screens::CurrentScreen, App},
     input::event::InputEvent,
-    ui::popup::{help::HelpPopUpBuilder, PopUp},
 };
 
 pub fn handle_edit_config(app: &mut App, input: InputEvent) -> color_eyre::Result<()> {
@@ -51,9 +50,8 @@ pub fn handle_edit_config(app: &mut App, input: InputEvent) -> color_eyre::Resul
     Ok(())
 }
 
-// TODO: Move this to a more appropriate place
-pub fn generate_help_popup() -> Box<dyn PopUp> {
-    let popup = HelpPopUpBuilder::new()
+pub fn generate_help_popup() -> AppPopup {
+    AppPopup::help()
         .title("Edit Config")
         .description("This screen allows you to edit the configuration options for patch-hub.\nMore configurations may be available in the configuration file.")
         .keybind("ESC", "Exit")
@@ -62,7 +60,5 @@ pub fn generate_help_popup() -> Box<dyn PopUp> {
         .keybind("j/🡇", "Down")
         .keybind("k/🡅", "Up")
         .keybind("e", "Toggle editing for a configuration option")
-        .build();
-
-    Box::new(popup)
+        .build()
 }

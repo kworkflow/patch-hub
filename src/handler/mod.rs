@@ -19,6 +19,7 @@ use crate::{
     app::{screens::CurrentScreen, App},
     input::{event::InputEvent, handle::InputHandle},
     terminal::{handle::TerminalHandle, messages::TerminalFrame, TerminalError},
+    ui::handle::UiHandle,
 };
 
 use bookmarked::handle_bookmarked_patchsets;
@@ -109,7 +110,7 @@ async fn input_handling(
         if input == InputEvent::ClosePopup {
             app.state.popup = None;
         } else {
-            popup.handle(input)?;
+            popup.handle_scroll(input);
         }
     } else {
         match app.state.navigation.current_screen {
@@ -139,6 +140,7 @@ async fn input_handling(
 pub async fn run_app(
     mut app: App,
     terminal_handle: TerminalHandle,
+    ui_handle: UiHandle,
     input_handle: InputHandle,
     mut app_input_rx: mpsc::Receiver<InputEvent>,
 ) -> color_eyre::Result<()> {
@@ -147,8 +149,12 @@ pub async fn run_app(
     loop {
         app.process_system_updates(&mut loading).await?;
 
+        let scene = ui_handle
+            .build_scene(app.present())
+            .await
+            .map_err(|e| color_eyre::eyre::eyre!("{e}"))?;
         terminal_handle
-            .draw(TerminalFrame::Main(Box::new(app.render_snapshot())))
+            .draw(TerminalFrame::Main(Box::new(scene)))
             .await
             .map_err(terminal_error)?;
 
