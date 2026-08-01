@@ -72,19 +72,20 @@ where
             if app.mailing_list_selection.mailing_lists.is_empty() {
                 terminal = loading_screen! {
                     terminal, "Fetching mailing lists" => {
-                        app.mailing_list_selection.refresh_available_mailing_lists(&*app.fs)
+                        app.refresh_mailing_lists()
                     }
                 };
             }
         }
         CurrentScreen::LatestPatchsets => {
             let patchsets_state = app.latest_patchsets.as_mut().unwrap();
-            let target_list = patchsets_state.target_list().to_string();
+
             if patchsets_state.processed_patchsets_count() == 0 {
+                let target_list = patchsets_state.target_list().to_string();
                 terminal = loading_screen! {
                     terminal,
                     format!("Fetching patchsets from {}", target_list) => {
-                        patchsets_state.fetch_current_page()
+                        app.fetch_latest_current_page()
                     }
                 };
 

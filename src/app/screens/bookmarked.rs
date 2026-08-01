@@ -1,4 +1,4 @@
-use crate::lore::patch::Patch;
+use crate::lore::domain::patch::Patch;
 
 pub struct BookmarkedPatchsets {
     pub bookmarked_patchsets: Vec<Patch>,

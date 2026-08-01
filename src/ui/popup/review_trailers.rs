@@ -8,7 +8,7 @@ use ratatui::{
 
 use std::collections::HashSet;
 
-use crate::{app::screens::details_actions::DetailsActions, lore::patch::Author};
+use crate::{app::screens::details_actions::DetailsActions, lore::domain::patch::Author};
 
 use super::PopUp;
 

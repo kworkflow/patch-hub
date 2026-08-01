@@ -19,8 +19,14 @@ use infrastructure::{
     shell::OsShell,
     terminal::{init, restore},
 };
-use lore::lore_api_client::BlockingLoreAPIClient;
-use std::ops::ControlFlow;
+use lore::{
+    application::{api::LoreServiceApi, service::LoreService},
+    infrastructure::{
+        http_lore_client::HttpLoreGateway, patchset_fetcher::B4PatchsetFetcher,
+        patchset_parser::MboxPatchsetParser, persistence::FileLorePersistence,
+    },
+};
+use std::{ops::ControlFlow, sync::Arc};
 use tracing::{event, Level};
 
 fn main() -> color_eyre::Result<()> {
@@ -37,11 +43,9 @@ fn main() -> color_eyre::Result<()> {
     infrastructure::errors::install_hooks()?;
     let mut terminal = init()?;
 
-    let fs = OsFileSystem;
-    let shell = OsShell;
     let env = OsEnv;
-    let config = Config::build(&env, &fs);
-    config.create_dirs(&fs);
+    let config = Config::build(&env, &OsFileSystem);
+    config.create_dirs(&OsFileSystem);
 
     // with the config we can update log directory
     let _guards = multi_log_file_writer.update_log_writer_with_config(
@@ -55,12 +59,42 @@ fn main() -> color_eyre::Result<()> {
         ControlFlow::Continue(t) => terminal = t,
     }
 
+    // Build shared infrastructure dependencies for LoreService
+    let net = Arc::new(UreqNetClient::new());
+    let fs_arc: Arc<dyn infrastructure::file_system::FileSystemTrait> = Arc::new(OsFileSystem);
+    let shell_arc: Arc<dyn infrastructure::shell::ShellTrait> = Arc::new(OsShell);
+
+    let gateway = Arc::new(HttpLoreGateway::new(net));
+    let persistence = Arc::new(FileLorePersistence::new(
+        fs_arc.clone(),
+        config.mailing_lists_path().to_string(),
+        config.bookmarked_patchsets_path().to_string(),
+        config.reviewed_patchsets_path().to_string(),
+    ));
+    let fetcher = Arc::new(B4PatchsetFetcher::new(
+        shell_arc.clone(),
+        fs_arc.clone(),
+        config.patchsets_cache_dir().to_string(),
+    ));
+    let parser = Arc::new(MboxPatchsetParser::new(fs_arc.clone()));
+
+    let lore_service: Box<dyn LoreServiceApi> = Box::new(LoreService::new(
+        gateway.clone(),
+        gateway.clone(),
+        gateway.clone(),
+        persistence,
+        fetcher,
+        parser,
+        fs_arc,
+        shell_arc,
+    ));
+
     let app = App::new(
         config,
-        Box::new(fs),
-        Box::new(shell),
+        Box::new(OsFileSystem),
+        Box::new(OsShell),
         Box::new(env),
-        BlockingLoreAPIClient::new(Box::new(UreqNetClient::new())),
+        lore_service,
     )?;
     if !app.check_external_deps() {
         event!(

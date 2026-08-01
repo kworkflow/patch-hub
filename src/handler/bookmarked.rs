@@ -7,9 +7,8 @@ use ratatui::{
 use std::ops::ControlFlow;
 
 use crate::{
-    app::{screens::CurrentScreen, App},
+    app::{screens::CurrentScreen, App, B4Result},
     loading_screen,
-    lore::lore_session::B4Result,
     ui::popup::{help::HelpPopUpBuilder, info_popup::InfoPopUp, PopUp},
 };
 
@@ -47,7 +46,7 @@ where
                         // necessary to handle this, but we can't assume that a
                         // patchset in this list was bookmarked through the UI
                         match result.unwrap() {
-                            B4Result::PatchFound(_) => {
+                            B4Result::PatchFound => {
                                 app.set_current_screen(CurrentScreen::PatchsetDetails);
                             }
                             B4Result::PatchNotFound(err_cause) => {

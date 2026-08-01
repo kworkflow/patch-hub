@@ -2,6 +2,9 @@ mod r#trait;
 
 pub use r#trait::{FileSystemError, FileSystemTrait};
 
+#[cfg(test)]
+pub use r#trait::MockFileSystemTrait;
+
 use std::{
     fs::{self, File},
     io::{self, BufReader},

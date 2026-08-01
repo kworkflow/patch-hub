@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::{app::App, lore::patch::Patch};
+use crate::{app::App, lore::domain::patch::Patch};
 
 pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
     let page_number = app.latest_patchsets.as_ref().unwrap().page_number();
@@ -60,9 +60,7 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
         .highlight_spacing(HighlightSpacing::Always);
 
     let mut list_state = ListState::default();
-    list_state.select(Some(
-        patchset_index - (page_number - 1) * app.config.page_size(),
-    ));
+    list_state.select(Some(patchset_index));
 
     f.render_stateful_widget(list, chunk, &mut list_state);
 }

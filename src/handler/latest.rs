@@ -7,9 +7,8 @@ use ratatui::{
 use std::ops::ControlFlow;
 
 use crate::{
-    app::{screens::CurrentScreen, App},
+    app::{screens::CurrentScreen, App, B4Result},
     loading_screen,
-    lore::lore_session::B4Result,
     ui::popup::{help::HelpPopUpBuilder, info_popup::InfoPopUp, PopUp},
 };
 
@@ -44,12 +43,14 @@ where
                 terminal,
                 format!("Fetching patchsets from {}", list_name) => {
                     latest_patchsets.increment_page();
-                    latest_patchsets.fetch_current_page()
+                    app.fetch_latest_current_page()
                 }
             };
         }
         KeyCode::Char('h') | KeyCode::Left => {
             latest_patchsets.decrement_page();
+            // Reload from cache (no network call since LoreService caches all pages)
+            app.fetch_latest_current_page()?;
         }
         KeyCode::Enter => {
             terminal = loading_screen! {
@@ -58,7 +59,7 @@ where
                     let result = app.init_details_actions();
                     if result.is_ok() {
                         match result.unwrap() {
-                            B4Result::PatchFound(_) => {
+                            B4Result::PatchFound => {
                                 app.set_current_screen(CurrentScreen::PatchsetDetails);
                             }
                             B4Result::PatchNotFound(err_cause) => {

@@ -1,36 +1,29 @@
 use color_eyre::eyre::bail;
 
-use crate::{
-    infrastructure::file_system::FileSystemTrait,
-    lore::{lore_api_client::AvailableListsRequest, lore_session, mailing_list::MailingList},
-};
+use crate::lore::{application::api::LoreServiceApi, domain::mailing_list::MailingList};
 
 pub struct MailingListSelection {
     pub mailing_lists: Vec<MailingList>,
     pub target_list: String,
     pub possible_mailing_lists: Vec<MailingList>,
     pub highlighted_list_index: usize,
-    pub mailing_lists_path: String,
-    pub lore_api_client: Box<dyn AvailableListsRequest>,
 }
 
 impl MailingListSelection {
     pub fn refresh_available_mailing_lists(
         &mut self,
-        fs: &dyn FileSystemTrait,
+        lore_service: &dyn LoreServiceApi,
     ) -> color_eyre::Result<()> {
-        match lore_session::fetch_available_lists(&*self.lore_api_client) {
+        match lore_service.refresh_available_lists() {
             Ok(available_mailing_lists) => {
                 self.mailing_lists = available_mailing_lists;
             }
-            Err(failed_available_lists_request) => {
-                bail!(format!("{failed_available_lists_request:#?}"));
+            Err(e) => {
+                bail!(format!("{e:#?}"));
             }
         };
 
         self.clear_target_list();
-
-        lore_session::save_available_lists(fs, &self.mailing_lists, &self.mailing_lists_path)?;
 
         Ok(())
     }
@@ -87,8 +80,6 @@ impl MailingListSelection {
 
 #[cfg(test)]
 mod tests {
-    use crate::lore::lore_api_client::MockBlockingLoreAPIClient;
-
     use super::*;
 
     #[test]
@@ -100,8 +91,6 @@ mod tests {
             target_list: "".to_string(),
             possible_mailing_lists: possible_mailing_lists.clone(),
             highlighted_list_index,
-            mailing_lists_path: "".to_string(),
-            lore_api_client: Box::new(MockBlockingLoreAPIClient::new()),
         };
 
         selection.remove_last_target_list_char();
@@ -124,8 +113,6 @@ mod tests {
             target_list: "target".to_string(),
             possible_mailing_lists: vec![],
             highlighted_list_index,
-            mailing_lists_path: "".to_string(),
-            lore_api_client: Box::new(MockBlockingLoreAPIClient::new()),
         };
 
         selection.remove_last_target_list_char();
@@ -150,8 +137,6 @@ mod tests {
             target_list: "targe".to_string(),
             possible_mailing_lists: vec![],
             highlighted_list_index: 2,
-            mailing_lists_path: "".to_string(),
-            lore_api_client: Box::new(MockBlockingLoreAPIClient::new()),
         };
 
         selection.push_char_to_target_list('t');
@@ -170,8 +155,6 @@ mod tests {
             target_list: "some value".to_string(),
             possible_mailing_lists: vec![MailingList::new("match", "")],
             highlighted_list_index: 3,
-            mailing_lists_path: "".to_string(),
-            lore_api_client: Box::new(MockBlockingLoreAPIClient::new()),
         };
 
         selection.clear_target_list();
@@ -267,8 +250,6 @@ mod tests {
                 target_list: test_case.target_list.to_string(),
                 possible_mailing_lists: vec![],
                 highlighted_list_index: test_case.highlighted_list_index,
-                mailing_lists_path: "".to_string(),
-                lore_api_client: Box::new(MockBlockingLoreAPIClient::new()),
             };
 
             mailing_list_selection.process_possible_mailing_lists();
@@ -296,8 +277,6 @@ mod tests {
             target_list: "".to_string(),
             possible_mailing_lists,
             highlighted_list_index: 0,
-            mailing_lists_path: "".to_string(),
-            lore_api_client: Box::new(MockBlockingLoreAPIClient::new()),
         };
 
         selection.highlight_below_list();
@@ -316,8 +295,6 @@ mod tests {
             target_list: "".to_string(),
             possible_mailing_lists: vec![mailing_list.clone(), mailing_list.clone()],
             highlighted_list_index: 2,
-            mailing_lists_path: "".to_string(),
-            lore_api_client: Box::new(MockBlockingLoreAPIClient::new()),
         };
 
         selection.highlight_above_list();
@@ -339,8 +316,6 @@ mod tests {
             target_list: "".to_string(),
             possible_mailing_lists: vec![mailing_list.clone()],
             highlighted_list_index: 0,
-            mailing_lists_path: "".to_string(),
-            lore_api_client: Box::new(MockBlockingLoreAPIClient::new()),
         };
         assert!(selection_valid.has_valid_target_list());
 
@@ -349,8 +324,6 @@ mod tests {
             target_list: "".to_string(),
             possible_mailing_lists: vec![mailing_list.clone()],
             highlighted_list_index: 5, // Out of bounds
-            mailing_lists_path: "".to_string(),
-            lore_api_client: Box::new(MockBlockingLoreAPIClient::new()),
         };
         assert!(!selection_invalid.has_valid_target_list());
     }
