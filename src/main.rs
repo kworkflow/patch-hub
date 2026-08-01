@@ -1,7 +1,6 @@
 mod app;
 mod cli;
 mod config;
-mod handler;
 mod infrastructure;
 mod input;
 mod lore;
@@ -11,14 +10,13 @@ mod render_prefs;
 mod terminal;
 mod ui;
 
-use app::App;
+use app::{actor::AppActor, App};
 use clap::Parser;
 use cli::Cli;
-use color_eyre::eyre::{bail, eyre};
-use config::{ConfigService, ConfigServiceApi, ConfigSnapshot};
-use handler::run_app;
+use color_eyre::eyre::eyre;
+use config::{ConfigService, ConfigServiceApi};
 use infrastructure::{
-    env::{EnvTrait, OsEnv},
+    env::OsEnv,
     file_system::OsFileSystem,
     monitoring::{init_monitoring, InitMonitoringProduct},
     net::UreqNetClient,
@@ -36,61 +34,11 @@ use lore::{
     },
 };
 use render::{actor::RenderActor, ShellRenderService};
-use render_prefs::PatchRenderer;
 use std::{ops::ControlFlow, sync::Arc};
 use terminal::{actor::TerminalActor, session::CrosstermTerminalSession};
 use tokio::sync::mpsc;
 use tracing::{event, Level};
 use ui::actor::UiActor;
-
-/// Verifies required and optional external binaries before the TUI runs.
-///
-/// Soft dependencies only emit warnings; a missing `b4` makes the app refuse to start.
-fn check_external_deps(env: &dyn EnvTrait, config: &ConfigSnapshot) -> bool {
-    let mut app_can_run = true;
-
-    if !env.which("b4") {
-        event!(
-            Level::ERROR,
-            "b4 is not installed, patchsets cannot be downloaded"
-        );
-        app_can_run = false;
-    }
-
-    if !env.which("git") {
-        event!(Level::WARN, "git is not installed, send-email won't work");
-    }
-
-    match config.patch_renderer() {
-        PatchRenderer::Bat => {
-            if !env.which("bat") {
-                event!(
-                    Level::WARN,
-                    "bat is not installed, patch rendering will fallback to default"
-                );
-            }
-        }
-        PatchRenderer::Delta => {
-            if !env.which("delta") {
-                event!(
-                    Level::WARN,
-                    "delta is not installed, patch rendering will fallback to default",
-                );
-            }
-        }
-        PatchRenderer::DiffSoFancy => {
-            if !env.which("diff-so-fancy") {
-                event!(
-                    Level::WARN,
-                    "diff-so-fancy is not installed, patch rendering will fallback to default",
-                );
-            }
-        }
-        _ => {}
-    }
-
-    app_can_run
-}
 
 #[tokio::main]
 async fn main() -> color_eyre::Result<()> {
@@ -170,14 +118,6 @@ async fn main() -> color_eyre::Result<()> {
         lore_api,
         render,
     )?;
-    if !check_external_deps(&*app.services.env, &app.state.config) {
-        event!(
-            Level::WARN,
-            "patch-hub cannot be executed because some dependencies are missing"
-        );
-        bail!("patch-hub cannot be executed because some dependencies are missing, check logs for more information");
-    }
-
     let (app_input_tx, app_input_rx) = mpsc::channel::<InputEvent>(64);
     let input_handle = InputActor::spawn(terminal_handle.clone(), app.input_context());
     input_handle
@@ -185,13 +125,14 @@ async fn main() -> color_eyre::Result<()> {
         .await
         .map_err(|e| eyre!("{e}"))?;
 
-    run_app(
+    AppActor::spawn(
         app,
         terminal_handle.clone(),
         ui_handle.clone(),
         input_handle,
         app_input_rx,
     )
+    .run_until_done()
     .await?;
     ui_handle.shutdown().await;
     terminal_handle

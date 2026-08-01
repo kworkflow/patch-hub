@@ -1,12 +1,11 @@
 use thiserror::Error;
 
-use crate::lore::application::errors::LoreError;
+use crate::{lore::application::errors::LoreError, ui::errors::UiError};
 
+#[allow(dead_code)]
 /// Errors surfaced by the application orchestration layer (`App`).
 ///
-/// Used as the typed boundary for future App-actor messages; many methods still
-/// return `color_eyre::Result` during the refactor.
-#[allow(dead_code)]
+/// Used as the typed boundary for `AppActor` messages and startup validation.
 #[derive(Debug, Error)]
 pub enum AppError {
     #[error("invalid navigation state: {0}")]
@@ -20,4 +19,13 @@ pub enum AppError {
 
     #[error("config error: {0}")]
     Config(String),
+
+    #[error("ui error: {0}")]
+    Ui(#[from] UiError),
+
+    #[error("input error: {0}")]
+    Input(String),
+
+    #[error("missing required dependencies: {0}")]
+    Dependencies(String),
 }

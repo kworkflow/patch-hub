@@ -1,6 +1,7 @@
+use tracing::debug;
+
 use crate::{
-    app::{popup::AppPopup, screens::CurrentScreen, App, B4Result},
-    handler::LoadingIndicator,
+    app::{loading::LoadingIndicator, popup::AppPopup, screens::CurrentScreen, App, B4Result},
     input::event::InputEvent,
 };
 
@@ -31,6 +32,7 @@ pub async fn handle_bookmarked_patchsets(
                 .select_above_patchset();
         }
         InputEvent::OpenPatchsetDetails => {
+            debug!("loading patchset details from bookmarks");
             loading.start("Loading patchset".to_string());
             let result = app.open_patchset_details().await;
             loading.stop()?;
