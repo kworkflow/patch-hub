@@ -1,54 +1,19 @@
 use color_eyre::eyre::eyre;
-use serde::{Deserialize, Serialize};
 use tracing::{event, Level};
 
-use std::fmt::Display;
-
 use crate::infrastructure::shell::{ShellCommand, ShellTrait};
+pub use crate::render_prefs::PatchRenderer;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]
-pub enum PatchRenderer {
-    #[default]
-    #[serde(rename = "default")]
-    Default,
-    #[serde(rename = "bat")]
-    Bat,
-    #[serde(rename = "delta")]
-    Delta,
-    #[serde(rename = "diff-so-fancy")]
-    DiffSoFancy,
-}
+/// Cleans patch contents before rendering for preview. Currently, it only trims
+/// the trailing signature delimiter (the `--` at the end of the patch) if it
+/// exists, as it is incorrectly rendered as a deletion by diff renderers.
+fn clean_patch_for_preview(patch: &str) -> String {
+    let lines: Vec<&str> = patch.lines().collect();
 
-impl From<String> for PatchRenderer {
-    fn from(value: String) -> Self {
-        match value.as_str() {
-            "bat" => PatchRenderer::Bat,
-            "delta" => PatchRenderer::Delta,
-            "diff-so-fancy" => PatchRenderer::DiffSoFancy,
-            _ => PatchRenderer::Default,
-        }
-    }
-}
-
-impl From<&str> for PatchRenderer {
-    fn from(value: &str) -> Self {
-        match value {
-            "bat" => PatchRenderer::Bat,
-            "delta" => PatchRenderer::Delta,
-            "diff-so-fancy" => PatchRenderer::DiffSoFancy,
-            _ => PatchRenderer::Default,
-        }
-    }
-}
-
-impl Display for PatchRenderer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PatchRenderer::Default => write!(f, "default"),
-            PatchRenderer::Bat => write!(f, "bat"),
-            PatchRenderer::Delta => write!(f, "delta"),
-            PatchRenderer::DiffSoFancy => write!(f, "diff-so-fancy"),
-        }
+    if let Some(sig_pos) = lines.iter().position(|&line| line.trim() == "--") {
+        lines[..sig_pos].join("\n")
+    } else {
+        patch.to_string()
     }
 }
 
@@ -65,19 +30,6 @@ pub fn render_patch_preview(
     }?;
 
     Ok(text)
-}
-
-/// Cleans patch contents before rendering for preview. Currently, it only trims
-/// the trailing signature delimiter (the `--` at the end of the patch) if it
-/// exists, as it is incorrectly rendered as a deletion by diff renderers.
-fn clean_patch_for_preview(patch: &str) -> String {
-    let lines: Vec<&str> = patch.lines().collect();
-
-    if let Some(sig_pos) = lines.iter().position(|&line| line.trim() == "--") {
-        lines[..sig_pos].join("\n")
-    } else {
-        patch.to_string()
-    }
 }
 
 /// Renders a patch using the `bat` command line tool.

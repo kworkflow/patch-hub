@@ -1,15 +1,18 @@
 mod app;
 mod cli;
+mod config;
 mod handler;
 mod infrastructure;
 mod lore;
 mod macros;
+mod render_prefs;
 mod ui;
 
-use app::{config::Config, patch_renderer::PatchRenderer, App};
+use app::{patch_renderer::PatchRenderer, App};
 use clap::Parser;
 use cli::Cli;
-use color_eyre::eyre::bail;
+use color_eyre::eyre::{bail, eyre};
+use config::{ConfigService, ConfigServiceApi, ConfigSnapshot};
 use handler::run_app;
 use infrastructure::{
     env::{EnvTrait, OsEnv},
@@ -35,7 +38,7 @@ use tracing::{event, Level};
 /// Verifies required and optional external binaries before the TUI runs.
 ///
 /// Soft dependencies only emit warnings; a missing `b4` makes the app refuse to start.
-fn check_external_deps(env: &dyn EnvTrait, config: &Config) -> bool {
+fn check_external_deps(env: &dyn EnvTrait, config: &ConfigSnapshot) -> bool {
     let mut app_can_run = true;
 
     if !env.which("b4") {
@@ -96,8 +99,9 @@ fn main() -> color_eyre::Result<()> {
     let mut terminal = init()?;
 
     let env = OsEnv;
-    let config = Config::build(&env, &OsFileSystem);
-    config.create_dirs(&OsFileSystem);
+    let config_service: Box<dyn ConfigServiceApi> =
+        Box::new(ConfigService::bootstrap(&env, OsFileSystem).map_err(|e| eyre!(e))?);
+    let config = config_service.snapshot();
 
     // with the config we can update log directory
     let _guards = multi_log_file_writer.update_log_writer_with_config(
@@ -146,7 +150,7 @@ fn main() -> color_eyre::Result<()> {
     ));
 
     let app = App::new(
-        config,
+        config_service,
         Box::new(OsFileSystem),
         Box::new(OsShell),
         Box::new(env),

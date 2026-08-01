@@ -4,7 +4,7 @@ use ratatui::{prelude::Backend, Terminal};
 
 use std::ops::ControlFlow;
 
-use crate::{app::config::Config, infrastructure::terminal::restore};
+use crate::{config::ConfigSnapshot, infrastructure::terminal::restore};
 
 #[derive(Debug, Parser)]
 #[command(version, about)]
@@ -21,7 +21,7 @@ impl Cli {
     pub fn resolve<B: Backend>(
         &self,
         terminal: Terminal<B>,
-        config: &Config,
+        config: &ConfigSnapshot,
     ) -> ControlFlow<color_eyre::Result<()>, Terminal<B>> {
         if self.show_configs {
             drop(terminal);

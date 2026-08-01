@@ -20,8 +20,6 @@ pub fn handle_latest_patchsets<B>(
 where
     B: Backend + Send + 'static,
 {
-    let latest_patchsets = app.state.lore.latest_patchsets.as_mut().unwrap();
-
     match key.code {
         KeyCode::Char('?') => {
             let popup = generate_help_popup();
@@ -32,23 +30,50 @@ where
             app.set_current_screen(CurrentScreen::MailingListSelection);
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            latest_patchsets.select_below_patchset();
+            app.state
+                .lore
+                .latest_patchsets
+                .as_mut()
+                .unwrap()
+                .select_below_patchset();
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            latest_patchsets.select_above_patchset();
+            app.state
+                .lore
+                .latest_patchsets
+                .as_mut()
+                .unwrap()
+                .select_above_patchset();
         }
         KeyCode::Char('l') | KeyCode::Right => {
-            let list_name = latest_patchsets.target_list().to_string();
+            let list_name = app
+                .state
+                .lore
+                .latest_patchsets
+                .as_ref()
+                .unwrap()
+                .target_list()
+                .to_string();
             terminal = loading_screen! {
                 terminal,
                 format!("Fetching patchsets from {}", list_name) => {
-                    latest_patchsets.increment_page();
+                    app.state
+                        .lore
+                        .latest_patchsets
+                        .as_mut()
+                        .unwrap()
+                        .increment_page();
                     app.fetch_latest_current_page()
                 }
             };
         }
         KeyCode::Char('h') | KeyCode::Left => {
-            latest_patchsets.decrement_page();
+            app.state
+                .lore
+                .latest_patchsets
+                .as_mut()
+                .unwrap()
+                .decrement_page();
             // Reload from cache (no network call since LoreService caches all pages)
             app.fetch_latest_current_page()?;
         }
