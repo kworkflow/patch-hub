@@ -5,50 +5,68 @@ use crate::{
     input::event::InputEvent,
 };
 
-pub fn handle_edit_config(app: &mut App, input: InputEvent) -> color_eyre::Result<()> {
-    if let Some(edit_config_state) = app.state.config_state.edit_config.as_mut() {
-        match edit_config_state.is_editing() {
-            true => match input {
-                InputEvent::CancelConfigEdit => {
-                    edit_config_state.clear_edit();
+pub async fn handle_edit_config(app: &mut App, input: InputEvent) -> color_eyre::Result<()> {
+    let Some(is_editing) = app
+        .state
+        .config_state
+        .edit_config
+        .as_ref()
+        .map(|edit_config_state| edit_config_state.is_editing())
+    else {
+        return Ok(());
+    };
+
+    match is_editing {
+        true => {
+            if let Some(edit_config_state) = app.state.config_state.edit_config.as_mut() {
+                match input {
+                    InputEvent::CancelConfigEdit => {
+                        edit_config_state.clear_edit();
+                        edit_config_state.toggle_editing();
+                    }
+                    InputEvent::Backspace => {
+                        edit_config_state.backspace_edit();
+                    }
+                    InputEvent::TextInput(ch) => {
+                        edit_config_state.append_edit(ch);
+                    }
+                    InputEvent::StageConfigEdit => {
+                        edit_config_state.stage_edit();
+                        edit_config_state.clear_edit();
+                        edit_config_state.toggle_editing();
+                    }
+                    _ => {}
+                }
+            }
+        }
+        false => match input {
+            InputEvent::OpenHelp => {
+                let popup = generate_help_popup();
+                app.state.popup = Some(popup);
+            }
+            InputEvent::SaveConfig => {
+                debug!("saving edited configuration");
+                app.consolidate_edit_config().await?;
+                app.reset_edit_config();
+                app.set_current_screen(CurrentScreen::MailingListSelection);
+            }
+            InputEvent::EditConfigField => {
+                if let Some(edit_config_state) = app.state.config_state.edit_config.as_mut() {
                     edit_config_state.toggle_editing();
                 }
-                InputEvent::Backspace => {
-                    edit_config_state.backspace_edit();
-                }
-                InputEvent::TextInput(ch) => {
-                    edit_config_state.append_edit(ch);
-                }
-                InputEvent::StageConfigEdit => {
-                    edit_config_state.stage_edit();
-                    edit_config_state.clear_edit();
-                    edit_config_state.toggle_editing();
-                }
-                _ => {}
-            },
-            false => match input {
-                InputEvent::OpenHelp => {
-                    let popup = generate_help_popup();
-                    app.state.popup = Some(popup);
-                }
-                InputEvent::SaveConfig => {
-                    debug!("saving edited configuration");
-                    app.consolidate_edit_config()?;
-                    app.reset_edit_config();
-                    app.set_current_screen(CurrentScreen::MailingListSelection);
-                }
-                InputEvent::EditConfigField => {
-                    edit_config_state.toggle_editing();
-                }
-                InputEvent::NavigateDown => {
+            }
+            InputEvent::NavigateDown => {
+                if let Some(edit_config_state) = app.state.config_state.edit_config.as_mut() {
                     edit_config_state.highlight_next();
                 }
-                InputEvent::NavigateUp => {
+            }
+            InputEvent::NavigateUp => {
+                if let Some(edit_config_state) = app.state.config_state.edit_config.as_mut() {
                     edit_config_state.highlight_prev();
                 }
-                _ => {}
-            },
-        }
+            }
+            _ => {}
+        },
     }
     Ok(())
 }

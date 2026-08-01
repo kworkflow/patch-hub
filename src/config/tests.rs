@@ -7,12 +7,15 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use crate::config::actor::ConfigActor;
 use crate::config::repository::{ConfigRepository, JsonConfigRepository};
+use crate::config::service::{bootstrap_parts, validate_update};
 use crate::config::state::{normalize_derived_paths, ConfigState};
-use crate::config::{
-    ConfigError, ConfigService, ConfigServiceApi, ConfigUpdateDraft, DEFAULT_CONFIG_PATH_SUFFIX,
+use crate::config::{ConfigError, ConfigSnapshot, ConfigUpdateDraft, DEFAULT_CONFIG_PATH_SUFFIX};
+use crate::infrastructure::{
+    env::{EnvTrait, MockEnvTrait},
+    file_system::OsFileSystem,
 };
-use crate::infrastructure::{env::MockEnvTrait, file_system::OsFileSystem};
 
 static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -25,6 +28,10 @@ fn unique_test_dir(prefix: &str) -> PathBuf {
     let p = std::env::temp_dir().join(format!("patch-hub-{prefix}-{}-{}", std::process::id(), n));
     fs::create_dir_all(&p).unwrap();
     p
+}
+
+fn bootstrap_snapshot(env: &dyn EnvTrait) -> ConfigSnapshot {
+    bootstrap_parts(env, os_fs()).unwrap().0.to_snapshot()
 }
 
 /// Writable `HOME` and mock env: no `PATCH_HUB_CONFIG_PATH` (uses `HOME/.config/...`).
@@ -100,8 +107,7 @@ fn config_fixture_json(root: &Path) -> String {
 fn bootstrap_with_default_values() {
     let (env, home) = default_env();
     let h = home.to_string_lossy();
-    let service = ConfigService::bootstrap(&env, os_fs()).unwrap();
-    let config = service.snapshot();
+    let config = bootstrap_snapshot(&env);
 
     assert_eq!(30, config.page_size());
     assert_eq!(
@@ -165,8 +171,7 @@ fn bootstrap_with_config_file() {
         })
         .returning(|_| Err(VarError::NotPresent.into()));
 
-    let service = ConfigService::bootstrap(&mock, os_fs()).unwrap();
-    let config = service.snapshot();
+    let config = bootstrap_snapshot(&mock);
 
     // `normalize_derived_paths` recomputes these from `cache_dir` / `data_dir` after load.
     let patchsets_cache_dir = fixture_root.join("cache_dir").join("patchsets");
@@ -253,8 +258,7 @@ fn bootstrap_with_env_vars() {
         .withf(|key| key == "PATCH_HUB_PATCH_RENDERER")
         .returning(|_| Err(VarError::NotPresent.into()));
 
-    let service = ConfigService::bootstrap(&mock, os_fs()).unwrap();
-    let config = service.snapshot();
+    let config = bootstrap_snapshot(&mock);
 
     assert_eq!(42, config.page_size());
     assert_eq!(
@@ -286,8 +290,7 @@ fn bootstrap_with_env_vars() {
 #[test]
 fn bootstrap_config_precedence() {
     let (env, home) = default_env();
-    let service = ConfigService::bootstrap(&env, os_fs()).unwrap();
-    assert_eq!(30, service.snapshot().page_size());
+    assert_eq!(30, bootstrap_snapshot(&env).page_size());
 
     let fixture_root = unique_test_dir("prec");
     let tmp_path = fixture_root.join("config.json");
@@ -318,8 +321,7 @@ fn bootstrap_config_precedence() {
         })
         .returning(|_| Err(VarError::NotPresent.into()));
 
-    let service = ConfigService::bootstrap(&env_with_file, os_fs()).unwrap();
-    assert_eq!(1234, service.snapshot().page_size());
+    assert_eq!(1234, bootstrap_snapshot(&env_with_file).page_size());
 
     let tmp_path_s2 = tmp_path.to_string_lossy().into_owned();
     let home_s2 = home.to_string_lossy().into_owned();
@@ -349,8 +351,7 @@ fn bootstrap_config_precedence() {
         })
         .returning(|_| Err(VarError::NotPresent.into()));
 
-    let service = ConfigService::bootstrap(&env_with_file_and_var, os_fs()).unwrap();
-    assert_eq!(42, service.snapshot().page_size());
+    assert_eq!(42, bootstrap_snapshot(&env_with_file_and_var).page_size());
 
     let _ = fs::remove_file(&tmp_path);
 }
@@ -394,7 +395,7 @@ fn bootstrap_rejects_invalid_patch_hub_page_size_env() {
         })
         .returning(|_| Err(VarError::NotPresent.into()));
 
-    match ConfigService::bootstrap(&mock, os_fs()) {
+    match bootstrap_parts(&mock, os_fs()) {
         Ok(_) => panic!("expected bootstrap to fail"),
         Err(err) => {
             assert!(matches!(err, ConfigError::InvalidPageSize(ref s) if s == "not-a-number"))
@@ -430,7 +431,7 @@ fn bootstrap_rejects_invalid_patch_hub_patch_renderer_env() {
         .withf(|key| key == "PATCH_HUB_PATCH_RENDERER")
         .returning(|_| Ok("not-a-real-renderer".into()));
 
-    match ConfigService::bootstrap(&mock, os_fs()) {
+    match bootstrap_parts(&mock, os_fs()) {
         Ok(_) => panic!("expected bootstrap to fail"),
         Err(err) => assert!(matches!(
             err,
@@ -471,27 +472,27 @@ fn normalize_derived_paths_recomputes_cache_and_data_subpaths() {
 
 #[test]
 fn validate_update_rejects_invalid_page_size() {
-    let (env, _home) = default_env();
-    let service = ConfigService::bootstrap(&env, os_fs()).unwrap();
-    let err = service
-        .validate_update(ConfigUpdateDraft {
+    let err = validate_update(
+        ConfigUpdateDraft {
             page_size: Some("xyz".into()),
             ..Default::default()
-        })
-        .unwrap_err();
+        },
+        &os_fs(),
+    )
+    .unwrap_err();
     assert!(matches!(err, ConfigError::InvalidPageSize(ref s) if s == "xyz"));
 }
 
 #[test]
 fn validate_update_rejects_invalid_patch_renderer() {
-    let (env, _home) = default_env();
-    let service = ConfigService::bootstrap(&env, os_fs()).unwrap();
-    let err = service
-        .validate_update(ConfigUpdateDraft {
+    let err = validate_update(
+        ConfigUpdateDraft {
             patch_renderer: Some("nope".into()),
             ..Default::default()
-        })
-        .unwrap_err();
+        },
+        &os_fs(),
+    )
+    .unwrap_err();
     assert!(matches!(
         err,
         ConfigError::InvalidPatchRenderer(ref s) if s == "nope"
@@ -500,14 +501,14 @@ fn validate_update_rejects_invalid_patch_renderer() {
 
 #[test]
 fn validate_update_rejects_invalid_cover_renderer() {
-    let (env, _home) = default_env();
-    let service = ConfigService::bootstrap(&env, os_fs()).unwrap();
-    let err = service
-        .validate_update(ConfigUpdateDraft {
+    let err = validate_update(
+        ConfigUpdateDraft {
             cover_renderer: Some("delta".into()),
             ..Default::default()
-        })
-        .unwrap_err();
+        },
+        &os_fs(),
+    )
+    .unwrap_err();
     assert!(matches!(
         err,
         ConfigError::InvalidCoverRenderer(ref s) if s == "delta"
@@ -516,14 +517,14 @@ fn validate_update_rejects_invalid_cover_renderer() {
 
 #[test]
 fn validate_update_rejects_invalid_max_log_age() {
-    let (env, _home) = default_env();
-    let service = ConfigService::bootstrap(&env, os_fs()).unwrap();
-    let err = service
-        .validate_update(ConfigUpdateDraft {
+    let err = validate_update(
+        ConfigUpdateDraft {
             max_log_age: Some("not-a-number".into()),
             ..Default::default()
-        })
-        .unwrap_err();
+        },
+        &os_fs(),
+    )
+    .unwrap_err();
     assert!(matches!(
         err,
         ConfigError::InvalidMaxLogAge(ref s) if s == "not-a-number"
@@ -532,17 +533,17 @@ fn validate_update_rejects_invalid_max_log_age() {
 
 #[test]
 fn validate_update_rejects_cache_dir_that_is_existing_file() {
-    let (env, _home) = default_env();
-    let service = ConfigService::bootstrap(&env, os_fs()).unwrap();
     let root = unique_test_dir("not-a-dir");
     let blocking = root.join("blocking-file");
     fs::write(&blocking, b"x").unwrap();
-    let err = service
-        .validate_update(ConfigUpdateDraft {
+    let err = validate_update(
+        ConfigUpdateDraft {
             cache_dir: Some(blocking.to_string_lossy().into_owned()),
             ..Default::default()
-        })
-        .unwrap_err();
+        },
+        &os_fs(),
+    )
+    .unwrap_err();
     assert!(matches!(err, ConfigError::InvalidDirectory(_)));
 }
 
@@ -578,22 +579,24 @@ fn json_config_repository_save_creates_parent_and_leaves_no_tmp_stale() {
     );
 }
 
-#[test]
-fn apply_update_persists_to_config_file() {
+#[tokio::test]
+async fn validate_and_apply_persists_to_config_file() {
     let (env, home) = default_env();
-    let mut service = ConfigService::bootstrap(&env, os_fs()).unwrap();
+    let (state, repo) = bootstrap_parts(&env, os_fs()).unwrap();
+    let handle = ConfigActor::spawn(state, repo);
     let cfg_path = home.join(DEFAULT_CONFIG_PATH_SUFFIX);
 
-    let validated = service
-        .validate_update(ConfigUpdateDraft {
+    let snapshot = handle
+        .validate_and_apply(ConfigUpdateDraft {
             page_size: Some("77".into()),
             ..Default::default()
         })
+        .await
         .unwrap();
-    service.apply_update(validated).unwrap();
 
-    assert_eq!(service.snapshot().page_size(), 77);
+    assert_eq!(snapshot.page_size(), 77);
     let raw = fs::read_to_string(&cfg_path).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
     assert_eq!(parsed["page_size"], 77);
+    handle.shutdown().await;
 }

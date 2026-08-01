@@ -113,7 +113,7 @@ impl EditConfigState {
         }
     }
 
-    /// Raw form values for [`crate::config::ConfigServiceApi::validate_update`].
+    /// Raw form values for config validation.
     pub fn to_update_draft(&self) -> ConfigUpdateDraft {
         ConfigUpdateDraft {
             page_size: self.config_buffer.get(&EditableConfig::PageSize).cloned(),
