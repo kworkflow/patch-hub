@@ -1,3 +1,15 @@
+//! Input mediation actor: polls the terminal and maps raw events to semantic
+//! [`InputEvent`](crate::input::event::InputEvent) values for the application.
+//!
+//! A dedicated pump subtask calls
+//! [`TerminalHandle::poll_event`](crate::terminal::handle::TerminalHandle::poll_event)
+//! so an in-flight poll is never abandoned when a control message wins the
+//! select race. Mapped events are delivered to the subscriber channel
+//! registered via
+//! [`InputHandle::subscribe_app`](crate::input::handle::InputHandle::subscribe_app);
+//! context updates from
+//! [`InputHandle::update_context`](crate::input::handle::InputHandle::update_context)
+//! change key bindings without restarting the pump.
 use std::time::Duration;
 
 use tokio::sync::mpsc;
@@ -84,7 +96,12 @@ impl InputActor {
                         tracing::debug!(?context, "input context updated");
                         self.context = context;
                     }
-                    Some(InputMessage::Shutdown) | None => {
+                    #[cfg(test)]
+                    Some(InputMessage::Shutdown) => {
+                        tracing::info!("input actor stopping");
+                        break;
+                    }
+                    None => {
                         tracing::info!("input actor stopping");
                         break;
                     }
@@ -134,7 +151,7 @@ mod tests {
             context::InputContext,
             event::{InputEvent, KeyInput, TerminalEvent},
         },
-        terminal::{actor::TerminalActor, session::MockTerminalSessionApi},
+        terminal::{actor::TerminalActor, session::MockTerminalSessionApi, TerminalError},
     };
 
     use super::*;
@@ -241,6 +258,28 @@ mod tests {
 
         // When the actor stops it drops the subscriber Sender, closing the
         // channel. recv() returns None once all senders are gone.
+        assert!(sub_rx.recv().await.is_none());
+    }
+
+    /// Verifies that a terminal I/O error propagates through the event pump to
+    /// InputActor, causing InputActor to stop and its subscriber channel to close.
+    #[tokio::test]
+    async fn terminal_poll_error_stops_input_actor_and_closes_subscriber() {
+        let mut session = MockTerminalSessionApi::new();
+        // First poll returns an error; the pump detects it and stops.
+        session.expect_poll_event().times(1).returning(|_| {
+            Err(TerminalError::Session(
+                "simulated terminal failure".to_string(),
+            ))
+        });
+
+        let (input_handle, _terminal_handle) = spawn_test_actor(session, mailing_list_context());
+        let (sub_tx, mut sub_rx) = mpsc::channel::<InputEvent>(8);
+        input_handle.subscribe_app(sub_tx).await.unwrap();
+
+        // When the pump stops due to the error, it drops event_tx.
+        // InputActor sees event_rx close and stops, dropping the subscriber sender.
+        // sub_rx.recv() therefore returns None.
         assert!(sub_rx.recv().await.is_none());
     }
 

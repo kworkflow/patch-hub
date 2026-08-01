@@ -36,12 +36,11 @@ pub async fn handle_bookmarked_patchsets(
             loading.start("Loading patchset".to_string());
             let result = app.open_patchset_details().await;
             loading.stop()?;
-            if result.is_ok() {
-                // If a patchset has been bookmarked UI, this means that
-                // b4 was successful in fetching it, so it shouldn't be
-                // necessary to handle this, but we can't assume that a
-                // patchset in this list was bookmarked through the UI
-                match result.unwrap() {
+            // If a patchset has been bookmarked via the UI, b4 was already
+            // successful for it, but patchsets may also arrive here from
+            // other sources where the fetch could fail.
+            if let Ok(b4_result) = result {
+                match b4_result {
                     B4Result::PatchFound => {
                         app.set_current_screen(CurrentScreen::PatchsetDetails);
                     }

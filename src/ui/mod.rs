@@ -7,4 +7,3 @@ pub mod messages;
 pub mod painter;
 pub mod scene;
 mod screens;
-pub mod theme;

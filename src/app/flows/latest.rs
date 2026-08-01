@@ -24,7 +24,7 @@ pub async fn handle_latest_patchsets(
                 .lore
                 .latest_patchsets
                 .as_mut()
-                .unwrap()
+                .expect("invariant: latest_patchsets must be initialised on LatestPatchsets screen")
                 .select_below_patchset();
         }
         InputEvent::NavigateUp => {
@@ -32,7 +32,7 @@ pub async fn handle_latest_patchsets(
                 .lore
                 .latest_patchsets
                 .as_mut()
-                .unwrap()
+                .expect("invariant: latest_patchsets must be initialised on LatestPatchsets screen")
                 .select_above_patchset();
         }
         InputEvent::NextPage => {
@@ -41,7 +41,7 @@ pub async fn handle_latest_patchsets(
                 .lore
                 .latest_patchsets
                 .as_ref()
-                .unwrap()
+                .expect("invariant: latest_patchsets must be initialised on LatestPatchsets screen")
                 .target_list()
                 .to_string();
             debug!(list = list_name, "fetching next page of patchsets");
@@ -50,7 +50,7 @@ pub async fn handle_latest_patchsets(
                 .lore
                 .latest_patchsets
                 .as_mut()
-                .unwrap()
+                .expect("invariant: latest_patchsets must be initialised on LatestPatchsets screen")
                 .increment_page();
             let result = app.fetch_latest_current_page().await;
             loading.stop()?;
@@ -61,7 +61,7 @@ pub async fn handle_latest_patchsets(
                 .lore
                 .latest_patchsets
                 .as_mut()
-                .unwrap()
+                .expect("invariant: latest_patchsets must be initialised on LatestPatchsets screen")
                 .decrement_page();
             // Reload from cache (no network call since LoreAPI caches all pages)
             app.fetch_latest_current_page().await?;
@@ -71,8 +71,8 @@ pub async fn handle_latest_patchsets(
             loading.start("Loading patchset".to_string());
             let result = app.open_patchset_details().await;
             loading.stop()?;
-            if result.is_ok() {
-                match result.unwrap() {
+            if let Ok(b4_result) = result {
+                match b4_result {
                     B4Result::PatchFound => {
                         app.set_current_screen(CurrentScreen::PatchsetDetails);
                     }

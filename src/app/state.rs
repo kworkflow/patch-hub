@@ -39,7 +39,7 @@ pub struct ConfigUiState {
     pub edit_config: Option<EditConfigState>,
 }
 
-/// All application state grouped for the future App actor.
+/// All application state grouped as the App actor's state.
 #[derive(Clone)]
 pub struct AppState {
     pub navigation: NavigationState,

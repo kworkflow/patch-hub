@@ -53,10 +53,7 @@ impl Default for CacheTtl {
 
 // ── Generic cache policy trait ────────────────────────────────────────────────
 
-/// Homogeneous interface shared by all three cache stores.
-///
-/// Not yet used by any concrete implementor; provided as a documented
-/// extension point for future phases.
+/// Uniform cache interface (`get`, `put`, `invalidate`, `clear`) for Lore cache stores.
 #[allow(dead_code)]
 pub trait CachePolicy<K, V> {
     fn get(&self, key: &K) -> Option<&V>;
@@ -94,9 +91,6 @@ impl MailingListsCacheEntry {
 pub struct FeedCacheEntry {
     pub index: PatchFeedIndex,
     pub fetched_at: SystemTime,
-    /// `true` once the gateway has returned `EndOfFeed` for this list.
-    #[allow(dead_code)]
-    pub complete: bool,
 }
 
 impl FeedCacheEntry {
@@ -104,7 +98,6 @@ impl FeedCacheEntry {
         FeedCacheEntry {
             index,
             fetched_at: SystemTime::now(),
-            complete: false,
         }
     }
 

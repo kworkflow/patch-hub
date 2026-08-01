@@ -10,5 +10,6 @@ pub enum InputMessage {
     /// terminal event with current application state.
     UpdateContext { context: InputContext },
     /// Requests a clean shutdown of the actor's event loop.
+    #[cfg(test)]
     Shutdown,
 }

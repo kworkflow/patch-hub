@@ -1,6 +1,16 @@
+//! Central orchestration actor: owns [`App`] and drives the main render/input loop.
+//!
+//! Each frame: process system updates → project state to [`AppViewModel`] via
+//! [`UiHandle`](crate::ui::handle::UiHandle) → draw through
+//! [`TerminalHandle`](crate::terminal::handle::TerminalHandle) → await the next
+//! [`InputEvent`](crate::input::event::InputEvent) from the channel registered
+//! with [`InputHandle`](crate::input::handle::InputHandle).
+//!
+//! The actor stops when the input event channel closes (user quit) or when
+//! initialization or I/O returns an unrecoverable error. Startup dependency
+//! checks run inside [`AppActor::run`] before the first frame.
 use std::ops::ControlFlow;
 
-use tokio::sync::mpsc;
 use tracing::{event, Level};
 
 use crate::{
@@ -13,7 +23,6 @@ use crate::{
         },
         handle::AppHandle,
         loading::{terminal_error, TerminalLoadingIndicator},
-        messages::AppMessage,
         screens::CurrentScreen,
         App,
     },
@@ -23,45 +32,40 @@ use crate::{
     ui::handle::UiHandle,
 };
 
-pub const DEFAULT_APP_MSG_CHANNEL_SIZE: usize = 32;
-
 /// Owns `App` state and drives the main application loop on a dedicated task.
 ///
 /// Constructed via [`AppActor::spawn`], which moves all owned resources into
 /// the actor and returns an [`AppHandle`] to the caller.
+///
+/// The actor runs until the input event channel closes (the user requested
+/// exit via the normal key binding) or an unrecoverable error occurs.
 pub struct AppActor {
     app: App,
     terminal_handle: TerminalHandle,
     ui_handle: UiHandle,
     input_handle: InputHandle,
-    event_rx: mpsc::Receiver<InputEvent>,
-    msg_rx: mpsc::Receiver<AppMessage>,
+    event_rx: tokio::sync::mpsc::Receiver<InputEvent>,
 }
 
 impl AppActor {
     /// Moves all resources into a new `AppActor`, spawns it on the Tokio
-    /// runtime, and returns an [`AppHandle`] to control and wait on it.
+    /// runtime, and returns an [`AppHandle`] to wait on it.
     pub fn spawn(
         app: App,
         terminal_handle: TerminalHandle,
         ui_handle: UiHandle,
         input_handle: InputHandle,
-        event_rx: mpsc::Receiver<InputEvent>,
+        event_rx: tokio::sync::mpsc::Receiver<InputEvent>,
     ) -> AppHandle {
-        tracing::debug!(
-            channel_size = DEFAULT_APP_MSG_CHANNEL_SIZE,
-            "spawning app actor"
-        );
-        let (msg_tx, msg_rx) = mpsc::channel(DEFAULT_APP_MSG_CHANNEL_SIZE);
+        tracing::debug!("spawning app actor");
         let actor = Self {
             app,
             terminal_handle,
             ui_handle,
             input_handle,
             event_rx,
-            msg_rx,
         };
-        AppHandle::new(tokio::spawn(actor.run()), msg_tx)
+        AppHandle::new(tokio::spawn(actor.run()))
     }
 
     /// Verifies required and optional external binaries.
@@ -143,70 +147,27 @@ impl AppActor {
                 .await
                 .map_err(terminal_error)?;
 
-            enum Outcome {
-                Continue,
-                UpdateContext,
-                Stop,
-            }
-
-            let outcome = tokio::select! {
-                input = self.event_rx.recv() => match input {
-                    Some(event) => {
-                        match on_input(&mut self.app, event, &self.terminal_handle, &mut loading)
-                            .await?
-                        {
-                            ControlFlow::Continue(()) => Outcome::UpdateContext,
-                            ControlFlow::Break(()) => Outcome::Stop,
+            match self.event_rx.recv().await {
+                Some(event) => {
+                    match on_input(&mut self.app, event, &self.terminal_handle, &mut loading)
+                        .await?
+                    {
+                        ControlFlow::Continue(()) => {
+                            self.input_handle
+                                .update_context(self.app.input_context())
+                                .await
+                                .ok();
                         }
+                        ControlFlow::Break(()) => break,
                     }
-                    None => {
-                        tracing::info!("input channel closed; app actor stopping");
-                        Outcome::Stop
-                    }
-                },
-                msg = self.msg_rx.recv() => match msg {
-                    Some(ref m) => {
-                        tracing::debug!(message = m.name(), "app message received");
-                        match msg {
-                            Some(AppMessage::Shutdown { reply_to }) => {
-                                tracing::debug!("app actor shutting down");
-                                reply_to.send(()).ok();
-                                Outcome::Stop
-                            }
-                            Some(AppMessage::Initialize { reply_to }) => {
-                                let result = self.initialize();
-                                if let Err(ref e) = result {
-                                    tracing::warn!(error = %e, "re-initialization failed");
-                                }
-                                reply_to.send(result).ok();
-                                Outcome::Continue
-                            }
-                            Some(AppMessage::GetViewModel { reply_to }) => {
-                                reply_to.send(self.app.present()).ok();
-                                Outcome::Continue
-                            }
-                            Some(AppMessage::GetInputContext { reply_to }) => {
-                                reply_to.send(self.app.input_context()).ok();
-                                Outcome::Continue
-                            }
-                            Some(AppMessage::Input { .. }) | None => Outcome::Continue,
-                        }
-                    }
-                    None => Outcome::Continue,
-                },
-            };
-
-            match outcome {
-                Outcome::Stop => break,
-                Outcome::UpdateContext => {
-                    self.input_handle
-                        .update_context(self.app.input_context())
-                        .await
-                        .ok();
                 }
-                Outcome::Continue => {}
+                None => {
+                    tracing::info!("input channel closed; app actor stopping");
+                    break;
+                }
             }
         }
+
         tracing::info!("app actor stopped");
         Ok(())
     }
@@ -252,7 +213,7 @@ async fn on_input(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, sync::Arc};
 
     use tokio::sync::mpsc;
 
@@ -270,9 +231,20 @@ mod tests {
         infrastructure::{
             env::MockEnvTrait, file_system::MockFileSystemTrait, shell::MockShellTrait,
         },
-        input::{handle::InputHandle, messages::InputMessage},
-        lore::{application::handle::LoreApiHandle, domain::mailing_list::MailingList},
-        render::handle::RenderHandle,
+        input::{event::InputEvent, handle::InputHandle, messages::InputMessage},
+        lore::{
+            application::{
+                actor::LoreApiActor, cache::CacheTtl, handle::LoreApiHandle, service::LoreService,
+            },
+            domain::mailing_list::MailingList,
+            infrastructure::{
+                http_lore_client::{MockFeedGateway, MockListsGateway, MockPatchHtmlGateway},
+                patchset_fetcher::MockPatchsetFetcher,
+                patchset_parser::MockPatchsetParser,
+                persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
+            },
+        },
+        render::{actor::RenderActor, handle::RenderHandle, ShellRenderService},
         terminal::{
             actor::TerminalActor, messages::TerminalFrame, session::MockTerminalSessionApi,
         },
@@ -353,7 +325,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn shutdown_message_stops_actor_and_returns_ok() {
+    async fn input_channel_close_stops_actor_and_returns_ok() {
         let mut session = MockTerminalSessionApi::new();
         session
             .expect_draw()
@@ -364,7 +336,7 @@ mod tests {
         let terminal_handle = TerminalActor::spawn(Box::new(session));
         let ui_handle = UiActor::spawn();
 
-        let (_event_tx, event_rx) = mpsc::channel::<InputEvent>(1);
+        let (event_tx, event_rx) = mpsc::channel::<InputEvent>(1);
         let (input_tx, _input_rx) = mpsc::channel::<InputMessage>(1);
         let input_handle = InputHandle::new(input_tx);
 
@@ -376,9 +348,98 @@ mod tests {
             event_rx,
         );
 
-        handle.shutdown().await;
+        // Dropping the sender closes the channel; the actor stops after one
+        // render frame when event_rx.recv() returns None.
+        drop(event_tx);
         let result = handle.run_until_done().await;
         assert!(result.is_ok());
+    }
+
+    fn spawn_real_lore_api(list: MailingList) -> LoreApiHandle {
+        let mut lists_store = MockMailingListsCacheStore::new();
+        lists_store
+            .expect_load_available_lists()
+            .returning(move || Ok(vec![list.clone()]));
+        let mut user_state = MockUserLoreStateStore::new();
+        user_state
+            .expect_load_bookmarked_patchsets()
+            .returning(|| Ok(vec![]));
+        user_state
+            .expect_load_reviewed_patchsets()
+            .returning(|| Ok(HashMap::new()));
+
+        let service = LoreService::new(
+            Arc::new(MockListsGateway::new()),
+            Arc::new(MockFeedGateway::new()),
+            Arc::new(MockPatchHtmlGateway::new()),
+            Arc::new(lists_store),
+            Arc::new(user_state),
+            Arc::new(MockPatchsetFetcher::new()),
+            Arc::new(MockPatchsetParser::new()),
+            Arc::new(MockFileSystemTrait::new()),
+            Arc::new(MockShellTrait::new()),
+            CacheTtl::default(),
+        );
+        LoreApiActor::spawn(service)
+    }
+
+    fn spawn_real_render() -> RenderHandle {
+        RenderActor::spawn(Box::new(ShellRenderService::new(Arc::new(
+            MockShellTrait::new(),
+        ))))
+    }
+
+    /// Verifies that AppActor, LoreApiActor, and RenderActor can be wired
+    /// together, go through a full bootstrap cycle, and all shut down cleanly
+    /// in the documented order when the input channel closes.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn three_actor_lifecycle_stops_cleanly() {
+        let dummy_list = MailingList::new("test-list", "Test list");
+        let lore_api = spawn_real_lore_api(dummy_list.clone());
+        let render = spawn_real_render();
+
+        let bootstrap = lore_api
+            .get_bootstrap_data()
+            .await
+            .expect("bootstrap must succeed with mock infrastructure");
+        assert_eq!(1, bootstrap.mailing_lists.len());
+
+        let mut env = MockEnvTrait::new();
+        env.expect_which().returning(|_| true);
+
+        let mut session = MockTerminalSessionApi::new();
+        session
+            .expect_draw()
+            .withf(|frame| matches!(frame, TerminalFrame::Main(_)))
+            .times(1..)
+            .returning(|_| Ok(()));
+        let terminal_handle = TerminalActor::spawn(Box::new(session));
+        let ui_handle = UiActor::spawn();
+
+        let app = App::new(
+            Box::new(NullConfigService),
+            bootstrap,
+            Box::new(MockFileSystemTrait::new()),
+            Box::new(MockShellTrait::new()),
+            Box::new(env),
+            lore_api.clone(),
+            render.clone(),
+        )
+        .expect("App::new must succeed");
+
+        let (event_tx, event_rx) = mpsc::channel::<InputEvent>(1);
+        let (input_tx, _input_rx) = mpsc::channel::<InputMessage>(1);
+        let input_handle = InputHandle::new(input_tx);
+
+        let handle = AppActor::spawn(app, terminal_handle, ui_handle, input_handle, event_rx);
+
+        // Closing the input channel stops AppActor.
+        drop(event_tx);
+        assert!(handle.run_until_done().await.is_ok());
+
+        // Explicit shutdown in documented order: LoreAPI then Render.
+        lore_api.shutdown().await;
+        render.shutdown().await;
     }
 
     #[tokio::test(flavor = "multi_thread")]

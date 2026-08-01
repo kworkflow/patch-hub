@@ -230,9 +230,6 @@ impl LoreService {
                     entry.index.advance_offset();
                 }
                 Err(LoreHttpError::EndOfFeed) => {
-                    if let Some(entry) = self.cache.feeds.get_mut(target_list) {
-                        entry.complete = true;
-                    }
                     break;
                 }
                 Err(e) => return Err(LoreError::Http(e)),
@@ -268,7 +265,6 @@ impl LoreService {
                     } else {
                         tracing::debug!(msg_id = %key.message_id, "patchset cache: hit");
                         return Ok(PatchsetDetails {
-                            representative_patch: representative_patch.clone(),
                             patchset_path: entry.patchset_path.clone(),
                             raw_patches: entry.raw_patches.clone(),
                             tag_summary: entry.tag_summary.clone(),
@@ -307,7 +303,6 @@ impl LoreService {
         }
 
         Ok(PatchsetDetails {
-            representative_patch: representative_patch.clone(),
             patchset_path,
             raw_patches,
             tag_summary,

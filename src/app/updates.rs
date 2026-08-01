@@ -22,7 +22,9 @@ impl App {
                 }
             }
             CurrentScreen::LatestPatchsets => {
-                let patchsets_state = self.state.lore.latest_patchsets.as_ref().unwrap();
+                let patchsets_state = self.state.lore.latest_patchsets.as_ref().expect(
+                    "invariant: latest_patchsets must be initialised on LatestPatchsets screen",
+                );
 
                 if patchsets_state.processed_patchsets_count() == 0 {
                     let target_list = patchsets_state.target_list().to_string();

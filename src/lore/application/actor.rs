@@ -1,3 +1,12 @@
+//! Lore domain actor: serializes access to [`LoreService`] on a dedicated task.
+//!
+//! All lore I/O (mailing lists, feed pages, patchset details, bookmarks,
+//! reviewed state, git reply preparation) goes through
+//! [`LoreApiHandle`](crate::lore::application::handle::LoreApiHandle) as typed
+//! request/reply messages. Heavy work runs on a blocking thread pool via
+//! [`LoreApiActor::with_core`]; callers never touch [`LoreService`] directly.
+use std::ops::ControlFlow;
+
 use tokio::{
     sync::{mpsc, oneshot},
     task,
@@ -35,12 +44,14 @@ impl LoreApiActor {
     pub async fn run(mut self) {
         tracing::info!("lore api actor started");
         while let Some(message) = self.rx.recv().await {
-            self.handle_message(message).await;
+            if let ControlFlow::Break(()) = self.handle_message(message).await {
+                break;
+            }
         }
         tracing::info!("lore api actor stopped");
     }
 
-    async fn handle_message(&mut self, message: LoreApiMessage) {
+    async fn handle_message(&mut self, message: LoreApiMessage) -> ControlFlow<()> {
         let message_name = message.name();
         tracing::debug!(message = message_name, "lore api request received");
 
@@ -52,6 +63,7 @@ impl LoreApiActor {
                     .await
                     .and_then(|result| result);
                 send_lore_reply(message_name, reply, result);
+                ControlFlow::Continue(())
             }
             LoreApiMessage::FetchAvailableLists { cache_mode, reply } => {
                 tracing::debug!(?cache_mode, "fetching available mailing lists");
@@ -60,6 +72,7 @@ impl LoreApiActor {
                     .await
                     .and_then(|result| result);
                 send_lore_reply(message_name, reply, result);
+                ControlFlow::Continue(())
             }
             LoreApiMessage::FetchFeedPage {
                 target_list,
@@ -82,6 +95,7 @@ impl LoreApiActor {
                     .await
                     .and_then(|result| result);
                 send_lore_reply(message_name, reply, result);
+                ControlFlow::Continue(())
             }
             LoreApiMessage::FetchPatchsetDetails {
                 representative_patch,
@@ -100,14 +114,7 @@ impl LoreApiActor {
                     .await
                     .and_then(|result| result);
                 send_lore_reply(message_name, reply, result);
-            }
-            LoreApiMessage::LoadBookmarks { reply } => {
-                tracing::debug!("loading bookmarked patchsets");
-                let result = self
-                    .with_core(|core| core.load_bookmarked_patchsets())
-                    .await
-                    .and_then(|result| result);
-                send_lore_reply(message_name, reply, result);
+                ControlFlow::Continue(())
             }
             LoreApiMessage::SaveBookmarks { bookmarks, reply } => {
                 tracing::debug!(count = bookmarks.len(), "saving bookmarked patchsets");
@@ -116,14 +123,7 @@ impl LoreApiActor {
                     .await
                     .and_then(|result| result);
                 send_lore_reply(message_name, reply, result);
-            }
-            LoreApiMessage::LoadReviewed { reply } => {
-                tracing::debug!("loading reviewed patchsets");
-                let result = self
-                    .with_core(|core| core.load_reviewed_patchsets())
-                    .await
-                    .and_then(|result| result);
-                send_lore_reply(message_name, reply, result);
+                ControlFlow::Continue(())
             }
             LoreApiMessage::SaveReviewed { reviewed, reply } => {
                 tracing::debug!(patchsets = reviewed.len(), "saving reviewed patchsets");
@@ -132,6 +132,7 @@ impl LoreApiActor {
                     .await
                     .and_then(|result| result);
                 send_lore_reply(message_name, reply, result);
+                ControlFlow::Continue(())
             }
             LoreApiMessage::GetGitSignature {
                 git_repo_path,
@@ -142,6 +143,7 @@ impl LoreApiActor {
                     .with_core(move |core| core.get_git_signature(&git_repo_path))
                     .await;
                 send_lore_reply(message_name, reply, result);
+                ControlFlow::Continue(())
             }
             LoreApiMessage::PrepareReplyCommands {
                 tmp_dir,
@@ -172,6 +174,11 @@ impl LoreApiActor {
                     .await
                     .and_then(|result| result);
                 send_lore_reply(message_name, reply, result);
+                ControlFlow::Continue(())
+            }
+            LoreApiMessage::Shutdown => {
+                tracing::debug!("lore api actor shutting down");
+                ControlFlow::Break(())
             }
         }
     }

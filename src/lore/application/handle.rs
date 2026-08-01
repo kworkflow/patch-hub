@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Some protocol methods are reserved for future App flows.
-
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -73,18 +71,8 @@ impl LoreApiHandle {
         .await
     }
 
-    pub async fn load_bookmarks(&self) -> LoreApiResult<Vec<Patch>> {
-        self.request_result(|reply| LoreApiMessage::LoadBookmarks { reply })
-            .await
-    }
-
     pub async fn save_bookmarks(&self, bookmarks: Vec<Patch>) -> LoreApiResult<()> {
         self.request_result(|reply| LoreApiMessage::SaveBookmarks { bookmarks, reply })
-            .await
-    }
-
-    pub async fn load_reviewed(&self) -> LoreApiResult<HashMap<String, HashSet<usize>>> {
-        self.request_result(|reply| LoreApiMessage::LoadReviewed { reply })
             .await
     }
 
@@ -105,6 +93,15 @@ impl LoreApiHandle {
             reply,
         })
         .await
+    }
+
+    /// Signals the actor to stop processing messages and exit its run loop.
+    ///
+    /// Callers should invoke this after the last request that uses this handle has
+    /// completed. Dropping all clones of the handle also stops the actor, but
+    /// calling `shutdown` makes the intent explicit and allows ordered teardown.
+    pub async fn shutdown(&self) {
+        self.tx.send(LoreApiMessage::Shutdown).await.ok();
     }
 
     pub async fn prepare_reply_commands(

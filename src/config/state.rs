@@ -79,7 +79,7 @@ impl ConfigState {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn page_size(&self) -> usize {
         self.page_size
     }
@@ -219,7 +219,6 @@ impl ConfigSnapshot {
         self.kernel_trees.keys().collect::<HashSet<&String>>()
     }
 
-    #[allow(dead_code)]
     pub fn get_kernel_tree(&self, kernel_tree_id: &str) -> Option<&KernelTree> {
         self.kernel_trees.get(kernel_tree_id)
     }

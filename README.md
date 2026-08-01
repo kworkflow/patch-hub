@@ -21,6 +21,53 @@ integrating it with the full `kw` suite for a more seamless developer
 experience. Check out the [kw
 repository](https://github.com/kworkflow/kworkflow/) to learn more.
 
+## :building_construction: Architecture
+
+`patch-hub` uses a **hybrid actor model**: orchestration and domain boundaries
+are actors communicating through typed handles and message channels, while
+cross-cutting infrastructure (filesystem, shell, environment, HTTP) stays as
+plain traits injected where needed. Observability (`tracing` + structured log
+files) is a global layer initialized at startup, not an actor.
+
+### Actors
+
+| Actor | Handle | Role |
+| --- | --- | --- |
+| **App** | `AppHandle` | Central orchestrator: owns application state, dispatches screen flows, projects `AppViewModel`, drives the render/input loop |
+| **LoreAPI** | `LoreApiHandle` | Lore domain: mailing lists, feeds, patchset details, bookmarks, reviewed state, git reply preparation |
+| **Render** | `RenderHandle` | Patch/cover preview rendering via external tools (`bat`, `delta`, `diff-so-fancy`) |
+| **Terminal** | `TerminalHandle` | Raw TUI session: draw, poll events, size, user-I/O setup |
+| **Input** | `InputHandle` | Maps terminal events to semantic `InputEvent` values and forwards them to App |
+| **UI** | `UiHandle` | Builds `UiScene` from `AppViewModel` for each frame |
+
+Configuration is **not** an actor: [`ConfigService`](src/config/service.rs) is
+bootstrapped once and injected into `App` as a trait object.
+
+### Communication and boundaries
+
+- Cross-actor calls use **cloneable handles** and **typed messages** (`mpsc` +
+  `oneshot` for request/reply). Actors do not share mutable state.
+- `AppState` holds domain/UI-flow state only; ratatui types and layout logic
+  stay in the UI actor. The app layer exposes [`AppViewModel`](src/app/view_model.rs)
+  as the presentation boundary.
+- `InputActor` sits between `TerminalActor` and `AppActor`, breaking a direct
+  terminal ↔ app dependency cycle.
+
+### Startup and shutdown
+
+At startup (`main.rs`), actors are spawned and wired: Terminal and UI first,
+then LoreAPI and Render, then App with an input channel subscribed from
+`InputActor`. `AppActor::run_until_done()` blocks until the user exits.
+
+Shutdown order after the app loop finishes:
+
+1. **LoreAPI** and **Render** — no further data/render requests
+2. **UI** — no further scene builds
+3. **Terminal** — restored last so the screen stays usable during teardown
+
+`InputActor` stops when `AppActor` drops its handle; `AppActor` stops when the
+input event channel closes.
+
 ## :star: Features
 
 <img src="assets/patch-hub-demo-v0.1.0.gif" width="100%"

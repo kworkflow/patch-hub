@@ -1,13 +1,8 @@
-#![allow(dead_code)] // Some protocol methods are reserved for future App flows.
-
 use tokio::sync::{mpsc, oneshot};
 
-use crate::{
-    render::{
-        messages::{RenderMessage, RenderResult},
-        RenderError, RenderPatchsetRequest, RenderedPatchPreview, RenderedPatchsetPreview,
-    },
-    render_prefs::{CoverRenderer, PatchRenderer},
+use crate::render::{
+    messages::{RenderMessage, RenderResult},
+    RenderError, RenderPatchsetRequest, RenderedPatchsetPreview,
 };
 
 #[derive(Clone)]
@@ -20,27 +15,21 @@ impl RenderHandle {
         Self { tx }
     }
 
+    /// Signals the actor to stop processing messages and exit its run loop.
+    ///
+    /// Callers should invoke this after the last request that uses this handle has
+    /// completed. Dropping all clones of the handle also stops the actor, but
+    /// calling `shutdown` makes the intent explicit and allows ordered teardown.
+    pub async fn shutdown(&self) {
+        self.tx.send(RenderMessage::Shutdown).await.ok();
+    }
+
     pub async fn render_patchset_preview(
         &self,
         request: RenderPatchsetRequest,
     ) -> RenderResult<RenderedPatchsetPreview> {
         self.request_result(|reply| RenderMessage::RenderPatchsetPreview { request, reply })
             .await
-    }
-
-    pub async fn render_single_patch(
-        &self,
-        raw_patch: String,
-        patch_renderer: PatchRenderer,
-        cover_renderer: CoverRenderer,
-    ) -> RenderResult<RenderedPatchPreview> {
-        self.request_result(|reply| RenderMessage::RenderSinglePatch {
-            raw_patch,
-            patch_renderer,
-            cover_renderer,
-            reply,
-        })
-        .await
     }
 
     async fn request_result<T>(

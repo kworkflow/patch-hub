@@ -6,8 +6,6 @@ use crate::config::DEFAULT_CONFIG_PATH_SUFFIX;
 use crate::infrastructure::{env::EnvTrait, file_system::FileSystemTrait};
 
 pub trait ConfigRepository: Send + Sync {
-    #[allow(dead_code)]
-    fn load(&self) -> Result<ConfigState, ConfigError>;
     fn save(&self, state: &ConfigState) -> Result<(), ConfigError>;
 }
 
@@ -15,7 +13,8 @@ pub fn resolve_config_path(env: &dyn EnvTrait) -> String {
     env.var("PATCH_HUB_CONFIG_PATH").unwrap_or_else(|_| {
         format!(
             "{}/{}",
-            env.var("HOME").unwrap(),
+            env.var("HOME")
+                .expect("invariant: HOME environment variable must be set"),
             DEFAULT_CONFIG_PATH_SUFFIX
         )
     })
@@ -44,18 +43,6 @@ impl<FS> JsonConfigRepository<FS> {
 }
 
 impl<FS: FileSystemTrait> ConfigRepository for JsonConfigRepository<FS> {
-    fn load(&self) -> Result<ConfigState, ConfigError> {
-        let path = Path::new(&self.config_path);
-        if !self.fs.is_file(path) {
-            return Err(ConfigError::Load("config file not found".into()));
-        }
-        let contents = self
-            .fs
-            .read_to_string(path)
-            .map_err(|e| ConfigError::Load(e.to_string()))?;
-        serde_json::from_str(&contents).map_err(|e| ConfigError::Load(e.to_string()))
-    }
-
     fn save(&self, state: &ConfigState) -> Result<(), ConfigError> {
         let config_path = Path::new(&self.config_path);
         if let Some(parent_dir) = Path::parent(config_path) {

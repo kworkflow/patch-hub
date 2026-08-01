@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-/// Fixed input timing values for the Phase 8 protocol.
+/// Fixed input timing values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KeyBindings {
     pub chord_timeout: Duration,

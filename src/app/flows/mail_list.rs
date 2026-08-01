@@ -30,7 +30,7 @@ pub async fn handle_mailing_list_selection(
                     .lore
                     .latest_patchsets
                     .as_ref()
-                    .unwrap()
+                    .expect("invariant: init_latest_patchsets was just called")
                     .target_list()
                     .to_string();
 
