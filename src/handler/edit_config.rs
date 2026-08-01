@@ -1,48 +1,47 @@
-use ratatui::crossterm::event::{KeyCode, KeyEvent};
-
 use crate::{
     app::{screens::CurrentScreen, App},
+    input::event::InputEvent,
     ui::popup::{help::HelpPopUpBuilder, PopUp},
 };
 
-pub fn handle_edit_config(app: &mut App, key: KeyEvent) -> color_eyre::Result<()> {
+pub fn handle_edit_config(app: &mut App, input: InputEvent) -> color_eyre::Result<()> {
     if let Some(edit_config_state) = app.state.config_state.edit_config.as_mut() {
         match edit_config_state.is_editing() {
-            true => match key.code {
-                KeyCode::Esc => {
+            true => match input {
+                InputEvent::CancelConfigEdit => {
                     edit_config_state.clear_edit();
                     edit_config_state.toggle_editing();
                 }
-                KeyCode::Backspace => {
+                InputEvent::Backspace => {
                     edit_config_state.backspace_edit();
                 }
-                KeyCode::Char(ch) => {
+                InputEvent::TextInput(ch) => {
                     edit_config_state.append_edit(ch);
                 }
-                KeyCode::Enter => {
+                InputEvent::StageConfigEdit => {
                     edit_config_state.stage_edit();
                     edit_config_state.clear_edit();
                     edit_config_state.toggle_editing();
                 }
                 _ => {}
             },
-            false => match key.code {
-                KeyCode::Char('?') => {
+            false => match input {
+                InputEvent::OpenHelp => {
                     let popup = generate_help_popup();
                     app.state.popup = Some(popup);
                 }
-                KeyCode::Esc | KeyCode::Char('q') => {
+                InputEvent::SaveConfig => {
                     app.consolidate_edit_config()?;
                     app.reset_edit_config();
                     app.set_current_screen(CurrentScreen::MailingListSelection);
                 }
-                KeyCode::Enter => {
+                InputEvent::EditConfigField => {
                     edit_config_state.toggle_editing();
                 }
-                KeyCode::Char('j') | KeyCode::Down => {
+                InputEvent::NavigateDown => {
                     edit_config_state.highlight_next();
                 }
-                KeyCode::Char('k') | KeyCode::Up => {
+                InputEvent::NavigateUp => {
                     edit_config_state.highlight_prev();
                 }
                 _ => {}

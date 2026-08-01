@@ -1,5 +1,4 @@
 use ratatui::{
-    crossterm::event::KeyCode,
     layout::Alignment,
     style::{Style, Stylize},
     text::Line,
@@ -7,6 +6,8 @@ use ratatui::{
 };
 
 use std::fmt::Display;
+
+use crate::input::event::InputEvent;
 
 use super::PopUp;
 
@@ -157,24 +158,24 @@ impl PopUp for HelpPopUp {
         f.render_widget(text, chunk);
     }
 
-    fn handle(&mut self, key: ratatui::crossterm::event::KeyEvent) -> color_eyre::Result<()> {
-        match key.code {
-            KeyCode::Up | KeyCode::Char('k') => {
+    fn handle(&mut self, input: InputEvent) -> color_eyre::Result<()> {
+        match input {
+            InputEvent::NavigateUp => {
                 if self.offset.0 > 0 {
                     self.offset.0 -= 1;
                 }
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            InputEvent::NavigateDown => {
                 if self.offset.0 < self.max_offset.0 {
                     self.offset.0 += 1;
                 }
             }
-            KeyCode::Left | KeyCode::Char('h') => {
+            InputEvent::NavigateLeft => {
                 if self.offset.1 > 0 {
                     self.offset.1 -= 1;
                 }
             }
-            KeyCode::Right | KeyCode::Char('l') => {
+            InputEvent::NavigateRight => {
                 if self.offset.1 < self.max_offset.1 {
                     self.offset.1 += 1;
                 }
