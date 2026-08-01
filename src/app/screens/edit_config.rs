@@ -5,7 +5,7 @@ use std::{collections::HashMap, fmt::Display};
 
 use crate::config::{ConfigSnapshot, ConfigUpdateDraft};
 
-#[derive(Debug, Getters)]
+#[derive(Clone, Debug, Getters)]
 pub struct EditConfigState {
     #[getter(skip)]
     config_buffer: HashMap<EditableConfig, String>,
@@ -137,7 +137,7 @@ impl EditConfigState {
     }
 }
 
-#[derive(Debug, Hash, Eq, PartialEq)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 enum EditableConfig {
     PageSize,
     CacheDir,

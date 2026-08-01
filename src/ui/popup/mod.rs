@@ -8,8 +8,27 @@ use std::fmt::Debug;
 
 use crate::input::event::InputEvent;
 
+pub trait PopUpClone {
+    fn clone_box(&self) -> Box<dyn PopUp>;
+}
+
+impl<T> PopUpClone for T
+where
+    T: 'static + PopUp + Clone,
+{
+    fn clone_box(&self) -> Box<dyn PopUp> {
+        Box::new(self.clone())
+    }
+}
+
+impl Clone for Box<dyn PopUp> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
+
 /// A trait that represents a popup that can be rendered on top of a screen
-pub trait PopUp: Debug {
+pub trait PopUp: Debug + Send + PopUpClone {
     /// Returns the dimensions of the popup in percentage of the screen
     /// (width, height)
     ///

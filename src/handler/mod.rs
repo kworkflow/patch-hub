@@ -4,18 +4,21 @@ mod edit_config;
 mod latest;
 mod mail_list;
 
-use ratatui::{prelude::Backend, Terminal};
+use std::{
+    ops::ControlFlow,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
-use std::ops::ControlFlow;
+use tokio::task::JoinHandle;
 
 use crate::{
     app::{screens::CurrentScreen, App},
-    input::{
-        event::InputEvent,
-        mapper::InputMapper,
-        terminal_source::{CrosstermEventSource, TerminalEventSource},
-    },
-    ui::draw_ui,
+    input::{event::InputEvent, mapper::InputMapper},
+    terminal::{handle::TerminalHandle, messages::TerminalFrame, TerminalError},
 };
 
 use bookmarked::handle_bookmarked_patchsets;
@@ -24,14 +27,84 @@ use edit_config::handle_edit_config;
 use latest::handle_latest_patchsets;
 use mail_list::handle_mailing_list_selection;
 
-async fn input_handling<B>(
-    mut terminal: Terminal<B>,
+const LOADING_FRAME_INTERVAL: Duration = Duration::from_millis(200);
+
+pub(crate) trait LoadingIndicator {
+    fn start(&mut self, title: String);
+    fn stop(&mut self) -> color_eyre::Result<()>;
+}
+
+struct TerminalLoadingIndicator {
+    terminal_handle: TerminalHandle,
+    running: Option<Arc<AtomicBool>>,
+    spinner_task: Option<JoinHandle<()>>,
+}
+
+impl TerminalLoadingIndicator {
+    fn new(terminal_handle: TerminalHandle) -> Self {
+        Self {
+            terminal_handle,
+            running: None,
+            spinner_task: None,
+        }
+    }
+}
+
+impl LoadingIndicator for TerminalLoadingIndicator {
+    fn start(&mut self, title: String) {
+        if self.spinner_task.is_some() {
+            return;
+        }
+
+        let running = Arc::new(AtomicBool::new(true));
+        let running_clone = Arc::clone(&running);
+        let terminal_handle = self.terminal_handle.clone();
+
+        self.running = Some(running);
+        self.spinner_task = Some(tokio::spawn(async move {
+            while running_clone.load(Ordering::Relaxed) {
+                if terminal_handle
+                    .draw(TerminalFrame::Loading(title.clone()))
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+
+                std::thread::sleep(LOADING_FRAME_INTERVAL);
+            }
+        }));
+
+        std::thread::sleep(LOADING_FRAME_INTERVAL);
+    }
+
+    fn stop(&mut self) -> color_eyre::Result<()> {
+        let Some(spinner_task) = self.spinner_task.take() else {
+            return Ok(());
+        };
+
+        if let Some(running) = self.running.take() {
+            running.store(false, Ordering::Relaxed);
+        }
+
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async { spinner_task.await.ok() });
+        });
+
+        Ok(())
+    }
+}
+
+fn terminal_error(error: TerminalError) -> color_eyre::Report {
+    color_eyre::eyre::eyre!("{error}")
+}
+
+async fn input_handling(
     app: &mut App,
     input: InputEvent,
-) -> color_eyre::Result<ControlFlow<(), Terminal<B>>>
-where
-    B: Backend + Send + 'static,
-{
+    terminal_handle: &TerminalHandle,
+    loading: &mut TerminalLoadingIndicator,
+) -> color_eyre::Result<ControlFlow<()>> {
     if let Some(popup) = app.state.popup.as_mut() {
         if input == InputEvent::ClosePopup {
             app.state.popup = None;
@@ -41,51 +114,71 @@ where
     } else {
         match app.state.navigation.current_screen {
             CurrentScreen::MailingListSelection => {
-                return handle_mailing_list_selection(app, input, terminal).await;
+                match handle_mailing_list_selection(app, input, loading).await? {
+                    ControlFlow::Continue(()) => {}
+                    ControlFlow::Break(()) => return Ok(ControlFlow::Break(())),
+                }
             }
             CurrentScreen::BookmarkedPatchsets => {
-                return handle_bookmarked_patchsets(app, input, terminal).await;
+                handle_bookmarked_patchsets(app, input, loading).await?;
             }
             CurrentScreen::PatchsetDetails => {
-                handle_patchset_details(app, input, &mut terminal).await?;
+                handle_patchset_details(app, input, terminal_handle).await?;
             }
             CurrentScreen::EditConfig => {
                 handle_edit_config(app, input)?;
             }
             CurrentScreen::LatestPatchsets => {
-                return handle_latest_patchsets(app, input, terminal).await;
+                handle_latest_patchsets(app, input, loading).await?;
             }
         }
     }
-    Ok(ControlFlow::Continue(terminal))
+    Ok(ControlFlow::Continue(()))
 }
 
-pub async fn run_app<B>(mut terminal: Terminal<B>, mut app: App) -> color_eyre::Result<()>
-where
-    B: Backend + Send + 'static,
-{
-    let mut event_source = CrosstermEventSource;
+pub async fn run_app(mut app: App, terminal_handle: TerminalHandle) -> color_eyre::Result<()> {
     let mut input_mapper = InputMapper::default();
+    let mut loading = TerminalLoadingIndicator::new(terminal_handle.clone());
 
     loop {
-        terminal = app.process_system_updates(terminal).await?;
+        app.process_system_updates(&mut loading).await?;
 
-        terminal.draw(|f| draw_ui(f, &app.to_view_model()))?;
+        terminal_handle
+            .draw(TerminalFrame::Main(Box::new(app.render_snapshot())))
+            .await
+            .map_err(terminal_error)?;
 
-        // *IMPORTANT*: Uncommenting the if below makes `patch-hub` not block
-        // until an event is captured.  We should only do it when (if ever) we
-        // need to refresh the UI independently of any event as doing so gravely
-        // hinders the performance to below acceptable.
-        // if event::poll(Duration::from_millis(16))? {
-        if let Some(terminal_event) = event_source.read_event()? {
+        if let Some(terminal_event) = terminal_handle.read_event().await.map_err(terminal_error)? {
             let input = input_mapper.map_terminal_event(terminal_event, &app.input_context());
             if let Some(input) = input {
-                match input_handling(terminal, &mut app, input).await? {
-                    ControlFlow::Continue(t) => terminal = t,
-                    ControlFlow::Break(_) => return Ok(()),
+                match input_handling(&mut app, input, &terminal_handle, &mut loading).await? {
+                    ControlFlow::Continue(()) => {}
+                    ControlFlow::Break(()) => return Ok(()),
                 }
             }
         }
-        // }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::terminal::{actor::TerminalActor, session::MockTerminalSessionApi};
+
+    use super::*;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn loading_indicator_draws_loading_frame_through_terminal_handle() {
+        let mut session = MockTerminalSessionApi::new();
+        session
+            .expect_draw()
+            .withf(|frame| matches!(frame, TerminalFrame::Loading(_)))
+            .times(1..)
+            .returning(|_| Ok(()));
+        let handle = TerminalActor::spawn(Box::new(session));
+        let mut loading = TerminalLoadingIndicator::new(handle);
+
+        loading.start("Fetching mailing lists".to_string());
+        std::thread::sleep(LOADING_FRAME_INTERVAL);
+        loading.stop().unwrap();
     }
 }

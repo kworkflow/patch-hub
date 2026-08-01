@@ -14,7 +14,7 @@ use crate::{
 
 use super::PopUp;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ReviewTrailersPopUp {
     reviewed_by_text: String,
     tested_by_text: String,

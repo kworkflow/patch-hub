@@ -1,9 +1,8 @@
 use ratatui::{
-    prelude::Backend,
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
-    Frame, Terminal,
+    Frame,
 };
 
 use std::fmt::Display;
@@ -25,13 +24,6 @@ static mut SPINNER_TICK: usize = 1;
 const LOADING_AREA_EXTRA_FACTOR_WIDTH: f32 = 1.3;
 const LOADING_AREA_EXTRA_LINES: u16 = 2;
 
-/// This function renders a loading screen taking a `terminal` instance and a
-/// `title`.
-pub fn render<B: Backend>(mut terminal: Terminal<B>, title: impl Display) -> Terminal<B> {
-    let _ = terminal.draw(|f| draw_loading_screen(f, title));
-    terminal
-}
-
 /// Gets the current spinner state and updates the tick.
 fn spinner() -> char {
     let char_to_ret = SPINNER[unsafe { SPINNER_TICK }];
@@ -43,7 +35,7 @@ fn spinner() -> char {
 
 /// The actual implementation of the loading screen rendering. Currently the
 /// loading notification is static.
-fn draw_loading_screen(f: &mut Frame, title: impl Display) {
+pub(crate) fn draw_loading_screen(f: &mut Frame, title: impl Display) {
     let frame_area = f.area();
     let loading_text = format!("{} {}", title, spinner());
 

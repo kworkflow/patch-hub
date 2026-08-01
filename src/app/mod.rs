@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod errors;
 pub mod input;
+pub mod render_snapshot;
 pub mod screens;
 pub mod state;
 pub mod updates;
@@ -427,11 +428,5 @@ impl App {
 
     pub fn set_current_screen(&mut self, new_current_screen: CurrentScreen) {
         self.state.navigation.current_screen = new_current_screen;
-    }
-
-    /// Borrows state for one UI frame without passing [`App`] into `ui/`.
-    #[must_use]
-    pub fn to_view_model(&self) -> AppViewModel<'_> {
-        AppViewModel { state: &self.state }
     }
 }

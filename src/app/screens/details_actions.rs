@@ -19,6 +19,7 @@ use crate::{
 
 use super::CurrentScreen;
 
+#[derive(Clone)]
 pub struct PatchsetDetailsState {
     pub representative_patch: Patch,
     /// Raw patches as plain text files

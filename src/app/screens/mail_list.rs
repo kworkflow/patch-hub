@@ -5,6 +5,7 @@ use crate::lore::{
     domain::mailing_list::MailingList,
 };
 
+#[derive(Clone)]
 pub struct MailingListSelectionState {
     pub mailing_lists: Vec<MailingList>,
     pub target_list: String,

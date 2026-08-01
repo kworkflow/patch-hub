@@ -2,7 +2,8 @@
 
 use super::state::AppState;
 
-/// References into [`AppState`] for one Ratatui frame. Built via [`super::App::to_view_model`].
+/// References into [`AppState`] for one Ratatui frame. Built via
+/// [`super::render_snapshot::AppRenderSnapshot::to_view_model`].
 #[derive(Clone, Copy)]
 pub struct AppViewModel<'a> {
     pub state: &'a AppState,

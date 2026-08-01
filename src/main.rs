@@ -8,6 +8,7 @@ mod lore;
 mod macros;
 mod render;
 mod render_prefs;
+mod terminal;
 mod ui;
 
 use app::App;
@@ -22,7 +23,7 @@ use infrastructure::{
     monitoring::{init_monitoring, InitMonitoringProduct},
     net::UreqNetClient,
     shell::OsShell,
-    terminal::{init, restore},
+    terminal::init,
 };
 use lore::{
     application::{actor::LoreApiActor, cache::CacheTtl, service::LoreService},
@@ -36,6 +37,7 @@ use lore::{
 use render::{actor::RenderActor, ShellRenderService};
 use render_prefs::PatchRenderer;
 use std::{ops::ControlFlow, sync::Arc};
+use terminal::{actor::TerminalActor, session::CrosstermTerminalSession};
 use tracing::{event, Level};
 
 /// Verifies required and optional external binaries before the TUI runs.
@@ -100,7 +102,6 @@ async fn main() -> color_eyre::Result<()> {
     let args = Cli::parse();
 
     infrastructure::errors::install_hooks()?;
-    let mut terminal = init()?;
 
     let env = OsEnv;
     let config_service: Box<dyn ConfigServiceApi> =
@@ -114,10 +115,12 @@ async fn main() -> color_eyre::Result<()> {
         logging_reload_handle,
     );
 
-    match args.resolve(terminal, &config) {
+    match args.resolve(&config) {
         ControlFlow::Break(b) => return b,
-        ControlFlow::Continue(t) => terminal = t,
+        ControlFlow::Continue(()) => {}
     }
+
+    let terminal_handle = TerminalActor::spawn(Box::new(CrosstermTerminalSession::new(init()?)));
 
     // Build shared infrastructure dependencies for LoreService
     let net = Arc::new(UreqNetClient::new());
@@ -171,8 +174,11 @@ async fn main() -> color_eyre::Result<()> {
         bail!("patch-hub cannot be executed because some dependencies are missing, check logs for more information");
     }
 
-    run_app(terminal, app).await?;
-    restore()?;
+    run_app(app, terminal_handle.clone()).await?;
+    terminal_handle
+        .shutdown()
+        .await
+        .map_err(|error| eyre!("{error}"))?;
 
     event!(Level::INFO, "patch-hub finished");
 

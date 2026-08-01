@@ -1,19 +1,20 @@
-use ratatui::{backend::Backend, Terminal};
+use std::time::Duration;
+
+use ratatui::crossterm::event::KeyCode;
 
 use crate::{
     app::{screens::CurrentScreen, App},
-    infrastructure::terminal::{setup_user_io, teardown_user_io},
-    input::{
-        event::{InputEvent, ScrollAmount},
-        terminal_source::{wait_for_enter_press, CrosstermEventSource},
-    },
+    input::event::{InputEvent, ScrollAmount},
+    terminal::handle::TerminalHandle,
     ui::popup::{help::HelpPopUpBuilder, review_trailers::ReviewTrailersPopUp, PopUp},
 };
 
-pub async fn handle_patchset_details<B: Backend>(
+const USER_IO_ENTER_POLL_TIMEOUT: Duration = Duration::from_millis(200);
+
+pub async fn handle_patchset_details(
     app: &mut App,
     input: InputEvent,
-    terminal: &mut Terminal<B>,
+    terminal_handle: &TerminalHandle,
 ) -> color_eyre::Result<()> {
     let patchset_details_and_actions = app.state.lore.details.as_mut().unwrap();
 
@@ -31,11 +32,11 @@ pub async fn handle_patchset_details<B: Backend>(
             patchset_details_and_actions.toggle_apply_action();
         }
         InputEvent::PreviewScrollDown(amount) => {
-            let lines = preview_scroll_lines(amount, terminal);
+            let lines = preview_scroll_lines(amount, terminal_handle).await?;
             patchset_details_and_actions.preview_scroll_down(lines);
         }
         InputEvent::PreviewScrollUp(amount) => {
-            let lines = preview_scroll_lines(amount, terminal);
+            let lines = preview_scroll_lines(amount, terminal_handle).await?;
             patchset_details_and_actions.preview_scroll_up(lines);
         }
         InputEvent::PreviewPanLeft => {
@@ -77,12 +78,14 @@ pub async fn handle_patchset_details<B: Backend>(
         }
         InputEvent::ConsolidatePatchsetActions => {
             if patchset_details_and_actions.actions_require_user_io() {
-                setup_user_io(terminal)?;
+                terminal_handle.setup_user_io().await?;
                 app.consolidate_patchset_actions().await?;
                 println!("\nPress ENTER continue...");
-                let mut event_source = CrosstermEventSource;
-                wait_for_enter_press(&mut event_source)?;
-                teardown_user_io(terminal)?;
+                while !terminal_handle
+                    .wait_for_key_press(KeyCode::Enter, USER_IO_ENTER_POLL_TIMEOUT)
+                    .await?
+                {}
+                terminal_handle.teardown_user_io().await?;
             } else {
                 app.consolidate_patchset_actions().await?;
             }
@@ -93,12 +96,16 @@ pub async fn handle_patchset_details<B: Backend>(
     Ok(())
 }
 
-fn preview_scroll_lines<B: Backend>(amount: ScrollAmount, terminal: &Terminal<B>) -> usize {
-    match amount {
+async fn preview_scroll_lines(
+    amount: ScrollAmount,
+    terminal_handle: &TerminalHandle,
+) -> color_eyre::Result<usize> {
+    let (_, height) = terminal_handle.size().await?;
+    Ok(match amount {
         ScrollAmount::Line => 1,
-        ScrollAmount::HalfPage => terminal.size().unwrap().height as usize / 2,
-        ScrollAmount::Page => terminal.size().unwrap().height as usize,
-    }
+        ScrollAmount::HalfPage => height as usize / 2,
+        ScrollAmount::Page => height as usize,
+    })
 }
 
 pub fn generate_help_popup() -> Box<dyn PopUp> {

@@ -8,7 +8,7 @@ use ratatui::{
 use super::PopUp;
 use crate::input::event::InputEvent;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct InfoPopUp {
     title: String,
     info: String,

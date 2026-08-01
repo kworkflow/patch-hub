@@ -1,5 +1,6 @@
 use crate::lore::domain::patch::Patch;
 
+#[derive(Clone)]
 pub struct BookmarkedPatchsetsState {
     pub bookmarked_patchsets: Vec<Patch>,
     pub patchset_index: usize,

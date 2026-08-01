@@ -21,7 +21,7 @@ use super::PopUp;
 /// The description is displayed below the title and is optional
 /// The keybinds (also optional) are displayed in a table format with the key on the left and the help message on the right
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct HelpPopUp {
     title: Option<String>,
     description: Option<String>,
