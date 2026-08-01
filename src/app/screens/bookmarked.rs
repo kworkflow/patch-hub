@@ -1,11 +1,11 @@
 use crate::lore::domain::patch::Patch;
 
-pub struct BookmarkedPatchsets {
+pub struct BookmarkedPatchsetsState {
     pub bookmarked_patchsets: Vec<Patch>,
     pub patchset_index: usize,
 }
 
-impl BookmarkedPatchsets {
+impl BookmarkedPatchsetsState {
     pub fn select_below_patchset(&mut self) {
         if self.patchset_index + 1 < self.bookmarked_patchsets.len() {
             self.patchset_index += 1;

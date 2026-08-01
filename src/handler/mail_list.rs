@@ -23,12 +23,19 @@ where
     match key.code {
         KeyCode::Char('?') => {
             let popup = generate_help_popup();
-            app.popup = Some(popup);
+            app.state.popup = Some(popup);
         }
         KeyCode::Enter => {
-            if app.mailing_list_selection.has_valid_target_list() {
+            if app
+                .state
+                .lore
+                .mailing_list_selection
+                .has_valid_target_list()
+            {
                 app.init_latest_patchsets();
                 let list_name = app
+                    .state
+                    .lore
                     .latest_patchsets
                     .as_ref()
                     .unwrap()
@@ -40,7 +47,7 @@ where
                     format!("Fetching patchsets from {}", list_name) => {
                         let result = app.fetch_latest_current_page();
                         if result.is_ok() {
-                            app.mailing_list_selection.clear_target_list();
+                            app.state.lore.mailing_list_selection.clear_target_list();
                             app.set_current_screen(CurrentScreen::LatestPatchsets);
                         }
                         result
@@ -61,25 +68,37 @@ where
             app.set_current_screen(CurrentScreen::EditConfig);
         }
         KeyCode::F(1) => {
-            if !app.bookmarked_patchsets.bookmarked_patchsets.is_empty() {
-                app.mailing_list_selection.clear_target_list();
+            if !app
+                .state
+                .user_state
+                .bookmarked_patchsets
+                .bookmarked_patchsets
+                .is_empty()
+            {
+                app.state.lore.mailing_list_selection.clear_target_list();
                 app.set_current_screen(CurrentScreen::BookmarkedPatchsets);
             }
         }
         KeyCode::Backspace => {
-            app.mailing_list_selection.remove_last_target_list_char();
+            app.state
+                .lore
+                .mailing_list_selection
+                .remove_last_target_list_char();
         }
         KeyCode::Esc => {
             return Ok(ControlFlow::Break(()));
         }
         KeyCode::Char(ch) => {
-            app.mailing_list_selection.push_char_to_target_list(ch);
+            app.state
+                .lore
+                .mailing_list_selection
+                .push_char_to_target_list(ch);
         }
         KeyCode::Down => {
-            app.mailing_list_selection.highlight_below_list();
+            app.state.lore.mailing_list_selection.highlight_below_list();
         }
         KeyCode::Up => {
-            app.mailing_list_selection.highlight_above_list();
+            app.state.lore.mailing_list_selection.highlight_above_list();
         }
         _ => {}
     }

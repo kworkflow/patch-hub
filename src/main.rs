@@ -6,16 +6,17 @@ mod lore;
 mod macros;
 mod ui;
 
-use app::{config::Config, App};
+use app::{config::Config, patch_renderer::PatchRenderer, App};
 use clap::Parser;
 use cli::Cli;
 use color_eyre::eyre::bail;
 use handler::run_app;
 use infrastructure::{
-    env::OsEnv,
+    env::{EnvTrait, OsEnv},
     file_system::OsFileSystem,
     monitoring::{init_monitoring, InitMonitoringProduct},
     net::UreqNetClient,
+    render::{RenderServiceApi, ShellRenderService},
     shell::OsShell,
     terminal::{init, restore},
 };
@@ -30,6 +31,55 @@ use lore::{
 };
 use std::{ops::ControlFlow, sync::Arc};
 use tracing::{event, Level};
+
+/// Verifies required and optional external binaries before the TUI runs.
+///
+/// Soft dependencies only emit warnings; a missing `b4` makes the app refuse to start.
+fn check_external_deps(env: &dyn EnvTrait, config: &Config) -> bool {
+    let mut app_can_run = true;
+
+    if !env.which("b4") {
+        event!(
+            Level::ERROR,
+            "b4 is not installed, patchsets cannot be downloaded"
+        );
+        app_can_run = false;
+    }
+
+    if !env.which("git") {
+        event!(Level::WARN, "git is not installed, send-email won't work");
+    }
+
+    match config.patch_renderer() {
+        PatchRenderer::Bat => {
+            if !env.which("bat") {
+                event!(
+                    Level::WARN,
+                    "bat is not installed, patch rendering will fallback to default"
+                );
+            }
+        }
+        PatchRenderer::Delta => {
+            if !env.which("delta") {
+                event!(
+                    Level::WARN,
+                    "delta is not installed, patch rendering will fallback to default",
+                );
+            }
+        }
+        PatchRenderer::DiffSoFancy => {
+            if !env.which("diff-so-fancy") {
+                event!(
+                    Level::WARN,
+                    "diff-so-fancy is not installed, patch rendering will fallback to default",
+                );
+            }
+        }
+        _ => {}
+    }
+
+    app_can_run
+}
 
 fn main() -> color_eyre::Result<()> {
     // file writer guards should be propagated to main() so the logging thread lives enough
@@ -80,6 +130,8 @@ fn main() -> color_eyre::Result<()> {
     ));
     let parser = Arc::new(MboxPatchsetParser::new(fs_arc.clone()));
 
+    let render: Box<dyn RenderServiceApi> = Box::new(ShellRenderService::new(shell_arc.clone()));
+
     let lore_service: Box<dyn LoreServiceApi> = Box::new(LoreService::new(
         gateway.clone(),
         gateway.clone(),
@@ -99,8 +151,9 @@ fn main() -> color_eyre::Result<()> {
         Box::new(OsShell),
         Box::new(env),
         lore_service,
+        render,
     )?;
-    if !app.check_external_deps() {
+    if !check_external_deps(&*app.services.env, &app.state.config) {
         event!(
             Level::WARN,
             "patch-hub cannot be executed because some dependencies are missing"

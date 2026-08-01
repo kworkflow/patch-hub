@@ -5,7 +5,7 @@ use crate::lore::{
     domain::patch::Patch,
 };
 
-pub struct LatestPatchsets {
+pub struct LatestPatchsetsState {
     target_list: String,
     page_number: usize,
     /// Index of the selected patchset within the current page (0-based).
@@ -15,9 +15,9 @@ pub struct LatestPatchsets {
     current_page: Vec<Patch>,
 }
 
-impl LatestPatchsets {
-    pub fn new(target_list: String, page_size: usize) -> LatestPatchsets {
-        LatestPatchsets {
+impl LatestPatchsetsState {
+    pub fn new(target_list: String, page_size: usize) -> LatestPatchsetsState {
+        LatestPatchsetsState {
             target_list,
             page_number: 1,
             patchset_index: 0,
@@ -128,7 +128,7 @@ mod tests {
             .times(1)
             .returning(|_, _, _, _| Ok(vec![make_patch("id-1"), make_patch("id-2")]));
 
-        let mut lp = LatestPatchsets::new("some-list".to_string(), 5);
+        let mut lp = LatestPatchsetsState::new("some-list".to_string(), 5);
         let result = lp.fetch_current_page(&mut mock, CacheMode::UseCache);
 
         assert!(result.is_ok());
@@ -142,7 +142,7 @@ mod tests {
             .times(1)
             .returning(|_, _, _, _| Err(LoreError::EndOfFeed));
 
-        let mut lp = LatestPatchsets::new("some-list".to_string(), 5);
+        let mut lp = LatestPatchsetsState::new("some-list".to_string(), 5);
         let result = lp.fetch_current_page(&mut mock, CacheMode::UseCache);
 
         assert!(result.is_ok());
@@ -164,7 +164,7 @@ mod tests {
                 })))
             });
 
-        let mut lp = LatestPatchsets::new("some-list".to_string(), 5);
+        let mut lp = LatestPatchsetsState::new("some-list".to_string(), 5);
         let result = lp.fetch_current_page(&mut mock, CacheMode::UseCache);
 
         assert!(result.is_err());
@@ -172,7 +172,7 @@ mod tests {
 
     #[test]
     fn test_select_below_patchset() {
-        let mut lp = LatestPatchsets::new("some-list".to_string(), 3);
+        let mut lp = LatestPatchsetsState::new("some-list".to_string(), 3);
         lp.current_page = vec![make_patch("a"), make_patch("b"), make_patch("c")];
         lp.patchset_index = 0;
 
@@ -189,7 +189,7 @@ mod tests {
 
     #[test]
     fn test_select_below_patchset_empty_page() {
-        let mut lp = LatestPatchsets::new("some-list".to_string(), 3);
+        let mut lp = LatestPatchsetsState::new("some-list".to_string(), 3);
         lp.patchset_index = 0;
         lp.select_below_patchset();
         assert_eq!(lp.patchset_index(), 0);
@@ -197,7 +197,7 @@ mod tests {
 
     #[test]
     fn test_select_above_patchset() {
-        let mut lp = LatestPatchsets::new("some-list".to_string(), 3);
+        let mut lp = LatestPatchsetsState::new("some-list".to_string(), 3);
         lp.current_page = vec![make_patch("a"), make_patch("b"), make_patch("c")];
         lp.patchset_index = 2;
 
@@ -214,7 +214,7 @@ mod tests {
 
     #[test]
     fn test_increment_page_full_page() {
-        let mut lp = LatestPatchsets::new("some-list".to_string(), 3);
+        let mut lp = LatestPatchsetsState::new("some-list".to_string(), 3);
         lp.current_page = vec![make_patch("a"), make_patch("b"), make_patch("c")];
         lp.patchset_index = 2;
 
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn test_increment_page_partial_page() {
-        let mut lp = LatestPatchsets::new("some-list".to_string(), 3);
+        let mut lp = LatestPatchsetsState::new("some-list".to_string(), 3);
         lp.current_page = vec![make_patch("a"), make_patch("b")]; // 2 < page_size=3
 
         lp.increment_page();
@@ -234,7 +234,7 @@ mod tests {
 
     #[test]
     fn test_increment_page_sequential() {
-        let mut lp = LatestPatchsets::new("some-list".to_string(), 1);
+        let mut lp = LatestPatchsetsState::new("some-list".to_string(), 1);
         lp.current_page = vec![make_patch("a")];
 
         lp.increment_page();
@@ -248,7 +248,7 @@ mod tests {
 
     #[test]
     fn test_decrement_page() {
-        let mut lp = LatestPatchsets::new("some-list".to_string(), 3);
+        let mut lp = LatestPatchsetsState::new("some-list".to_string(), 3);
 
         // Already on page 1, no change
         lp.decrement_page();
@@ -270,13 +270,13 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_get_selected_patchset_before_fetching_page() {
-        let lp = LatestPatchsets::new("some-list".to_string(), 3);
+        let lp = LatestPatchsetsState::new("some-list".to_string(), 3);
         let _patch = lp.get_selected_patchset();
     }
 
     #[test]
     fn test_get_selected_patchset() {
-        let mut lp = LatestPatchsets::new("some-list".to_string(), 3);
+        let mut lp = LatestPatchsetsState::new("some-list".to_string(), 3);
         lp.current_page = vec![make_patch("id-1"), make_patch("id-2"), make_patch("id-3")];
 
         lp.patchset_index = 0;
@@ -304,7 +304,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_get_selected_patchset_invalid_index() {
-        let mut lp = LatestPatchsets::new("some-list".to_string(), 3);
+        let mut lp = LatestPatchsetsState::new("some-list".to_string(), 3);
         lp.current_page = vec![make_patch("id-1")];
         lp.patchset_index = 99;
         let _patch = lp.get_selected_patchset();

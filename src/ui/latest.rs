@@ -6,21 +6,35 @@ use ratatui::{
     Frame,
 };
 
-use crate::{app::App, lore::domain::patch::Patch};
+use crate::{app::AppViewModel, lore::domain::patch::Patch};
 
-pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
-    let page_number = app.latest_patchsets.as_ref().unwrap().page_number();
-    let patchset_index = app.latest_patchsets.as_ref().unwrap().patchset_index();
+pub fn render_main(f: &mut Frame, vm: &AppViewModel<'_>, chunk: Rect) {
+    let page_number = vm
+        .state
+        .lore
+        .latest_patchsets
+        .as_ref()
+        .unwrap()
+        .page_number();
+    let patchset_index = vm
+        .state
+        .lore
+        .latest_patchsets
+        .as_ref()
+        .unwrap()
+        .patchset_index();
     let mut list_items = Vec::<ListItem>::new();
 
-    let patch_feed_page: Vec<&Patch> = app
+    let patch_feed_page: Vec<&Patch> = vm
+        .state
+        .lore
         .latest_patchsets
         .as_ref()
         .unwrap()
         .get_current_patch_feed_page()
         .unwrap();
 
-    let mut index: usize = (page_number - 1) * app.config.page_size();
+    let mut index: usize = (page_number - 1) * vm.state.config.page_size();
     for patch in patch_feed_page {
         let patch_title = format!("{:width$}", patch.title(), width = 70);
         let patch_title = format!("{:.width$}", patch_title, width = 70);
@@ -65,12 +79,22 @@ pub fn render_main(f: &mut Frame, app: &App, chunk: Rect) {
     f.render_stateful_widget(list, chunk, &mut list_state);
 }
 
-pub fn mode_footer_text(app: &App) -> Vec<Span> {
+pub fn mode_footer_text<'a>(vm: &'a AppViewModel<'a>) -> Vec<Span<'a>> {
     vec![Span::styled(
         format!(
             "Latest Patchsets from {} (page {})",
-            &app.latest_patchsets.as_ref().unwrap().target_list(),
-            &app.latest_patchsets.as_ref().unwrap().page_number()
+            &vm.state
+                .lore
+                .latest_patchsets
+                .as_ref()
+                .unwrap()
+                .target_list(),
+            &vm.state
+                .lore
+                .latest_patchsets
+                .as_ref()
+                .unwrap()
+                .page_number()
         ),
         Style::default().fg(Color::Green),
     )]
