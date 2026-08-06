@@ -189,3 +189,254 @@ impl Display for EditableConfig {
         }
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{collections::HashMap};
+
+    fn config_buffer_instance() -> HashMap<EditableConfig, String> {
+        let mut config_buffer = HashMap::new();
+        config_buffer.insert(EditableConfig::PageSize, "20".into());
+        config_buffer.insert(
+            EditableConfig::CacheDir,
+            std::env::temp_dir().to_string_lossy().into(),
+        );
+        config_buffer.insert(
+            EditableConfig::DataDir,
+            std::env::temp_dir().to_string_lossy().into(),
+        );
+        config_buffer.insert(EditableConfig::GitSendEmailOpt, "--x".into());
+        config_buffer.insert(EditableConfig::GitAmOpt, "--y".into());
+        config_buffer.insert(EditableConfig::PatchRenderer, "bat".into());
+        config_buffer.insert(EditableConfig::CoverRenderer, "bat".into());
+        config_buffer.insert(EditableConfig::MaxLogAge, "7".into());
+        config_buffer
+    }
+
+    fn instance_from_config_buffer(config_buffer: HashMap<EditableConfig, String>) -> EditConfig {
+        EditConfig {
+            config_buffer,
+            highlighted: 0,
+            is_editing: false,
+            curr_edit: String::new(),
+        }
+    }
+
+    #[test]
+    fn test_initial_values_loaded_correctly() {
+        let config = config_buffer_instance();
+        let config_len = config.len();
+        let edit = instance_from_config_buffer(config);
+
+        assert_eq!(edit.config_count(), config_len);
+
+        let (name, value) = edit
+            .config(0)
+            .expect("Deve haver uma configuração no índice 0");
+
+        assert_eq!(name, "Page Size");
+        assert_eq!(value, "20");
+    }
+
+        #[test]
+    fn test_highlight_next_within_bounds() {
+        let config = config_buffer_instance();
+        let mut edit = instance_from_config_buffer(config);
+
+        assert_eq!(edit.highlighted(), 0);
+
+        edit.highlight_next();
+        assert_eq!(edit.highlighted(), 1);
+
+        edit.highlight_next();
+        assert_eq!(edit.highlighted(), 2);
+    }
+
+    #[test]
+    fn test_highlight_next_stops_at_last() {
+        let config = config_buffer_instance();
+        let mut edit = instance_from_config_buffer(config);
+
+        let last_index = edit.config_count() - 1;
+
+        edit.highlighted = last_index;
+
+        edit.highlight_next();
+
+        assert_eq!(edit.highlighted(), last_index);
+    }
+
+    #[test]
+    fn test_highlight_prev_within_bounds() {
+        let config = config_buffer_instance();
+        let mut edit = instance_from_config_buffer(config);
+
+        edit.highlight_next();
+        edit.highlight_next();
+
+        assert_eq!(edit.highlighted(), 2);
+
+        edit.highlight_prev();
+        assert_eq!(edit.highlighted(), 1);
+
+        edit.highlight_prev();
+        assert_eq!(edit.highlighted(), 0);
+    }
+
+    #[test]
+    fn test_highlight_prev_stops_at_zero() {
+        let config = config_buffer_instance();
+        let mut edit = instance_from_config_buffer(config);
+
+        edit.highlighted = 0;
+
+        assert_eq!(edit.highlighted(), 0);
+
+        edit.highlight_prev();
+
+        assert_eq!(edit.highlighted(), 0);
+    }
+
+    #[test]
+    fn test_append_edit() {
+        let config = config_buffer_instance();
+        let mut edit = instance_from_config_buffer(config);
+
+        edit.is_editing = true;
+        edit.curr_edit.clear();
+
+        edit.append_edit('a');
+        edit.append_edit('b');
+        edit.append_edit('c');
+        assert_eq!(edit.curr_edit, "abc");
+        edit.append_edit('ç');
+        assert_eq!(edit.curr_edit, "abcç");
+    }
+
+    #[test]
+    fn test_backspace_edit() {
+        let config = config_buffer_instance();
+        let mut edit = instance_from_config_buffer(config);
+
+        edit.is_editing = true;
+
+        edit.curr_edit.clear();
+
+        edit.curr_edit = "abc".into();
+        edit.backspace_edit();
+        assert_eq!(edit.curr_edit, "ab");
+        edit.backspace_edit();
+        assert_eq!(edit.curr_edit, "a");
+        edit.backspace_edit();
+        assert_eq!(edit.curr_edit, "");
+        edit.backspace_edit();
+        assert_eq!(edit.curr_edit, "");
+    }
+
+    #[test]
+    fn test_clear_edit() {
+        let mut edit = instance_from_config_buffer(config_buffer_instance());
+
+        edit.is_editing = true;
+
+        assert!(edit.curr_edit().is_empty());
+        edit.clear_edit();
+        assert!(edit.curr_edit().is_empty());
+
+        edit.curr_edit = "abc".to_string();
+        assert_eq!(edit.curr_edit(), "abc");
+
+        edit.clear_edit();
+        assert!(edit.curr_edit().is_empty());
+    }
+
+    #[test]
+    fn test_toggle_editing_twice() {
+        let config = config_buffer_instance();
+        let mut edit = instance_from_config_buffer(config);
+
+        assert!(!edit.is_editing);
+
+        let (_, initial_val) = edit.config(edit.highlighted()).unwrap();
+
+        edit.toggle_editing();
+        assert!(edit.is_editing);
+        assert_eq!(*edit.curr_edit(), initial_val);
+
+        edit.toggle_editing();
+        assert!(!edit.is_editing);
+        assert_eq!(*edit.curr_edit(), initial_val);
+    }
+
+    #[test]
+    fn test_stage_edit_updates_value() {
+        let mut edit = instance_from_config_buffer(config_buffer_instance());
+
+        edit.is_editing = true;
+
+        edit.clear_edit();
+        edit.append_edit('4');
+        edit.append_edit('2');
+        assert_eq!(edit.curr_edit(), "42");
+
+        edit.stage_edit();
+
+        let (_, value) = edit.config(0).unwrap();
+        assert_eq!(value, "42");
+    }
+
+    #[test]
+    fn test_page_size_parsing() {
+        let mut edit = instance_from_config_buffer(config_buffer_instance());
+
+        edit.config_buffer.insert(EditableConfig::PageSize, "50".to_string());
+
+        assert_eq!(edit.page_size().unwrap(), 50);
+    }
+
+    #[test]
+    fn test_page_size_invalid() {
+        let mut edit = instance_from_config_buffer(config_buffer_instance());
+
+        edit.config_buffer.insert(EditableConfig::PageSize, "x".to_string());
+
+        assert!(edit.page_size().is_err());
+    }
+
+    #[test]
+    fn test_cache_dir_valid() {
+        let mut edit = instance_from_config_buffer(config_buffer_instance());
+
+        edit.config_buffer.insert(EditableConfig::CacheDir, "/tmp/cache".into());
+
+        assert!(edit.cache_dir().is_ok());
+    }
+
+    #[test]
+    fn test_data_dir_valid() {
+        let mut edit = instance_from_config_buffer(config_buffer_instance());
+
+        edit.config_buffer.insert(EditableConfig::DataDir, "/tmp/data".into());
+
+        assert!(edit.data_dir().is_ok());
+    }
+
+    #[test]
+    fn test_max_log_age_parsing() {
+        let mut edit = instance_from_config_buffer(config_buffer_instance());
+
+        edit.config_buffer.insert(EditableConfig::MaxLogAge, "99".to_string());
+
+        assert_eq!(edit.max_log_age().unwrap(), 99);
+    }
+
+
+    #[test]
+    fn test_try_from_valid_index() {
+        for i in 0..=7 {
+            assert!(EditableConfig::try_from(i).is_ok());
+        }
+
+        assert!(EditableConfig::try_from(8).is_err());
+    }
+}
