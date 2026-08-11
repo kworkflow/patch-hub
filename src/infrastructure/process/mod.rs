@@ -9,6 +9,11 @@ pub use r#trait::{ProcessError, ProcessTrait, RunningProcess};
 pub use r#trait::MockRunningProcess;
 
 #[cfg(test)]
+mod fake;
+#[cfg(test)]
+pub use fake::FakeProcess;
+
+#[cfg(test)]
 mod tests;
 
 use std::{
