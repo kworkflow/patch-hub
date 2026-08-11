@@ -7,7 +7,7 @@ use std::{
 
 use nix::{errno::Errno, sys::signal::kill, unistd::Pid};
 
-use super::{MockRunningProcess, OsProcess, ProcessTrait, RunningProcess};
+use super::{FakeProcess, MockRunningProcess, OsProcess, ProcessTrait, RunningProcess};
 use crate::infrastructure::shell::ShellCommand;
 
 struct TempDir(PathBuf);
@@ -218,4 +218,66 @@ async fn running_process_is_dyn_compatible_and_mockable() {
     process.kill().unwrap();
     let status = process.wait().await.unwrap();
     assert!(status.success());
+}
+
+#[tokio::test]
+async fn fake_process_records_spawn_and_simulates_run() {
+    let dir = TempDir::new("fake_run");
+    let log = dir.path().join("job.log");
+    let fake = FakeProcess::new();
+    let cmd = ShellCommand::new("kw").args(["build", "--alert=n"]);
+
+    let mut process = fake.spawn(&cmd, dir.path(), &log).unwrap();
+
+    assert_eq!(fake.spawned().len(), 1);
+    let record = &fake.spawned()[0];
+    assert_eq!(record.program, "kw");
+    assert_eq!(record.args, vec!["build", "--alert=n"]);
+    assert_eq!(record.cwd, dir.path());
+    assert_eq!(record.log_path, log);
+
+    let control = fake.last_child();
+    control.write_log(b"partial output\n");
+
+    // still running: wait must not resolve before finish() is called
+    let early_wait = tokio::time::timeout(Duration::from_millis(50), process.wait()).await;
+    assert!(early_wait.is_err());
+
+    let log_so_far = std::fs::read_to_string(&log).unwrap();
+    assert_eq!(log_so_far, "partial output\n");
+
+    control.finish(0);
+    let status = process.wait().await.unwrap();
+    assert!(status.success());
+}
+
+#[tokio::test]
+async fn fake_finish_with_nonzero_code_yields_that_code() {
+    let dir = TempDir::new("fake_nonzero");
+    let log = dir.path().join("job.log");
+    let fake = FakeProcess::new();
+    let cmd = ShellCommand::new("kw").arg("build");
+
+    let mut process = fake.spawn(&cmd, dir.path(), &log).unwrap();
+    fake.last_child().finish(42);
+
+    let status = process.wait().await.unwrap();
+    assert!(!status.success());
+    assert_eq!(status.code(), Some(42));
+}
+
+#[tokio::test]
+async fn fake_kill_makes_wait_return_signal_status() {
+    let dir = TempDir::new("fake_kill");
+    let log = dir.path().join("job.log");
+    let fake = FakeProcess::new();
+    let cmd = ShellCommand::new("kw").arg("build");
+
+    let mut process = fake.spawn(&cmd, dir.path(), &log).unwrap();
+
+    process.kill().unwrap();
+
+    assert!(fake.last_child().was_killed());
+    let status = process.wait().await.unwrap();
+    assert!(status.code().is_none());
 }
