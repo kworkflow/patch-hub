@@ -41,6 +41,10 @@ pub trait RunningProcess: Send {
 
     /// Send SIGTERM to the whole process group, not just the direct child.
     /// Idempotent: an already-gone group (ESRCH) is reported as success.
+    /// Signaling a leaderless group is intentional — it is how grandchildren
+    /// that outlive the leader get cleaned up — but in the narrow window where
+    /// the kernel has recycled the pgid, the signal could land on an unrelated
+    /// process group.
     ///
     /// Both methods take `&mut self`: a consumer that waits while staying able
     /// to cancel should `tokio::select!` between `wait()` and its cancel

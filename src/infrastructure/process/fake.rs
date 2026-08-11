@@ -1,10 +1,13 @@
 use std::{
     fs::{File, OpenOptions},
-    io::Write,
+    io::{self, Write},
     os::unix::process::ExitStatusExt,
     path::{Path, PathBuf},
     process::ExitStatus,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
 
 use async_trait::async_trait;
@@ -49,10 +52,15 @@ impl FakeControl {
         file.write_all(contents).unwrap();
     }
 
-    /// Unblock `wait()`, reporting exit with `exit_code`.
+    /// Unblock `wait()`, reporting exit with `exit_code`. A terminal state is
+    /// terminal: a process already finished or killed does not exit later.
     pub fn finish(&self, exit_code: i32) {
-        self.state.lock().unwrap().raw_status = Some(exit_code << 8);
-        self.notify.notify_one();
+        let mut state = self.state.lock().unwrap();
+        if state.raw_status.is_none() {
+            state.raw_status = Some(exit_code << 8);
+            drop(state);
+            self.notify.notify_one();
+        }
     }
 
     pub fn was_killed(&self) -> bool {
@@ -71,11 +79,19 @@ struct FakeSpawn {
 #[derive(Default)]
 pub struct FakeProcess {
     spawns: Mutex<Vec<FakeSpawn>>,
+    refuse_spawns: AtomicBool,
 }
 
 impl FakeProcess {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Make `spawn` fail with an IO error, like a missing binary or an
+    /// unwritable log path would; no log file is created and nothing is
+    /// recorded, mirroring `OsProcess`'s failure behavior.
+    pub fn refuse_spawns(&self, refuse: bool) {
+        self.refuse_spawns.store(refuse, Ordering::Relaxed);
     }
 
     pub fn spawned(&self) -> Vec<SpawnRecord> {
@@ -107,6 +123,12 @@ impl ProcessTrait for FakeProcess {
         cwd: &Path,
         log_path: &Path,
     ) -> Result<Box<dyn RunningProcess>, ProcessError> {
+        if self.refuse_spawns.load(Ordering::Relaxed) {
+            return Err(ProcessError::IoError(io::Error::new(
+                io::ErrorKind::NotFound,
+                "fake spawn failure",
+            )));
+        }
         File::create(log_path)?;
 
         let control = Arc::new(FakeControl {
@@ -151,12 +173,14 @@ impl RunningProcess for FakeRunningProcess {
 
     fn kill(&mut self) -> Result<(), ProcessError> {
         let mut state = self.control.state.lock().unwrap();
-        state.killed = true;
+        // Mirrors the real kill()'s ESRCH tolerance: killing an already-dead
+        // process is a successful no-op, not a kill.
         if state.raw_status.is_none() {
+            state.killed = true;
             state.raw_status = Some(Signal::SIGTERM as i32);
+            drop(state);
+            self.control.notify.notify_one();
         }
-        drop(state);
-        self.control.notify.notify_one();
         Ok(())
     }
 }

@@ -1,4 +1,5 @@
 use std::{
+    io,
     os::unix::process::ExitStatusExt,
     path::{Path, PathBuf},
     process::ExitStatus,
@@ -7,7 +8,10 @@ use std::{
 
 use nix::{errno::Errno, sys::signal::kill, unistd::Pid};
 
-use super::{FakeProcess, MockRunningProcess, OsProcess, ProcessTrait, RunningProcess};
+use super::{
+    FakeProcess, MockProcessTrait, MockRunningProcess, OsProcess, ProcessError, ProcessTrait,
+    RunningProcess,
+};
 use crate::infrastructure::shell::ShellCommand;
 
 struct TempDir(PathBuf);
@@ -50,6 +54,24 @@ fn pid_is_gone(pid: i32) -> bool {
         kill(Pid::from_raw(pid), None::<nix::sys::signal::Signal>),
         Err(Errno::ESRCH)
     )
+}
+
+// The shell redirection creates the sidecar file before `echo $!` writes into
+// it, so polling for existence can observe an empty file; poll for parseable
+// content instead.
+async fn await_sidecar_pid(path: &Path) -> i32 {
+    let mut pid = None;
+    wait_for(
+        || {
+            pid = std::fs::read_to_string(path)
+                .ok()
+                .and_then(|contents| contents.trim().parse::<i32>().ok());
+            pid.is_some()
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+    pid.expect("sidecar never received a grandchild pid")
 }
 
 #[tokio::test]
@@ -138,13 +160,7 @@ async fn kill_terminates_process_group() {
 
     let mut process = OsProcess.spawn(&cmd, dir.path(), &log).unwrap();
 
-    let sidecar_ready = wait_for(|| sidecar.exists(), Duration::from_secs(2)).await;
-    assert!(sidecar_ready);
-    let grandchild_pid: i32 = std::fs::read_to_string(&sidecar)
-        .unwrap()
-        .trim()
-        .parse()
-        .unwrap();
+    let grandchild_pid = await_sidecar_pid(&sidecar).await;
 
     process.kill().unwrap();
     let status = tokio::time::timeout(Duration::from_secs(2), process.wait())
@@ -173,7 +189,7 @@ async fn kill_after_successful_exit_is_ok() {
 }
 
 #[tokio::test]
-async fn spawn_missing_binary_returns_error() {
+async fn spawn_missing_binary_returns_error_without_creating_log_file() {
     let dir = TempDir::new("missing_binary");
     let log = dir.path().join("job.log");
     let cmd = ShellCommand::new("__nonexistent_binary_patch_hub__");
@@ -181,6 +197,7 @@ async fn spawn_missing_binary_returns_error() {
     let result = OsProcess.spawn(&cmd, dir.path(), &log);
 
     assert!(result.is_err());
+    assert!(!log.exists());
 }
 
 #[tokio::test]
@@ -193,13 +210,7 @@ async fn dropped_unreaped_process_group_is_killed() {
 
     let process = OsProcess.spawn(&cmd, dir.path(), &log).unwrap();
 
-    let sidecar_ready = wait_for(|| sidecar.exists(), Duration::from_secs(2)).await;
-    assert!(sidecar_ready);
-    let grandchild_pid: i32 = std::fs::read_to_string(&sidecar)
-        .unwrap()
-        .trim()
-        .parse()
-        .unwrap();
+    let grandchild_pid = await_sidecar_pid(&sidecar).await;
 
     // no wait(): dropping the handle must not orphan the process group
     drop(process);
@@ -280,4 +291,73 @@ async fn fake_kill_makes_wait_return_signal_status() {
     assert!(fake.last_child().was_killed());
     let status = process.wait().await.unwrap();
     assert!(status.code().is_none());
+}
+
+#[tokio::test]
+async fn fake_finish_after_kill_keeps_signal_status() {
+    let dir = TempDir::new("fake_finish_after_kill");
+    let log = dir.path().join("job.log");
+    let fake = FakeProcess::new();
+    let cmd = ShellCommand::new("kw").arg("build");
+
+    let mut process = fake.spawn(&cmd, dir.path(), &log).unwrap();
+
+    process.kill().unwrap();
+    // a killed process cannot exit 0 later; finish() must not resurrect it
+    fake.last_child().finish(0);
+
+    let status = process.wait().await.unwrap();
+    assert!(status.code().is_none());
+    assert!(fake.last_child().was_killed());
+}
+
+#[tokio::test]
+async fn fake_kill_after_finish_is_a_no_op_success() {
+    let dir = TempDir::new("fake_kill_after_finish");
+    let log = dir.path().join("job.log");
+    let fake = FakeProcess::new();
+    let cmd = ShellCommand::new("kw").arg("build");
+
+    let mut process = fake.spawn(&cmd, dir.path(), &log).unwrap();
+    fake.last_child().finish(0);
+
+    process.kill().unwrap();
+
+    assert!(!fake.last_child().was_killed());
+    let status = process.wait().await.unwrap();
+    assert!(status.success());
+}
+
+#[tokio::test]
+async fn fake_spawn_can_be_made_to_fail() {
+    let dir = TempDir::new("fake_spawn_failure");
+    let log = dir.path().join("job.log");
+    let fake = FakeProcess::new();
+    let cmd = ShellCommand::new("kw").arg("build");
+
+    fake.refuse_spawns(true);
+    let result = fake.spawn(&cmd, dir.path(), &log);
+
+    assert!(result.is_err());
+    assert!(!log.exists());
+    assert!(fake.spawned().is_empty());
+}
+
+#[tokio::test]
+async fn mock_process_trait_can_simulate_spawn_failure() {
+    let dir = TempDir::new("mock_spawn_failure");
+    let log = dir.path().join("job.log");
+    let cmd = ShellCommand::new("kw").arg("build");
+
+    let mut mock = MockProcessTrait::new();
+    mock.expect_spawn().return_once(|_, _, _| {
+        Err(ProcessError::IoError(io::Error::new(
+            io::ErrorKind::NotFound,
+            "kw not found",
+        )))
+    });
+
+    let result = mock.spawn(&cmd, dir.path(), &log);
+
+    assert!(result.is_err());
 }
