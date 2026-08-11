@@ -6,7 +6,7 @@ mod r#trait;
 pub use r#trait::{ProcessError, ProcessTrait, RunningProcess};
 
 #[cfg(test)]
-pub use r#trait::MockRunningProcess;
+pub use r#trait::{MockProcessTrait, MockRunningProcess};
 
 #[cfg(test)]
 mod fake;
@@ -31,7 +31,7 @@ use nix::{
 };
 use tokio::process::{Child, Command};
 
-use super::shell::ShellCommand;
+use crate::infrastructure::shell::ShellCommand;
 
 // No production caller exists until the kw integration wires KwActor;
 // kept per the CachePolicy precedent (src/lore/application/cache.rs).
@@ -57,7 +57,11 @@ impl ProcessTrait for OsProcess {
             .stdout(Stdio::from(log_out))
             .stderr(Stdio::from(log_err))
             .process_group(0)
-            .spawn()?;
+            .spawn()
+            .inspect_err(|_| {
+                // a job that never started must not leave a truncated log
+                let _ = std::fs::remove_file(log_path);
+            })?;
 
         let pid = child
             .id()
