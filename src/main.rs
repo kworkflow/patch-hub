@@ -3,6 +3,7 @@ mod cli;
 mod config;
 mod infrastructure;
 mod input;
+mod kw;
 mod lore;
 mod macros;
 mod render;
