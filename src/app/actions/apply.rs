@@ -18,9 +18,6 @@ pub(crate) struct ApplyPatchsetRequest {
 #[derive(Debug)]
 pub(crate) struct AppliedPatchset {
     pub message: String,
-    // Consumed by the apply-history record write (kw integration); no
-    // production reader exists until that wiring lands.
-    #[allow(dead_code)]
     pub applied_branch: String,
 }
 

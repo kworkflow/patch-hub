@@ -12,9 +12,6 @@ use std::{collections::HashMap, io, path::Path, sync::Arc};
 
 use crate::infrastructure::file_system::{FileSystemError, FileSystemTrait};
 
-// No production caller exists until the apply hook wires the store into the
-// app; kept per the CachePolicy precedent (src/lore/application/cache.rs).
-#[allow(dead_code)]
 pub const APPLY_HISTORY_FILENAME: &str = "kw_apply_history.json";
 
 /// One recorded `git am` application of a lore patchset to a kernel tree.
@@ -31,10 +28,6 @@ pub struct KwApplyRecord {
     pub applied_at: String,
 }
 
-// The trait's production caller is the apply hook (and, later, KwActor); the
-// read side serves readiness/prefill in later steps. Kept per the CachePolicy
-// precedent (src/lore/application/cache.rs).
-#[allow(dead_code)]
 #[automock]
 pub trait KwHistoryStore: Send + Sync {
     /// Inserts or replaces the apply record keyed by `record.message_id`.
@@ -42,6 +35,9 @@ pub trait KwHistoryStore: Send + Sync {
 
     /// Returns the apply record for `message_id`, or `None` if it was never
     /// recorded. A missing history file is a normal state, not an error.
+    // Read by the kw readiness checks in a later step; kept per the
+    // CachePolicy precedent (src/lore/application/cache.rs).
+    #[allow(dead_code)]
     fn apply_record(&self, message_id: &str) -> Result<Option<KwApplyRecord>, FileSystemError>;
 }
 
@@ -51,9 +47,6 @@ pub struct FileKwHistoryStore {
 }
 
 impl FileKwHistoryStore {
-    // No production caller exists until the apply hook wires the store into
-    // the app; kept per the CachePolicy precedent.
-    #[allow(dead_code)]
     pub fn new(fs: Arc<dyn FileSystemTrait>, apply_history_path: String) -> Self {
         FileKwHistoryStore {
             fs,

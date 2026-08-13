@@ -32,15 +32,22 @@ use color_eyre::{
 };
 use tracing::{debug, event, info, warn, Level};
 
+use std::sync::Arc;
+
+use chrono::{SecondsFormat, Utc};
+
 use crate::{
     app::actions::{
-        apply::ApplyPatchsetRequest, reviewed_reply::ReviewedReplyRequest, PatchsetActionService,
+        apply::{AppliedPatchset, ApplyPatchsetRequest},
+        reviewed_reply::ReviewedReplyRequest,
+        PatchsetActionService,
     },
     config::{ConfigHandle, ConfigSnapshot},
     infrastructure::{
         file_system::FileSystemTrait, monitoring::logging::garbage_collector::collect_garbage,
         shell::ShellTrait,
     },
+    kw::history::{KwApplyRecord, KwHistoryStore},
     lore::{
         application::{
             cache::{BootstrapLoreData, CacheMode},
@@ -69,6 +76,8 @@ pub struct AppServices {
     pub shell: Box<dyn ShellTrait>,
     pub fs: Box<dyn FileSystemTrait>,
     pub config: ConfigHandle,
+    /// Shared with KwActor once it exists (the actor adopts the same store).
+    pub kw_history: Arc<dyn KwHistoryStore>,
 }
 
 /// Result type signalling whether a patchset was successfully loaded.
@@ -100,6 +109,7 @@ impl App {
         shell: Box<dyn ShellTrait>,
         lore_api: LoreApiHandle,
         render: RenderHandle,
+        kw_history: Arc<dyn KwHistoryStore>,
     ) -> Result<Self> {
         event!(Level::INFO, "patch-hub started");
         collect_garbage(&config);
@@ -136,6 +146,7 @@ impl App {
                 shell,
                 fs,
                 config: config_handle,
+                kw_history,
             },
         })
     }
@@ -414,7 +425,24 @@ impl App {
                 &self.services.lore_api,
             );
             let popup = match action_service.apply_patchset(&request, &self.state.config) {
-                Ok(applied) => popup::AppPopup::info("Patchset Apply Success", applied.message),
+                Ok(applied) => {
+                    let record = kw_apply_record(details, &self.state.config, &applied);
+                    match self.services.kw_history.record_apply(record) {
+                        Ok(()) => popup::AppPopup::info("Patchset Apply Success", applied.message),
+                        // The git apply itself succeeded; a history-write
+                        // failure must not turn it into a reported failure.
+                        Err(e) => {
+                            warn!(error = %e, "failed to record kw apply history");
+                            popup::AppPopup::info(
+                                "Patchset Apply Success",
+                                format!(
+                                    "{}\n\nWarning: the apply was not recorded in the kw history: {e}",
+                                    applied.message
+                                ),
+                            )
+                        }
+                    }
+                }
                 Err(msg) => popup::AppPopup::info("Patchset Apply Fail", msg),
             };
 
@@ -489,6 +517,32 @@ fn apply_patchset_request(details: &PatchsetDetailsState) -> ApplyPatchsetReques
     ApplyPatchsetRequest {
         patch_title: details.representative_patch.title().clone(),
         patchset_path: details.patchset_path.clone(),
+    }
+}
+
+fn kw_apply_record(
+    details: &PatchsetDetailsState,
+    config: &ConfigSnapshot,
+    applied: &AppliedPatchset,
+) -> KwApplyRecord {
+    // Both were already validated by the apply itself, which cannot have
+    // succeeded without a resolvable target kernel tree.
+    let kernel_tree_id = config
+        .target_kernel_tree()
+        .as_ref()
+        .expect("invariant: a successful apply implies a target kernel tree was set")
+        .clone();
+    let kernel_tree = config
+        .get_kernel_tree(&kernel_tree_id)
+        .expect("invariant: a successful apply implies the target kernel tree exists");
+
+    KwApplyRecord {
+        message_id: details.representative_patch.message_id().href.clone(),
+        kernel_tree_id,
+        tree_path: kernel_tree.path().clone(),
+        applied_branch: applied.applied_branch.clone(),
+        base_branch: kernel_tree.branch().clone(),
+        applied_at: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
     }
 }
 
