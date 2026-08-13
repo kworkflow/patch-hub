@@ -133,6 +133,15 @@ pub(crate) fn validate_update(
         ),
     };
 
+    let stay_on_applied_branch = match &draft.stay_on_applied_branch {
+        None => None,
+        Some(s) => Some(
+            s.trim()
+                .parse::<bool>()
+                .map_err(|_| ConfigError::InvalidStayOnAppliedBranch(s.clone()))?,
+        ),
+    };
+
     Ok(ValidatedConfigUpdate {
         page_size,
         cache_dir,
@@ -142,6 +151,7 @@ pub(crate) fn validate_update(
         patch_renderer,
         cover_renderer,
         max_log_age,
+        stay_on_applied_branch,
     })
 }
 

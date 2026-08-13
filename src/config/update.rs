@@ -11,6 +11,7 @@ pub struct ConfigUpdateDraft {
     pub patch_renderer: Option<String>,
     pub cover_renderer: Option<String>,
     pub max_log_age: Option<String>,
+    pub stay_on_applied_branch: Option<String>,
 }
 
 /// Parsed and validated update ready to merge into [`crate::config::ConfigState`](super::state::ConfigState).
@@ -24,4 +25,5 @@ pub struct ValidatedConfigUpdate {
     pub patch_renderer: Option<PatchRenderer>,
     pub cover_renderer: Option<CoverRenderer>,
     pub max_log_age: Option<usize>,
+    pub stay_on_applied_branch: Option<bool>,
 }
