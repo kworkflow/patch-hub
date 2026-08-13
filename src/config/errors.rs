@@ -18,6 +18,8 @@ pub enum ConfigError {
     InvalidCoverRenderer(String),
     #[error("invalid max log age: {0}")]
     InvalidMaxLogAge(String),
+    #[error("invalid stay-on-applied-branch value: {0}")]
+    InvalidStayOnAppliedBranch(String),
     #[error("filesystem error: {0}")]
     Fs(#[from] FileSystemError),
 }

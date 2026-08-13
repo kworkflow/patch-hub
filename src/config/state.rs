@@ -38,6 +38,7 @@ pub struct ConfigState {
     pub(crate) target_kernel_tree: Option<String>,
     pub(crate) git_am_options: String,
     pub(crate) git_am_branch_prefix: String,
+    pub(crate) stay_on_applied_branch: bool,
 }
 
 impl Default for ConfigState {
@@ -79,6 +80,7 @@ impl ConfigState {
             target_kernel_tree: None,
             git_am_options: String::new(),
             git_am_branch_prefix: String::from("patchset-"),
+            stay_on_applied_branch: true,
         }
     }
 
@@ -124,6 +126,10 @@ impl ConfigState {
         self.max_log_age = max_log_age;
     }
 
+    fn set_stay_on_applied_branch(&mut self, stay_on_applied_branch: bool) {
+        self.stay_on_applied_branch = stay_on_applied_branch;
+    }
+
     /// Merges validated field updates from the edit-config flow.
     pub fn apply_update(&mut self, u: &ValidatedConfigUpdate) {
         if let Some(page_size) = u.page_size {
@@ -149,6 +155,9 @@ impl ConfigState {
         }
         if let Some(max_log_age) = u.max_log_age {
             self.set_max_log_age(max_log_age);
+        }
+        if let Some(stay_on_applied_branch) = u.stay_on_applied_branch {
+            self.set_stay_on_applied_branch(stay_on_applied_branch);
         }
     }
 
@@ -189,6 +198,7 @@ pub struct ConfigSnapshot {
     target_kernel_tree: Option<String>,
     git_am_options: String,
     git_am_branch_prefix: String,
+    stay_on_applied_branch: bool,
 }
 
 impl ConfigSnapshot {
@@ -210,6 +220,7 @@ impl ConfigSnapshot {
             target_kernel_tree: s.target_kernel_tree.clone(),
             git_am_options: s.git_am_options.clone(),
             git_am_branch_prefix: s.git_am_branch_prefix.clone(),
+            stay_on_applied_branch: s.stay_on_applied_branch,
         }
     }
 

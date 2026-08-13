@@ -41,6 +41,10 @@ impl EditConfigState {
             config.cover_renderer().to_string(),
         );
         config_buffer.insert(EditableConfig::MaxLogAge, config.max_log_age().to_string());
+        config_buffer.insert(
+            EditableConfig::StayOnAppliedBranch,
+            config.stay_on_applied_branch().to_string(),
+        );
 
         EditConfigState {
             config_buffer,
@@ -137,6 +141,10 @@ impl EditConfigState {
                 .get(&EditableConfig::CoverRenderer)
                 .cloned(),
             max_log_age: self.config_buffer.get(&EditableConfig::MaxLogAge).cloned(),
+            stay_on_applied_branch: self
+                .config_buffer
+                .get(&EditableConfig::StayOnAppliedBranch)
+                .cloned(),
         }
     }
 }
@@ -151,6 +159,7 @@ enum EditableConfig {
     PatchRenderer,
     CoverRenderer,
     MaxLogAge,
+    StayOnAppliedBranch,
 }
 
 impl TryFrom<usize> for EditableConfig {
@@ -166,6 +175,7 @@ impl TryFrom<usize> for EditableConfig {
             5 => Ok(EditableConfig::PatchRenderer),
             6 => Ok(EditableConfig::CoverRenderer),
             7 => Ok(EditableConfig::MaxLogAge),
+            8 => Ok(EditableConfig::StayOnAppliedBranch),
             _ => bail!("Invalid index {} for EditableConfig", value), // Handle out of bounds
         }
     }
@@ -186,6 +196,9 @@ impl Display for EditableConfig {
             EditableConfig::GitSendEmailOpt => write!(f, "`git send email` option"),
             EditableConfig::MaxLogAge => write!(f, "Max Log Age (0 = forever)"),
             EditableConfig::GitAmOpt => write!(f, "`git am` option"),
+            EditableConfig::StayOnAppliedBranch => {
+                write!(f, "Stay On Applied Branch (true/false)")
+            }
         }
     }
 }
