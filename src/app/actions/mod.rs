@@ -9,7 +9,7 @@ use crate::{
     lore::application::handle::LoreApiHandle,
 };
 
-use apply::ApplyPatchsetRequest;
+use apply::{AppliedPatchset, ApplyPatchsetRequest};
 use reviewed_reply::{ReviewedReplyRequest, ReviewedReplyResult};
 
 pub(crate) struct PatchsetActionService<'a> {
@@ -35,7 +35,7 @@ impl<'a> PatchsetActionService<'a> {
         &self,
         request: &ApplyPatchsetRequest,
         config: &ConfigSnapshot,
-    ) -> Result<String, String> {
+    ) -> Result<AppliedPatchset, String> {
         apply::apply_patchset(request, self.fs, self.shell, config)
     }
 

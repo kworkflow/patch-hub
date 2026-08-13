@@ -15,12 +15,21 @@ pub(crate) struct ApplyPatchsetRequest {
     pub patchset_path: String,
 }
 
+#[derive(Debug)]
+pub(crate) struct AppliedPatchset {
+    pub message: String,
+    // Consumed by the apply-history record write (kw integration); no
+    // production reader exists until that wiring lands.
+    #[allow(dead_code)]
+    pub applied_branch: String,
+}
+
 pub(crate) fn apply_patchset(
     request: &ApplyPatchsetRequest,
     fs: &dyn FileSystemTrait,
     shell: &dyn ShellTrait,
     config: &ConfigSnapshot,
-) -> Result<String, String> {
+) -> Result<AppliedPatchset, String> {
     let kernel_tree = validate_kernel_tree(fs, config)?;
     check_git_state(fs, shell, kernel_tree)?;
 
@@ -28,17 +37,32 @@ pub(crate) fn apply_patchset(
     let target_branch = create_target_branch(shell, kernel_tree, config)?;
 
     let git_am_result = run_git_am(request, shell, kernel_tree, config);
-    switch_to_branch(shell, kernel_tree, &original_branch)?;
 
     match git_am_result {
-        Ok(_) => Ok(format!(
-            " Patchset '{}' applied successfully!\n\n - Kernel Tree: '{}'\n\n - Base Branch: '{}'\n\n - Applied branch: '{}'",
-            request.patch_title,
-            kernel_tree.path(),
-            kernel_tree.branch(),
-            &target_branch
-        )),
-        Err(e) => Err(format!(" `git am` failed\n{}{}", &original_branch, e)),
+        Ok(_) => {
+            let current_branch = if config.stay_on_applied_branch() {
+                target_branch.clone()
+            } else {
+                switch_to_branch(shell, kernel_tree, &original_branch)?;
+                original_branch
+            };
+
+            Ok(AppliedPatchset {
+                message: format!(
+                    " Patchset '{}' applied successfully!\n\n - Kernel Tree: '{}'\n\n - Base Branch: '{}'\n\n - Applied branch: '{}'\n\n - Current branch: '{}'",
+                    request.patch_title,
+                    kernel_tree.path(),
+                    kernel_tree.branch(),
+                    &target_branch,
+                    current_branch
+                ),
+                applied_branch: target_branch,
+            })
+        }
+        Err(e) => {
+            switch_to_branch(shell, kernel_tree, &original_branch)?;
+            Err(format!(" `git am` failed\n{}{}", &original_branch, e))
+        }
     }
 }
 
@@ -250,6 +274,8 @@ mod tests {
     const BASE_BRANCH: &str = "main";
     const PATCHSET_PATH: &str = "/tmp/patchset.mbx";
 
+    // `stay_on_applied_branch` is deliberately absent so the tests below
+    // exercise the serde default (true) that existing config files inherit.
     fn config() -> ConfigSnapshot {
         serde_json::from_value::<ConfigState>(serde_json::json!({
             "kernel_trees": {
@@ -261,6 +287,23 @@ mod tests {
             "target_kernel_tree": "linux",
             "git_am_options": "--signoff --3way",
             "git_am_branch_prefix": "patchset-"
+        }))
+        .expect("test config should deserialize")
+        .to_snapshot()
+    }
+
+    fn config_stay_disabled() -> ConfigSnapshot {
+        serde_json::from_value::<ConfigState>(serde_json::json!({
+            "kernel_trees": {
+                "linux": {
+                    "path": KERNEL_TREE_PATH,
+                    "branch": BASE_BRANCH
+                }
+            },
+            "target_kernel_tree": "linux",
+            "git_am_options": "--signoff --3way",
+            "git_am_branch_prefix": "patchset-",
+            "stay_on_applied_branch": false
         }))
         .expect("test config should deserialize")
         .to_snapshot()
@@ -327,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_success_runs_expected_git_sequence() {
+    fn apply_success_stays_on_applied_branch_by_default() {
         let fs = clean_fs();
         let (shell, calls) = shell_with_outputs(vec![
             output("", "", true),
@@ -336,14 +379,20 @@ mod tests {
             output("", "", true),
             output("", "", true),
             output("", "", true),
-            output("", "", true),
         ]);
 
-        let result = apply_patchset(&request(), &fs, &shell, &config()).unwrap();
+        let applied = apply_patchset(&request(), &fs, &shell, &config()).unwrap();
 
-        assert!(result.contains("Patchset '[PATCH] test' applied successfully"));
-        assert!(result.contains("Applied branch: 'patchset-"));
+        assert!(applied.applied_branch.starts_with("patchset-"));
+        assert!(applied
+            .message
+            .contains("Patchset '[PATCH] test' applied successfully"));
+        assert!(applied.message.contains("Applied branch: 'patchset-"));
+        assert!(applied
+            .message
+            .contains(&format!("Current branch: '{}'", applied.applied_branch)));
         let calls = calls.lock().unwrap();
+        assert_eq!(6, calls.len());
         assert_eq!(
             &calls[0],
             &command(&["git", "-C", KERNEL_TREE_PATH, "status", "--porcelain"])
@@ -392,6 +441,26 @@ mod tests {
                 "--3way"
             ])
         );
+    }
+
+    #[test]
+    fn apply_success_switches_back_when_stay_disabled() {
+        let fs = clean_fs();
+        let (shell, calls) = shell_with_outputs(vec![
+            output("", "", true),
+            output("", "", true),
+            output("feature\n", "", true),
+            output("", "", true),
+            output("", "", true),
+            output("", "", true),
+            output("", "", true),
+        ]);
+
+        let applied = apply_patchset(&request(), &fs, &shell, &config_stay_disabled()).unwrap();
+
+        assert!(applied.message.contains("Current branch: 'feature'"));
+        let calls = calls.lock().unwrap();
+        assert_eq!(7, calls.len());
         assert_eq!(
             &calls[6],
             &command(&["git", "-C", KERNEL_TREE_PATH, "switch", "feature"])
@@ -438,31 +507,33 @@ mod tests {
 
     #[test]
     fn failed_git_am_aborts_and_switches_back() {
-        let fs = clean_fs();
-        let (shell, calls) = shell_with_outputs(vec![
-            output("", "", true),
-            output("", "", true),
-            output("feature\n", "", true),
-            output("", "", true),
-            output("", "", true),
-            output("", "apply failed", false),
-            output("", "", true),
-            output("", "", true),
-        ]);
+        for config in [config(), config_stay_disabled()] {
+            let fs = clean_fs();
+            let (shell, calls) = shell_with_outputs(vec![
+                output("", "", true),
+                output("", "", true),
+                output("feature\n", "", true),
+                output("", "", true),
+                output("", "", true),
+                output("", "apply failed", false),
+                output("", "", true),
+                output("", "", true),
+            ]);
 
-        let result = apply_patchset(&request(), &fs, &shell, &config()).unwrap_err();
+            let result = apply_patchset(&request(), &fs, &shell, &config).unwrap_err();
 
-        assert!(result.contains("`git am` failed"));
-        assert!(result.contains("feature"));
-        assert!(result.contains("apply failed"));
-        let calls = calls.lock().unwrap();
-        assert_eq!(
-            &calls[6],
-            &command(&["git", "-C", KERNEL_TREE_PATH, "am", "--abort"])
-        );
-        assert_eq!(
-            &calls[7],
-            &command(&["git", "-C", KERNEL_TREE_PATH, "switch", "feature"])
-        );
+            assert!(result.contains("`git am` failed"));
+            assert!(result.contains("feature"));
+            assert!(result.contains("apply failed"));
+            let calls = calls.lock().unwrap();
+            assert_eq!(
+                &calls[6],
+                &command(&["git", "-C", KERNEL_TREE_PATH, "am", "--abort"])
+            );
+            assert_eq!(
+                &calls[7],
+                &command(&["git", "-C", KERNEL_TREE_PATH, "switch", "feature"])
+            );
+        }
     }
 }

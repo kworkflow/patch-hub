@@ -47,7 +47,6 @@ async fn apply_success_sets_success_popup_and_resets_apply_action() {
         output("", "", true),
         output("", "", true),
         output("", "", true),
-        output("", "", true),
     ]);
     let mut app = app_with_apply_details(clean_fs(), shell);
 
@@ -61,7 +60,42 @@ async fn apply_success_sets_success_popup_and_resets_apply_action() {
             "applied successfully",
             "Kernel Tree: '/kernel'",
             "Applied branch: 'patchset-",
+            "Current branch: 'patchset-",
         ],
+    );
+}
+
+#[tokio::test]
+async fn apply_success_switches_back_when_stay_disabled() {
+    let (shell, calls) = shell_with_outputs(vec![
+        output("", "", true),
+        output("", "", true),
+        output("feature\n", "", true),
+        output("", "", true),
+        output("", "", true),
+        output("", "", true),
+        output("", "", true),
+    ]);
+    let mut app = app_with_details(
+        clean_fs(),
+        shell,
+        lore_handle_with_persistence(),
+        apply_details_state(),
+        apply_config_stay_disabled(),
+    );
+
+    app.consolidate_patchset_actions().await.unwrap();
+
+    assert_apply_action(&app, false);
+    assert_info_popup_contains(
+        app.state.popup.as_ref(),
+        "Patchset Apply Success",
+        &["Current branch: 'feature'"],
+    );
+    let calls = calls.lock().unwrap();
+    assert_eq!(
+        command(&["git", "-C", KERNEL_TREE_PATH, "switch", "feature"]),
+        calls[6]
     );
 }
 
@@ -161,6 +195,7 @@ fn app_with_apply_details(fs: MockFileSystemTrait, shell: MockShellTrait) -> App
         shell,
         lore_handle_with_persistence(),
         apply_details_state(),
+        apply_config(),
     )
 }
 
@@ -170,6 +205,7 @@ fn app_with_reviewed_reply_details(shell: MockShellTrait, lore_api: LoreApiHandl
         shell,
         lore_api,
         reviewed_reply_details_state(),
+        apply_config(),
     )
 }
 
@@ -178,9 +214,10 @@ fn app_with_details(
     shell: MockShellTrait,
     lore_api: LoreApiHandle,
     details: PatchsetDetailsState,
+    config: ConfigSnapshot,
 ) -> App {
     let mut app = App::new(
-        apply_config(),
+        config,
         dummy_config_handle(),
         BootstrapLoreData {
             mailing_lists: vec![sample_mailing_list()],
@@ -258,6 +295,8 @@ fn reviewed_reply_lore_handle(saved_reviewed: SharedReviewedState) -> LoreApiHan
     LoreApiHandle::new(tx)
 }
 
+// `stay_on_applied_branch` is deliberately absent so the tests exercise the
+// serde default (true) that existing config files inherit.
 fn apply_config() -> ConfigSnapshot {
     serde_json::from_value::<ConfigState>(serde_json::json!({
         "kernel_trees": {
@@ -269,6 +308,23 @@ fn apply_config() -> ConfigSnapshot {
         "target_kernel_tree": "linux",
         "git_am_options": "--signoff --3way",
         "git_am_branch_prefix": "patchset-"
+    }))
+    .expect("test config should deserialize")
+    .to_snapshot()
+}
+
+fn apply_config_stay_disabled() -> ConfigSnapshot {
+    serde_json::from_value::<ConfigState>(serde_json::json!({
+        "kernel_trees": {
+            "linux": {
+                "path": KERNEL_TREE_PATH,
+                "branch": BASE_BRANCH
+            }
+        },
+        "target_kernel_tree": "linux",
+        "git_am_options": "--signoff --3way",
+        "git_am_branch_prefix": "patchset-",
+        "stay_on_applied_branch": false
     }))
     .expect("test config should deserialize")
     .to_snapshot()
