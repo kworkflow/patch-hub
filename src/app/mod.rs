@@ -414,7 +414,7 @@ impl App {
                 &self.services.lore_api,
             );
             let popup = match action_service.apply_patchset(&request, &self.state.config) {
-                Ok(msg) => popup::AppPopup::info("Patchset Apply Success", msg),
+                Ok(applied) => popup::AppPopup::info("Patchset Apply Success", applied.message),
                 Err(msg) => popup::AppPopup::info("Patchset Apply Fail", msg),
             };
 
