@@ -426,22 +426,31 @@ impl App {
             );
             let popup = match action_service.apply_patchset(&request, &self.state.config) {
                 Ok(applied) => {
-                    let record = kw_apply_record(details, &self.state.config, &applied);
-                    match self.services.kw_history.record_apply(record) {
-                        Ok(()) => popup::AppPopup::info("Patchset Apply Success", applied.message),
-                        // The git apply itself succeeded; a history-write
-                        // failure must not turn it into a reported failure.
-                        Err(e) => {
-                            warn!(error = %e, "failed to record kw apply history");
-                            popup::AppPopup::info(
-                                "Patchset Apply Success",
-                                format!(
-                                    "{}\n\nWarning: the apply was not recorded in the kw history: {e}",
-                                    applied.message
-                                ),
+                    let popup_body = match kw_apply_record(details, &self.state.config, &applied) {
+                        // Defensive: the apply itself resolved this tree from
+                        // the same snapshot, so this is unreachable unless the
+                        // config changed mid-apply.
+                        None => {
+                            warn!("kw apply history skipped: target kernel tree is no longer configured");
+                            format!(
+                                "{}\n\nWarning: the apply was not recorded in the kw history: target kernel tree is no longer configured",
+                                applied.message
                             )
                         }
-                    }
+                        // The git apply itself succeeded; a history-write
+                        // failure must not turn it into a reported failure.
+                        Some(record) => match self.services.kw_history.record_apply(record) {
+                            Ok(()) => applied.message,
+                            Err(e) => {
+                                warn!(error = %e, "failed to record kw apply history");
+                                format!(
+                                    "{}\n\nWarning: the apply was not recorded in the kw history: {e}\nIf this warning keeps appearing, inspect or delete that file.",
+                                    applied.message
+                                )
+                            }
+                        },
+                    };
+                    popup::AppPopup::info("Patchset Apply Success", popup_body)
                 }
                 Err(msg) => popup::AppPopup::info("Patchset Apply Fail", msg),
             };
@@ -524,26 +533,18 @@ fn kw_apply_record(
     details: &PatchsetDetailsState,
     config: &ConfigSnapshot,
     applied: &AppliedPatchset,
-) -> KwApplyRecord {
-    // Both were already validated by the apply itself, which cannot have
-    // succeeded without a resolvable target kernel tree.
-    let kernel_tree_id = config
-        .target_kernel_tree()
-        .as_ref()
-        .expect("invariant: a successful apply implies a target kernel tree was set")
-        .clone();
-    let kernel_tree = config
-        .get_kernel_tree(&kernel_tree_id)
-        .expect("invariant: a successful apply implies the target kernel tree exists");
+) -> Option<KwApplyRecord> {
+    let kernel_tree_id = config.target_kernel_tree().as_ref()?;
+    let kernel_tree = config.get_kernel_tree(kernel_tree_id)?;
 
-    KwApplyRecord {
+    Some(KwApplyRecord {
         message_id: details.representative_patch.message_id().href.clone(),
-        kernel_tree_id,
+        kernel_tree_id: kernel_tree_id.clone(),
         tree_path: kernel_tree.path().clone(),
         applied_branch: applied.applied_branch.clone(),
         base_branch: kernel_tree.branch().clone(),
         applied_at: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
-    }
+    })
 }
 
 #[cfg(test)]

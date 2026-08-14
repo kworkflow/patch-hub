@@ -63,7 +63,7 @@ fn default_env() -> (MockEnvTrait, PathBuf) {
     (mock, home)
 }
 
-/// Same logical content as `test_samples/app/config/config.json`, but paths under `root` so
+/// Fully-populated config file content, with paths under `root` so
 /// `ensure_directories` stays inside a writable temp tree. After bootstrap, `normalize_derived_paths`
 /// overwrites patchset/data paths from `cache_dir` and `data_dir` only (explicit per-field paths
 /// in JSON are not preserved).

@@ -135,6 +135,9 @@ pub(crate) fn validate_update(
 
     let stay_on_applied_branch = match &draft.stay_on_applied_branch {
         None => None,
+        Some(s) if s.trim().is_empty() => {
+            return Err(ConfigError::InvalidStayOnAppliedBranch(s.clone()));
+        }
         Some(s) => Some(
             s.trim()
                 .parse::<bool>()

@@ -201,7 +201,12 @@ async fn apply_success_with_history_write_failure_keeps_success_popup() {
     assert_info_popup_contains(
         app.state.popup.as_ref(),
         "Patchset Apply Success",
-        &["applied successfully", "was not recorded in the kw history"],
+        &[
+            "applied successfully",
+            "was not recorded in the kw history",
+            "disk full",
+            "inspect or delete that file",
+        ],
     );
 }
 
