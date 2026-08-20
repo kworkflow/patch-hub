@@ -7,7 +7,7 @@ use thiserror::Error;
 use crate::infrastructure::process::ProcessError;
 use crate::{
     infrastructure::{file_system::FileSystemError, shell::ShellError},
-    kw::readiness::KwReadinessError,
+    kw::readiness::{KwReadinessError, TreeReadiness},
 };
 
 #[derive(Debug, Error)]
@@ -35,6 +35,12 @@ pub enum KwStartError {
     ActorUnavailable(String),
     #[error("a kw job is already running")]
     JobAlreadyRunning,
+    #[error("kw binary not found on PATH; install kw and make sure it is on PATH")]
+    KwBinaryMissing,
+    #[error("the kernel tree is not ready: {0}")]
+    TreeNotReady(TreeReadiness),
+    #[error("could not resolve the kw env state: {0}")]
+    Readiness(#[from] KwReadinessError),
     #[error("kw jobs are not supported yet")]
     NotImplemented,
     // Spawning a process is unix-only (ProcessTrait is cfg(unix)).
