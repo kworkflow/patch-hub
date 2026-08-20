@@ -27,7 +27,7 @@ use crate::{
         shell::{ShellCommand, ShellTrait},
     },
     kw::{
-        errors::{KwError, KwStartError},
+        errors::{KwError, KwStartError, TreeGitError},
         handle::KwHandle,
         history::KwHistoryStore,
         messages::{KwMessage, StartRequest},
@@ -63,10 +63,6 @@ enum JobEvent {
 /// Where RestorePreviousBranch switches back to: the branch HEAD was on
 /// when the last job was accepted, and the tree that branch lives in.
 /// Session-only (integration plan §2.1a), deliberately not persisted.
-// Read once RestorePreviousBranch is implemented (the next unit of the
-// build step); kept per the CachePolicy precedent
-// (src/lore/application/cache.rs).
-#[allow(dead_code)]
 struct RestoreContext {
     tree_path: String,
     branch: String,
@@ -80,10 +76,6 @@ struct JobState {
     kernel_tree_id: String,
     branch: String,
     log_path: PathBuf,
-    /// HEAD at accept time, so RestorePreviousBranch can offer to switch
-    /// back after the job. Read once the checkout policy lands.
-    #[allow(dead_code)]
-    pre_job_branch: Option<String>,
     /// `None` once a cancel has been requested; a second `Cancel` is an
     /// idempotent ack.
     cancel_tx: Option<oneshot::Sender<()>>,
@@ -219,10 +211,8 @@ impl KwActor {
                 );
                 ControlFlow::Continue(())
             }
-            // Restoring needs the dirty-worktree check and `git switch`,
-            // which arrive with the checkout policy in the build step.
             KwMessage::RestorePreviousBranch { reply } => {
-                send_kw_reply(message_name, reply, Err(KwError::NoRecordedBranch));
+                send_kw_reply(message_name, reply, self.restore_previous_branch());
                 ControlFlow::Continue(())
             }
             KwMessage::Shutdown { reply } => {
@@ -295,7 +285,7 @@ impl KwActor {
         // Refuse on a dirty worktree before touching anything (§2.1a): a
         // switch could otherwise carry unrelated changes into the build
         // branch.
-        self.check_worktree_clean(&request.tree)?;
+        self.check_worktree_clean(request.tree.path())?;
 
         // Probed before anything touches the tree: the `git switch` below
         // goes between this probe and the spawn, and the probe must still
@@ -310,7 +300,7 @@ impl KwActor {
 
         // The checkout policy (§2.1a): the job runs on the requested
         // branch, and HEAD stays there after the job.
-        self.switch_to_branch(&request.tree, &request.branch)?;
+        self.switch_to_branch(request.tree.path(), &request.branch)?;
 
         self.fs.create_dir_all(&self.kw_log_dir)?;
         // Millisecond suffix: two jobs started within the same second must
@@ -337,7 +327,7 @@ impl KwActor {
         // after the switch (log-dir creation, spawn) — never clobbers a
         // previous job's restore target. An accepted job with an unprobed
         // pre-job HEAD clears it: nothing honest is left to restore to.
-        self.last_restore = pre_job_branch.clone().map(|branch| RestoreContext {
+        self.last_restore = pre_job_branch.map(|branch| RestoreContext {
             tree_path: request.tree.path().to_string(),
             branch,
         });
@@ -347,7 +337,6 @@ impl KwActor {
             kernel_tree_id: request.kernel_tree_id.clone(),
             branch: request.branch.clone(),
             log_path: log_path.clone(),
-            pre_job_branch,
             cancel_tx: Some(cancel_tx),
         });
         self.set_status(KwJobStatus::Running {
@@ -452,43 +441,73 @@ impl KwActor {
         )?)
     }
 
-    /// Refuses the start unless the tree's git state verifies clean
-    /// (§2.1a). A probe that itself fails — git missing, not a repository
-    /// — refuses too: starting a job on a tree whose state is unknown
-    /// could carry unrecorded changes into the build branch.
-    fn check_worktree_clean(&self, tree: &KernelTree) -> Result<(), KwStartError> {
-        let cmd = ShellCommand::new("git").args(["-C", tree.path(), "status", "--porcelain"]);
+    /// Fails unless the tree's git state verifies clean (§2.1a). A probe
+    /// that itself fails — git missing, not a repository — fails too:
+    /// starting a job or restoring a branch on a tree whose state is
+    /// unknown could carry unrecorded changes across branches.
+    fn check_worktree_clean(&self, tree_path: &str) -> Result<(), TreeGitError> {
+        let cmd = ShellCommand::new("git").args(["-C", tree_path, "status", "--porcelain"]);
         let output = self
             .shell
             .execute(&cmd)
-            .map_err(|error| KwStartError::GitStateProbe(error.to_string()))?;
+            .map_err(|error| TreeGitError::Probe(error.to_string()))?;
         if !output.success {
-            return Err(KwStartError::GitStateProbe(
+            return Err(TreeGitError::Probe(
                 String::from_utf8_lossy(&output.stderr).trim().to_string(),
             ));
         }
         if !output.stdout.is_empty() {
-            return Err(KwStartError::DirtyWorktree);
+            return Err(TreeGitError::DirtyWorktree);
         }
         Ok(())
     }
 
-    /// Switches the tree onto the branch the job must run on (§2.1a); HEAD
-    /// stays there after the job. A failure refuses the start with git's
-    /// stderr, which names the usual causes (no such branch, a rebase or
-    /// merge in progress).
-    fn switch_to_branch(&self, tree: &KernelTree, branch: &str) -> Result<(), KwStartError> {
-        let cmd = ShellCommand::new("git").args(["-C", tree.path(), "switch", branch]);
+    /// Switches the tree onto `branch`. A failure carries git's stderr,
+    /// which names the usual causes (no such branch, a rebase or merge in
+    /// progress).
+    fn switch_to_branch(&self, tree_path: &str, branch: &str) -> Result<(), TreeGitError> {
+        let cmd = ShellCommand::new("git").args(["-C", tree_path, "switch", branch]);
         let output = self
             .shell
             .execute(&cmd)
-            .map_err(|error| KwStartError::CheckoutFailed(error.to_string()))?;
+            .map_err(|error| TreeGitError::Switch(error.to_string()))?;
         if !output.success {
-            return Err(KwStartError::CheckoutFailed(
+            return Err(TreeGitError::Switch(
                 String::from_utf8_lossy(&output.stderr).trim().to_string(),
             ));
         }
         Ok(())
+    }
+
+    /// Switches the tree that ran the last job back to the branch HEAD was
+    /// on when that job was accepted (§2.1a). Refuses while a job is
+    /// running (its branch is in use), when nothing was recorded, and on
+    /// a dirty worktree. Only a successful switch consumes the context —
+    /// a refused restore stays available for a retry.
+    fn restore_previous_branch(&mut self) -> Result<(), KwError> {
+        if self.job.is_some() {
+            return Err(KwError::JobRunning);
+        }
+        let Some(restore) = self.last_restore.take() else {
+            return Err(KwError::NoRecordedBranch);
+        };
+        match self
+            .check_worktree_clean(&restore.tree_path)
+            .and_then(|()| self.switch_to_branch(&restore.tree_path, &restore.branch))
+        {
+            Ok(()) => {
+                tracing::info!(
+                    tree = restore.tree_path,
+                    branch = restore.branch,
+                    "restored pre-job branch"
+                );
+                Ok(())
+            }
+            Err(error) => {
+                self.last_restore = Some(restore);
+                Err(error.into())
+            }
+        }
     }
 
     /// The tree's current branch, probed via git. An unresolvable HEAD
@@ -649,7 +668,7 @@ mod tests {
         io,
         path::Path,
         sync::{
-            atomic::{AtomicU64, Ordering},
+            atomic::{AtomicBool, AtomicU64, Ordering},
             Mutex,
         },
         time::Duration,
@@ -774,6 +793,79 @@ mod tests {
             Ok(output(b"master\n", b"", true))
         });
         (shell, calls)
+    }
+
+    /// A stateful shell double for the restore tests: kw's version probe
+    /// answers 0.10.0, `git status --porcelain` reflects the dirty flag,
+    /// the HEAD probe reports `head` (with the trailing newline git
+    /// prints), and a successful `git switch` updates `head` — mirroring
+    /// a real worktree the actor switches between branches.
+    struct GitStub {
+        head: Arc<Mutex<String>>,
+        dirty: Arc<AtomicBool>,
+        fail_switches: Arc<AtomicBool>,
+    }
+
+    impl GitStub {
+        fn on_branch(branch: &str) -> Self {
+            Self {
+                head: Arc::new(Mutex::new(branch.to_string())),
+                dirty: Arc::new(AtomicBool::new(false)),
+                fail_switches: Arc::new(AtomicBool::new(false)),
+            }
+        }
+
+        fn set_dirty(&self, dirty: bool) {
+            self.dirty.store(dirty, Ordering::Relaxed);
+        }
+
+        fn set_fail_switches(&self, fail: bool) {
+            self.fail_switches.store(fail, Ordering::Relaxed);
+        }
+
+        fn head(&self) -> String {
+            self.head.lock().unwrap().clone()
+        }
+
+        fn shell(&self) -> MockShellTrait {
+            let head = Arc::clone(&self.head);
+            let dirty = Arc::clone(&self.dirty);
+            let fail_switches = Arc::clone(&self.fail_switches);
+            let mut shell = MockShellTrait::new();
+            shell.expect_execute().returning(move |cmd| {
+                let output = |stdout: &[u8]| ShellOutput {
+                    stdout: stdout.to_vec(),
+                    stderr: Vec::new(),
+                    success: true,
+                };
+                if cmd.program == "kw" {
+                    return Ok(output(KW_VERSION_OK));
+                }
+                if cmd.args.iter().any(|arg| arg == "status") {
+                    let stdout: &[u8] = if dirty.load(Ordering::Relaxed) {
+                        b" M src/main.c\n"
+                    } else {
+                        b""
+                    };
+                    return Ok(output(stdout));
+                }
+                if cmd.args.iter().any(|arg| arg == "switch") {
+                    if fail_switches.load(Ordering::Relaxed) {
+                        return Ok(ShellOutput {
+                            stdout: Vec::new(),
+                            stderr: b"error: you need to resolve your current index first\n"
+                                .to_vec(),
+                            success: false,
+                        });
+                    }
+                    *head.lock().unwrap() = cmd.args.last().unwrap().clone();
+                    return Ok(output(b""));
+                }
+                let current = format!("{}\n", head.lock().unwrap());
+                Ok(output(current.as_bytes()))
+            });
+            shell
+        }
     }
 
     /// fs answers for a ready kernel tree with no active kw env: the
@@ -1377,6 +1469,132 @@ mod tests {
         assert!(matches!(cancel, Err(KwError::NoJobRunning)));
         assert!(matches!(restore, Err(KwError::NoRecordedBranch)));
         handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn restore_switches_back_to_pre_job_branch_and_is_consumed() {
+        let git = GitStub::on_branch("master");
+        let (handle, process, log_dir) =
+            spawn_job_actor_with_mocks("restore", git.shell(), ready_fs());
+        let mut watch = handle.watch_status().await.unwrap();
+
+        handle.start_build(start_request()).await.unwrap();
+        // The checkout policy left HEAD on the build branch.
+        assert_eq!(git.head(), "patchset-2026-08-01-17-30-00");
+        process.last_child().finish(0);
+        let status = wait_for_terminal_status(&mut watch).await;
+        assert!(matches!(status, KwJobStatus::Succeeded { .. }));
+
+        handle.restore_previous_branch().await.unwrap();
+        assert_eq!(git.head(), "master");
+
+        // A successful restore consumes the context: a second restore has
+        // nothing to do.
+        let err = handle.restore_previous_branch().await.unwrap_err();
+        assert!(matches!(err, KwError::NoRecordedBranch));
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn restore_refused_while_job_is_running() {
+        let git = GitStub::on_branch("master");
+        let (handle, process, log_dir) =
+            spawn_job_actor_with_mocks("restore-running", git.shell(), ready_fs());
+
+        handle.start_build(start_request()).await.unwrap();
+        let err = handle.restore_previous_branch().await.unwrap_err();
+        assert!(matches!(err, KwError::JobRunning));
+
+        // The context survives the refusal: restore works once the job
+        // ends.
+        process.last_child().finish(0);
+        let mut watch = handle.watch_status().await.unwrap();
+        let _ = wait_for_terminal_status(&mut watch).await;
+        handle.restore_previous_branch().await.unwrap();
+        assert_eq!(git.head(), "master");
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn restore_refused_when_worktree_is_dirty() {
+        let git = GitStub::on_branch("master");
+        let (handle, process, log_dir) =
+            spawn_job_actor_with_mocks("restore-dirty", git.shell(), ready_fs());
+        let mut watch = handle.watch_status().await.unwrap();
+
+        handle.start_build(start_request()).await.unwrap();
+        process.last_child().finish(0);
+        let _ = wait_for_terminal_status(&mut watch).await;
+
+        git.set_dirty(true);
+        let err = handle.restore_previous_branch().await.unwrap_err();
+        assert!(matches!(err, KwError::DirtyWorktree));
+        // The refused restore did not touch the tree.
+        assert_eq!(git.head(), "patchset-2026-08-01-17-30-00");
+
+        // The context survives: clean the tree and retry.
+        git.set_dirty(false);
+        handle.restore_previous_branch().await.unwrap();
+        assert_eq!(git.head(), "master");
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn restore_failure_keeps_the_context_for_a_retry() {
+        let git = GitStub::on_branch("master");
+        let (handle, process, log_dir) =
+            spawn_job_actor_with_mocks("restore-fail", git.shell(), ready_fs());
+        let mut watch = handle.watch_status().await.unwrap();
+
+        handle.start_build(start_request()).await.unwrap();
+        process.last_child().finish(0);
+        let _ = wait_for_terminal_status(&mut watch).await;
+
+        git.set_fail_switches(true);
+        let err = handle.restore_previous_branch().await.unwrap_err();
+        assert!(matches!(err, KwError::CheckoutFailed(_)));
+        assert!(err.to_string().contains("resolve your current index"));
+
+        git.set_fail_switches(false);
+        handle.restore_previous_branch().await.unwrap();
+        assert_eq!(git.head(), "master");
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn refused_start_does_not_clobber_the_restore_context() {
+        let git = GitStub::on_branch("master");
+        let (handle, process, log_dir) =
+            spawn_job_actor_with_mocks("restore-clobber", git.shell(), ready_fs());
+        let mut watch = handle.watch_status().await.unwrap();
+
+        handle.start_build(start_request()).await.unwrap();
+        process.last_child().finish(0);
+        let _ = wait_for_terminal_status(&mut watch).await;
+        assert_eq!(git.head(), "patchset-2026-08-01-17-30-00");
+
+        // This start is refused at spawn — after its HEAD probe and
+        // switch — and must not overwrite the recorded restore target.
+        process.refuse_spawns(true);
+        let mut second = start_request();
+        second.branch = "patchset-two".to_string();
+        let err = handle.start_build(second).await.unwrap_err();
+        assert!(matches!(err, KwStartError::Spawn(_)));
+        assert_eq!(git.head(), "patchset-two");
+
+        handle.restore_previous_branch().await.unwrap();
+        assert_eq!(git.head(), "master");
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
     }
 
     #[tokio::test]
