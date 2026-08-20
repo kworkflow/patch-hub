@@ -27,6 +27,7 @@ use crate::{
         shell::{ShellCommand, ShellTrait},
     },
     kw::{
+        argv,
         errors::{KwError, KwStartError, TreeGitError},
         handle::KwHandle,
         history::KwHistoryStore,
@@ -249,9 +250,9 @@ impl KwActor {
     ///
     /// Refusals, in order: a job already running, no kw binary on PATH,
     /// unresolvable kw-env state, a tree that fails the readiness probes,
-    /// a dirty worktree, or a failed branch switch. The argv is still the
-    /// skeleton's minimal `kw build --alert=n`; the real argv builder
-    /// (reserved flags, extra-args merge) lands later in the build step.
+    /// a dirty worktree, or a failed branch switch. The argv comes from
+    /// the reserved-flags merge (§2.1f): patch-hub's own flags win over
+    /// the request's extra args.
     fn start_job(&mut self, kind: KwJobKind, request: StartRequest) -> Result<(), KwStartError> {
         if self.job.is_some() {
             return Err(KwStartError::JobAlreadyRunning);
@@ -309,7 +310,7 @@ impl KwActor {
             "build-{}.log",
             chrono::Utc::now().format("%Y%m%d-%H%M%S-%3f")
         ));
-        let cmd = ShellCommand::new("kw").args(["build", "--alert=n"]);
+        let cmd = ShellCommand::new("kw").args(argv::build_argv(&request.extra_args));
         let cwd = PathBuf::from(request.tree.path());
         let process = self.process.spawn(&cmd, &cwd, &log_path)?;
 
@@ -720,6 +721,7 @@ mod tests {
             kernel_tree_id: "mainline".to_string(),
             tree: kernel_tree(Path::new("/home/user/linux")),
             branch: "patchset-2026-08-01-17-30-00".to_string(),
+            extra_args: Vec::new(),
         }
     }
 
@@ -1124,6 +1126,36 @@ mod tests {
             "unexpected status: {status:?}"
         );
 
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_build_merges_extra_args_into_the_spawned_argv() {
+        let (handle, process, log_dir) = spawn_job_actor("extra-args");
+
+        let mut request = start_request();
+        request.extra_args = [
+            "--verbose",
+            "--alert=vv",
+            "--save-log-to",
+            "/tmp/x.log",
+            "--ccache",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+        handle.start_build(request).await.unwrap();
+
+        let spawned = process.spawned();
+        // Reserved options win: the user's --alert and --save-log-to are
+        // stripped, the rest passes through in order.
+        assert_eq!(
+            ["build", "--alert=n", "--verbose", "--ccache"].as_slice(),
+            spawned[0].args.as_slice()
+        );
+
+        process.last_child().finish(0);
         handle.shutdown().await;
         std::fs::remove_dir_all(&log_dir).unwrap();
     }

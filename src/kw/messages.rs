@@ -23,6 +23,11 @@ pub struct StartRequest {
     /// Branch the job must run on; the actor switches the tree onto it
     /// before spawning and leaves HEAD there after the job.
     pub branch: String,
+    /// Extra kw CLI tokens, already whitespace-split by the caller.
+    /// Reserved options (integration plan §2.1f: `--alert`,
+    /// `--save-log-to`, and the deploy-time set) are stripped from them —
+    /// patch-hub's own argv wins.
+    pub extra_args: Vec<String>,
 }
 
 pub enum KwMessage {
