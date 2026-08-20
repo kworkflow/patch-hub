@@ -7,6 +7,13 @@
 //! kernel build. The actor composes the readiness probes from
 //! [`crate::kw::readiness`] and records applies through the shared
 //! [`KwHistoryStore`](crate::kw::history::KwHistoryStore).
+//!
+//! Tracked note (same class as the integration plan's §2.1i): the actor
+//! runs quick blocking calls inline in its async task — `create_dir_all`,
+//! the HEAD-probe `git` call, and the history store's atomic write — per
+//! the ConfigActor precedent. They are all milliseconds-scale; if a real
+//! stall ever shows up while a long job runs, they should move behind
+//! `spawn_blocking` like the other actors' heavy work.
 
 use std::{ops::ControlFlow, path::PathBuf, process::ExitStatus, sync::Arc, time::Duration};
 
@@ -220,6 +227,9 @@ impl KwActor {
                     tracing::info!("killing kw job process group during shutdown");
                     self.request_cancel().ok();
                     while self.job.is_some() {
+                        // `None` is unreachable — the actor holds
+                        // `job_event_tx`, so the channel never closes —
+                        // but break defensively rather than spin.
                         match self.job_event_rx.recv().await {
                             Some(event) => self.handle_job_event(event),
                             None => break,
@@ -250,6 +260,17 @@ impl KwActor {
             return Err(KwStartError::JobAlreadyRunning);
         }
 
+        // Probed before anything touches the tree: once the checkout policy
+        // lands, `git switch <selected branch>` goes between this probe and
+        // the spawn, and the probe must still capture the pre-job HEAD or
+        // RestorePreviousBranch would "restore" the branch the job switched
+        // to. An unprobed HEAD (detached, or not a git repo) records
+        // nothing rather than a wrong branch.
+        let pre_job_branch = match self.head_branch(&request.tree) {
+            branch if branch.is_empty() => None,
+            branch => Some(branch),
+        };
+
         self.fs.create_dir_all(&self.kw_log_dir)?;
         // Millisecond suffix: two jobs started within the same second must
         // not share a log file — spawn truncates it.
@@ -260,14 +281,6 @@ impl KwActor {
         let cmd = ShellCommand::new("kw").args(["build", "--alert=n"]);
         let cwd = PathBuf::from(request.tree.path());
         let process = self.process.spawn(&cmd, &cwd, &log_path)?;
-
-        // Recorded before the job starts so RestorePreviousBranch can offer
-        // to switch back; an unprobed HEAD (detached, or not a git repo)
-        // records nothing rather than a wrong branch.
-        let pre_job_branch = match self.head_branch(&request.tree) {
-            branch if branch.is_empty() => None,
-            branch => Some(branch),
-        };
 
         let (cancel_tx, cancel_rx) = oneshot::channel();
         spawn(run_job(process, cancel_rx, self.job_event_tx.clone()));
@@ -327,6 +340,7 @@ impl KwActor {
                         KwJobStatus::Succeeded {
                             kind: job.kind,
                             kernel_tree_id: job.kernel_tree_id,
+                            branch: job.branch,
                             log_path: job.log_path,
                         }
                     }
@@ -447,19 +461,14 @@ async fn cancel_job(process: &mut dyn RunningProcess) -> JobOutcome {
         tracing::warn!(%error, "failed to SIGTERM kw job process group");
     }
     match tokio::time::timeout(TERM_GRACE, process.wait()).await {
-        // A successful reap after the signal means the process had already
-        // exited before it landed (kill of a dead group is a no-op, and a
-        // signaled process reaps as signal-terminated, not as success):
-        // report the real outcome, not Cancelled.
-        Ok(Ok(status)) if status.success() => JobOutcome::Exited(status),
-        Ok(_) => JobOutcome::Cancelled,
+        Ok(outcome) => outcome_after_cancel(outcome),
         Err(_) => {
             tracing::warn!("kw job ignored SIGTERM; escalating to SIGKILL");
             if let Err(error) = process.force_kill() {
                 tracing::warn!(%error, "failed to SIGKILL kw job process group");
             }
             match tokio::time::timeout(KILL_GRACE, process.wait()).await {
-                Ok(_) => JobOutcome::Cancelled,
+                Ok(outcome) => outcome_after_cancel(outcome),
                 Err(_) => {
                     tracing::warn!(
                         "kw job process group could not be reaped after SIGKILL; giving up"
@@ -468,6 +477,30 @@ async fn cancel_job(process: &mut dyn RunningProcess) -> JobOutcome {
                 }
             }
         }
+    }
+}
+
+/// Maps a reap result observed after a cancel request. A signal-terminated
+/// process means our SIGTERM/SIGKILL landed — the job was really cancelled.
+/// A plain exit means the process finished on its own before the signal:
+/// report the real outcome, because a cancel must not mask a failure the
+/// build history (and deploy-alone readiness) needs to see.
+///
+/// Known, accepted edges: a process that *traps* our SIGTERM and exits 0
+/// counts as success (kw is bash, so this is possible in principle), and an
+/// external signal racing a cancel (e.g. the OOM killer) reads as
+/// Cancelled. Both are indistinguishable from the honest cases without
+/// comparing who signaled first, and both favor showing the user real
+/// output over inventing failures.
+fn outcome_after_cancel(result: Result<ExitStatus, ProcessError>) -> JobOutcome {
+    use std::os::unix::process::ExitStatusExt;
+
+    match result {
+        Ok(status) => match status.signal() {
+            Some(_) => JobOutcome::Cancelled,
+            None => JobOutcome::Exited(status),
+        },
+        Err(error) => JobOutcome::WaitFailed(error),
     }
 }
 
@@ -775,8 +808,8 @@ mod tests {
     /// Waits until the status leaves `Idle`/`Running` and returns the
     /// terminal status. The receiver may have observed the `Running`
     /// transition first, so a single `changed()` is not enough. The timeout
-    /// is generous because the SIGKILL-escalation test waits out the
-    /// SIGTERM grace period.
+    /// backstops against a wedged actor; tests that exercise the grace
+    /// periods run with paused time instead of waiting them out.
     async fn wait_for_terminal_status(
         watch: &mut watch::Receiver<KwStatusSnapshot>,
     ) -> KwJobStatus {
@@ -1047,6 +1080,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cancel_racing_a_failed_exit_reports_failure() {
+        let (handle, process, log_dir) = spawn_job_actor("cancel-race-fail");
+        let mut watch = handle.watch_status().await.unwrap();
+
+        handle.start_build(start_request()).await.unwrap();
+        process.last_child().finish(2);
+        // Whether the actor processes the exit or the cancel first is
+        // timing-dependent, but a plain exit (not signal-terminated) means
+        // the process failed on its own before the signal landed: the
+        // terminal status must be Failed either way, so the build history
+        // records a failure rather than a cancel.
+        let _ = handle.cancel().await;
+
+        let status = wait_for_terminal_status(&mut watch).await;
+        assert!(
+            matches!(
+                status,
+                KwJobStatus::Failed {
+                    exit_code: Some(2),
+                    ..
+                }
+            ),
+            "expected Failed(2), got {status:?}"
+        );
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    // Paused time: the runtime auto-advances through the grace-period
+    // timers instead of burning wall-clock seconds on them.
+    #[tokio::test(start_paused = true)]
     async fn cancel_escalates_to_sigkill_when_sigterm_is_ignored() {
         let (handle, process, log_dir) = spawn_job_actor("sigkill-escalation");
         process.ignore_sigterm(true);
@@ -1055,7 +1120,6 @@ mod tests {
         handle.start_build(start_request()).await.unwrap();
         handle.cancel().await.unwrap();
 
-        // Waits out the SIGTERM grace period before the escalation.
         let status = wait_for_terminal_status(&mut watch).await;
         assert!(
             matches!(status, KwJobStatus::Cancelled { .. }),
