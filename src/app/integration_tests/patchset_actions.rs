@@ -22,7 +22,7 @@ use crate::{
         process::FakeProcess,
         shell::{MockShellTrait, ShellCommand, ShellOutput},
     },
-    kw::{actor::KwActor, history::MockKwHistoryStore},
+    kw::{actor::KwActor, history::MockKwHistoryStore, messages::StartRequest},
     lore::application::{
         cache::BootstrapLoreData, handle::LoreApiHandle, messages::LoreApiMessage,
     },
@@ -252,6 +252,41 @@ async fn apply_failure_does_not_record_history() {
 }
 
 #[tokio::test]
+async fn apply_is_blocked_while_a_kw_job_runs() {
+    // No scripted outputs: any apply-time git call fails the test.
+    let (shell, calls) = shell_with_outputs(vec![]);
+    let log_dir = kw_log_dir("apply-blocked");
+    let mut app = app_with_details_and_kw(
+        clean_fs(),
+        shell,
+        lore_handle_with_persistence(),
+        apply_details_state(),
+        apply_config(),
+        history_store_allowing_writes(),
+        kw_actor_shell(),
+        kw_actor_fs(),
+        kw_actor_env(),
+        log_dir.clone(),
+    );
+
+    let kw = app.services.kw.as_ref().expect("tests run on unix");
+    kw.start_build(kw_start_request()).await.unwrap();
+
+    app.consolidate_patchset_actions().await.unwrap();
+
+    assert_apply_action(&app, false);
+    assert_info_popup_contains(
+        app.state.popup.as_ref(),
+        "Patchset Apply Blocked",
+        &["kw job is running", "Wait for the job to finish"],
+    );
+    assert!(calls.lock().unwrap().is_empty());
+
+    shutdown_kw(&app).await;
+    std::fs::remove_dir_all(&log_dir).unwrap();
+}
+
+#[tokio::test]
 async fn reviewed_reply_success_records_persists_and_resets_reply_action() {
     let saved_reviewed = Arc::new(Mutex::new(None));
     let lore_api = reviewed_reply_lore_handle(Arc::clone(&saved_reviewed));
@@ -352,15 +387,44 @@ fn app_with_details(
     config: ConfigSnapshot,
     kw_history: MockKwHistoryStore,
 ) -> App {
+    app_with_details_and_kw(
+        fs,
+        shell,
+        lore_api,
+        details,
+        config,
+        kw_history,
+        MockShellTrait::new(),
+        MockFileSystemTrait::new(),
+        MockEnvTrait::new(),
+        PathBuf::from("/tmp/patch-hub-test-kw-logs"),
+    )
+}
+
+/// Variant of [`app_with_details`] whose kw actor gets its own mocks and
+/// log dir, for tests that start jobs through the app's kw handle.
+#[allow(clippy::too_many_arguments)]
+fn app_with_details_and_kw(
+    fs: MockFileSystemTrait,
+    shell: MockShellTrait,
+    lore_api: LoreApiHandle,
+    details: PatchsetDetailsState,
+    config: ConfigSnapshot,
+    kw_history: MockKwHistoryStore,
+    kw_shell: MockShellTrait,
+    kw_fs: MockFileSystemTrait,
+    kw_env: MockEnvTrait,
+    kw_log_dir: PathBuf,
+) -> App {
     // Apply history is recorded through the real actor wrapping the mock
     // store, mirroring production wiring.
     let kw = KwActor::spawn(
         Arc::new(kw_history),
         Arc::new(FakeProcess::new()),
-        Arc::new(MockShellTrait::new()),
-        Arc::new(MockFileSystemTrait::new()),
-        Arc::new(MockEnvTrait::new()),
-        PathBuf::from("/tmp/patch-hub-test-kw-logs"),
+        Arc::new(kw_shell),
+        Arc::new(kw_fs),
+        Arc::new(kw_env),
+        kw_log_dir,
     );
     let mut app = App::new(
         config,
@@ -521,6 +585,80 @@ fn command_parts(cmd: &ShellCommand) -> Vec<String> {
     let mut parts = vec![cmd.program.clone()];
     parts.extend(cmd.args.clone());
     parts
+}
+
+/// kw-actor mocks for tests that start jobs through the app's handle:
+/// kw on PATH at the verified version, clean git state, a ready kernel
+/// tree — the happy path through the actor's start probes.
+fn kw_actor_shell() -> MockShellTrait {
+    let mut shell = MockShellTrait::new();
+    shell.expect_execute().returning(|cmd| {
+        let stdout = match cmd.program.as_str() {
+            "kw" => b"kw, version 0.10.0\n".to_vec(),
+            _ if cmd.args.iter().any(|arg| arg == "status") => Vec::new(),
+            _ => b"main\n".to_vec(),
+        };
+        Ok(ShellOutput {
+            stdout,
+            stderr: Vec::new(),
+            success: true,
+        })
+    });
+    shell
+}
+
+fn kw_actor_fs() -> MockFileSystemTrait {
+    let mut fs = MockFileSystemTrait::new();
+    fs.expect_is_dir().returning(|_| true);
+    fs.expect_is_file()
+        .returning(|path| !path.ends_with(".kw/env.current"));
+    fs.expect_exists().returning(|_| true);
+    fs.expect_read_to_string().returning(|_| {
+        Err(FileSystemError::IoError(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "missing",
+        )))
+    });
+    fs.expect_read_dir().returning(|_| {
+        Err(FileSystemError::IoError(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "missing",
+        )))
+    });
+    fs.expect_create_dir_all().returning(|_| Ok(()));
+    fs
+}
+
+fn kw_actor_env() -> MockEnvTrait {
+    let mut env = MockEnvTrait::new();
+    env.expect_which().returning(|_| true);
+    env
+}
+
+/// A real, unique directory: FakeProcess creates the job's log file on
+/// spawn, even though the fs trait is mocked.
+fn kw_log_dir(test_name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "patch-hub-app-kw-logs-{}-{}",
+        test_name,
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+fn kw_start_request() -> StartRequest {
+    StartRequest {
+        kernel_tree_id: "linux".to_string(),
+        tree: serde_json::from_value(serde_json::json!({
+            "path": KERNEL_TREE_PATH,
+            "branch": BASE_BRANCH
+        }))
+        .expect("kernel tree should deserialize"),
+        branch: "patchset-2026-08-20-15-00-00".to_string(),
+        extra_args: Vec::new(),
+    }
 }
 
 fn command(parts: &[&str]) -> Vec<String> {
