@@ -1,14 +1,17 @@
 //! Readiness probes for running `kw build` / `kw deploy` on a configured
 //! kernel tree.
 //!
-//! Each probe mirrors the corresponding discovery logic in kw itself
+//! Most probes mirror the corresponding discovery logic in kw itself
 //! (`src/lib/kwlib.sh`, `src/lib/kw_config_loader.sh`, `src/deploy.sh` at
 //! kw 0.10) so patch-hub's idea of "ready" matches what kw will actually
 //! do, instead of being a parallel interpretation that can silently drift
-//! from it. The probes are pure functions over injected infrastructure
-//! traits; KwActor composes them into the `GetReadiness` snapshot.
+//! from it. The deliberate divergences — the `arch`-unset glob fallback
+//! and the non-recursive boot-dir scan — are documented on
+//! [`find_newest_kernel_image`]. The probes are pure functions over
+//! injected infrastructure traits; KwActor composes them into the
+//! `GetReadiness` snapshot.
 
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use thiserror::Error;
 
 use std::{
@@ -22,7 +25,10 @@ use crate::infrastructure::{
     file_system::{FileSystemError, FileSystemTrait},
     shell::{ShellCommand, ShellTrait},
 };
-use crate::{config::KernelTree, kw::history::{KwBuildRecord, KwHistoryStore}};
+use crate::{
+    config::KernelTree,
+    kw::history::{KwBuildRecord, KwHistoryStore},
+};
 
 /// Errors from readiness probes for states where "absent" is not a normal
 /// situation (unlike a missing `.kw` dir, which is a readiness verdict).
@@ -38,9 +44,10 @@ pub enum KwReadinessError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TreeReadiness {
     /// Kernel root, kw-initialized, with a `.config`. `arch` is the literal
-    /// `arch=` value from `.kw/build.config`; `None` means image discovery
-    /// must glob `arch/*/boot/`, the fallback kw's own `arch=` resolution
-    /// effectively produces when the key is unset.
+    /// `arch=` value from `.kw/build.config`; `None` means the key is unset
+    /// and image discovery will glob `arch/*/boot/` instead — a deliberate
+    /// divergence from kw, whose own fallback is the merged kw-config
+    /// `arch` (see [`find_newest_kernel_image`]).
     Ready { arch: Option<String> },
     /// The configured path is not a directory.
     Missing,
@@ -104,7 +111,9 @@ pub fn is_kernel_root(fs: &dyn FileSystemTrait, path: &Path) -> bool {
 
 /// Probes whether `tree_path` is a kernel tree ready for kw operations.
 /// `output_dir` is the resolved kw-env `O=` path when an env is active: kw
-/// then keeps the `.config` there instead of in the tree root.
+/// refuses to activate an env while an in-tree `.config` exists
+/// (`kw_env.sh::validate_env_before_switch`), so with an env active the
+/// `.config` lives only at the env's `O=` dir.
 // No production caller until the readiness aggregation lands; kept per the
 // CachePolicy precedent (src/lore/application/cache.rs).
 #[allow(dead_code)]
@@ -135,13 +144,19 @@ pub fn probe_tree(
 /// value kw's image discovery globs under `arch/<arch>/boot/`. Returns
 /// `None` when the file or the key is absent or empty — kw's
 /// `${build_config[arch]:-...}` expansion treats empty as unset — meaning
-/// the caller should fall back to globbing `arch/*/boot/`.
+/// the caller falls back to globbing `arch/*/boot/`, a deliberate
+/// divergence from kw's merged-config fallback (see
+/// [`find_newest_kernel_image`]).
 pub fn read_build_arch(fs: &dyn FileSystemTrait, tree_path: &Path) -> Option<String> {
     let content = fs
         .read_to_string(&tree_path.join(".kw").join("build.config"))
         .ok()?;
     let arch = parse_kw_config(&content).remove("arch")?;
-    if arch.is_empty() { None } else { Some(arch) }
+    if arch.is_empty() {
+        None
+    } else {
+        Some(arch)
+    }
 }
 
 /// Resolves kw's active build output dir (`O=`) for `tree_path`, mirroring
@@ -187,8 +202,10 @@ pub fn resolve_output_dir(
     }
 
     let cache_base = match env.var("XDG_CACHE_HOME") {
-        Ok(xdg) => xdg,
-        Err(_) => format!("{}/.cache", env.var("HOME")?),
+        // bash's `:-` (and the XDG spec) treat a set-but-empty value as
+        // unset; env::var would happily return it as Ok("").
+        Ok(xdg) if !xdg.is_empty() => xdg,
+        _ => format!("{}/.cache", env.var("HOME")?),
     };
     let trimmed = tree_path.to_string_lossy();
     let normalized = match trimmed.trim_end_matches('/') {
@@ -205,18 +222,29 @@ pub fn resolve_output_dir(
     ))
 }
 
-/// Finds the newest kernel image under `<build_root>/arch/`, mirroring kw's
-/// `get_kernel_binary_name`: a candidate's basename must end with `Image`
-/// (find's `-name '*Image'` is case-sensitive, so `Image.gz` and `image`
+/// Finds the newest kernel image under `<build_root>/arch/`. Candidate
+/// basenames must end with `Image` (the `-name '*Image'` in kw's
+/// `get_kernel_binary_name` is case-sensitive, so `Image.gz` and `image`
 /// are excluded) and the most recently modified one wins, with ties broken
-/// by descending path (kw's `sort -r | head -1`). With `arch`, only
-/// `arch/<arch>/boot/` is probed; without, every `arch/*/boot/` is globbed.
+/// by descending path (kw's `sort -r | head -1`).
 ///
-/// Deliberate deviation: kw's `find` recurses into boot/ subdirectories,
-/// while this scans only the top level. Kernel images for every arch kw
-/// supports are produced directly in boot/ (subdirs like compressed/ or
-/// dts/ never hold `*Image` files), and find does not descend into symlinked
-/// dirs either, so the behaviors agree on real trees.
+/// With `arch`, only `arch/<arch>/boot/` is probed — exactly kw's behavior.
+/// Without `arch` this is a **deliberate divergence**, not a mirror: kw
+/// falls back to the merged kw-config `arch` (packaged default `x86_64`, a
+/// directory that does not exist in kernel trees, so `kw deploy` then fails
+/// with exit 125), and patch-hub does not read kw's global config layers.
+/// Globbing every `arch/*/boot/` gives a more useful readiness signal than
+/// probing a directory that is never there — at the cost of possibly
+/// reporting an image kw would not find. A green image probe with `arch=`
+/// unset is therefore not a guarantee kw deploy will locate one; setting
+/// `arch=` in `.kw/build.config` makes the two agree.
+///
+/// Second deliberate deviation: kw's `find` recurses into boot/
+/// subdirectories, while this scans only the top level. Kernel images for
+/// every arch kw supports are produced directly in boot/ (subdirs like
+/// compressed/ or dts/ never hold `*Image` files), and find does not
+/// descend into symlinked dirs either, so the behaviors agree on real
+/// trees.
 // No production caller until the readiness aggregation lands; kept per the
 // CachePolicy precedent (src/lore/application/cache.rs).
 #[allow(dead_code)]
@@ -340,10 +368,35 @@ fn parse_kw_version(line: &str) -> Option<(u32, u32)> {
     Some((major, minor.parse().ok()?))
 }
 
+impl std::fmt::Display for TreeReadiness {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TreeReadiness::Ready { .. } => write!(f, "ready"),
+            TreeReadiness::Missing => write!(f, "the configured path is not a directory"),
+            TreeReadiness::NotAKernelRoot => write!(
+                f,
+                "the directory is not a kernel tree root (missing files like \
+                 Makefile or dirs like arch/)"
+            ),
+            TreeReadiness::MissingKwDir => {
+                write!(f, "kw init was never run in this tree (no .kw/ directory)")
+            }
+            TreeReadiness::MissingKernelConfig => {
+                write!(
+                    f,
+                    "no .config at the build root (the tree, or the kw env's O=)"
+                )
+            }
+        }
+    }
+}
+
 /// Why a deploy-without-build was refused (integration plan §2.1d). Each
 /// variant's message is the actionable explanation KwOps shows.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum DeployAloneRefusal {
+    #[error("the kernel tree is not ready: {0}")]
+    TreeNotReady(TreeReadiness),
     #[error("no build recorded for this tree and branch; run a build first")]
     NoBuildRecord,
     #[error("the last build of this branch failed; rebuild before deploying")]
@@ -363,7 +416,11 @@ pub enum DeployAloneRefusal {
          rebuild in the active env before deploying"
     )]
     OutputDirMismatch,
-    #[error("no kernel image (*Image) found under arch/*/boot; rebuild before deploying")]
+    #[error(
+        "no kernel image (*Image) found under arch/*/boot; rebuild before deploying \
+         (with no arch= in .kw/build.config, kw probes arch/x86_64/boot/, which \
+         does not exist in kernel trees — set arch= explicitly)"
+    )]
     ImageMissing,
 }
 
@@ -391,7 +448,9 @@ pub fn check_deploy_alone(
             current: head_branch.to_string(),
         });
     }
-    if record.tree_path.as_str() != tree.path().as_str() {
+    // Trailing slashes are normalized away: a config edit that only adds
+    // or drops one does not move the tree.
+    if record.tree_path.trim_end_matches('/') != tree.path().trim_end_matches('/') {
         return Err(DeployAloneRefusal::TreePathDrift {
             recorded: record.tree_path.clone(),
             current: tree.path().to_string(),
@@ -422,6 +481,11 @@ pub struct KwReadiness {
     pub kernel_image: Option<PathBuf>,
     /// Build record for `(kernel_tree_id, head_branch)`, if any.
     pub build_record: Option<KwBuildRecord>,
+    /// Newest build record for the tree across branches, so KwOps can show
+    /// "last build was on branch X" copy even when HEAD has no record.
+    pub latest_build: Option<KwBuildRecord>,
+    /// `Ok(())` is a self-sufficient verdict: tree readiness is already
+    /// conjoined in, so a caller cannot forget to check `tree` as well.
     pub deploy_alone: Result<(), DeployAloneRefusal>,
 }
 
@@ -454,19 +518,27 @@ pub fn evaluate_readiness(
         arch.as_deref(),
     );
     let build_record = history.build_record(kernel_tree_id, head_branch)?;
-    let deploy_alone = check_deploy_alone(
-        build_record.as_ref(),
-        tree,
-        head_branch,
-        output_dir.as_deref(),
-        kernel_image.as_deref(),
-    );
+    let latest_build = history.latest_build_record(kernel_tree_id)?;
+    // The tree's current state is part of the verdict: a stale image and a
+    // matching record must not green-light a deploy on a tree that has
+    // since lost its .config, .kw/, or kernel-root files.
+    let deploy_alone = match &tree_status {
+        TreeReadiness::Ready { .. } => check_deploy_alone(
+            build_record.as_ref(),
+            tree,
+            head_branch,
+            output_dir.as_deref(),
+            kernel_image.as_deref(),
+        ),
+        other => Err(DeployAloneRefusal::TreeNotReady(other.clone())),
+    };
     Ok(KwReadiness {
         kw_binary,
         tree: tree_status,
         output_dir,
         kernel_image,
         build_record,
+        latest_build,
         deploy_alone,
     })
 }
@@ -731,11 +803,7 @@ last_line_without_newline=yes";
         assert_eq!(None, read_build_arch(&OsFileSystem, no_key.path()));
 
         let commented = make_ready_tree("arch-commented");
-        fs::write(
-            commented.path().join(".kw/build.config"),
-            "#arch=riscv\n",
-        )
-        .unwrap();
+        fs::write(commented.path().join(".kw/build.config"), "#arch=riscv\n").unwrap();
         assert_eq!(None, read_build_arch(&OsFileSystem, commented.path()));
 
         let empty = make_ready_tree("arch-empty");
@@ -778,8 +846,7 @@ last_line_without_newline=yes";
             .withf(|key| key == "XDG_CACHE_HOME")
             .returning(|_| Ok("/xdg".to_string()));
 
-        let resolved =
-            resolve_output_dir(&fs, &env, Path::new("/home/user/linux")).unwrap();
+        let resolved = resolve_output_dir(&fs, &env, Path::new("/home/user/linux")).unwrap();
 
         assert_eq!(
             Some(PathBuf::from("/xdg/kw/envs/L2hvbWUvdXNlci9saW51eA==/minix")),
@@ -814,6 +881,34 @@ last_line_without_newline=yes";
     }
 
     #[test]
+    fn resolve_output_dir_treats_empty_xdg_cache_home_as_unset() {
+        // bash's `:-` (and the XDG spec) treat set-but-empty as unset;
+        // otherwise the resolved path would be relative to cwd.
+        let mut fs = MockFileSystemTrait::new();
+        fs.expect_is_file().returning(|_| true);
+        fs.expect_read_to_string()
+            .returning(|_| Ok("minix\n".to_string()));
+        let mut env = MockEnvTrait::new();
+        env.expect_var()
+            .withf(|key| key == "XDG_CACHE_HOME")
+            .returning(|_| Ok(String::new()));
+        env.expect_var()
+            .withf(|key| key == "HOME")
+            .returning(|_| Ok("/home/user".to_string()));
+
+        let resolved = resolve_output_dir(&fs, &env, Path::new("/kernel")).unwrap();
+
+        assert_eq!(
+            Some(
+                Path::new("/home/user/.cache/kw/envs")
+                    .join(BASE64.encode("/kernel"))
+                    .join("minix")
+            ),
+            resolved
+        );
+    }
+
+    #[test]
     fn resolve_output_dir_trims_trailing_slashes_before_encoding() {
         // kw encodes $PWD after cd-ing into the tree, where the path no
         // longer carries a trailing slash.
@@ -826,8 +921,7 @@ last_line_without_newline=yes";
             .withf(|key| key == "XDG_CACHE_HOME")
             .returning(|_| Ok("/xdg".to_string()));
 
-        let resolved =
-            resolve_output_dir(&fs, &env, Path::new("/home/user/linux/")).unwrap();
+        let resolved = resolve_output_dir(&fs, &env, Path::new("/home/user/linux/")).unwrap();
 
         assert_eq!(
             Some(PathBuf::from("/xdg/kw/envs/L2hvbWUvdXNlci9saW51eA==/minix")),
@@ -839,10 +933,14 @@ last_line_without_newline=yes";
     fn resolve_output_dir_empty_env_file_is_inactive() {
         let mut fs = MockFileSystemTrait::new();
         fs.expect_is_file().returning(|_| true);
-        fs.expect_read_to_string().returning(|_| Ok("\n".to_string()));
+        fs.expect_read_to_string()
+            .returning(|_| Ok("\n".to_string()));
         let env = MockEnvTrait::new();
 
-        assert_eq!(None, resolve_output_dir(&fs, &env, Path::new("/kernel")).unwrap());
+        assert_eq!(
+            None,
+            resolve_output_dir(&fs, &env, Path::new("/kernel")).unwrap()
+        );
     }
 
     #[test]
@@ -925,7 +1023,10 @@ last_line_without_newline=yes";
     fn find_image_missing_or_empty_dirs_return_none() {
         let dir = make_ready_tree("image-none");
         // No image anywhere yet: the fixture has an empty arch/ dir.
-        assert_eq!(None, find_newest_kernel_image(&OsFileSystem, dir.path(), None));
+        assert_eq!(
+            None,
+            find_newest_kernel_image(&OsFileSystem, dir.path(), None)
+        );
         assert_eq!(
             None,
             find_newest_kernel_image(&OsFileSystem, dir.path(), Some("x86"))
@@ -936,7 +1037,10 @@ last_line_without_newline=yes";
         write_file_with_mtime(&boot.join("image"), 100); // lowercase: no match
         write_file_with_mtime(&boot.join("Image.gz"), 200); // suffix: no match
 
-        assert_eq!(None, find_newest_kernel_image(&OsFileSystem, dir.path(), None));
+        assert_eq!(
+            None,
+            find_newest_kernel_image(&OsFileSystem, dir.path(), None)
+        );
         assert_eq!(
             None,
             find_newest_kernel_image(&OsFileSystem, dir.path(), Some("x86"))
@@ -1135,6 +1239,14 @@ last_line_without_newline=yes";
             Ok(()),
             check_deploy_alone(Some(&record), &tree, "patchset-x", None, Some(&image))
         );
+
+        // A trailing-slash-only difference is the same tree, not drift.
+        let mut slashed = built_record(dir.path(), "patchset-x");
+        slashed.tree_path = format!("{}/", dir.path().to_str().unwrap());
+        assert_eq!(
+            Ok(()),
+            check_deploy_alone(Some(&slashed), &tree, "patchset-x", None, Some(&image))
+        );
     }
 
     #[test]
@@ -1192,11 +1304,51 @@ last_line_without_newline=yes";
             readiness.tree
         );
         assert_eq!(Some(boot.join("bzImage")), readiness.kernel_image);
-        assert_eq!(Some(record), readiness.build_record);
+        assert_eq!(Some(record.clone()), readiness.build_record);
+        assert_eq!(Some(record), readiness.latest_build);
         assert_eq!(Ok(()), readiness.deploy_alone);
         assert_eq!(None, readiness.output_dir);
         assert!(readiness.kw_binary.available);
         assert_eq!(KwVersionCheck::Meets, readiness.kw_binary.check);
+    }
+
+    #[test]
+    fn evaluate_readiness_missing_tree_short_circuits() {
+        let dir = TempDir::new("evaluate-missing");
+        let missing = dir.path().join("nope");
+        let data = TempDir::new("evaluate-missing-data");
+        let history = FileKwHistoryStore::new(
+            Arc::new(OsFileSystem),
+            data.path().to_str().unwrap().to_string(),
+        );
+
+        let mut env = MockEnvTrait::new();
+        env.expect_which().returning(|_| false);
+        let mut shell = MockShellTrait::new();
+        shell.expect_execute().times(0);
+
+        let tree = kernel_tree(&missing);
+        let readiness = evaluate_readiness(
+            &OsFileSystem,
+            &env,
+            &shell,
+            &history,
+            "mainline",
+            &tree,
+            "patchset-x",
+        )
+        .unwrap();
+
+        assert_eq!(TreeReadiness::Missing, readiness.tree);
+        assert_eq!(None, readiness.kernel_image);
+        assert_eq!(None, readiness.build_record);
+        assert_eq!(None, readiness.latest_build);
+        // Tree readiness is conjoined into the deploy-alone verdict, so
+        // Ok(()) can never describe a tree that is not build-ready.
+        assert_eq!(
+            Err(DeployAloneRefusal::TreeNotReady(TreeReadiness::Missing)),
+            readiness.deploy_alone
+        );
     }
 
     #[test]
@@ -1229,6 +1381,7 @@ last_line_without_newline=yes";
         assert_eq!(TreeReadiness::Ready { arch: None }, readiness.tree);
         assert_eq!(None, readiness.kernel_image);
         assert_eq!(None, readiness.build_record);
+        assert_eq!(None, readiness.latest_build);
         assert_eq!(
             Err(DeployAloneRefusal::NoBuildRecord),
             readiness.deploy_alone
