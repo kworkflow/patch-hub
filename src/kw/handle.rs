@@ -92,20 +92,14 @@ impl KwHandle {
     async fn request_result<T>(
         &self,
         build_message: impl FnOnce(oneshot::Sender<Result<T, KwError>>) -> KwMessage,
-    ) -> Result<T, KwError>
-    where
-        T: Send + 'static,
-    {
+    ) -> Result<T, KwError> {
         self.request(build_message).await?
     }
 
     async fn request<T>(
         &self,
         build_message: impl FnOnce(oneshot::Sender<T>) -> KwMessage,
-    ) -> Result<T, KwError>
-    where
-        T: Send + 'static,
-    {
+    ) -> Result<T, KwError> {
         let (reply, rx) = oneshot::channel();
         self.tx
             .send(build_message(reply))
