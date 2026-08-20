@@ -13,9 +13,6 @@ use crate::{
 /// Everything the actor needs to start a job. The tree context is resolved
 /// by the caller from its config snapshot, keeping KwActor decoupled from
 /// ConfigActor.
-// Fields are read once job execution lands; kept per the CachePolicy
-// precedent (src/lore/application/cache.rs).
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct StartRequest {
     pub kernel_tree_id: String,
@@ -31,12 +28,11 @@ pub enum KwMessage {
         reply: oneshot::Sender<Result<(), KwError>>,
     },
     StartBuild {
-        // Read once job execution lands (CachePolicy precedent).
-        #[allow(dead_code)]
         request: StartRequest,
         reply: oneshot::Sender<Result<(), KwStartError>>,
     },
     StartDeploy {
+        // Read once deploy execution lands (CachePolicy precedent).
         #[allow(dead_code)]
         request: StartRequest,
         reply: oneshot::Sender<Result<(), KwStartError>>,
