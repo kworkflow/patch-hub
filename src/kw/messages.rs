@@ -20,7 +20,8 @@ use crate::{
 pub struct StartRequest {
     pub kernel_tree_id: String,
     pub tree: KernelTree,
-    /// Branch the job must run on.
+    /// Branch the job must run on; the actor switches the tree onto it
+    /// before spawning and leaves HEAD there after the job.
     pub branch: String,
 }
 

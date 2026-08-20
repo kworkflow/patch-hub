@@ -41,6 +41,12 @@ pub enum KwStartError {
     TreeNotReady(TreeReadiness),
     #[error("could not resolve the kw env state: {0}")]
     Readiness(#[from] KwReadinessError),
+    #[error("the kernel tree has staged and/or unstaged changes; commit or stash them first")]
+    DirtyWorktree,
+    #[error("could not verify the kernel tree's git state: {0}")]
+    GitStateProbe(String),
+    #[error("failed to switch the kernel tree to the requested branch: {0}")]
+    CheckoutFailed(String),
     #[error("kw jobs are not supported yet")]
     NotImplemented,
     // Spawning a process is unix-only (ProcessTrait is cfg(unix)).
