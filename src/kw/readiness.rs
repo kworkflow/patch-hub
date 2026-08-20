@@ -20,7 +20,9 @@ use std::{
 use crate::infrastructure::{
     env::{EnvError, EnvTrait},
     file_system::{FileSystemError, FileSystemTrait},
+    shell::{ShellCommand, ShellTrait},
 };
+use crate::{config::KernelTree, kw::history::{KwBuildRecord, KwHistoryStore}};
 
 /// Errors from readiness probes for states where "absent" is not a normal
 /// situation (unlike a missing `.kw` dir, which is a readiness verdict).
@@ -261,6 +263,217 @@ fn image_mtime(fs: &dyn FileSystemTrait, path: &Path) -> SystemTime {
         .unwrap_or(SystemTime::UNIX_EPOCH)
 }
 
+/// Minimum kw version this integration is verified against.
+pub const KW_MIN_VERSION: (u32, u32) = (0, 10);
+
+/// Result of comparing the version kw reports against [`KW_MIN_VERSION`].
+///
+/// Advisory only: kw's shipped VERSION file is stale (it reads `beta-0.9`
+/// even at the 0.10 tag), so `Below` can fire on a genuinely recent kw and
+/// must never gate functionality — the raw line is carried verbatim so the
+/// UI can show exactly what kw reported.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KwVersionCheck {
+    Meets,
+    Below(String),
+    /// The version output could not be obtained or parsed.
+    Unknown,
+}
+
+/// Probe of the kw binary on `PATH`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KwBinaryProbe {
+    pub available: bool,
+    /// First line of `kw --version` output, verbatim.
+    pub version_line: Option<String>,
+    pub check: KwVersionCheck,
+}
+
+/// Probes for the kw binary (`which kw`) and, when present, its version
+/// (`kw --version`, whose first line is the version string; repo-mode and
+/// installed kw both print `Branch:`/`Commit:` lines after it).
+// Wired into startup checks in a later step; kept per the CachePolicy
+// precedent (src/lore/application/cache.rs).
+#[allow(dead_code)]
+pub fn probe_kw_binary(env: &dyn EnvTrait, shell: &dyn ShellTrait) -> KwBinaryProbe {
+    if !env.which("kw") {
+        return KwBinaryProbe {
+            available: false,
+            version_line: None,
+            check: KwVersionCheck::Unknown,
+        };
+    }
+    let version_line = shell
+        .execute(&ShellCommand::new("kw").arg("--version"))
+        .ok()
+        .filter(|out| out.success)
+        .and_then(|out| String::from_utf8(out.stdout).ok())
+        .and_then(|stdout| stdout.lines().next().map(str::to_string))
+        .filter(|line| !line.is_empty());
+    let check = match &version_line {
+        Some(line) => check_kw_version(line),
+        None => KwVersionCheck::Unknown,
+    };
+    KwBinaryProbe {
+        available: true,
+        version_line,
+        check,
+    }
+}
+
+fn check_kw_version(version_line: &str) -> KwVersionCheck {
+    match parse_kw_version(version_line) {
+        Some(version) if version >= KW_MIN_VERSION => KwVersionCheck::Meets,
+        Some(_) => KwVersionCheck::Below(version_line.to_string()),
+        None => KwVersionCheck::Unknown,
+    }
+}
+
+/// Extracts the first `X.Y[.Z]` pair from a version line: `0.10.0` and the
+/// stale `beta-0.9` kw currently ships both parse.
+fn parse_kw_version(line: &str) -> Option<(u32, u32)> {
+    let start = line.find(|c: char| c.is_ascii_digit())?;
+    let mut parts = line[start..].splitn(3, '.');
+    let major = parts.next()?.parse().ok()?;
+    let minor: String = parts
+        .next()?
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    Some((major, minor.parse().ok()?))
+}
+
+/// Why a deploy-without-build was refused (integration plan §2.1d). Each
+/// variant's message is the actionable explanation KwOps shows.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum DeployAloneRefusal {
+    #[error("no build recorded for this tree and branch; run a build first")]
+    NoBuildRecord,
+    #[error("the last build of this branch failed; rebuild before deploying")]
+    LastBuildFailed,
+    #[error(
+        "the last build was on branch '{recorded}', but HEAD is '{current}'; \
+         rebuild on the current branch before deploying"
+    )]
+    HeadMismatch { recorded: String, current: String },
+    #[error(
+        "the kernel tree moved from '{recorded}' to '{current}' since the last build; \
+         rebuild before deploying"
+    )]
+    TreePathDrift { recorded: String, current: String },
+    #[error(
+        "the last build ran with a different kw env (O=) than the active one; \
+         rebuild in the active env before deploying"
+    )]
+    OutputDirMismatch,
+    #[error("no kernel image (*Image) found under arch/*/boot; rebuild before deploying")]
+    ImageMissing,
+}
+
+/// Deploy-alone readiness gate (integration plan §2.1d steps 1–4): a deploy
+/// without a preceding build is only allowed when a successful build record
+/// exists for the tree and current HEAD, written against the same tree path
+/// and kw env, and a kernel image is still discoverable.
+// Consumed by KwActor deploy in a later step; kept per the CachePolicy
+// precedent (src/lore/application/cache.rs).
+#[allow(dead_code)]
+pub fn check_deploy_alone(
+    record: Option<&KwBuildRecord>,
+    tree: &KernelTree,
+    head_branch: &str,
+    output_dir: Option<&Path>,
+    image: Option<&Path>,
+) -> Result<(), DeployAloneRefusal> {
+    let record = record.ok_or(DeployAloneRefusal::NoBuildRecord)?;
+    if !record.success {
+        return Err(DeployAloneRefusal::LastBuildFailed);
+    }
+    if record.branch != head_branch {
+        return Err(DeployAloneRefusal::HeadMismatch {
+            recorded: record.branch.clone(),
+            current: head_branch.to_string(),
+        });
+    }
+    if record.tree_path.as_str() != tree.path().as_str() {
+        return Err(DeployAloneRefusal::TreePathDrift {
+            recorded: record.tree_path.clone(),
+            current: tree.path().to_string(),
+        });
+    }
+    let current_output_dir = output_dir.map(|p| p.to_string_lossy().into_owned());
+    if record.output_dir != current_output_dir {
+        return Err(DeployAloneRefusal::OutputDirMismatch);
+    }
+    if image.is_none() {
+        return Err(DeployAloneRefusal::ImageMissing);
+    }
+    Ok(())
+}
+
+/// Snapshot of everything KwOps needs to decide whether build/deploy can
+/// start, and why not — returned by KwActor's `GetReadiness` (§2.3).
+// Assembled by KwActor in a later step; kept per the CachePolicy precedent
+// (src/lore/application/cache.rs).
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct KwReadiness {
+    pub kw_binary: KwBinaryProbe,
+    pub tree: TreeReadiness,
+    /// Active kw env's `O=` dir, if any.
+    pub output_dir: Option<PathBuf>,
+    /// Newest discoverable kernel image under the build root, if any.
+    pub kernel_image: Option<PathBuf>,
+    /// Build record for `(kernel_tree_id, head_branch)`, if any.
+    pub build_record: Option<KwBuildRecord>,
+    pub deploy_alone: Result<(), DeployAloneRefusal>,
+}
+
+/// Runs all readiness probes for `tree` and composes them into a
+/// [`KwReadiness`] snapshot. `head_branch` is the tree's current branch —
+/// resolving it (via git) is the caller's job, keeping these probes pure.
+// Composed by KwActor in a later step; kept per the CachePolicy precedent
+// (src/lore/application/cache.rs).
+#[allow(dead_code)]
+pub fn evaluate_readiness(
+    fs: &dyn FileSystemTrait,
+    env: &dyn EnvTrait,
+    shell: &dyn ShellTrait,
+    history: &dyn KwHistoryStore,
+    kernel_tree_id: &str,
+    tree: &KernelTree,
+    head_branch: &str,
+) -> Result<KwReadiness, KwReadinessError> {
+    let tree_path = Path::new(tree.path());
+    let kw_binary = probe_kw_binary(env, shell);
+    let output_dir = resolve_output_dir(fs, env, tree_path)?;
+    let tree_status = probe_tree(fs, tree_path, output_dir.as_deref());
+    let arch = match &tree_status {
+        TreeReadiness::Ready { arch } => arch.clone(),
+        _ => None,
+    };
+    let kernel_image = find_newest_kernel_image(
+        fs,
+        output_dir.as_deref().unwrap_or(tree_path),
+        arch.as_deref(),
+    );
+    let build_record = history.build_record(kernel_tree_id, head_branch)?;
+    let deploy_alone = check_deploy_alone(
+        build_record.as_ref(),
+        tree,
+        head_branch,
+        output_dir.as_deref(),
+        kernel_image.as_deref(),
+    );
+    Ok(KwReadiness {
+        kw_binary,
+        tree: tree_status,
+        output_dir,
+        kernel_image,
+        build_record,
+        deploy_alone,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -273,9 +486,13 @@ mod tests {
     use crate::infrastructure::{
         env::MockEnvTrait,
         file_system::{MockFileSystemTrait, OsFileSystem},
+        shell::{MockShellTrait, ShellOutput},
     };
+    use crate::kw::history::FileKwHistoryStore;
 
     use super::*;
+
+    use std::sync::Arc;
 
     static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -727,5 +944,298 @@ last_line_without_newline=yes";
             None,
             find_newest_kernel_image(&OsFileSystem, dir.path(), Some("x86"))
         );
+    }
+
+    fn shell_output(stdout: &str, success: bool) -> ShellOutput {
+        ShellOutput {
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: Vec::new(),
+            success,
+        }
+    }
+
+    fn kernel_tree(path: &Path) -> KernelTree {
+        serde_json::from_value(serde_json::json!({
+            "path": path.to_str().unwrap(),
+            "branch": "master"
+        }))
+        .unwrap()
+    }
+
+    fn built_record(tree: &Path, branch: &str) -> KwBuildRecord {
+        KwBuildRecord {
+            kernel_tree_id: "mainline".to_string(),
+            tree_path: tree.to_str().unwrap().to_string(),
+            message_id: None,
+            branch: branch.to_string(),
+            arch: Some("x86".to_string()),
+            image_path: None,
+            output_dir: None,
+            kernelrelease: None,
+            log_path: String::new(),
+            built_at: "2026-08-01T18:10:00Z".to_string(),
+            success: true,
+        }
+    }
+
+    #[test]
+    fn kw_probe_missing_binary_never_spawns() {
+        let mut env = MockEnvTrait::new();
+        env.expect_which()
+            .withf(|name| name == "kw")
+            .returning(|_| false);
+        let mut shell = MockShellTrait::new();
+        shell.expect_execute().times(0);
+
+        let probe = probe_kw_binary(&env, &shell);
+
+        assert!(!probe.available);
+        assert_eq!(None, probe.version_line);
+        assert_eq!(KwVersionCheck::Unknown, probe.check);
+    }
+
+    #[test]
+    fn kw_probe_compares_version_against_floor() {
+        for (stdout, expected) in [
+            ("0.10.0\n", KwVersionCheck::Meets),
+            ("0.10\n", KwVersionCheck::Meets),
+            ("1.0\n", KwVersionCheck::Meets),
+            ("0.9.9\n", KwVersionCheck::Below("0.9.9".to_string())),
+            // What a real 0.10 install prints: kw's shipped VERSION is stale.
+            (
+                "beta-0.9\nBranch: master\nCommit: 3575d38\n",
+                KwVersionCheck::Below("beta-0.9".to_string()),
+            ),
+            ("not a version\n", KwVersionCheck::Unknown),
+        ] {
+            let mut env = MockEnvTrait::new();
+            env.expect_which().returning(|_| true);
+            let mut shell = MockShellTrait::new();
+            let stdout_bytes = stdout.as_bytes().to_vec();
+            shell
+                .expect_execute()
+                .withf(|cmd| cmd.program == "kw" && cmd.args == ["--version"])
+                .returning(move |_| Ok(shell_output(str::from_utf8(&stdout_bytes).unwrap(), true)));
+
+            let probe = probe_kw_binary(&env, &shell);
+
+            assert!(probe.available, "for version output {stdout:?}");
+            assert_eq!(expected, probe.check, "for version output {stdout:?}");
+        }
+    }
+
+    #[test]
+    fn kw_probe_keeps_the_raw_first_line_verbatim() {
+        let mut env = MockEnvTrait::new();
+        env.expect_which().returning(|_| true);
+        let mut shell = MockShellTrait::new();
+        shell.expect_execute().returning(|_| {
+            Ok(shell_output(
+                "beta-0.9\nBranch: master\nCommit: 3575d38\n",
+                true,
+            ))
+        });
+
+        let probe = probe_kw_binary(&env, &shell);
+
+        assert_eq!(Some("beta-0.9".to_string()), probe.version_line);
+    }
+
+    #[test]
+    fn kw_probe_unknown_when_version_is_unreadable() {
+        // kw is on PATH but its --version output cannot be trusted.
+        let mut spawn_fails = MockShellTrait::new();
+        spawn_fails
+            .expect_execute()
+            .returning(|_| Err(std::io::Error::other("spawn failed").into()));
+
+        let mut empty_stdout = MockShellTrait::new();
+        empty_stdout
+            .expect_execute()
+            .returning(|_| Ok(shell_output("", true)));
+
+        let mut kw_fails = MockShellTrait::new();
+        kw_fails
+            .expect_execute()
+            .returning(|_| Ok(shell_output("0.10.0\n", false)));
+
+        for shell in [spawn_fails, empty_stdout, kw_fails] {
+            let mut env = MockEnvTrait::new();
+            env.expect_which().returning(|_| true);
+
+            let probe = probe_kw_binary(&env, &shell);
+
+            assert!(probe.available);
+            assert_eq!(None, probe.version_line);
+            assert_eq!(KwVersionCheck::Unknown, probe.check);
+        }
+    }
+
+    #[test]
+    fn deploy_alone_requires_a_successful_build_record() {
+        let dir = make_ready_tree("deploy-gate");
+        let tree = kernel_tree(dir.path());
+        let image = dir.path().join("arch/x86/boot/bzImage");
+
+        assert_eq!(
+            Err(DeployAloneRefusal::NoBuildRecord),
+            check_deploy_alone(None, &tree, "patchset-x", None, Some(&image))
+        );
+
+        let mut failed = built_record(dir.path(), "patchset-x");
+        failed.success = false;
+        assert_eq!(
+            Err(DeployAloneRefusal::LastBuildFailed),
+            check_deploy_alone(Some(&failed), &tree, "patchset-x", None, Some(&image))
+        );
+    }
+
+    #[test]
+    fn deploy_alone_refuses_frankenstein_combinations() {
+        let dir = make_ready_tree("deploy-frankenstein");
+        let tree = kernel_tree(dir.path());
+        let image = dir.path().join("arch/x86/boot/bzImage");
+        let record = built_record(dir.path(), "patchset-x");
+
+        // HEAD moved to another branch since the build.
+        assert_eq!(
+            Err(DeployAloneRefusal::HeadMismatch {
+                recorded: "patchset-x".to_string(),
+                current: "master".to_string(),
+            }),
+            check_deploy_alone(Some(&record), &tree, "master", None, Some(&image))
+        );
+
+        // The config repointed the same tree id at another path.
+        let moved_tree = kernel_tree(Path::new("/elsewhere/linux"));
+        assert_eq!(
+            Err(DeployAloneRefusal::TreePathDrift {
+                recorded: dir.path().to_str().unwrap().to_string(),
+                current: "/elsewhere/linux".to_string(),
+            }),
+            check_deploy_alone(Some(&record), &moved_tree, "patchset-x", None, Some(&image))
+        );
+
+        // The active kw env changed since the build.
+        assert_eq!(
+            Err(DeployAloneRefusal::OutputDirMismatch),
+            check_deploy_alone(
+                Some(&record),
+                &tree,
+                "patchset-x",
+                Some(Path::new("/cache/kw/envs/xyz/minix")),
+                Some(&image),
+            )
+        );
+
+        // The image the build produced is gone.
+        assert_eq!(
+            Err(DeployAloneRefusal::ImageMissing),
+            check_deploy_alone(Some(&record), &tree, "patchset-x", None, None)
+        );
+
+        assert_eq!(
+            Ok(()),
+            check_deploy_alone(Some(&record), &tree, "patchset-x", None, Some(&image))
+        );
+    }
+
+    #[test]
+    fn deploy_alone_checks_failure_before_branch_mismatch() {
+        let dir = make_ready_tree("deploy-order");
+        let tree = kernel_tree(dir.path());
+        let mut failed = built_record(dir.path(), "patchset-x");
+        failed.success = false;
+
+        assert_eq!(
+            Err(DeployAloneRefusal::LastBuildFailed),
+            check_deploy_alone(Some(&failed), &tree, "master", None, None)
+        );
+    }
+
+    #[test]
+    fn evaluate_readiness_composes_all_probes() {
+        let dir = make_ready_tree("evaluate");
+        fs::write(dir.path().join(".kw/build.config"), "arch=x86\n").unwrap();
+        let boot = dir.path().join("arch/x86/boot");
+        fs::create_dir_all(&boot).unwrap();
+        write_file_with_mtime(&boot.join("bzImage"), 100);
+
+        let data = TempDir::new("evaluate-data");
+        let history = FileKwHistoryStore::new(
+            Arc::new(OsFileSystem),
+            data.path().to_str().unwrap().to_string(),
+        );
+        let record = built_record(dir.path(), "patchset-x");
+        history.record_build(record.clone()).unwrap();
+
+        let mut env = MockEnvTrait::new();
+        env.expect_which().returning(|_| true);
+        let mut shell = MockShellTrait::new();
+        shell
+            .expect_execute()
+            .returning(|_| Ok(shell_output("0.10.0\n", true)));
+
+        let tree = kernel_tree(dir.path());
+        let readiness = evaluate_readiness(
+            &OsFileSystem,
+            &env,
+            &shell,
+            &history,
+            "mainline",
+            &tree,
+            "patchset-x",
+        )
+        .unwrap();
+
+        assert_eq!(
+            TreeReadiness::Ready {
+                arch: Some("x86".to_string())
+            },
+            readiness.tree
+        );
+        assert_eq!(Some(boot.join("bzImage")), readiness.kernel_image);
+        assert_eq!(Some(record), readiness.build_record);
+        assert_eq!(Ok(()), readiness.deploy_alone);
+        assert_eq!(None, readiness.output_dir);
+        assert!(readiness.kw_binary.available);
+        assert_eq!(KwVersionCheck::Meets, readiness.kw_binary.check);
+    }
+
+    #[test]
+    fn evaluate_readiness_without_build_refuses_deploy_alone() {
+        let dir = make_ready_tree("evaluate-nobuild");
+        let data = TempDir::new("evaluate-nobuild-data");
+        let history = FileKwHistoryStore::new(
+            Arc::new(OsFileSystem),
+            data.path().to_str().unwrap().to_string(),
+        );
+
+        let mut env = MockEnvTrait::new();
+        env.expect_which().returning(|_| false);
+        let mut shell = MockShellTrait::new();
+        shell.expect_execute().times(0);
+
+        let tree = kernel_tree(dir.path());
+        let readiness = evaluate_readiness(
+            &OsFileSystem,
+            &env,
+            &shell,
+            &history,
+            "mainline",
+            &tree,
+            "patchset-x",
+        )
+        .unwrap();
+
+        // No build.config: arch stays None (glob fallback); no images exist.
+        assert_eq!(TreeReadiness::Ready { arch: None }, readiness.tree);
+        assert_eq!(None, readiness.kernel_image);
+        assert_eq!(None, readiness.build_record);
+        assert_eq!(
+            Err(DeployAloneRefusal::NoBuildRecord),
+            readiness.deploy_alone
+        );
+        assert!(!readiness.kw_binary.available);
     }
 }
