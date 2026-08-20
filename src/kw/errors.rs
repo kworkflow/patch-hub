@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use crate::{
-    infrastructure::{file_system::FileSystemError, shell::ShellError},
+    infrastructure::{file_system::FileSystemError, process::ProcessError, shell::ShellError},
     kw::readiness::KwReadinessError,
 };
 
@@ -28,11 +28,12 @@ pub enum KwError {
 pub enum KwStartError {
     #[error("kw actor unavailable: {0}")]
     ActorUnavailable(String),
-    // Constructed once job execution lands; kept per the CachePolicy
-    // precedent (src/lore/application/cache.rs).
-    #[allow(dead_code)]
     #[error("a kw job is already running")]
     JobAlreadyRunning,
     #[error("kw jobs are not supported yet")]
     NotImplemented,
+    #[error("failed to spawn the kw process: {0}")]
+    Spawn(#[from] ProcessError),
+    #[error("filesystem error: {0}")]
+    Fs(#[from] FileSystemError),
 }

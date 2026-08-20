@@ -5,25 +5,26 @@
 
 use std::path::PathBuf;
 
-// Most variants are constructed once job execution lands; kept per the
-// CachePolicy precedent (src/lore/application/cache.rs).
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KwJobKind {
     Build,
+    // Constructed once deploy execution lands; kept per the CachePolicy
+    // precedent (src/lore/application/cache.rs).
+    #[allow(dead_code)]
     Deploy,
+    #[allow(dead_code)]
     BuildThenDeploy,
 }
 
 /// Running phase of a job. `BuildThenDeploy` jobs pass through both.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KwPhase {
     Building,
+    // Constructed once deploy execution lands (CachePolicy precedent).
+    #[allow(dead_code)]
     Deploying,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KwJobStatus {
     Idle,
