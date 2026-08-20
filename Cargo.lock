@@ -855,6 +855,7 @@ version = "0.1.7"
 dependencies = [
  "ansi-to-tui",
  "async-trait",
+ "base64",
  "chrono",
  "clap",
  "color-eyre",
