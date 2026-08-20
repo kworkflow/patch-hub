@@ -8,10 +8,21 @@
 //! [`crate::kw::readiness`] and records applies through the shared
 //! [`KwHistoryStore`](crate::kw::history::KwHistoryStore).
 //!
-//! `create_dir_all`, the HEAD-probe `git` call, and history writes run
-//! inline on the actor task.
+//! Tracked note (same class as the integration plan's §2.1i): the actor
+//! runs quick blocking calls inline in its async task — `create_dir_all`,
+//! the git probes of the checkout policy, the build-record completion
+//! probes, and the history store's atomic writes — per the ConfigActor
+//! precedent. They are all milliseconds-scale; if a real stall ever shows
+//! up while a long job runs, they should move behind `spawn_blocking`
+//! like the other actors' heavy work.
 
-use std::{ops::ControlFlow, path::PathBuf, process::ExitStatus, sync::Arc, time::Duration};
+use std::{
+    ops::ControlFlow,
+    path::{Path, PathBuf},
+    process::ExitStatus,
+    sync::Arc,
+    time::Duration,
+};
 
 use tokio::{
     spawn,
@@ -30,7 +41,7 @@ use crate::{
         argv,
         errors::{KwError, KwStartError, TreeGitError},
         handle::KwHandle,
-        history::KwHistoryStore,
+        history::{KwBuildRecord, KwHistoryStore},
         messages::{KwMessage, StartRequest},
         readiness::{self, KwReadiness, KwVersionCheck, TreeReadiness},
         status::{KwJobKind, KwJobStatus, KwPhase, KwStatusSnapshot},
@@ -76,6 +87,10 @@ struct JobState {
     phase: KwPhase,
     kernel_tree_id: String,
     branch: String,
+    /// Snapshot of the tree path at accept time: the build record carries
+    /// it so later readiness checks can detect the tree being repointed
+    /// (§2.1e).
+    tree_path: String,
     log_path: PathBuf,
     /// `None` once a cancel has been requested; a second `Cancel` is an
     /// idempotent ack.
@@ -337,6 +352,7 @@ impl KwActor {
             phase,
             kernel_tree_id: request.kernel_tree_id.clone(),
             branch: request.branch.clone(),
+            tree_path: request.tree.path().to_string(),
             log_path: log_path.clone(),
             cancel_tx: Some(cancel_tx),
         });
@@ -369,6 +385,10 @@ impl KwActor {
                     tracing::warn!("kw job finished with no job state recorded");
                     return;
                 };
+                // The record is written before the status flips: watchers
+                // that react to the terminal status find the history
+                // already durable.
+                self.record_build_outcome(&job, &outcome);
                 let status = match outcome {
                     JobOutcome::Exited(exit) if exit.success() => {
                         tracing::info!(
@@ -416,6 +436,87 @@ impl KwActor {
                 };
                 self.set_status(status);
             }
+        }
+    }
+
+    /// Writes the build record for a finished job (§2.1e): success and
+    /// failure both — KwOps shows "last build failed" from the stored
+    /// record, and deploy-alone readiness requires `success == true`. A
+    /// cancelled job writes nothing: it never completed. History and
+    /// patchset-link errors are logged, never reported in the job's
+    /// status — the build's real outcome already reached the user.
+    ///
+    /// Build-then-deploy jobs (the deploy step) must instead write this
+    /// record at the Building → Deploying phase transition, so a failed
+    /// deploy cannot mask a good build.
+    fn record_build_outcome(&self, job: &JobState, outcome: &JobOutcome) {
+        let success = match outcome {
+            JobOutcome::Exited(exit) => exit.success(),
+            // The exit status is lost: record an honest failure rather
+            // than guess, so deploy-alone readiness cannot trust it.
+            JobOutcome::WaitFailed(_) => false,
+            JobOutcome::Cancelled => return,
+        };
+
+        let tree_path = Path::new(&job.tree_path);
+        // If the env state became unresolvable mid-build, the record
+        // would be keyed with a wrong `output_dir: None` — a Frankenstein
+        // match for a later no-env deploy-alone probe. No record fails
+        // safe.
+        let output_dir = match readiness::resolve_output_dir(&*self.fs, &*self.env, tree_path) {
+            Ok(output_dir) => output_dir,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    branch = job.branch,
+                    "skipping the build record: kw env state unresolvable"
+                );
+                return;
+            }
+        };
+        let arch = readiness::read_build_arch(&*self.fs, tree_path);
+        // A failed build may have left a stale image from an earlier
+        // successful one behind; only successes record what they
+        // produced.
+        let (image_path, kernelrelease) = if success {
+            let build_root = output_dir.as_deref().unwrap_or(tree_path);
+            (
+                readiness::find_newest_kernel_image(&*self.fs, build_root, arch.as_deref()),
+                readiness::read_kernelrelease(&*self.fs, build_root),
+            )
+        } else {
+            (None, None)
+        };
+        let message_id = match self
+            .history
+            .apply_record_for_branch(&job.kernel_tree_id, &job.branch)
+        {
+            Ok(record) => record.map(|record| record.message_id),
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    branch = job.branch,
+                    "build record loses its patchset link"
+                );
+                None
+            }
+        };
+
+        let record = KwBuildRecord {
+            kernel_tree_id: job.kernel_tree_id.clone(),
+            tree_path: job.tree_path.clone(),
+            message_id,
+            branch: job.branch.clone(),
+            arch,
+            image_path: image_path.map(|path| path.to_string_lossy().into_owned()),
+            output_dir: output_dir.map(|path| path.to_string_lossy().into_owned()),
+            kernelrelease,
+            log_path: job.log_path.to_string_lossy().into_owned(),
+            built_at: chrono::Utc::now().to_rfc3339(),
+            success,
+        };
+        if let Err(error) = self.history.record_build(record) {
+            tracing::warn!(%error, branch = job.branch, "failed to record kw build history");
         }
     }
 
@@ -684,7 +785,7 @@ mod tests {
         },
         kw::{
             errors::KwStartError,
-            history::{KwApplyRecord, MockKwHistoryStore},
+            history::{KwApplyRecord, KwBuildRecord, MockKwHistoryStore},
             messages::StartRequest,
             readiness::{DeployAloneRefusal, TreeReadiness},
             status::{KwJobKind, KwJobStatus, KwPhase},
@@ -872,13 +973,20 @@ mod tests {
 
     /// fs answers for a ready kernel tree with no active kw env: the
     /// kernel-root probes pass, `.config` exists, `.kw/env.current` is
-    /// absent, and `.kw/build.config` is unreadable (arch probes as None).
+    /// absent, `.kw/build.config` is unreadable (arch probes as None),
+    /// and there is no arch/ dir to glob images from.
     fn expect_ready_tree(fs: &mut MockFileSystemTrait) {
         fs.expect_is_dir().returning(|_| true);
         fs.expect_is_file()
             .returning(|path| !path.ends_with(".kw/env.current"));
         fs.expect_exists().returning(|_| true);
         fs.expect_read_to_string().returning(|_| {
+            Err(FileSystemError::IoError(io::Error::new(
+                io::ErrorKind::NotFound,
+                "missing",
+            )))
+        });
+        fs.expect_read_dir().returning(|_| {
             Err(FileSystemError::IoError(io::Error::new(
                 io::ErrorKind::NotFound,
                 "missing",
@@ -894,6 +1002,99 @@ mod tests {
         fs
     }
 
+    /// A ready kernel tree whose build produced an image and a
+    /// kernelrelease: build.config sets `arch=x86`, `arch/x86/boot/`
+    /// holds a bzImage, and `include/config/kernel.release` exists. The
+    /// image's metadata is unreadable, so its mtime falls back to the
+    /// epoch — still the only, hence newest, candidate.
+    fn built_tree_fs() -> MockFileSystemTrait {
+        let mut fs = MockFileSystemTrait::new();
+        fs.expect_is_dir().returning(|_| true);
+        fs.expect_is_file()
+            .returning(|path| !path.ends_with(".kw/env.current"));
+        fs.expect_exists().returning(|_| true);
+        fs.expect_read_to_string().returning(|path| {
+            if path.ends_with("build.config") {
+                Ok("arch=x86\n".to_string())
+            } else if path.ends_with("kernel.release") {
+                Ok("6.17.0\n".to_string())
+            } else {
+                Err(FileSystemError::IoError(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "missing",
+                )))
+            }
+        });
+        fs.expect_read_dir().returning(|path| {
+            if path.ends_with("arch/x86/boot") {
+                Ok(vec![PathBuf::from(
+                    "/home/user/linux/arch/x86/boot/bzImage",
+                )])
+            } else {
+                Err(FileSystemError::IoError(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "missing",
+                )))
+            }
+        });
+        fs.expect_metadata()
+            .returning(|_| Err(FileSystemError::IoError(io::Error::other("no metadata"))));
+        fs.expect_create_dir_all().returning(|_| Ok(()));
+        fs
+    }
+
+    /// History answers for an actor whose jobs complete: no patchset
+    /// link, build-record writes accepted and dropped.
+    fn quiet_history() -> MockKwHistoryStore {
+        let mut history = MockKwHistoryStore::new();
+        history
+            .expect_apply_record_for_branch()
+            .returning(|_, _| Ok(None));
+        history.expect_record_build().returning(|_| Ok(()));
+        history
+    }
+
+    /// A history double that captures written build records and answers
+    /// the patchset-link lookup with `apply_record`.
+    fn recording_history(
+        apply_record: Option<KwApplyRecord>,
+    ) -> (MockKwHistoryStore, Arc<Mutex<Vec<KwBuildRecord>>>) {
+        let builds = Arc::new(Mutex::new(Vec::new()));
+        let builds_in_store = Arc::clone(&builds);
+        let mut history = MockKwHistoryStore::new();
+        history
+            .expect_apply_record_for_branch()
+            .returning(move |_, _| Ok(apply_record.clone()));
+        history.expect_record_build().returning(move |record| {
+            builds_in_store.lock().unwrap().push(record);
+            Ok(())
+        });
+        (history, builds)
+    }
+
+    /// Spawns the actor with every dependency explicit, a real temp log
+    /// dir, and the [`FakeProcess`] exposed so tests drive the "running"
+    /// process.
+    fn spawn_full_actor(
+        test_name: &str,
+        history: MockKwHistoryStore,
+        shell: MockShellTrait,
+        fs: MockFileSystemTrait,
+        env: MockEnvTrait,
+    ) -> (KwHandle, Arc<FakeProcess>, PathBuf) {
+        let process = Arc::new(FakeProcess::new());
+        let log_dir = tmp_log_dir(test_name);
+        let handle = KwActor::spawn(
+            Arc::new(history),
+            process.clone(),
+            Arc::new(shell),
+            Arc::new(fs),
+            Arc::new(env),
+            log_dir.clone(),
+        );
+        (handle, process, log_dir)
+    }
+
     /// Spawns the actor with a real temp log dir and exposes the
     /// [`FakeProcess`] so tests drive the "running" process. The env mock
     /// has kw on PATH.
@@ -902,19 +1103,9 @@ mod tests {
         shell: MockShellTrait,
         fs: MockFileSystemTrait,
     ) -> (KwHandle, Arc<FakeProcess>, PathBuf) {
-        let process = Arc::new(FakeProcess::new());
-        let log_dir = tmp_log_dir(test_name);
         let mut env = MockEnvTrait::new();
         env.expect_which().returning(|_| true);
-        let handle = KwActor::spawn(
-            Arc::new(MockKwHistoryStore::new()),
-            process.clone(),
-            Arc::new(shell),
-            Arc::new(fs),
-            Arc::new(env),
-            log_dir.clone(),
-        );
-        (handle, process, log_dir)
+        spawn_full_actor(test_name, quiet_history(), shell, fs, env)
     }
 
     fn spawn_job_actor(test_name: &str) -> (KwHandle, Arc<FakeProcess>, PathBuf) {
@@ -1740,6 +1931,258 @@ mod tests {
         let child = process.last_child();
         assert!(child.was_killed());
         assert!(child.was_force_killed());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn successful_build_writes_a_full_build_record() {
+        let (history, builds) = recording_history(Some(apply_record()));
+        let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
+        let (handle, process, log_dir) =
+            spawn_full_actor("build-record", history, shell, built_tree_fs(), {
+                let mut env = MockEnvTrait::new();
+                env.expect_which().returning(|_| true);
+                env
+            });
+        let mut watch = handle.watch_status().await.unwrap();
+
+        handle.start_build(start_request()).await.unwrap();
+        process.last_child().finish(0);
+        let status = wait_for_terminal_status(&mut watch).await;
+        assert!(matches!(status, KwJobStatus::Succeeded { .. }));
+
+        {
+            let builds = builds.lock().unwrap();
+            assert_eq!(1, builds.len());
+            let record = &builds[0];
+            assert_eq!("mainline", record.kernel_tree_id);
+            assert_eq!("/home/user/linux", record.tree_path);
+            assert_eq!(Some("msg-1"), record.message_id.as_deref());
+            assert_eq!("patchset-2026-08-01-17-30-00", record.branch);
+            assert_eq!(Some("x86"), record.arch.as_deref());
+            assert_eq!(
+                Some("/home/user/linux/arch/x86/boot/bzImage"),
+                record.image_path.as_deref()
+            );
+            assert_eq!(None, record.output_dir);
+            assert_eq!(Some("6.17.0"), record.kernelrelease.as_deref());
+            assert!(record.log_path.starts_with(log_dir.to_str().unwrap()));
+            assert!(record.success);
+            // The readiness latest-lookup parses built_at as RFC3339.
+            assert!(chrono::DateTime::parse_from_rfc3339(&record.built_at).is_ok());
+        }
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn failed_build_writes_a_failure_record() {
+        let (history, builds) = recording_history(Some(apply_record()));
+        let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
+        let (handle, process, log_dir) =
+            spawn_full_actor("failed-record", history, shell, built_tree_fs(), {
+                let mut env = MockEnvTrait::new();
+                env.expect_which().returning(|_| true);
+                env
+            });
+        let mut watch = handle.watch_status().await.unwrap();
+
+        handle.start_build(start_request()).await.unwrap();
+        process.last_child().finish(2);
+        let status = wait_for_terminal_status(&mut watch).await;
+        assert!(matches!(
+            status,
+            KwJobStatus::Failed {
+                exit_code: Some(2),
+                ..
+            }
+        ));
+
+        {
+            let builds = builds.lock().unwrap();
+            assert_eq!(1, builds.len());
+            let record = &builds[0];
+            assert!(!record.success);
+            // Config/env facts are still recorded; what the build never
+            // produced is not — a stale image from an earlier build must
+            // not leak into a failure record.
+            assert_eq!(Some("x86"), record.arch.as_deref());
+            assert_eq!(None, record.image_path);
+            assert_eq!(None, record.kernelrelease);
+            assert_eq!(Some("msg-1"), record.message_id.as_deref());
+        }
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn cancelled_build_writes_no_record() {
+        let (history, builds) = recording_history(None);
+        let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
+        let (handle, _process, log_dir) =
+            spawn_full_actor("cancel-record", history, shell, ready_fs(), {
+                let mut env = MockEnvTrait::new();
+                env.expect_which().returning(|_| true);
+                env
+            });
+        let mut watch = handle.watch_status().await.unwrap();
+
+        handle.start_build(start_request()).await.unwrap();
+        handle.cancel().await.unwrap();
+        let status = wait_for_terminal_status(&mut watch).await;
+
+        assert!(matches!(status, KwJobStatus::Cancelled { .. }));
+        assert!(builds.lock().unwrap().is_empty());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn lost_exit_status_records_a_failed_build() {
+        let (history, builds) = recording_history(None);
+        let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
+        let (handle, process, log_dir) =
+            spawn_full_actor("wait-failure", history, shell, ready_fs(), {
+                let mut env = MockEnvTrait::new();
+                env.expect_which().returning(|_| true);
+                env
+            });
+        let mut watch = handle.watch_status().await.unwrap();
+        process.fail_waits(true);
+
+        handle.start_build(start_request()).await.unwrap();
+        process.last_child().finish(0);
+        let status = wait_for_terminal_status(&mut watch).await;
+
+        // A lost exit status is an honest failure: the record must not
+        // become deploy-alone evidence.
+        assert!(matches!(
+            status,
+            KwJobStatus::Failed {
+                exit_code: None,
+                ..
+            }
+        ));
+        {
+            let builds = builds.lock().unwrap();
+            assert_eq!(1, builds.len());
+            assert!(!builds[0].success);
+        }
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn build_record_write_failure_keeps_the_terminal_status() {
+        let mut history = MockKwHistoryStore::new();
+        history
+            .expect_apply_record_for_branch()
+            .returning(|_, _| Ok(None));
+        history
+            .expect_record_build()
+            .returning(|_| Err(FileSystemError::IoError(io::Error::other("disk full"))));
+        let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
+        let (handle, process, log_dir) =
+            spawn_full_actor("record-write-fails", history, shell, ready_fs(), {
+                let mut env = MockEnvTrait::new();
+                env.expect_which().returning(|_| true);
+                env
+            });
+        let mut watch = handle.watch_status().await.unwrap();
+
+        handle.start_build(start_request()).await.unwrap();
+        process.last_child().finish(0);
+        let status = wait_for_terminal_status(&mut watch).await;
+
+        // The build's real outcome reached the user; a history-write
+        // failure must not turn it into a reported failure.
+        assert!(matches!(status, KwJobStatus::Succeeded { .. }));
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn build_record_keeps_no_patchset_link_when_apply_lookup_fails() {
+        let builds = Arc::new(Mutex::new(Vec::new()));
+        let builds_in_store = Arc::clone(&builds);
+        let mut history = MockKwHistoryStore::new();
+        history.expect_apply_record_for_branch().returning(|_, _| {
+            Err(FileSystemError::IoError(io::Error::other(
+                "corrupt history",
+            )))
+        });
+        history.expect_record_build().returning(move |record| {
+            builds_in_store.lock().unwrap().push(record);
+            Ok(())
+        });
+        let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
+        let (handle, process, log_dir) =
+            spawn_full_actor("link-lookup-fails", history, shell, ready_fs(), {
+                let mut env = MockEnvTrait::new();
+                env.expect_which().returning(|_| true);
+                env
+            });
+        let mut watch = handle.watch_status().await.unwrap();
+
+        handle.start_build(start_request()).await.unwrap();
+        process.last_child().finish(0);
+        let _ = wait_for_terminal_status(&mut watch).await;
+
+        // The lookup error must not drop the record, only the link.
+        {
+            let builds = builds.lock().unwrap();
+            assert_eq!(1, builds.len());
+            assert_eq!(None, builds[0].message_id);
+            assert!(builds[0].success);
+        }
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn build_record_skipped_when_env_state_breaks_mid_build() {
+        // An env that resolves at Start but not at completion must not
+        // produce a record keyed with a wrong `output_dir: None`.
+        let env_broken = Arc::new(AtomicBool::new(false));
+        let env_broken_in_fs = Arc::clone(&env_broken);
+        let mut fs = MockFileSystemTrait::new();
+        fs.expect_is_dir().returning(|_| true);
+        fs.expect_is_file().returning(|_| true);
+        fs.expect_exists().returning(|_| true);
+        fs.expect_read_to_string().returning(move |path| {
+            if path.ends_with("env.current") && !env_broken_in_fs.load(Ordering::Relaxed) {
+                Ok("testenv\n".to_string())
+            } else {
+                Err(FileSystemError::IoError(io::Error::other("unreadable")))
+            }
+        });
+        fs.expect_create_dir_all().returning(|_| Ok(()));
+        let mut env = MockEnvTrait::new();
+        env.expect_which().returning(|_| true);
+        env.expect_var()
+            .returning(|_| Ok("/home/user/.cache".to_string()));
+        let (history, builds) = recording_history(None);
+        let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
+        let (handle, process, log_dir) = spawn_full_actor("env-breaks", history, shell, fs, env);
+        let mut watch = handle.watch_status().await.unwrap();
+
+        handle.start_build(start_request()).await.unwrap();
+        // Break the env state after the start probes but before the
+        // completion probes run.
+        env_broken.store(true, Ordering::Relaxed);
+        process.last_child().finish(0);
+        let status = wait_for_terminal_status(&mut watch).await;
+
+        assert!(matches!(status, KwJobStatus::Succeeded { .. }));
+        assert!(builds.lock().unwrap().is_empty());
 
         handle.shutdown().await;
         std::fs::remove_dir_all(&log_dir).unwrap();

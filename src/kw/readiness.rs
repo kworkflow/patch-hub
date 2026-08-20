@@ -285,6 +285,30 @@ fn image_mtime(fs: &dyn FileSystemTrait, path: &Path) -> SystemTime {
         .unwrap_or(SystemTime::UNIX_EPOCH)
 }
 
+/// Reads the built kernel's release string from
+/// `<build_root>/include/config/kernel.release`, the file a kernel build
+/// generates — cheaper than re-running `make kernelrelease`, and `None`
+/// when the build never produced one (or produced an empty one).
+// Read by KwActor when writing build records (the build step); kept per
+// the CachePolicy precedent (src/lore/application/cache.rs).
+#[allow(dead_code)]
+pub fn read_kernelrelease(fs: &dyn FileSystemTrait, build_root: &Path) -> Option<String> {
+    let release = fs
+        .read_to_string(
+            &build_root
+                .join("include")
+                .join("config")
+                .join("kernel.release"),
+        )
+        .ok()?;
+    let release = release.trim();
+    if release.is_empty() {
+        None
+    } else {
+        Some(release.to_string())
+    }
+}
+
 /// Minimum kw version this integration is verified against.
 pub const KW_MIN_VERSION: (u32, u32) = (0, 10);
 
@@ -1037,6 +1061,31 @@ last_line_without_newline=yes";
             None,
             find_newest_kernel_image(&OsFileSystem, dir.path(), Some("x86"))
         );
+    }
+
+    #[test]
+    fn kernelrelease_reads_and_trims_the_release_file() {
+        let dir = make_ready_tree("kernelrelease");
+        let config_dir = dir.path().join("include").join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(config_dir.join("kernel.release"), "6.17.0-rc1\n").unwrap();
+
+        assert_eq!(
+            Some("6.17.0-rc1".to_string()),
+            read_kernelrelease(&OsFileSystem, dir.path())
+        );
+    }
+
+    #[test]
+    fn kernelrelease_is_none_without_a_release_file() {
+        let dir = make_ready_tree("kernelrelease-missing");
+
+        assert_eq!(None, read_kernelrelease(&OsFileSystem, dir.path()));
+
+        let config_dir = dir.path().join("include").join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(config_dir.join("kernel.release"), "\n").unwrap();
+        assert_eq!(None, read_kernelrelease(&OsFileSystem, dir.path()));
     }
 
     fn shell_output(stdout: &str, success: bool) -> ShellOutput {
