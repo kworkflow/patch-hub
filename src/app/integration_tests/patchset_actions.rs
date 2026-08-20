@@ -22,7 +22,9 @@ use crate::{
         process::FakeProcess,
         shell::{MockShellTrait, ShellCommand, ShellOutput},
     },
-    kw::{actor::KwActor, history::MockKwHistoryStore, messages::StartRequest},
+    kw::{
+        actor::KwActor, history::MockKwHistoryStore, messages::StartRequest, status::KwJobStatus,
+    },
     lore::application::{
         cache::BootstrapLoreData, handle::LoreApiHandle, messages::LoreApiMessage,
     },
@@ -266,6 +268,7 @@ async fn apply_is_blocked_while_a_kw_job_runs() {
         kw_actor_shell(),
         kw_actor_fs(),
         kw_actor_env(),
+        Arc::new(FakeProcess::new()),
         log_dir.clone(),
     );
 
@@ -281,6 +284,81 @@ async fn apply_is_blocked_while_a_kw_job_runs() {
         &["kw job is running", "Wait for the job to finish"],
     );
     assert!(calls.lock().unwrap().is_empty());
+
+    shutdown_kw(&app).await;
+    std::fs::remove_dir_all(&log_dir).unwrap();
+}
+
+#[tokio::test]
+async fn apply_is_allowed_again_after_the_job_finishes() {
+    let (shell, calls) = shell_with_outputs(vec![
+        output("", "", true),
+        output("", "", true),
+        output("feature\n", "", true),
+        output("", "", true),
+        output("", "", true),
+        output("", "", true),
+    ]);
+    let log_dir = kw_log_dir("apply-after-job");
+    let process = Arc::new(FakeProcess::new());
+    let mut store = MockKwHistoryStore::new();
+    store.expect_record_apply().returning(|_| Ok(()));
+    store
+        .expect_apply_record_for_branch()
+        .returning(|_, _| Ok(None));
+    store.expect_record_build().returning(|_| Ok(()));
+    let mut app = app_with_details_and_kw(
+        clean_fs(),
+        shell,
+        lore_handle_with_persistence(),
+        apply_details_state(),
+        apply_config(),
+        store,
+        kw_actor_shell(),
+        kw_actor_fs(),
+        kw_actor_env(),
+        process.clone(),
+        log_dir.clone(),
+    );
+
+    let kw = app.services.kw.as_ref().expect("tests run on unix").clone();
+    kw.start_build(kw_start_request()).await.unwrap();
+
+    // While the job runs, the apply is blocked.
+    app.consolidate_patchset_actions().await.unwrap();
+    assert_info_popup_contains(app.state.popup.as_ref(), "Patchset Apply Blocked", &[]);
+    assert!(calls.lock().unwrap().is_empty());
+
+    // Once the job finishes, the same apply goes through.
+    process.last_child().finish(0);
+    let mut watch = kw.watch_status().await.unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            if matches!(watch.borrow().job, KwJobStatus::Succeeded { .. }) {
+                break;
+            }
+            watch.changed().await.unwrap();
+        }
+    })
+    .await
+    .expect("job must reach a terminal state");
+
+    let details = app
+        .state
+        .lore
+        .details
+        .as_mut()
+        .expect("details should remain loaded");
+    details.toggle_apply_action();
+    app.consolidate_patchset_actions().await.unwrap();
+
+    assert_apply_action(&app, false);
+    assert_info_popup_contains(
+        app.state.popup.as_ref(),
+        "Patchset Apply Success",
+        &["applied successfully"],
+    );
+    assert_eq!(6, calls.lock().unwrap().len());
 
     shutdown_kw(&app).await;
     std::fs::remove_dir_all(&log_dir).unwrap();
@@ -397,12 +475,14 @@ fn app_with_details(
         MockShellTrait::new(),
         MockFileSystemTrait::new(),
         MockEnvTrait::new(),
+        Arc::new(FakeProcess::new()),
         PathBuf::from("/tmp/patch-hub-test-kw-logs"),
     )
 }
 
-/// Variant of [`app_with_details`] whose kw actor gets its own mocks and
-/// log dir, for tests that start jobs through the app's kw handle.
+/// Variant of [`app_with_details`] whose kw actor gets its own mocks,
+/// process double, and log dir, for tests that start jobs through the
+/// app's kw handle.
 #[allow(clippy::too_many_arguments)]
 fn app_with_details_and_kw(
     fs: MockFileSystemTrait,
@@ -414,13 +494,14 @@ fn app_with_details_and_kw(
     kw_shell: MockShellTrait,
     kw_fs: MockFileSystemTrait,
     kw_env: MockEnvTrait,
+    kw_process: Arc<FakeProcess>,
     kw_log_dir: PathBuf,
 ) -> App {
     // Apply history is recorded through the real actor wrapping the mock
     // store, mirroring production wiring.
     let kw = KwActor::spawn(
         Arc::new(kw_history),
-        Arc::new(FakeProcess::new()),
+        kw_process,
         Arc::new(kw_shell),
         Arc::new(kw_fs),
         Arc::new(kw_env),
