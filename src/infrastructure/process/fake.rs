@@ -46,6 +46,10 @@ struct FakeState {
     /// "running": the model for a process group that ignores SIGTERM, so
     /// tests can exercise the SIGKILL escalation.
     ignores_sigterm: bool,
+    /// When set, `wait()` resolves with an IO error once the process
+    /// finishes: the model for a process whose exit status is lost (an
+    /// already-reaped child, an OS-level wait failure).
+    fails_wait: bool,
 }
 
 impl FakeControl {
@@ -90,6 +94,7 @@ pub struct FakeProcess {
     spawns: Mutex<Vec<FakeSpawn>>,
     refuse_spawns: AtomicBool,
     ignore_sigterm: AtomicBool,
+    fail_waits: AtomicBool,
 }
 
 impl FakeProcess {
@@ -108,6 +113,12 @@ impl FakeProcess {
     /// kill is recorded but they keep "running" until `force_kill()`.
     pub fn ignore_sigterm(&self, ignore: bool) {
         self.ignore_sigterm.store(ignore, Ordering::Relaxed);
+    }
+
+    /// Make subsequently spawned processes' `wait()` resolve with an IO
+    /// error once they finish, instead of their exit status.
+    pub fn fail_waits(&self, fail: bool) {
+        self.fail_waits.store(fail, Ordering::Relaxed);
     }
 
     pub fn spawned(&self) -> Vec<SpawnRecord> {
@@ -153,6 +164,7 @@ impl ProcessTrait for FakeProcess {
                 killed: false,
                 force_killed: false,
                 ignores_sigterm: self.ignore_sigterm.load(Ordering::Relaxed),
+                fails_wait: self.fail_waits.load(Ordering::Relaxed),
             }),
             notify: Notify::new(),
             log_path: log_path.to_path_buf(),
@@ -179,11 +191,20 @@ struct FakeRunningProcess {
 impl RunningProcess for FakeRunningProcess {
     async fn wait(&mut self) -> Result<ExitStatus, ProcessError> {
         loop {
-            // The state lock is released before the await; a finish()/kill()
-            // racing the check is not lost because Notify stores one permit.
-            let raw_status = self.control.state.lock().unwrap().raw_status;
-            if let Some(raw) = raw_status {
-                return Ok(ExitStatus::from_raw(raw));
+            // Only Copy data escapes the guard scope, so the (non-Send)
+            // guard is never held across the await; a finish()/kill()
+            // racing the check is not lost because Notify stores one
+            // permit.
+            let finished = {
+                let state = self.control.state.lock().unwrap();
+                state.raw_status.map(|raw| (raw, state.fails_wait))
+            };
+            if let Some((raw, fails_wait)) = finished {
+                return if fails_wait {
+                    Err(ProcessError::IoError(io::Error::other("fake wait failure")))
+                } else {
+                    Ok(ExitStatus::from_raw(raw))
+                };
             }
             self.control.notify.notified().await;
         }
