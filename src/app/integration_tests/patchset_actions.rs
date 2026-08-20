@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 
@@ -16,10 +17,12 @@ use crate::{
     },
     config::{ConfigSnapshot, ConfigState},
     infrastructure::{
+        env::MockEnvTrait,
         file_system::{FileSystemError, MockFileSystemTrait},
+        process::FakeProcess,
         shell::{MockShellTrait, ShellCommand, ShellOutput},
     },
-    kw::history::MockKwHistoryStore,
+    kw::{actor::KwActor, history::MockKwHistoryStore},
     lore::application::{
         cache::BootstrapLoreData, handle::LoreApiHandle, messages::LoreApiMessage,
     },
@@ -329,6 +332,16 @@ fn app_with_details(
     config: ConfigSnapshot,
     kw_history: MockKwHistoryStore,
 ) -> App {
+    // Apply history is recorded through the real actor wrapping the mock
+    // store, mirroring production wiring.
+    let kw = KwActor::spawn(
+        Arc::new(kw_history),
+        Arc::new(FakeProcess::new()),
+        Arc::new(MockShellTrait::new()),
+        Arc::new(MockFileSystemTrait::new()),
+        Arc::new(MockEnvTrait::new()),
+        PathBuf::from("/tmp/patch-hub-test-kw-logs"),
+    );
     let mut app = App::new(
         config,
         dummy_config_handle(),
@@ -341,7 +354,8 @@ fn app_with_details(
         Box::new(shell),
         lore_api,
         dummy_render_handle(),
-        Arc::new(kw_history),
+        Arc::new(MockKwHistoryStore::new()),
+        Some(kw),
     )
     .expect("app should build");
 

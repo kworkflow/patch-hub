@@ -16,6 +16,8 @@ use clap::Parser;
 use cli::Cli;
 use color_eyre::{eyre::eyre, Result};
 use config::{bootstrap_parts, ConfigActor};
+#[cfg(unix)]
+use infrastructure::process::OsProcess;
 use infrastructure::{
     env::OsEnv,
     file_system::{FileSystemTrait, OsFileSystem},
@@ -25,6 +27,8 @@ use infrastructure::{
     terminal::init,
 };
 use input::{actor::InputActor, event::InputEvent};
+#[cfg(unix)]
+use kw::actor::KwActor;
 use kw::history::{FileKwHistoryStore, KwHistoryStore};
 use lore::{
     application::{actor::LoreApiActor, cache::CacheTtl, service::LoreService},
@@ -101,6 +105,21 @@ async fn main() -> Result<()> {
         config.data_dir().to_string(),
     ));
 
+    // The kw actor is unix-only because ProcessTrait (process-group kill)
+    // is; everywhere else there is no handle and App falls back to writing
+    // apply history directly.
+    #[cfg(unix)]
+    let kw_handle = Some(KwActor::spawn(
+        kw_history.clone(),
+        Arc::new(OsProcess),
+        shell_arc.clone(),
+        fs_arc.clone(),
+        Arc::new(OsEnv),
+        format!("{}/kw_logs", config.cache_dir()).into(),
+    ));
+    #[cfg(not(unix))]
+    let kw_handle = None;
+
     let render = RenderActor::spawn(Box::new(ShellRenderService::new(shell_arc.clone())));
 
     let lore_api = LoreApiActor::spawn(LoreService::new(
@@ -132,6 +151,7 @@ async fn main() -> Result<()> {
         lore_api.clone(),
         render.clone(),
         kw_history.clone(),
+        kw_handle.clone(),
     )?;
     let (app_input_tx, app_input_rx) = mpsc::channel::<InputEvent>(64);
     let input_handle = InputActor::spawn(terminal_handle.clone(), app.input_context());
@@ -144,11 +164,13 @@ async fn main() -> Result<()> {
     // Shutdown ordering:
     //  1. AppActor — exits when the user quits (input channel closes)
     //  2. InputActor — no further terminal input is needed once App is gone
-    //  3. ConfigActor — no further configuration requests once App is gone
-    //  4. LoreApiActor — no further requests once App is gone
-    //  5. RenderActor  — no further requests once App is gone
-    //  6. UiActor      — no further scene builds once App is gone
-    //  7. TerminalActor — restores the terminal last so the screen stays usable
+    //  3. KwActor — no further kw requests once App is gone; kills any
+    //     running job's process group before stopping
+    //  4. ConfigActor — no further configuration requests once App is gone
+    //  5. LoreApiActor — no further requests once App is gone
+    //  6. RenderActor  — no further requests once App is gone
+    //  7. UiActor      — no further scene builds once App is gone
+    //  8. TerminalActor — restores the terminal last so the screen stays usable
     //                     during the steps above
     AppActor::spawn(
         app,
@@ -163,6 +185,9 @@ async fn main() -> Result<()> {
         .shutdown()
         .await
         .map_err(|e| eyre!("{e}"))?;
+    if let Some(kw_handle) = kw_handle {
+        kw_handle.shutdown().await;
+    }
     config_handle.shutdown().await;
     lore_api.shutdown().await;
     render.shutdown().await;

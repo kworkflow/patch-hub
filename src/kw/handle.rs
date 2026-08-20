@@ -16,8 +16,9 @@ pub struct KwHandle {
     tx: mpsc::Sender<KwMessage>,
 }
 
-// No production caller until the actor is wired into the app; kept per the
-// CachePolicy precedent (src/lore/application/cache.rs).
+// Only record_apply/shutdown have a production caller until the KwOps
+// screen lands; kept per the CachePolicy precedent
+// (src/lore/application/cache.rs).
 #[allow(dead_code)]
 impl KwHandle {
     pub fn new(tx: mpsc::Sender<KwMessage>) -> Self {

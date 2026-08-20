@@ -1,3 +1,6 @@
+// The actor that constructs/reads these is unix-only.
+#![cfg_attr(not(unix), allow(dead_code))]
+
 use thiserror::Error;
 
 use crate::{

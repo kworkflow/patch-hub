@@ -47,7 +47,10 @@ use crate::{
         file_system::FileSystemTrait, monitoring::logging::garbage_collector::collect_garbage,
         shell::ShellTrait,
     },
-    kw::history::{KwApplyRecord, KwHistoryStore},
+    kw::{
+        handle::KwHandle,
+        history::{KwApplyRecord, KwHistoryStore},
+    },
     lore::{
         application::{
             cache::{BootstrapLoreData, CacheMode},
@@ -76,8 +79,12 @@ pub struct AppServices {
     pub shell: Box<dyn ShellTrait>,
     pub fs: Box<dyn FileSystemTrait>,
     pub config: ConfigHandle,
-    /// Shared with KwActor once it exists (the actor adopts the same store).
+    /// Direct access to the store, for the non-unix fallback below.
     pub kw_history: Arc<dyn KwHistoryStore>,
+    /// `None` on non-unix builds, where ProcessTrait (and thus KwActor)
+    /// does not exist; apply-history writes then go to `kw_history`
+    /// directly, as they did before the actor landed.
+    pub kw: Option<KwHandle>,
 }
 
 /// Result type signalling whether a patchset was successfully loaded.
@@ -110,6 +117,7 @@ impl App {
         lore_api: LoreApiHandle,
         render: RenderHandle,
         kw_history: Arc<dyn KwHistoryStore>,
+        kw: Option<KwHandle>,
     ) -> Result<Self> {
         event!(Level::INFO, "patch-hub started");
         collect_garbage(&config);
@@ -147,6 +155,7 @@ impl App {
                 fs,
                 config: config_handle,
                 kw_history,
+                kw,
             },
         })
     }
@@ -310,7 +319,7 @@ impl App {
         debug!("consolidating patchset actions");
         self.sync_patchset_bookmark().await?;
         self.execute_reviewed_reply().await?;
-        self.execute_apply_patchset();
+        self.execute_apply_patchset().await;
         debug!("patchset actions consolidated");
         Ok(())
     }
@@ -408,7 +417,7 @@ impl App {
         Ok(())
     }
 
-    fn execute_apply_patchset(&mut self) {
+    async fn execute_apply_patchset(&mut self) {
         let details = self
             .state
             .lore
@@ -437,18 +446,33 @@ impl App {
                                 applied.message
                             )
                         }
-                        // The git apply itself succeeded; a history-write
-                        // failure must not turn it into a reported failure.
-                        Some(record) => match self.services.kw_history.record_apply(record) {
-                            Ok(()) => applied.message,
-                            Err(e) => {
-                                warn!(error = %e, "failed to record kw apply history");
-                                format!(
-                                    "{}\n\nWarning: the apply was not recorded in the kw history: {e}\nIf this warning keeps appearing, inspect or delete that file.",
-                                    applied.message
-                                )
+                        Some(record) => {
+                            // History writes go through KwActor so apply
+                            // recording serializes with job state; without an
+                            // actor (non-unix), write the store directly.
+                            let recorded = match &self.services.kw {
+                                Some(kw) => {
+                                    kw.record_apply(record).await.map_err(|e| e.to_string())
+                                }
+                                None => self
+                                    .services
+                                    .kw_history
+                                    .record_apply(record)
+                                    .map_err(|e| e.to_string()),
+                            };
+                            // The git apply itself succeeded; a history-write
+                            // failure must not turn it into a reported failure.
+                            match recorded {
+                                Ok(()) => applied.message,
+                                Err(e) => {
+                                    warn!(error = %e, "failed to record kw apply history");
+                                    format!(
+                                        "{}\n\nWarning: the apply was not recorded in the kw history: {e}\nIf this warning keeps appearing, inspect or delete that file.",
+                                        applied.message
+                                    )
+                                }
                             }
-                        },
+                        }
                     };
                     popup::AppPopup::info("Patchset Apply Success", popup_body)
                 }

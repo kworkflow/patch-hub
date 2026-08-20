@@ -3,6 +3,9 @@
 //! `AppState` never owns job state; it polls (`GetStatus`) or watches
 //! (`WatchStatus`) these snapshots and projects them into the view model.
 
+// The actor that constructs/reads these is unix-only.
+#![cfg_attr(not(unix), allow(dead_code))]
+
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

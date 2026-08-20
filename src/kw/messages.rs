@@ -1,3 +1,6 @@
+// The actor that reads these fields is unix-only.
+#![cfg_attr(not(unix), allow(dead_code))]
+
 use tokio::sync::{oneshot, watch};
 
 use crate::{

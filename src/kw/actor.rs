@@ -8,12 +8,6 @@
 //! [`crate::kw::readiness`] and records applies through the shared
 //! [`KwHistoryStore`](crate::kw::history::KwHistoryStore).
 
-// No production caller until the actor is wired into the app; the allow
-// marks the module as a live root so the message/status/handle types it
-// references stay live too. Removed once main.rs spawns the actor. Kept
-// per the CachePolicy precedent (src/lore/application/cache.rs).
-#![allow(dead_code)]
-
 use std::{ops::ControlFlow, path::PathBuf, process::ExitStatus, sync::Arc};
 
 use tokio::{
@@ -288,11 +282,16 @@ impl KwActor {
                 };
                 let status = match outcome {
                     JobOutcome::Exited(exit) if exit.success() => {
-                        tracing::info!(branch = job.branch, "kw job succeeded");
+                        tracing::info!(
+                            kernel_tree_id = job.kernel_tree_id,
+                            branch = job.branch,
+                            "kw job succeeded"
+                        );
                         KwJobStatus::Succeeded { kind: job.kind }
                     }
                     JobOutcome::Exited(exit) => {
                         tracing::warn!(
+                            kernel_tree_id = job.kernel_tree_id,
                             branch = job.branch,
                             exit_code = exit.code(),
                             "kw job failed"
