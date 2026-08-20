@@ -292,9 +292,6 @@ pub struct KwBinaryProbe {
 /// Probes for the kw binary (`which kw`) and, when present, its version
 /// (`kw --version`, whose first line is the version string; repo-mode and
 /// installed kw both print `Branch:`/`Commit:` lines after it).
-// Wired into startup checks in a later step; kept per the CachePolicy
-// precedent (src/lore/application/cache.rs).
-#[allow(dead_code)]
 pub fn probe_kw_binary(env: &dyn EnvTrait, shell: &dyn ShellTrait) -> KwBinaryProbe {
     if !env.which("kw") {
         return KwBinaryProbe {

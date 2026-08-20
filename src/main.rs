@@ -72,7 +72,7 @@ async fn main() -> Result<()> {
         ControlFlow::Continue(()) => {}
     }
 
-    check_external_deps(&env, &config)?;
+    check_external_deps(&env, &OsShell, &config)?;
 
     let config_handle = ConfigActor::spawn(config_state, config_repo);
     let terminal_handle = TerminalActor::spawn(Box::new(CrosstermTerminalSession::new(init()?)));
