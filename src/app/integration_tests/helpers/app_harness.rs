@@ -56,6 +56,7 @@ pub(crate) fn app_with_bootstrap_and_handles(
         lore_api,
         render,
         Arc::new(MockKwHistoryStore::new()),
+        None,
     )
     .expect("minimal app should build")
 }
