@@ -1,5 +1,7 @@
+mod json;
 mod r#trait;
 
+pub use json::JsonUtils;
 pub use r#trait::{FileSystemError, FileSystemTrait};
 
 #[cfg(test)]

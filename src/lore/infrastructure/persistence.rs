@@ -1,6 +1,6 @@
 use mockall::automock;
-use serde::{de::DeserializeOwned, Serialize};
-use serde_json::{from_reader, to_writer};
+use serde::de::DeserializeOwned;
+use serde_json::from_reader;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -10,7 +10,7 @@ use std::{
 };
 
 use crate::{
-    infrastructure::file_system::{FileSystemError, FileSystemTrait},
+    infrastructure::file_system::{FileSystemError, FileSystemTrait, JsonUtils},
     lore::domain::{mailing_list::MailingList, patch::Patch},
 };
 
@@ -60,24 +60,6 @@ impl FileLorePersistence {
         }
     }
 
-    fn atomic_write_json<T: Serialize + ?Sized>(
-        &self,
-        value: &T,
-        path: &str,
-    ) -> Result<(), FileSystemError> {
-        if let Some(parent) = Path::new(path).parent() {
-            self.fs.create_dir_all(parent)?;
-        }
-
-        let tmp_path = format!("{path}.tmp");
-        {
-            let writer = self.fs.create_writer(Path::new(&tmp_path))?;
-            to_writer(writer, value).map_err(io::Error::from)?;
-        }
-        self.fs.rename(Path::new(&tmp_path), Path::new(path))?;
-        Ok(())
-    }
-
     fn read_json<T: DeserializeOwned>(&self, path: &str) -> Result<T, FileSystemError> {
         let reader = self.fs.open_bufreader(Path::new(path))?;
         from_reader(reader)
@@ -92,7 +74,7 @@ impl MailingListsCacheStore for FileLorePersistence {
     }
 
     fn save_available_lists(&self, lists: &[MailingList]) -> Result<(), FileSystemError> {
-        self.atomic_write_json(lists, &self.mailing_lists_path)
+        JsonUtils::atomic_write_json(&*self.fs, lists, &self.mailing_lists_path)
     }
 }
 
@@ -102,7 +84,7 @@ impl UserLoreStateStore for FileLorePersistence {
     }
 
     fn save_bookmarked_patchsets(&self, patchsets: &[Patch]) -> Result<(), FileSystemError> {
-        self.atomic_write_json(patchsets, &self.bookmarked_path)
+        JsonUtils::atomic_write_json(&*self.fs, patchsets, &self.bookmarked_path)
     }
 
     fn load_reviewed_patchsets(&self) -> Result<HashMap<String, HashSet<usize>>, FileSystemError> {
@@ -113,7 +95,7 @@ impl UserLoreStateStore for FileLorePersistence {
         &self,
         reviewed: &HashMap<String, HashSet<usize>>,
     ) -> Result<(), FileSystemError> {
-        self.atomic_write_json(reviewed, &self.reviewed_path)
+        JsonUtils::atomic_write_json(&*self.fs, reviewed, &self.reviewed_path)
     }
 }
 

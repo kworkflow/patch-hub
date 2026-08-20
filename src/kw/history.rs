@@ -6,11 +6,11 @@
 
 use mockall::automock;
 use serde::{Deserialize, Serialize};
-use serde_json::{from_reader, to_writer_pretty};
+use serde_json::from_reader;
 
 use std::{collections::HashMap, io, path::Path, sync::Arc};
 
-use crate::infrastructure::file_system::{FileSystemError, FileSystemTrait};
+use crate::infrastructure::file_system::{FileSystemError, FileSystemTrait, JsonUtils};
 
 pub const APPLY_HISTORY_FILENAME: &str = "kw_apply_history.json";
 
@@ -83,27 +83,7 @@ impl FileKwHistoryStore {
             .entry(record.message_id.clone())
             .or_default()
             .insert(record.kernel_tree_id.clone(), record);
-        self.atomic_write_json(&records, &self.apply_history_path)
-    }
-
-    /// Mirrors `FileLorePersistence::atomic_write_json`
-    /// (src/lore/infrastructure/persistence.rs).
-    fn atomic_write_json<T: Serialize + ?Sized>(
-        &self,
-        value: &T,
-        path: &str,
-    ) -> Result<(), FileSystemError> {
-        if let Some(parent) = Path::new(path).parent() {
-            self.fs.create_dir_all(parent)?;
-        }
-
-        let tmp_path = format!("{path}.tmp");
-        {
-            let writer = self.fs.create_writer(Path::new(&tmp_path))?;
-            to_writer_pretty(writer, value).map_err(io::Error::from)?;
-        }
-        self.fs.rename(Path::new(&tmp_path), Path::new(path))?;
-        Ok(())
+        JsonUtils::atomic_write_json(&*self.fs, &records, &self.apply_history_path)
     }
 
     /// Makes store errors self-describing so the apply hook's warning popup
