@@ -60,6 +60,18 @@ enum JobEvent {
     Finished(JobOutcome),
 }
 
+/// Where RestorePreviousBranch switches back to: the branch HEAD was on
+/// when the last job was accepted, and the tree that branch lives in.
+/// Session-only (integration plan §2.1a), deliberately not persisted.
+// Read once RestorePreviousBranch is implemented (the next unit of the
+// build step); kept per the CachePolicy precedent
+// (src/lore/application/cache.rs).
+#[allow(dead_code)]
+struct RestoreContext {
+    tree_path: String,
+    branch: String,
+}
+
 /// What the actor remembers about the running job while the detached task
 /// owns the process itself (see [`run_job`]).
 struct JobState {
@@ -89,6 +101,9 @@ pub struct KwActor {
     process: Arc<dyn ProcessTrait>,
     kw_log_dir: PathBuf,
     job: Option<JobState>,
+    /// Recorded only when a job is accepted: a refused start never
+    /// clobbers a previous job's restore target.
+    last_restore: Option<RestoreContext>,
 }
 
 impl KwActor {
@@ -115,6 +130,7 @@ impl KwActor {
             process,
             kw_log_dir,
             job: None,
+            last_restore: None,
         }
     }
 
@@ -242,12 +258,10 @@ impl KwActor {
     /// detached task and is observed via the status snapshot.
     ///
     /// Refusals, in order: a job already running, no kw binary on PATH,
-    /// unresolvable kw-env state, or a tree that fails the readiness
-    /// probes. The argv is still the skeleton's minimal `kw build
-    /// --alert=n`; the real argv builder (reserved flags, extra-args merge)
-    /// and the checkout policy land later in the build step. The `branch`
-    /// carried by the Running status is the *requested* branch; the
-    /// checkout policy is what will make the tree actually sit on it.
+    /// unresolvable kw-env state, a tree that fails the readiness probes,
+    /// a dirty worktree, or a failed branch switch. The argv is still the
+    /// skeleton's minimal `kw build --alert=n`; the real argv builder
+    /// (reserved flags, extra-args merge) lands later in the build step.
     fn start_job(&mut self, kind: KwJobKind, request: StartRequest) -> Result<(), KwStartError> {
         if self.job.is_some() {
             return Err(KwStartError::JobAlreadyRunning);
@@ -278,16 +292,25 @@ impl KwActor {
             return Err(KwStartError::TreeNotReady(tree_readiness));
         }
 
-        // Probed before anything touches the tree: once the checkout policy
-        // lands, `git switch <selected branch>` goes between this probe and
-        // the spawn, and the probe must still capture the pre-job HEAD or
-        // RestorePreviousBranch would "restore" the branch the job switched
-        // to. An unprobed HEAD (detached, or not a git repo) records
-        // nothing rather than a wrong branch.
+        // Refuse on a dirty worktree before touching anything (§2.1a): a
+        // switch could otherwise carry unrelated changes into the build
+        // branch.
+        self.check_worktree_clean(&request.tree)?;
+
+        // Probed before anything touches the tree: the `git switch` below
+        // goes between this probe and the spawn, and the probe must still
+        // capture the pre-job HEAD or RestorePreviousBranch would
+        // "restore" the branch the job switched to. An unprobed HEAD
+        // (detached, or not a git repo) records nothing rather than a
+        // wrong branch.
         let pre_job_branch = match self.head_branch(&request.tree) {
             branch if branch.is_empty() => None,
             branch => Some(branch),
         };
+
+        // The checkout policy (§2.1a): the job runs on the requested
+        // branch, and HEAD stays there after the job.
+        self.switch_to_branch(&request.tree, &request.branch)?;
 
         self.fs.create_dir_all(&self.kw_log_dir)?;
         // Millisecond suffix: two jobs started within the same second must
@@ -310,6 +333,14 @@ impl KwActor {
             log_path = %log_path.display(),
             "kw build job started"
         );
+        // Recorded only on accept: a refused start — including one refused
+        // after the switch (log-dir creation, spawn) — never clobbers a
+        // previous job's restore target. An accepted job with an unprobed
+        // pre-job HEAD clears it: nothing honest is left to restore to.
+        self.last_restore = pre_job_branch.clone().map(|branch| RestoreContext {
+            tree_path: request.tree.path().to_string(),
+            branch,
+        });
         self.job = Some(JobState {
             kind,
             phase,
@@ -419,6 +450,45 @@ impl KwActor {
             tree,
             &head,
         )?)
+    }
+
+    /// Refuses the start unless the tree's git state verifies clean
+    /// (§2.1a). A probe that itself fails — git missing, not a repository
+    /// — refuses too: starting a job on a tree whose state is unknown
+    /// could carry unrecorded changes into the build branch.
+    fn check_worktree_clean(&self, tree: &KernelTree) -> Result<(), KwStartError> {
+        let cmd = ShellCommand::new("git").args(["-C", tree.path(), "status", "--porcelain"]);
+        let output = self
+            .shell
+            .execute(&cmd)
+            .map_err(|error| KwStartError::GitStateProbe(error.to_string()))?;
+        if !output.success {
+            return Err(KwStartError::GitStateProbe(
+                String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            ));
+        }
+        if !output.stdout.is_empty() {
+            return Err(KwStartError::DirtyWorktree);
+        }
+        Ok(())
+    }
+
+    /// Switches the tree onto the branch the job must run on (§2.1a); HEAD
+    /// stays there after the job. A failure refuses the start with git's
+    /// stderr, which names the usual causes (no such branch, a rebase or
+    /// merge in progress).
+    fn switch_to_branch(&self, tree: &KernelTree, branch: &str) -> Result<(), KwStartError> {
+        let cmd = ShellCommand::new("git").args(["-C", tree.path(), "switch", branch]);
+        let output = self
+            .shell
+            .execute(&cmd)
+            .map_err(|error| KwStartError::CheckoutFailed(error.to_string()))?;
+        if !output.success {
+            return Err(KwStartError::CheckoutFailed(
+                String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            ));
+        }
+        Ok(())
     }
 
     /// The tree's current branch, probed via git. An unresolvable HEAD
@@ -578,7 +648,10 @@ mod tests {
     use std::{
         io,
         path::Path,
-        sync::atomic::{AtomicU64, Ordering},
+        sync::{
+            atomic::{AtomicU64, Ordering},
+            Mutex,
+        },
         time::Duration,
     };
 
@@ -587,7 +660,7 @@ mod tests {
             env::MockEnvTrait,
             file_system::{FileSystemError, MockFileSystemTrait},
             process::FakeProcess,
-            shell::{MockShellTrait, ShellOutput},
+            shell::{MockShellTrait, ShellCommand, ShellOutput},
         },
         kw::{
             errors::KwStartError,
@@ -653,6 +726,56 @@ mod tests {
         )
     }
 
+    const KW_VERSION_OK: &[u8] = b"kw, version 0.10.0\n";
+    /// A clean `git status --porcelain` answer.
+    const CLEAN_STATUS: (&[u8], &[u8], bool) = (b"", b"", true);
+    /// A successful `git switch` answer.
+    const SWITCH_OK: (&[u8], bool) = (b"", true);
+
+    fn command_parts(cmd: &ShellCommand) -> Vec<String> {
+        let mut parts = vec![cmd.program.clone()];
+        parts.extend(cmd.args.clone());
+        parts
+    }
+
+    fn command(parts: &[&str]) -> Vec<String> {
+        parts.iter().map(|part| part.to_string()).collect()
+    }
+
+    /// A shell mock that logs every command's argv parts and answers by
+    /// content: kw's version probe with `kw_version`; `git status
+    /// --porcelain` with `status` (stdout, stderr, success); `git switch`
+    /// with `switch` (stderr, success); any other git call — the HEAD
+    /// branch probe — with `master`.
+    fn recording_shell(
+        kw_version: &'static [u8],
+        status: (&'static [u8], &'static [u8], bool),
+        switch: (&'static [u8], bool),
+    ) -> (MockShellTrait, Arc<Mutex<Vec<Vec<String>>>>) {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let calls_in_shell = Arc::clone(&calls);
+        let mut shell = MockShellTrait::new();
+        shell.expect_execute().returning(move |cmd| {
+            calls_in_shell.lock().unwrap().push(command_parts(cmd));
+            let output = |stdout: &[u8], stderr: &[u8], success: bool| ShellOutput {
+                stdout: stdout.to_vec(),
+                stderr: stderr.to_vec(),
+                success,
+            };
+            if cmd.program == "kw" {
+                return Ok(output(kw_version, b"", true));
+            }
+            if cmd.args.iter().any(|arg| arg == "status") {
+                return Ok(output(status.0, status.1, status.2));
+            }
+            if cmd.args.iter().any(|arg| arg == "switch") {
+                return Ok(output(b"", switch.0, switch.1));
+            }
+            Ok(output(b"master\n", b"", true))
+        });
+        (shell, calls)
+    }
+
     /// fs answers for a ready kernel tree with no active kw env: the
     /// kernel-root probes pass, `.config` exists, `.kw/env.current` is
     /// absent, and `.kw/build.config` is unreadable (arch probes as None).
@@ -669,28 +792,24 @@ mod tests {
         });
     }
 
+    /// A ready kernel tree whose log dir can be created.
+    fn ready_fs() -> MockFileSystemTrait {
+        let mut fs = MockFileSystemTrait::new();
+        expect_ready_tree(&mut fs);
+        fs.expect_create_dir_all().returning(|_| Ok(()));
+        fs
+    }
+
     /// Spawns the actor with a real temp log dir and exposes the
     /// [`FakeProcess`] so tests drive the "running" process. The env mock
-    /// has kw on PATH; the shell mock answers the kw version probe and the
-    /// pre-job HEAD probe.
-    fn spawn_job_actor_with_fs(
+    /// has kw on PATH.
+    fn spawn_job_actor_with_mocks(
         test_name: &str,
+        shell: MockShellTrait,
         fs: MockFileSystemTrait,
     ) -> (KwHandle, Arc<FakeProcess>, PathBuf) {
         let process = Arc::new(FakeProcess::new());
         let log_dir = tmp_log_dir(test_name);
-        let mut shell = MockShellTrait::new();
-        shell.expect_execute().returning(|cmd| {
-            let stdout = match cmd.program.as_str() {
-                "kw" => b"kw, version 0.10.0\n".to_vec(),
-                _ => b"master\n".to_vec(),
-            };
-            Ok(ShellOutput {
-                stdout,
-                stderr: Vec::new(),
-                success: true,
-            })
-        });
         let mut env = MockEnvTrait::new();
         env.expect_which().returning(|_| true);
         let handle = KwActor::spawn(
@@ -705,10 +824,8 @@ mod tests {
     }
 
     fn spawn_job_actor(test_name: &str) -> (KwHandle, Arc<FakeProcess>, PathBuf) {
-        let mut fs = MockFileSystemTrait::new();
-        expect_ready_tree(&mut fs);
-        fs.expect_create_dir_all().returning(|_| Ok(()));
-        spawn_job_actor_with_fs(test_name, fs)
+        let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
+        spawn_job_actor_with_mocks(test_name, shell, ready_fs())
     }
 
     fn apply_record() -> KwApplyRecord {
@@ -1092,41 +1209,130 @@ mod tests {
 
     #[tokio::test]
     async fn start_build_allowed_when_kw_version_below_floor() {
-        let process = Arc::new(FakeProcess::new());
-        let log_dir = tmp_log_dir("version-below");
-        let mut env = MockEnvTrait::new();
-        env.expect_which().returning(|_| true);
-        let mut shell = MockShellTrait::new();
-        shell.expect_execute().returning(|cmd| {
-            let stdout = match cmd.program.as_str() {
-                // kw's shipped VERSION file is stale (`beta-0.9` even at
-                // the 0.10 tag): a below-floor report warns but never
-                // gates the start.
-                "kw" => b"kw, version beta-0.9\n".to_vec(),
-                _ => b"master\n".to_vec(),
-            };
-            Ok(ShellOutput {
-                stdout,
-                stderr: Vec::new(),
-                success: true,
-            })
-        });
-        let mut fs = MockFileSystemTrait::new();
-        expect_ready_tree(&mut fs);
-        fs.expect_create_dir_all().returning(|_| Ok(()));
-        let handle = KwActor::spawn(
-            Arc::new(MockKwHistoryStore::new()),
-            process.clone(),
-            Arc::new(shell),
-            Arc::new(fs),
-            Arc::new(env),
-            log_dir.clone(),
-        );
+        // kw's shipped VERSION file is stale (`beta-0.9` even at the 0.10
+        // tag): a below-floor report warns but never gates the start.
+        let (shell, _calls) = recording_shell(b"kw, version beta-0.9\n", CLEAN_STATUS, SWITCH_OK);
+        let (handle, process, log_dir) =
+            spawn_job_actor_with_mocks("version-below", shell, ready_fs());
 
         handle.start_build(start_request()).await.unwrap();
         assert_eq!(1, process.spawned().len());
 
         process.last_child().finish(0);
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_build_switches_to_requested_branch_before_spawning() {
+        let (shell, calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
+        let (handle, process, log_dir) =
+            spawn_job_actor_with_mocks("checkout-order", shell, ready_fs());
+
+        handle.start_build(start_request()).await.unwrap();
+
+        {
+            let calls = calls.lock().unwrap();
+            let git_position = |subcommand: &str| {
+                calls
+                    .iter()
+                    .position(|call| {
+                        call.first().map(String::as_str) == Some("git")
+                            && call.iter().any(|part| part == subcommand)
+                    })
+                    .expect("expected git call missing")
+            };
+            let status = git_position("status");
+            let head = git_position("--show-current");
+            let switch = git_position("switch");
+            assert!(
+                status < head && head < switch,
+                "checkout policy must probe dirty state, then HEAD, then switch: {calls:?}"
+            );
+            assert_eq!(
+                &calls[switch],
+                &command(&[
+                    "git",
+                    "-C",
+                    "/home/user/linux",
+                    "switch",
+                    "patchset-2026-08-01-17-30-00"
+                ])
+            );
+        }
+        assert_eq!(1, process.spawned().len());
+
+        process.last_child().finish(0);
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_build_refused_when_worktree_is_dirty() {
+        let (shell, calls) =
+            recording_shell(KW_VERSION_OK, (b" M src/main.c\n", b"", true), SWITCH_OK);
+        let mut fs = MockFileSystemTrait::new();
+        expect_ready_tree(&mut fs);
+        let (handle, process, log_dir) = spawn_job_actor_with_mocks("dirty", shell, fs);
+
+        let err = handle.start_build(start_request()).await.unwrap_err();
+
+        assert!(matches!(err, KwStartError::DirtyWorktree));
+        assert_eq!(KwJobStatus::Idle, handle.get_status().await.unwrap().job);
+        assert!(process.spawned().is_empty());
+        // The refusal happens before any branch mutation.
+        assert!(!calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|call| call.iter().any(|part| part == "switch")));
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_build_refused_when_git_state_is_unverifiable() {
+        let (shell, _calls) = recording_shell(
+            KW_VERSION_OK,
+            (b"", b"fatal: not a git repository\n", false),
+            SWITCH_OK,
+        );
+        let mut fs = MockFileSystemTrait::new();
+        expect_ready_tree(&mut fs);
+        let (handle, process, log_dir) = spawn_job_actor_with_mocks("git-probe-fail", shell, fs);
+
+        let err = handle.start_build(start_request()).await.unwrap_err();
+
+        assert!(matches!(err, KwStartError::GitStateProbe(_)));
+        assert!(err.to_string().contains("not a git repository"));
+        assert_eq!(KwJobStatus::Idle, handle.get_status().await.unwrap().job);
+        assert!(process.spawned().is_empty());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_build_refused_when_branch_switch_fails() {
+        let (shell, _calls) = recording_shell(
+            KW_VERSION_OK,
+            CLEAN_STATUS,
+            (
+                b"error: pathspec 'no-such-branch' did not match any file(s) known to git\n",
+                false,
+            ),
+        );
+        let (handle, process, log_dir) =
+            spawn_job_actor_with_mocks("switch-fail", shell, ready_fs());
+
+        let err = handle.start_build(start_request()).await.unwrap_err();
+
+        assert!(matches!(err, KwStartError::CheckoutFailed(_)));
+        assert!(err.to_string().contains("did not match"));
+        assert_eq!(KwJobStatus::Idle, handle.get_status().await.unwrap().job);
+        assert!(process.spawned().is_empty());
+
         handle.shutdown().await;
         std::fs::remove_dir_all(&log_dir).unwrap();
     }
@@ -1191,6 +1397,7 @@ mod tests {
 
     #[tokio::test]
     async fn log_dir_creation_failure_refuses_start_and_stays_idle() {
+        let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
         let mut fs = MockFileSystemTrait::new();
         expect_ready_tree(&mut fs);
         fs.expect_create_dir_all().returning(|_| {
@@ -1198,7 +1405,7 @@ mod tests {
                 "read-only filesystem",
             )))
         });
-        let (handle, process, log_dir) = spawn_job_actor_with_fs("log-dir-fail", fs);
+        let (handle, process, log_dir) = spawn_job_actor_with_mocks("log-dir-fail", shell, fs);
 
         let err = handle.start_build(start_request()).await.unwrap_err();
 
