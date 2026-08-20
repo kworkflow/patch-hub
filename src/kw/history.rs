@@ -280,9 +280,7 @@ mod tests {
             message_id: None,
             branch: branch.to_string(),
             arch: Some("x86".to_string()),
-            image_path: Some(format!(
-                "/home/user/{kernel_tree_id}/arch/x86/boot/bzImage"
-            )),
+            image_path: Some(format!("/home/user/{kernel_tree_id}/arch/x86/boot/bzImage")),
             output_dir: None,
             kernelrelease: Some("6.17.0".to_string()),
             log_path: "/home/user/.cache/patch_hub/kw_logs/build-1.log".to_string(),
@@ -438,7 +436,9 @@ mod tests {
         let dir = tmp_dir("build-round-trip");
         let store = store_at(&dir);
 
-        store.record_build(build("mainline", "for-next", "2026-08-01T18:10:00Z")).unwrap();
+        store
+            .record_build(build("mainline", "for-next", "2026-08-01T18:10:00Z"))
+            .unwrap();
         let mut failed = build("mainline", "patchset-x", "2026-08-02T09:00:00Z");
         failed.success = false;
         failed.image_path = None;
@@ -465,8 +465,12 @@ mod tests {
         let dir = tmp_dir("build-overwrite");
         let store = store_at(&dir);
 
-        store.record_build(build("mainline", "for-next", "2026-08-01T18:10:00Z")).unwrap();
-        store.record_build(build("mainline", "for-next", "2026-08-02T18:10:00Z")).unwrap();
+        store
+            .record_build(build("mainline", "for-next", "2026-08-01T18:10:00Z"))
+            .unwrap();
+        store
+            .record_build(build("mainline", "for-next", "2026-08-02T18:10:00Z"))
+            .unwrap();
 
         assert_eq!(
             Some(build("mainline", "for-next", "2026-08-02T18:10:00Z")),
@@ -481,9 +485,15 @@ mod tests {
         let dir = tmp_dir("build-multi");
         let store = store_at(&dir);
 
-        store.record_build(build("mainline", "for-next", "2026-08-01T18:10:00Z")).unwrap();
-        store.record_build(build("mainline", "patchset-x", "2026-08-02T18:10:00Z")).unwrap();
-        store.record_build(build("stable", "for-next", "2026-08-03T18:10:00Z")).unwrap();
+        store
+            .record_build(build("mainline", "for-next", "2026-08-01T18:10:00Z"))
+            .unwrap();
+        store
+            .record_build(build("mainline", "patchset-x", "2026-08-02T18:10:00Z"))
+            .unwrap();
+        store
+            .record_build(build("stable", "for-next", "2026-08-03T18:10:00Z"))
+            .unwrap();
 
         assert_eq!(
             Some(build("mainline", "for-next", "2026-08-01T18:10:00Z")),
@@ -506,11 +516,19 @@ mod tests {
         let dir = tmp_dir("build-latest");
         let store = store_at(&dir);
 
-        store.record_build(build("mainline", "for-next", "2026-08-01T18:10:00Z")).unwrap();
-        store.record_build(build("mainline", "patchset-x", "2026-08-03T18:10:00Z")).unwrap();
-        store.record_build(build("mainline", "master", "2026-08-02T18:10:00Z")).unwrap();
+        store
+            .record_build(build("mainline", "for-next", "2026-08-01T18:10:00Z"))
+            .unwrap();
+        store
+            .record_build(build("mainline", "patchset-x", "2026-08-03T18:10:00Z"))
+            .unwrap();
+        store
+            .record_build(build("mainline", "master", "2026-08-02T18:10:00Z"))
+            .unwrap();
         // Unparseable timestamps sort oldest.
-        store.record_build(build("mainline", "broken-ts", "not a timestamp")).unwrap();
+        store
+            .record_build(build("mainline", "broken-ts", "not a timestamp"))
+            .unwrap();
 
         assert_eq!(
             Some(build("mainline", "patchset-x", "2026-08-03T18:10:00Z")),
@@ -556,7 +574,9 @@ mod tests {
         let dir = tmp_dir("build-atomic");
         let store = store_at(&dir);
 
-        store.record_build(build("mainline", "for-next", "2026-08-01T18:10:00Z")).unwrap();
+        store
+            .record_build(build("mainline", "for-next", "2026-08-01T18:10:00Z"))
+            .unwrap();
 
         let tmp_left = fs::read_dir(&dir).unwrap().any(|e| {
             e.ok()
@@ -578,7 +598,9 @@ mod tests {
         assert!(!dir.join(BUILD_HISTORY_FILENAME).exists());
         assert_eq!(None, store.build_record("mainline", "patchset-x").unwrap());
 
-        store.record_build(build("mainline", "patchset-x", "2026-08-01T18:10:00Z")).unwrap();
+        store
+            .record_build(build("mainline", "patchset-x", "2026-08-01T18:10:00Z"))
+            .unwrap();
         assert!(dir.join(APPLY_HISTORY_FILENAME).exists());
         assert!(dir.join(BUILD_HISTORY_FILENAME).exists());
         assert_eq!(

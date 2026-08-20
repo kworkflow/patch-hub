@@ -4,7 +4,7 @@ use crate::{
     app::errors::AppError,
     config::ConfigSnapshot,
     infrastructure::{env::EnvTrait, shell::ShellTrait},
-    kw::readiness::{KwVersionCheck, probe_kw_binary},
+    kw::readiness::{probe_kw_binary, KwVersionCheck},
     render_prefs::PatchRenderer,
 };
 
@@ -118,8 +118,8 @@ mod tests {
         let mut shell = MockShellTrait::new();
         shell.expect_execute().times(0);
 
-        let err = check_external_deps(&env, &shell, &ConfigState::default().to_snapshot())
-            .unwrap_err();
+        let err =
+            check_external_deps(&env, &shell, &ConfigState::default().to_snapshot()).unwrap_err();
 
         assert!(matches!(err, AppError::Dependencies(_)));
     }
