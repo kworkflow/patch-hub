@@ -10,11 +10,12 @@
 //!
 //! Tracked note (same class as the integration plan's §2.1i): the actor
 //! runs quick blocking calls inline in its async task — `create_dir_all`,
-//! the git probes of the checkout policy, the build-record completion
-//! probes, and the history store's atomic writes — per the ConfigActor
-//! precedent. They are all milliseconds-scale; if a real stall ever shows
-//! up while a long job runs, they should move behind `spawn_blocking`
-//! like the other actors' heavy work.
+//! the build-record completion probes, and the history store's atomic
+//! writes — per the ConfigActor precedent. The checkout policy's git
+//! calls are different: `git switch` rewrites the worktree (seconds on a
+//! kernel tree), so the start and restore paths run them behind
+//! `spawn_blocking` and the `Start*`/`RestorePreviousBranch` replies stay
+//! immediate.
 
 use std::{
     ops::ControlFlow,
@@ -87,10 +88,13 @@ struct JobState {
     phase: KwPhase,
     kernel_tree_id: String,
     branch: String,
-    /// Snapshot of the tree path at accept time: the build record carries
-    /// it so later readiness checks can detect the tree being repointed
-    /// (§2.1e).
+    /// Tree path, kw-env output dir, and build arch as probed at accept
+    /// time. The build runs under these, so the completion record
+    /// describes this snapshot — not whatever the tree's configuration
+    /// says by the time the job ends (§2.1e drift detection).
     tree_path: String,
+    output_dir: Option<PathBuf>,
+    arch: Option<String>,
     log_path: PathBuf,
     /// `None` once a cancel has been requested; a second `Cancel` is an
     /// idempotent ack.
@@ -193,7 +197,7 @@ impl KwActor {
                 send_start_reply(
                     message_name,
                     reply,
-                    self.start_job(KwJobKind::Build, request),
+                    self.start_job(KwJobKind::Build, request).await,
                 );
                 ControlFlow::Continue(())
             }
@@ -228,7 +232,7 @@ impl KwActor {
                 ControlFlow::Continue(())
             }
             KwMessage::RestorePreviousBranch { reply } => {
-                send_kw_reply(message_name, reply, self.restore_previous_branch());
+                send_kw_reply(message_name, reply, self.restore_previous_branch().await);
                 ControlFlow::Continue(())
             }
             KwMessage::Shutdown { reply } => {
@@ -267,8 +271,14 @@ impl KwActor {
     /// unresolvable kw-env state, a tree that fails the readiness probes,
     /// a dirty worktree, or a failed branch switch. The argv comes from
     /// the reserved-flags merge (§2.1f): patch-hub's own flags win over
-    /// the request's extra args.
-    fn start_job(&mut self, kind: KwJobKind, request: StartRequest) -> Result<(), KwStartError> {
+    /// the request's extra args. A start refused after the branch switch
+    /// rolls the switch back: a refused start never leaves the tree on a
+    /// branch the user did not check out.
+    async fn start_job(
+        &mut self,
+        kind: KwJobKind,
+        request: StartRequest,
+    ) -> Result<(), KwStartError> {
         if self.job.is_some() {
             return Err(KwStartError::JobAlreadyRunning);
         }
@@ -292,42 +302,25 @@ impl KwActor {
         let tree_path = PathBuf::from(request.tree.path());
         // Unresolvable env state refuses the start: the build record this
         // job writes at completion must know whether it ran under an O=.
+        // Both values are then snapshotted onto the job — the build runs
+        // under them, so the completion record describes them, not the
+        // tree's configuration at whatever time the job ends.
         let output_dir = readiness::resolve_output_dir(&*self.fs, &*self.env, &tree_path)?;
         let tree_readiness = readiness::probe_tree(&*self.fs, &tree_path, output_dir.as_deref());
-        if !matches!(tree_readiness, TreeReadiness::Ready { .. }) {
+        let TreeReadiness::Ready { arch } = tree_readiness else {
             return Err(KwStartError::TreeNotReady(tree_readiness));
-        }
-
-        // Refuse on a dirty worktree before touching anything (§2.1a): a
-        // switch could otherwise carry unrelated changes into the build
-        // branch.
-        self.check_worktree_clean(request.tree.path())?;
-
-        // Probed before anything touches the tree: the `git switch` below
-        // goes between this probe and the spawn, and the probe must still
-        // capture the pre-job HEAD or RestorePreviousBranch would
-        // "restore" the branch the job switched to. An unprobed HEAD
-        // (detached, or not a git repo) records nothing rather than a
-        // wrong branch.
-        let pre_job_branch = match self.head_branch(&request.tree) {
-            branch if branch.is_empty() => None,
-            branch => Some(branch),
         };
 
-        // The checkout policy (§2.1a): the job runs on the requested
-        // branch, and HEAD stays there after the job.
-        self.switch_to_branch(request.tree.path(), &request.branch)?;
+        let pre_job_branch = self.checkout_build_branch(&request).await?;
 
-        self.fs.create_dir_all(&self.kw_log_dir)?;
-        // Millisecond suffix: two jobs started within the same second must
-        // not share a log file — spawn truncates it.
-        let log_path = self.kw_log_dir.join(format!(
-            "build-{}.log",
-            chrono::Utc::now().format("%Y%m%d-%H%M%S-%3f")
-        ));
-        let cmd = ShellCommand::new("kw").args(argv::build_argv(&request.extra_args));
-        let cwd = PathBuf::from(request.tree.path());
-        let process = self.process.spawn(&cmd, &cwd, &log_path)?;
+        let (process, log_path) = match self.spawn_build_process(&request) {
+            Ok(spawned) => spawned,
+            Err(error) => {
+                self.rollback_switch(request.tree.path(), pre_job_branch.as_deref())
+                    .await;
+                return Err(error);
+            }
+        };
 
         let (cancel_tx, cancel_rx) = oneshot::channel();
         spawn(run_job(process, cancel_rx, self.job_event_tx.clone()));
@@ -339,10 +332,11 @@ impl KwActor {
             log_path = %log_path.display(),
             "kw build job started"
         );
-        // Recorded only on accept: a refused start — including one refused
-        // after the switch (log-dir creation, spawn) — never clobbers a
-        // previous job's restore target. An accepted job with an unprobed
-        // pre-job HEAD clears it: nothing honest is left to restore to.
+        // Recorded only on accept. Refused starts never reach here, and —
+        // with their switch rolled back — can neither clobber a previous
+        // job's restore target nor strand the tree on a branch the user
+        // did not check out. An accepted job with an unprobed pre-job
+        // HEAD clears the target: nothing honest is left to restore to.
         self.last_restore = pre_job_branch.map(|branch| RestoreContext {
             tree_path: request.tree.path().to_string(),
             branch,
@@ -353,6 +347,8 @@ impl KwActor {
             kernel_tree_id: request.kernel_tree_id.clone(),
             branch: request.branch.clone(),
             tree_path: request.tree.path().to_string(),
+            output_dir,
+            arch,
             log_path: log_path.clone(),
             cancel_tx: Some(cancel_tx),
         });
@@ -364,6 +360,96 @@ impl KwActor {
             log_path,
         });
         Ok(())
+    }
+
+    /// The checkout policy (§2.1a): refuse on a dirty worktree, probe the
+    /// pre-job HEAD, then switch the tree onto the requested branch. The
+    /// git calls rewrite the worktree — seconds on a kernel tree, not
+    /// milliseconds — so they run on the blocking pool and the accept
+    /// reply stays immediate.
+    ///
+    /// The HEAD probe sits between the dirty check and the switch: it
+    /// must capture the branch the user was on, or RestorePreviousBranch
+    /// would "restore" the branch the job switched to. An unprobed HEAD
+    /// (detached, or not a git repo) yields `None` rather than a wrong
+    /// branch.
+    async fn checkout_build_branch(
+        &self,
+        request: &StartRequest,
+    ) -> Result<Option<String>, KwStartError> {
+        let shell = Arc::clone(&self.shell);
+        let tree_path = request.tree.path().to_string();
+        let branch = request.branch.clone();
+        let pre_job_branch =
+            tokio::task::spawn_blocking(move || -> Result<String, TreeGitError> {
+                check_worktree_clean(&*shell, &tree_path)?;
+                let pre_job_branch = head_branch(&*shell, &tree_path);
+                switch_to_branch(&*shell, &tree_path, &branch)?;
+                Ok(pre_job_branch)
+            })
+            .await
+            // A join error means the probe task panicked — a bug, surfaced as
+            // an unverifiable git state rather than wedging the actor.
+            .map_err(|error| KwStartError::GitStateProbe(error.to_string()))??;
+        Ok(if pre_job_branch.is_empty() {
+            None
+        } else {
+            Some(pre_job_branch)
+        })
+    }
+
+    /// Switches the tree back after a start that reached the branch
+    /// switch but failed before accepting the job. A rollback failure is
+    /// logged, not reported: the caller already holds the actionable
+    /// refusal. An unprobed pre-job HEAD leaves nothing to roll back to.
+    async fn rollback_switch(&self, tree_path: &str, pre_job_branch: Option<&str>) {
+        let Some(branch) = pre_job_branch else {
+            tracing::warn!(
+                tree = tree_path,
+                "cannot roll back the branch switch: pre-job HEAD was unprobed"
+            );
+            return;
+        };
+        let shell = Arc::clone(&self.shell);
+        let tree_path = tree_path.to_string();
+        let branch = branch.to_string();
+        let branch_for_task = branch.clone();
+        match tokio::task::spawn_blocking(move || {
+            switch_to_branch(&*shell, &tree_path, &branch_for_task)
+        })
+        .await
+        {
+            Ok(Ok(())) => tracing::info!(
+                branch,
+                "rolled back the branch switch after a refused start"
+            ),
+            Ok(Err(error)) => {
+                let error = KwStartError::from(error);
+                tracing::warn!(%error, "failed to roll back the branch switch")
+            }
+            Err(error) => {
+                tracing::warn!(%error, "branch-switch rollback task failed to join")
+            }
+        }
+    }
+
+    /// Creates the job's log dir and spawns the kw process. Split from
+    /// `start_job` so a failure here can roll the branch switch back.
+    fn spawn_build_process(
+        &self,
+        request: &StartRequest,
+    ) -> Result<(Box<dyn RunningProcess>, PathBuf), KwStartError> {
+        self.fs.create_dir_all(&self.kw_log_dir)?;
+        // Millisecond suffix: two jobs started within the same second must
+        // not share a log file — spawn truncates it.
+        let log_path = self.kw_log_dir.join(format!(
+            "build-{}.log",
+            chrono::Utc::now().format("%Y%m%d-%H%M%S-%3f")
+        ));
+        let cmd = ShellCommand::new("kw").args(argv::build_argv(&request.extra_args));
+        let cwd = PathBuf::from(request.tree.path());
+        let process = self.process.spawn(&cmd, &cwd, &log_path)?;
+        Ok((process, log_path))
     }
 
     fn request_cancel(&mut self) -> Result<(), KwError> {
@@ -458,30 +544,21 @@ impl KwActor {
             JobOutcome::Cancelled => return,
         };
 
+        // The record describes the accept-time snapshot: the build ran
+        // under this tree path, output dir, and arch. Re-resolving them
+        // here could describe a configuration the build never used — an
+        // env deactivated mid-build would key the record with a wrong
+        // `output_dir: None` and probe the tree for an image the build
+        // wrote under O=, a Frankenstein match for a later deploy-alone
+        // probe.
         let tree_path = Path::new(&job.tree_path);
-        // If the env state became unresolvable mid-build, the record
-        // would be keyed with a wrong `output_dir: None` — a Frankenstein
-        // match for a later no-env deploy-alone probe. No record fails
-        // safe.
-        let output_dir = match readiness::resolve_output_dir(&*self.fs, &*self.env, tree_path) {
-            Ok(output_dir) => output_dir,
-            Err(error) => {
-                tracing::warn!(
-                    %error,
-                    branch = job.branch,
-                    "skipping the build record: kw env state unresolvable"
-                );
-                return;
-            }
-        };
-        let arch = readiness::read_build_arch(&*self.fs, tree_path);
+        let build_root = job.output_dir.as_deref().unwrap_or(tree_path);
         // A failed build may have left a stale image from an earlier
         // successful one behind; only successes record what they
         // produced.
         let (image_path, kernelrelease) = if success {
-            let build_root = output_dir.as_deref().unwrap_or(tree_path);
             (
-                readiness::find_newest_kernel_image(&*self.fs, build_root, arch.as_deref()),
+                readiness::find_newest_kernel_image(&*self.fs, build_root, job.arch.as_deref()),
                 readiness::read_kernelrelease(&*self.fs, build_root),
             )
         } else {
@@ -507,9 +584,12 @@ impl KwActor {
             tree_path: job.tree_path.clone(),
             message_id,
             branch: job.branch.clone(),
-            arch,
+            arch: job.arch.clone(),
             image_path: image_path.map(|path| path.to_string_lossy().into_owned()),
-            output_dir: output_dir.map(|path| path.to_string_lossy().into_owned()),
+            output_dir: job
+                .output_dir
+                .as_ref()
+                .map(|path| path.to_string_lossy().into_owned()),
             kernelrelease,
             log_path: job.log_path.to_string_lossy().into_owned(),
             built_at: chrono::Utc::now().to_rfc3339(),
@@ -531,7 +611,7 @@ impl KwActor {
         kernel_tree_id: &str,
         tree: &KernelTree,
     ) -> Result<KwReadiness, KwError> {
-        let head = self.head_branch(tree);
+        let head = head_branch(&*self.shell, tree.path());
         Ok(readiness::evaluate_readiness(
             &*self.fs,
             &*self.env,
@@ -543,60 +623,31 @@ impl KwActor {
         )?)
     }
 
-    /// Fails unless the tree's git state verifies clean (§2.1a). A probe
-    /// that itself fails — git missing, not a repository — fails too:
-    /// starting a job or restoring a branch on a tree whose state is
-    /// unknown could carry unrecorded changes across branches.
-    fn check_worktree_clean(&self, tree_path: &str) -> Result<(), TreeGitError> {
-        let cmd = ShellCommand::new("git").args(["-C", tree_path, "status", "--porcelain"]);
-        let output = self
-            .shell
-            .execute(&cmd)
-            .map_err(|error| TreeGitError::Probe(error.to_string()))?;
-        if !output.success {
-            return Err(TreeGitError::Probe(
-                String::from_utf8_lossy(&output.stderr).trim().to_string(),
-            ));
-        }
-        if !output.stdout.is_empty() {
-            return Err(TreeGitError::DirtyWorktree);
-        }
-        Ok(())
-    }
-
-    /// Switches the tree onto `branch`. A failure carries git's stderr,
-    /// which names the usual causes (no such branch, a rebase or merge in
-    /// progress).
-    fn switch_to_branch(&self, tree_path: &str, branch: &str) -> Result<(), TreeGitError> {
-        let cmd = ShellCommand::new("git").args(["-C", tree_path, "switch", branch]);
-        let output = self
-            .shell
-            .execute(&cmd)
-            .map_err(|error| TreeGitError::Switch(error.to_string()))?;
-        if !output.success {
-            return Err(TreeGitError::Switch(
-                String::from_utf8_lossy(&output.stderr).trim().to_string(),
-            ));
-        }
-        Ok(())
-    }
-
     /// Switches the tree that ran the last job back to the branch HEAD was
     /// on when that job was accepted (§2.1a). Refuses while a job is
     /// running (its branch is in use), when nothing was recorded, and on
     /// a dirty worktree. Only a successful switch consumes the context —
     /// a refused restore stays available for a retry.
-    fn restore_previous_branch(&mut self) -> Result<(), KwError> {
+    async fn restore_previous_branch(&mut self) -> Result<(), KwError> {
         if self.job.is_some() {
             return Err(KwError::JobRunning);
         }
         let Some(restore) = self.last_restore.take() else {
             return Err(KwError::NoRecordedBranch);
         };
-        match self
-            .check_worktree_clean(&restore.tree_path)
-            .and_then(|()| self.switch_to_branch(&restore.tree_path, &restore.branch))
-        {
+        let shell = Arc::clone(&self.shell);
+        let tree_path = restore.tree_path.clone();
+        let branch = restore.branch.clone();
+        // Same spawn_blocking rationale as the start path's checkout: the
+        // switch rewrites the worktree.
+        let result = tokio::task::spawn_blocking(move || -> Result<(), TreeGitError> {
+            check_worktree_clean(&*shell, &tree_path)?;
+            switch_to_branch(&*shell, &tree_path, &branch)
+        })
+        .await
+        .map_err(|error| KwError::GitStateProbe(error.to_string()))
+        .and_then(|result| result.map_err(KwError::from));
+        match result {
             Ok(()) => {
                 tracing::info!(
                     tree = restore.tree_path,
@@ -607,34 +658,82 @@ impl KwActor {
             }
             Err(error) => {
                 self.last_restore = Some(restore);
-                Err(error.into())
+                Err(error)
             }
         }
     }
+}
 
-    /// The tree's current branch, probed via git. An unresolvable HEAD
-    /// (not a git repo, or a detached HEAD, for which `branch
-    /// --show-current` prints nothing) yields an empty string: no build
-    /// record can match it, so deploy-alone readiness refuses — the safe
-    /// direction for an unknown HEAD.
-    fn head_branch(&self, tree: &KernelTree) -> String {
-        let cmd = ShellCommand::new("git").args(["-C", tree.path(), "branch", "--show-current"]);
-        match self.shell.execute(&cmd) {
-            Ok(output) if output.success => {
-                String::from_utf8_lossy(&output.stdout).trim().to_string()
-            }
-            Ok(output) => {
-                tracing::warn!(
-                    tree = tree.path(),
-                    stderr = %String::from_utf8_lossy(&output.stderr),
-                    "failed to probe the kernel tree's HEAD branch"
-                );
-                String::new()
-            }
-            Err(error) => {
-                tracing::warn!(tree = tree.path(), %error, "failed to probe the kernel tree's HEAD branch");
-                String::new()
-            }
+/// Fails unless the tree's git state verifies clean (§2.1a). Untracked
+/// files don't count: kernel trees accumulate local scratch files, and
+/// only tracked changes can corrupt the branch a job builds — an
+/// untracked file that would collide with the switch is still caught by
+/// git itself. A probe that itself fails — git missing, not a repository
+/// — fails too: starting a job or restoring a branch on a tree whose
+/// state is unknown could carry unrecorded changes across branches.
+fn check_worktree_clean(shell: &dyn ShellTrait, tree_path: &str) -> Result<(), TreeGitError> {
+    let cmd = ShellCommand::new("git").args([
+        "-C",
+        tree_path,
+        "status",
+        "--porcelain",
+        "--untracked-files=no",
+    ]);
+    let output = shell
+        .execute(&cmd)
+        .map_err(|error| TreeGitError::Probe(error.to_string()))?;
+    if !output.success {
+        return Err(TreeGitError::Probe(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ));
+    }
+    if !output.stdout.is_empty() {
+        return Err(TreeGitError::DirtyWorktree);
+    }
+    Ok(())
+}
+
+/// Switches the tree onto `branch`. A failure carries git's stderr, which
+/// names the usual causes (no such branch, a rebase or merge in
+/// progress). The `--` keeps a branch named like a flag from being parsed
+/// as one.
+fn switch_to_branch(
+    shell: &dyn ShellTrait,
+    tree_path: &str,
+    branch: &str,
+) -> Result<(), TreeGitError> {
+    let cmd = ShellCommand::new("git").args(["-C", tree_path, "switch", "--", branch]);
+    let output = shell
+        .execute(&cmd)
+        .map_err(|error| TreeGitError::Switch(error.to_string()))?;
+    if !output.success {
+        return Err(TreeGitError::Switch(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// The tree's current branch, probed via git. An unresolvable HEAD
+/// (not a git repo, or a detached HEAD, for which `branch
+/// --show-current` prints nothing) yields an empty string: no build
+/// record can match it, so deploy-alone readiness refuses — the safe
+/// direction for an unknown HEAD.
+fn head_branch(shell: &dyn ShellTrait, tree_path: &str) -> String {
+    let cmd = ShellCommand::new("git").args(["-C", tree_path, "branch", "--show-current"]);
+    match shell.execute(&cmd) {
+        Ok(output) if output.success => String::from_utf8_lossy(&output.stdout).trim().to_string(),
+        Ok(output) => {
+            tracing::warn!(
+                tree = tree_path,
+                stderr = %String::from_utf8_lossy(&output.stderr),
+                "failed to probe the kernel tree's HEAD branch"
+            );
+            String::new()
+        }
+        Err(error) => {
+            tracing::warn!(tree = tree_path, %error, "failed to probe the kernel tree's HEAD branch");
+            String::new()
         }
     }
 }
@@ -898,15 +997,17 @@ mod tests {
         (shell, calls)
     }
 
-    /// A stateful shell double for the restore tests: kw's version probe
-    /// answers 0.10.0, `git status --porcelain` reflects the dirty flag,
-    /// the HEAD probe reports `head` (with the trailing newline git
-    /// prints), and a successful `git switch` updates `head` — mirroring
-    /// a real worktree the actor switches between branches.
+    /// A stateful shell double for the checkout/restore tests: kw's
+    /// version probe answers 0.10.0, `git status --porcelain` reflects the
+    /// dirty flag, the HEAD probe reports `head` (with the trailing
+    /// newline git prints), and a successful `git switch` updates `head`
+    /// — mirroring a real worktree the actor switches between branches.
+    /// Switches to `fail_switch_to` fail, so a test can model "going
+    /// forward works, coming back fails".
     struct GitStub {
         head: Arc<Mutex<String>>,
         dirty: Arc<AtomicBool>,
-        fail_switches: Arc<AtomicBool>,
+        fail_switch_to: Arc<Mutex<Option<String>>>,
     }
 
     impl GitStub {
@@ -914,7 +1015,7 @@ mod tests {
             Self {
                 head: Arc::new(Mutex::new(branch.to_string())),
                 dirty: Arc::new(AtomicBool::new(false)),
-                fail_switches: Arc::new(AtomicBool::new(false)),
+                fail_switch_to: Arc::new(Mutex::new(None)),
             }
         }
 
@@ -922,8 +1023,8 @@ mod tests {
             self.dirty.store(dirty, Ordering::Relaxed);
         }
 
-        fn set_fail_switches(&self, fail: bool) {
-            self.fail_switches.store(fail, Ordering::Relaxed);
+        fn fail_switches_to(&self, branch: Option<&str>) {
+            *self.fail_switch_to.lock().unwrap() = branch.map(str::to_string);
         }
 
         fn head(&self) -> String {
@@ -933,7 +1034,7 @@ mod tests {
         fn shell(&self) -> MockShellTrait {
             let head = Arc::clone(&self.head);
             let dirty = Arc::clone(&self.dirty);
-            let fail_switches = Arc::clone(&self.fail_switches);
+            let fail_switch_to = Arc::clone(&self.fail_switch_to);
             let mut shell = MockShellTrait::new();
             shell.expect_execute().returning(move |cmd| {
                 let output = |stdout: &[u8]| ShellOutput {
@@ -953,7 +1054,8 @@ mod tests {
                     return Ok(output(stdout));
                 }
                 if cmd.args.iter().any(|arg| arg == "switch") {
-                    if fail_switches.load(Ordering::Relaxed) {
+                    let branch = cmd.args.last().unwrap().clone();
+                    if fail_switch_to.lock().unwrap().as_deref() == Some(branch.as_str()) {
                         return Ok(ShellOutput {
                             stdout: Vec::new(),
                             stderr: b"error: you need to resolve your current index first\n"
@@ -961,7 +1063,7 @@ mod tests {
                             success: false,
                         });
                     }
-                    *head.lock().unwrap() = cmd.args.last().unwrap().clone();
+                    *head.lock().unwrap() = branch;
                     return Ok(output(b""));
                 }
                 let current = format!("{}\n", head.lock().unwrap());
@@ -1564,6 +1666,21 @@ mod tests {
                 status < head && head < switch,
                 "checkout policy must probe dirty state, then HEAD, then switch: {calls:?}"
             );
+            // Untracked scratch files don't block a build; only tracked
+            // changes do.
+            assert_eq!(
+                &calls[status],
+                &command(&[
+                    "git",
+                    "-C",
+                    "/home/user/linux",
+                    "status",
+                    "--porcelain",
+                    "--untracked-files=no"
+                ])
+            );
+            // The `--` keeps a branch named like a flag from being parsed
+            // as one.
             assert_eq!(
                 &calls[switch],
                 &command(&[
@@ -1571,6 +1688,7 @@ mod tests {
                     "-C",
                     "/home/user/linux",
                     "switch",
+                    "--",
                     "patchset-2026-08-01-17-30-00"
                 ])
             );
@@ -1779,12 +1897,12 @@ mod tests {
         process.last_child().finish(0);
         let _ = wait_for_terminal_status(&mut watch).await;
 
-        git.set_fail_switches(true);
+        git.fail_switches_to(Some("master"));
         let err = handle.restore_previous_branch().await.unwrap_err();
         assert!(matches!(err, KwError::CheckoutFailed(_)));
         assert!(err.to_string().contains("resolve your current index"));
 
-        git.set_fail_switches(false);
+        git.fail_switches_to(None);
         handle.restore_previous_branch().await.unwrap();
         assert_eq!(git.head(), "master");
 
@@ -1805,13 +1923,14 @@ mod tests {
         assert_eq!(git.head(), "patchset-2026-08-01-17-30-00");
 
         // This start is refused at spawn — after its HEAD probe and
-        // switch — and must not overwrite the recorded restore target.
+        // switch — and the switch is rolled back: the tree returns to the
+        // first job's branch and the recorded restore target is intact.
         process.refuse_spawns(true);
         let mut second = start_request();
         second.branch = "patchset-two".to_string();
         let err = handle.start_build(second).await.unwrap_err();
         assert!(matches!(err, KwStartError::Spawn(_)));
-        assert_eq!(git.head(), "patchset-two");
+        assert_eq!(git.head(), "patchset-2026-08-01-17-30-00");
 
         handle.restore_previous_branch().await.unwrap();
         assert_eq!(git.head(), "master");
@@ -1838,7 +1957,7 @@ mod tests {
 
     #[tokio::test]
     async fn log_dir_creation_failure_refuses_start_and_stays_idle() {
-        let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
+        let git = GitStub::on_branch("master");
         let mut fs = MockFileSystemTrait::new();
         expect_ready_tree(&mut fs);
         fs.expect_create_dir_all().returning(|_| {
@@ -1846,13 +1965,46 @@ mod tests {
                 "read-only filesystem",
             )))
         });
-        let (handle, process, log_dir) = spawn_job_actor_with_mocks("log-dir-fail", shell, fs);
+        let (handle, process, log_dir) =
+            spawn_job_actor_with_mocks("log-dir-fail", git.shell(), fs);
 
         let err = handle.start_build(start_request()).await.unwrap_err();
 
         assert!(matches!(err, KwStartError::Fs(_)));
         assert_eq!(KwJobStatus::Idle, handle.get_status().await.unwrap().job);
         assert!(process.spawned().is_empty());
+        // The switch happened and was rolled back: the tree is back on the
+        // user's branch, and no restore target was recorded.
+        assert_eq!(git.head(), "master");
+        assert!(matches!(
+            handle.restore_previous_branch().await,
+            Err(KwError::NoRecordedBranch)
+        ));
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn rollback_failure_keeps_the_spawn_refusal() {
+        let git = GitStub::on_branch("master");
+        // Going forward works; coming back fails.
+        git.fail_switches_to(Some("master"));
+        let (handle, process, log_dir) =
+            spawn_job_actor_with_mocks("rollback-fails", git.shell(), ready_fs());
+        process.refuse_spawns(true);
+
+        let err = handle.start_build(start_request()).await.unwrap_err();
+
+        assert!(matches!(err, KwStartError::Spawn(_)));
+        // The rollback failure is logged, not reported: the caller keeps
+        // the actionable refusal, and the tree honestly shows where HEAD
+        // is. No restore target was recorded.
+        assert_eq!(git.head(), "patchset-2026-08-01-17-30-00");
+        assert!(matches!(
+            handle.restore_previous_branch().await,
+            Err(KwError::NoRecordedBranch)
+        ));
 
         handle.shutdown().await;
         std::fs::remove_dir_all(&log_dir).unwrap();
@@ -2148,22 +2300,45 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_record_skipped_when_env_state_breaks_mid_build() {
-        // An env that resolves at Start but not at completion must not
-        // produce a record keyed with a wrong `output_dir: None`.
-        let env_broken = Arc::new(AtomicBool::new(false));
-        let env_broken_in_fs = Arc::clone(&env_broken);
+    async fn successful_build_with_active_env_records_the_output_dir() {
+        // env.current is read once, at accept time. The completion record
+        // must describe the env the build ran under — the snapshot — not
+        // the tree's env state at whatever time the job ends.
+        let env_current_reads = Arc::new(AtomicU64::new(0));
+        let env_current_reads_in_fs = Arc::clone(&env_current_reads);
         let mut fs = MockFileSystemTrait::new();
         fs.expect_is_dir().returning(|_| true);
         fs.expect_is_file().returning(|_| true);
         fs.expect_exists().returning(|_| true);
         fs.expect_read_to_string().returning(move |path| {
-            if path.ends_with("env.current") && !env_broken_in_fs.load(Ordering::Relaxed) {
+            if path.ends_with("env.current") {
+                env_current_reads_in_fs.fetch_add(1, Ordering::SeqCst);
                 Ok("testenv\n".to_string())
+            } else if path.ends_with("build.config") {
+                Ok("arch=x86\n".to_string())
+            } else if path.ends_with("kernel.release") {
+                Ok("6.17.0\n".to_string())
             } else {
-                Err(FileSystemError::IoError(io::Error::other("unreadable")))
+                Err(FileSystemError::IoError(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "missing",
+                )))
             }
         });
+        // Every boot-dir probe answers with an image inside the probed
+        // dir: the record's image path shows which build root was used.
+        fs.expect_read_dir().returning(|path| {
+            if path.ends_with("arch/x86/boot") {
+                Ok(vec![path.join("bzImage")])
+            } else {
+                Err(FileSystemError::IoError(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "missing",
+                )))
+            }
+        });
+        fs.expect_metadata()
+            .returning(|_| Err(FileSystemError::IoError(io::Error::other("no metadata"))));
         fs.expect_create_dir_all().returning(|_| Ok(()));
         let mut env = MockEnvTrait::new();
         env.expect_which().returning(|_| true);
@@ -2171,18 +2346,38 @@ mod tests {
             .returning(|_| Ok("/home/user/.cache".to_string()));
         let (history, builds) = recording_history(None);
         let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
-        let (handle, process, log_dir) = spawn_full_actor("env-breaks", history, shell, fs, env);
+        let (handle, process, log_dir) = spawn_full_actor("env-build", history, shell, fs, env);
         let mut watch = handle.watch_status().await.unwrap();
 
         handle.start_build(start_request()).await.unwrap();
-        // Break the env state after the start probes but before the
-        // completion probes run.
-        env_broken.store(true, Ordering::Relaxed);
         process.last_child().finish(0);
         let status = wait_for_terminal_status(&mut watch).await;
-
         assert!(matches!(status, KwJobStatus::Succeeded { .. }));
-        assert!(builds.lock().unwrap().is_empty());
+
+        {
+            let builds = builds.lock().unwrap();
+            assert_eq!(1, builds.len());
+            let record = &builds[0];
+            let output_dir = record
+                .output_dir
+                .as_deref()
+                .expect("an env build records its O= dir");
+            assert!(
+                output_dir.contains("/kw/envs/") && output_dir.ends_with("/testenv"),
+                "unexpected output dir: {output_dir}"
+            );
+            let image = record.image_path.as_deref().expect("image recorded");
+            assert!(
+                image.starts_with(output_dir) && image.ends_with("bzImage"),
+                "image {image} must be probed under the env's output dir {output_dir}"
+            );
+            assert_eq!(Some("x86"), record.arch.as_deref());
+            assert_eq!(Some("6.17.0"), record.kernelrelease.as_deref());
+            assert!(record.success);
+        }
+        // Read at accept time only: the completion record uses the
+        // snapshot, never a re-resolve.
+        assert_eq!(1, env_current_reads.load(Ordering::SeqCst));
 
         handle.shutdown().await;
         std::fs::remove_dir_all(&log_dir).unwrap();

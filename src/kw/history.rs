@@ -85,9 +85,9 @@ pub trait KwHistoryStore: Send + Sync {
     /// it came from. A missing history file is a normal state, not an
     /// error. Records with unparseable `applied_at` values sort oldest,
     /// same convention as the build records.
-    // Read by KwActor when writing build records (the build step); kept
-    // per the CachePolicy precedent (src/lore/application/cache.rs).
-    #[allow(dead_code)]
+    // The only production caller is the unix-only actor's build-record
+    // writer.
+    #[cfg_attr(not(unix), allow(dead_code))]
     fn apply_record_for_branch(
         &self,
         kernel_tree_id: &str,
@@ -96,7 +96,9 @@ pub trait KwHistoryStore: Send + Sync {
 
     /// Inserts or replaces the build record for the record's
     /// `(kernel_tree_id, branch)` pair.
-    #[allow(dead_code)]
+    // The only production caller is the unix-only actor's build-record
+    // writer.
+    #[cfg_attr(not(unix), allow(dead_code))]
     fn record_build(&self, record: KwBuildRecord) -> Result<(), FileSystemError>;
 
     /// Returns the build record for the `(kernel_tree_id, branch)` pair, or
@@ -120,7 +122,6 @@ pub trait KwHistoryStore: Send + Sync {
     /// Returns the record for `(kernel_tree_id, branch)` and the newest
     /// record for the tree across branches from a single load of the
     /// history file — the pair a readiness snapshot is computed from.
-    #[allow(dead_code)]
     fn build_records(
         &self,
         kernel_tree_id: &str,

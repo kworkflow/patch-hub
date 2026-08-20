@@ -25,13 +25,16 @@ impl ReservedOption {
     }
 }
 
-/// Reserved for `kw build`: patch-hub forces non-interactive alerts, and
-/// owns the job's log file (ProcessTrait captures kw's stdout/stderr to
-/// it) — a user-supplied `--save-log-to` would fork the log to a second
-/// file, leaving KwOps tailing only half the output.
+/// Reserved for `kw build`: patch-hub forces non-interactive alerts, owns
+/// the job's log file (ProcessTrait captures kw's stdout/stderr to it) —
+/// a user-supplied `--save-log-to` would fork the log to a second file,
+/// leaving KwOps tailing only half the output — and never runs `--menu`
+/// from automation (plan §1.1): the job's stdio is a log file, so
+/// menuconfig would hang until cancelled.
 const BUILD_RESERVED: &[ReservedOption] = &[
     ReservedOption::new(&["--alert"], true),
     ReservedOption::new(&["--save-log-to"], true),
+    ReservedOption::new(&["--menu"], false),
 ];
 
 /// The argv for a build job: `kw build --alert=n <extras>`.
@@ -143,6 +146,16 @@ mod tests {
         assert_eq!(
             vec!["build", "--alert=n"],
             build_argv(&extras(&["--alert"]))
+        );
+    }
+
+    #[test]
+    fn menu_is_stripped_without_eating_the_next_token() {
+        // kw build --menu would open menuconfig with the job's stdio
+        // redirected to a log file — a hang, not a build.
+        assert_eq!(
+            vec!["build", "--alert=n", "--verbose"],
+            build_argv(&extras(&["--menu", "--verbose"]))
         );
     }
 

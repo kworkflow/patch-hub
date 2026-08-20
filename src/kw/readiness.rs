@@ -114,7 +114,6 @@ pub fn is_kernel_root(fs: &dyn FileSystemTrait, path: &Path) -> bool {
 /// refuses to activate an env while an in-tree `.config` exists
 /// (`kw_env.sh::validate_env_before_switch`), so with an env active the
 /// `.config` lives only at the env's `O=` dir.
-#[allow(dead_code)]
 pub fn probe_tree(
     fs: &dyn FileSystemTrait,
     tree_path: &Path,
@@ -177,7 +176,6 @@ pub fn read_build_arch(fs: &dyn FileSystemTrait, tree_path: &Path) -> Option<Str
 /// `env.current` or an unresolvable cache base (neither `XDG_CACHE_HOME`
 /// nor `HOME` set) is an error, since the env state is then unknown —
 /// kw's "active but unresolvable" case.
-#[allow(dead_code)]
 pub fn resolve_output_dir(
     fs: &dyn FileSystemTrait,
     env: &dyn EnvTrait,
@@ -241,7 +239,6 @@ pub fn resolve_output_dir(
 /// compressed/ or dts/ never hold `*Image` files), and find does not
 /// descend into symlinked dirs either, so the behaviors agree on real
 /// trees.
-#[allow(dead_code)]
 pub fn find_newest_kernel_image(
     fs: &dyn FileSystemTrait,
     build_root: &Path,
@@ -289,9 +286,9 @@ fn image_mtime(fs: &dyn FileSystemTrait, path: &Path) -> SystemTime {
 /// `<build_root>/include/config/kernel.release`, the file a kernel build
 /// generates — cheaper than re-running `make kernelrelease`, and `None`
 /// when the build never produced one (or produced an empty one).
-// Read by KwActor when writing build records (the build step); kept per
-// the CachePolicy precedent (src/lore/application/cache.rs).
-#[allow(dead_code)]
+// The only production caller is the unix-only actor's build-record
+// writer.
+#[cfg_attr(not(unix), allow(dead_code))]
 pub fn read_kernelrelease(fs: &dyn FileSystemTrait, build_root: &Path) -> Option<String> {
     let release = fs
         .read_to_string(
@@ -451,7 +448,6 @@ pub enum DeployAloneRefusal {
 /// about the tree's *current* state. [`evaluate_readiness`] conjoins
 /// [`TreeReadiness`] into its `deploy_alone` verdict; prefer it over
 /// calling this directly.
-#[allow(dead_code)]
 pub fn check_deploy_alone(
     record: Option<&KwBuildRecord>,
     tree: &KernelTree,
@@ -511,7 +507,8 @@ pub struct KwReadiness {
 /// Runs all readiness probes for `tree` and composes them into a
 /// [`KwReadiness`] snapshot. `head_branch` is the tree's current branch —
 /// resolving it (via git) is the caller's job, keeping these probes pure.
-#[allow(dead_code)]
+// The only caller is the unix-only actor's GetReadiness.
+#[cfg_attr(not(unix), allow(dead_code))]
 pub fn evaluate_readiness(
     fs: &dyn FileSystemTrait,
     env: &dyn EnvTrait,
