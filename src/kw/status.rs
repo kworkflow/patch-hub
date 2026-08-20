@@ -40,6 +40,8 @@ pub enum KwJobStatus {
     },
     Succeeded {
         kind: KwJobKind,
+        kernel_tree_id: String,
+        log_path: PathBuf,
     },
     Failed {
         kind: KwJobKind,

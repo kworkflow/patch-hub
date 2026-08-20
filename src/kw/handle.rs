@@ -79,9 +79,14 @@ impl KwHandle {
     }
 
     /// Signals the actor to stop processing messages and exit its run loop.
-    /// A running job is killed before the actor stops.
+    /// A running job's process group is killed first; this returns only
+    /// after the kill escalation has completed, so teardown can drop the
+    /// runtime without orphaning kw's child processes.
     pub async fn shutdown(&self) {
-        self.tx.send(KwMessage::Shutdown).await.ok();
+        let (reply, rx) = oneshot::channel();
+        if self.tx.send(KwMessage::Shutdown { reply }).await.is_ok() {
+            rx.await.ok();
+        }
     }
 
     async fn request_result<T>(

@@ -40,7 +40,7 @@ use lore::{
     },
 };
 use render::{actor::RenderActor, ShellRenderService};
-use std::{ops::ControlFlow, sync::Arc};
+use std::{ops::ControlFlow, path::Path, sync::Arc};
 use terminal::{actor::TerminalActor, session::CrosstermTerminalSession};
 use tokio::sync::mpsc;
 use tracing::{event, Level};
@@ -115,7 +115,7 @@ async fn main() -> Result<()> {
         shell_arc.clone(),
         fs_arc.clone(),
         Arc::new(OsEnv),
-        format!("{}/kw_logs", config.cache_dir()).into(),
+        Path::new(config.cache_dir()).join("kw_logs"),
     ));
     #[cfg(not(unix))]
     let kw_handle = None;

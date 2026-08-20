@@ -3,8 +3,10 @@
 
 use thiserror::Error;
 
+#[cfg(unix)]
+use crate::infrastructure::process::ProcessError;
 use crate::{
-    infrastructure::{file_system::FileSystemError, process::ProcessError, shell::ShellError},
+    infrastructure::{file_system::FileSystemError, shell::ShellError},
     kw::readiness::KwReadinessError,
 };
 
@@ -35,6 +37,8 @@ pub enum KwStartError {
     JobAlreadyRunning,
     #[error("kw jobs are not supported yet")]
     NotImplemented,
+    // Spawning a process is unix-only (ProcessTrait is cfg(unix)).
+    #[cfg(unix)]
     #[error("failed to spawn the kw process: {0}")]
     Spawn(#[from] ProcessError),
     #[error("filesystem error: {0}")]

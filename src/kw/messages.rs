@@ -66,7 +66,11 @@ pub enum KwMessage {
     RestorePreviousBranch {
         reply: oneshot::Sender<Result<(), KwError>>,
     },
-    Shutdown,
+    /// Unlike the other actors' bare `Shutdown`, this one replies — the
+    /// `TerminalMessage::Shutdown` convention. Teardown must know the
+    /// running job's process group was actually killed before the runtime
+    /// is dropped; a fire-and-forget message leaves that to scheduler luck.
+    Shutdown { reply: oneshot::Sender<()> },
 }
 
 impl KwMessage {
@@ -81,7 +85,7 @@ impl KwMessage {
             KwMessage::WatchStatus { .. } => "WatchStatus",
             KwMessage::GetReadiness { .. } => "GetReadiness",
             KwMessage::RestorePreviousBranch { .. } => "RestorePreviousBranch",
-            KwMessage::Shutdown => "Shutdown",
+            KwMessage::Shutdown { .. } => "Shutdown",
         }
     }
 }

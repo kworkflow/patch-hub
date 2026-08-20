@@ -12,7 +12,6 @@ pub enum ProcessError {
     IoError(#[from] io::Error),
 }
 
-#[allow(dead_code)]
 #[automock]
 pub trait ProcessTrait: Send + Sync {
     /// Spawn `cmd` with `cwd` as its working directory, redirecting stdout and
@@ -29,7 +28,6 @@ pub trait ProcessTrait: Send + Sync {
 
 // `automock` must stay the outermost attribute: with `async_trait` listed
 // first, the generated mock's async methods return an unusable type.
-#[allow(dead_code)]
 #[automock]
 #[async_trait]
 pub trait RunningProcess: Send {
@@ -47,4 +45,8 @@ pub trait RunningProcess: Send {
     /// to cancel should `tokio::select!` between `wait()` and its cancel
     /// signal, then call `kill()`.
     fn kill(&mut self) -> Result<(), ProcessError>;
+
+    /// Send SIGKILL to the whole process group. The escalation rung for a
+    /// group that ignored `kill()`'s SIGTERM; same ESRCH tolerance.
+    fn force_kill(&mut self) -> Result<(), ProcessError>;
 }
