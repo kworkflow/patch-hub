@@ -111,6 +111,18 @@ pub trait KwHistoryStore: Send + Sync {
         &self,
         kernel_tree_id: &str,
     ) -> Result<Option<KwBuildRecord>, FileSystemError>;
+
+    /// Returns the record for `(kernel_tree_id, branch)` and the newest
+    /// record for the tree across branches from a single load of the
+    /// history file — the pair a readiness snapshot is computed from.
+    // Read by the kw readiness aggregation in a later step; kept per the
+    // CachePolicy precedent (src/lore/application/cache.rs).
+    #[allow(dead_code)]
+    fn build_records(
+        &self,
+        kernel_tree_id: &str,
+        branch: &str,
+    ) -> Result<(Option<KwBuildRecord>, Option<KwBuildRecord>), FileSystemError>;
 }
 
 pub struct FileKwHistoryStore {
@@ -203,29 +215,39 @@ impl KwHistoryStore for FileKwHistoryStore {
         kernel_tree_id: &str,
         branch: &str,
     ) -> Result<Option<KwBuildRecord>, FileSystemError> {
-        self.load_records(&self.build_history_path)
-            .map(|records: BuildRecords| {
-                records
-                    .get(kernel_tree_id)
-                    .and_then(|by_branch| by_branch.get(branch))
-                    .cloned()
-            })
-            .map_err(|e| self.error_with_path(&self.build_history_path, e))
+        self.build_records(kernel_tree_id, branch)
+            .map(|(record, _)| record)
     }
 
     fn latest_build_record(
         &self,
         kernel_tree_id: &str,
     ) -> Result<Option<KwBuildRecord>, FileSystemError> {
+        // The branch half of the pair is unused here.
+        self.build_records(kernel_tree_id, "")
+            .map(|(_, latest)| latest)
+    }
+
+    fn build_records(
+        &self,
+        kernel_tree_id: &str,
+        branch: &str,
+    ) -> Result<(Option<KwBuildRecord>, Option<KwBuildRecord>), FileSystemError> {
         self.load_records(&self.build_history_path)
             .map(|records: BuildRecords| {
-                records
-                    .get(kernel_tree_id)?
-                    .values()
-                    .max_by_key(|record| {
-                        chrono::DateTime::parse_from_rfc3339(&record.built_at).ok()
-                    })
-                    .cloned()
+                let by_branch = records.get(kernel_tree_id);
+                let record = by_branch
+                    .and_then(|by_branch| by_branch.get(branch))
+                    .cloned();
+                let latest = by_branch.and_then(|by_branch| {
+                    by_branch
+                        .values()
+                        .max_by_key(|record| {
+                            chrono::DateTime::parse_from_rfc3339(&record.built_at).ok()
+                        })
+                        .cloned()
+                });
+                (record, latest)
             })
             .map_err(|e| self.error_with_path(&self.build_history_path, e))
     }
@@ -535,6 +557,41 @@ mod tests {
             store.latest_build_record("mainline").unwrap()
         );
         assert_eq!(None, store.latest_build_record("amd-gfx").unwrap());
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn build_records_returns_branch_match_and_latest_from_one_load() {
+        let dir = tmp_dir("build-pair");
+        let store = store_at(&dir);
+
+        store
+            .record_build(build("mainline", "for-next", "2026-08-01T18:10:00Z"))
+            .unwrap();
+        store
+            .record_build(build("mainline", "patchset-x", "2026-08-03T18:10:00Z"))
+            .unwrap();
+
+        assert_eq!(
+            (
+                Some(build("mainline", "for-next", "2026-08-01T18:10:00Z")),
+                Some(build("mainline", "patchset-x", "2026-08-03T18:10:00Z")),
+            ),
+            store.build_records("mainline", "for-next").unwrap()
+        );
+        // An unbuilt branch still reports the tree's latest record.
+        assert_eq!(
+            (
+                None,
+                Some(build("mainline", "patchset-x", "2026-08-03T18:10:00Z")),
+            ),
+            store.build_records("mainline", "never-built").unwrap()
+        );
+        assert_eq!(
+            (None, None),
+            store.build_records("amd-gfx", "for-next").unwrap()
+        );
 
         fs::remove_dir_all(&dir).unwrap();
     }

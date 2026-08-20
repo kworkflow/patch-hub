@@ -428,6 +428,11 @@ pub enum DeployAloneRefusal {
 /// without a preceding build is only allowed when a successful build record
 /// exists for the tree and current HEAD, written against the same tree path
 /// and kw env, and a kernel image is still discoverable.
+///
+/// This is only the record-matching half of the gate — it says nothing
+/// about the tree's *current* state. [`evaluate_readiness`] conjoins
+/// [`TreeReadiness`] into its `deploy_alone` verdict; prefer it over
+/// calling this directly.
 // Consumed by KwActor deploy in a later step; kept per the CachePolicy
 // precedent (src/lore/application/cache.rs).
 #[allow(dead_code)]
@@ -517,8 +522,7 @@ pub fn evaluate_readiness(
         output_dir.as_deref().unwrap_or(tree_path),
         arch.as_deref(),
     );
-    let build_record = history.build_record(kernel_tree_id, head_branch)?;
-    let latest_build = history.latest_build_record(kernel_tree_id)?;
+    let (build_record, latest_build) = history.build_records(kernel_tree_id, head_branch)?;
     // The tree's current state is part of the verdict: a stale image and a
     // matching record must not green-light a deploy on a tree that has
     // since lost its .config, .kw/, or kernel-root files.
