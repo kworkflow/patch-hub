@@ -8,7 +8,7 @@
 //! [`crate::kw::readiness`] and records applies through the shared
 //! [`KwHistoryStore`](crate::kw::history::KwHistoryStore).
 
-use std::{ops::ControlFlow, path::PathBuf, process::ExitStatus, sync::Arc};
+use std::{ops::ControlFlow, path::PathBuf, process::ExitStatus, sync::Arc, time::Duration};
 
 use tokio::{
     spawn,
@@ -35,6 +35,14 @@ use crate::{
 
 pub const DEFAULT_KW_CHANNEL_SIZE: usize = 16;
 
+/// Grace periods for the cancel escalation ladder: SIGTERM the process
+/// group, wait, SIGKILL, wait, then give up. Giving up still terminates the
+/// job from the actor's point of view — a group that ignores both signals
+/// must not wedge the actor into refusing every later Start with
+/// JobAlreadyRunning for the rest of the session.
+const TERM_GRACE: Duration = Duration::from_secs(3);
+const KILL_GRACE: Duration = Duration::from_secs(2);
+
 /// How a job's process ended, as observed by the detached task that owns
 /// the process handle.
 enum JobOutcome {
@@ -57,6 +65,10 @@ struct JobState {
     kernel_tree_id: String,
     branch: String,
     log_path: PathBuf,
+    /// HEAD at accept time, so RestorePreviousBranch can offer to switch
+    /// back after the job. Read once the checkout policy lands.
+    #[allow(dead_code)]
+    pre_job_branch: Option<String>,
     /// `None` once a cancel has been requested; a second `Cancel` is an
     /// idempotent ack.
     cancel_tx: Option<oneshot::Sender<()>>,
@@ -103,7 +115,6 @@ impl KwActor {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn spawn(
         history: Arc<dyn KwHistoryStore>,
         process: Arc<dyn ProcessTrait>,
@@ -126,7 +137,7 @@ impl KwActor {
             tokio::select! {
                 message = self.rx.recv() => {
                     let Some(message) = message else { break };
-                    if let ControlFlow::Break(()) = self.handle_message(message) {
+                    if let ControlFlow::Break(()) = self.handle_message(message).await {
                         break;
                     }
                 }
@@ -138,7 +149,7 @@ impl KwActor {
         tracing::info!("kw actor stopped");
     }
 
-    fn handle_message(&mut self, message: KwMessage) -> ControlFlow<()> {
+    async fn handle_message(&mut self, message: KwMessage) -> ControlFlow<()> {
         let message_name = message.name();
         tracing::debug!(message = message_name, "kw request received");
 
@@ -197,15 +208,25 @@ impl KwActor {
                 send_kw_reply(message_name, reply, Err(KwError::NoRecordedBranch));
                 ControlFlow::Continue(())
             }
-            KwMessage::Shutdown => {
+            KwMessage::Shutdown { reply } => {
                 // Quit-prompt cooperation: the app asks whether a job is
                 // running before quitting; if it quits anyway, the job's
                 // process group is killed here. The log may capture partial
-                // output and the tree a partial build.
-                if let Some(cancel) = self.job.as_mut().and_then(|job| job.cancel_tx.take()) {
+                // output and the tree a partial build. The reply is held
+                // until the kill escalation has run its (bounded) course,
+                // so a caller tearing down the runtime afterwards cannot
+                // leave orphaned kw processes behind.
+                if self.job.is_some() {
                     tracing::info!("killing kw job process group during shutdown");
-                    let _ = cancel.send(());
+                    self.request_cancel().ok();
+                    while self.job.is_some() {
+                        match self.job_event_rx.recv().await {
+                            Some(event) => self.handle_job_event(event),
+                            None => break,
+                        }
+                    }
                 }
+                reply.send(()).ok();
                 tracing::debug!("kw actor shutting down");
                 ControlFlow::Break(())
             }
@@ -218,20 +239,35 @@ impl KwActor {
     ///
     /// The argv is the skeleton's minimal `kw build --alert=n`; the real
     /// argv builder (reserved flags, extra-args merge) and the checkout
-    /// policy land with the build step.
+    /// policy land with the build step — as does the readiness-based
+    /// refusal from the message protocol (refuse Start when readiness
+    /// fails); until then the only caller is the KwOps screen, which
+    /// surfaces readiness before offering Start. The `branch` carried by
+    /// the Running status is the *requested* branch; the checkout policy is
+    /// what will make the tree actually sit on it.
     fn start_job(&mut self, kind: KwJobKind, request: StartRequest) -> Result<(), KwStartError> {
         if self.job.is_some() {
             return Err(KwStartError::JobAlreadyRunning);
         }
 
         self.fs.create_dir_all(&self.kw_log_dir)?;
+        // Millisecond suffix: two jobs started within the same second must
+        // not share a log file — spawn truncates it.
         let log_path = self.kw_log_dir.join(format!(
             "build-{}.log",
-            chrono::Utc::now().format("%Y%m%d-%H%M%S")
+            chrono::Utc::now().format("%Y%m%d-%H%M%S-%3f")
         ));
         let cmd = ShellCommand::new("kw").args(["build", "--alert=n"]);
         let cwd = PathBuf::from(request.tree.path());
         let process = self.process.spawn(&cmd, &cwd, &log_path)?;
+
+        // Recorded before the job starts so RestorePreviousBranch can offer
+        // to switch back; an unprobed HEAD (detached, or not a git repo)
+        // records nothing rather than a wrong branch.
+        let pre_job_branch = match self.head_branch(&request.tree) {
+            branch if branch.is_empty() => None,
+            branch => Some(branch),
+        };
 
         let (cancel_tx, cancel_rx) = oneshot::channel();
         spawn(run_job(process, cancel_rx, self.job_event_tx.clone()));
@@ -249,6 +285,7 @@ impl KwActor {
             kernel_tree_id: request.kernel_tree_id.clone(),
             branch: request.branch.clone(),
             log_path: log_path.clone(),
+            pre_job_branch,
             cancel_tx: Some(cancel_tx),
         });
         self.set_status(KwJobStatus::Running {
@@ -287,7 +324,11 @@ impl KwActor {
                             branch = job.branch,
                             "kw job succeeded"
                         );
-                        KwJobStatus::Succeeded { kind: job.kind }
+                        KwJobStatus::Succeeded {
+                            kind: job.kind,
+                            kernel_tree_id: job.kernel_tree_id,
+                            log_path: job.log_path,
+                        }
                     }
                     JobOutcome::Exited(exit) => {
                         tracing::warn!(
@@ -376,7 +417,7 @@ impl KwActor {
 }
 
 /// Owns the spawned process until it ends: waits on it, or — when the
-/// cancel signal fires — kills the whole process group and reaps it. The
+/// cancel signal fires — runs the kill escalation and reaps it. The
 /// `wait()` future is dropped before the cancel arm's body runs, releasing
 /// the mutable borrow so `kill()` can be called. Reports the outcome back
 /// to the actor over the internal event channel.
@@ -391,15 +432,43 @@ async fn run_job(
             Err(error) => JobOutcome::WaitFailed(error),
         },
         // A dropped sender (actor shutting down) cancels the job too.
-        _ = &mut cancel_rx => {
-            if let Err(error) = process.kill() {
-                tracing::warn!(%error, "failed to kill kw job process group");
-            }
-            let _ = process.wait().await;
-            JobOutcome::Cancelled
-        }
+        _ = &mut cancel_rx => cancel_job(&mut *process).await,
     };
     events.send(JobEvent::Finished(outcome)).await.ok();
+}
+
+/// Cancel escalation ladder: SIGTERM the group, wait a grace period,
+/// SIGKILL, wait again, then give up. Giving up still reports Cancelled and
+/// lets the actor clear its job state — a process group that ignores both
+/// signals must not wedge the actor into refusing every later Start with
+/// `JobAlreadyRunning` for the rest of the session.
+async fn cancel_job(process: &mut dyn RunningProcess) -> JobOutcome {
+    if let Err(error) = process.kill() {
+        tracing::warn!(%error, "failed to SIGTERM kw job process group");
+    }
+    match tokio::time::timeout(TERM_GRACE, process.wait()).await {
+        // A successful reap after the signal means the process had already
+        // exited before it landed (kill of a dead group is a no-op, and a
+        // signaled process reaps as signal-terminated, not as success):
+        // report the real outcome, not Cancelled.
+        Ok(Ok(status)) if status.success() => JobOutcome::Exited(status),
+        Ok(_) => JobOutcome::Cancelled,
+        Err(_) => {
+            tracing::warn!("kw job ignored SIGTERM; escalating to SIGKILL");
+            if let Err(error) = process.force_kill() {
+                tracing::warn!(%error, "failed to SIGKILL kw job process group");
+            }
+            match tokio::time::timeout(KILL_GRACE, process.wait()).await {
+                Ok(_) => JobOutcome::Cancelled,
+                Err(_) => {
+                    tracing::warn!(
+                        "kw job process group could not be reaped after SIGKILL; giving up"
+                    );
+                    JobOutcome::Cancelled
+                }
+            }
+        }
+    }
 }
 
 fn send_kw_reply<T>(
@@ -513,8 +582,11 @@ mod tests {
 
     /// Spawns the actor with the already-configured mocks (mockall
     /// expectations need `&mut`, so they are set before the mocks move
-    /// behind `Arc`s).
+    /// behind `Arc`s). The log dir is a real unique temp dir even though
+    /// these tests never start a job, so a future test that accidentally
+    /// does cannot share a fixed path with the job tests.
     fn spawn_test_actor(
+        test_name: &str,
         history: MockKwHistoryStore,
         shell: MockShellTrait,
         fs: MockFileSystemTrait,
@@ -526,26 +598,42 @@ mod tests {
             Arc::new(shell),
             Arc::new(fs),
             Arc::new(env),
-            PathBuf::from("/tmp/patch-hub-test-kw-logs"),
+            tmp_log_dir(test_name),
         )
     }
 
     /// Spawns the actor with a real temp log dir and exposes the
-    /// [`FakeProcess`] so tests drive the "running" process.
-    fn spawn_job_actor(test_name: &str) -> (KwHandle, Arc<FakeProcess>, PathBuf) {
+    /// [`FakeProcess`] so tests drive the "running" process. The shell mock
+    /// answers the pre-job HEAD probe.
+    fn spawn_job_actor_with_fs(
+        test_name: &str,
+        fs: MockFileSystemTrait,
+    ) -> (KwHandle, Arc<FakeProcess>, PathBuf) {
         let process = Arc::new(FakeProcess::new());
         let log_dir = tmp_log_dir(test_name);
-        let mut fs = MockFileSystemTrait::new();
-        fs.expect_create_dir_all().returning(|_| Ok(()));
+        let mut shell = MockShellTrait::new();
+        shell.expect_execute().returning(|_| {
+            Ok(ShellOutput {
+                stdout: b"master\n".to_vec(),
+                stderr: Vec::new(),
+                success: true,
+            })
+        });
         let handle = KwActor::spawn(
             Arc::new(MockKwHistoryStore::new()),
             process.clone(),
-            Arc::new(MockShellTrait::new()),
+            Arc::new(shell),
             Arc::new(fs),
             Arc::new(MockEnvTrait::new()),
             log_dir.clone(),
         );
         (handle, process, log_dir)
+    }
+
+    fn spawn_job_actor(test_name: &str) -> (KwHandle, Arc<FakeProcess>, PathBuf) {
+        let mut fs = MockFileSystemTrait::new();
+        fs.expect_create_dir_all().returning(|_| Ok(()));
+        spawn_job_actor_with_fs(test_name, fs)
     }
 
     fn apply_record() -> KwApplyRecord {
@@ -569,6 +657,7 @@ mod tests {
             .times(1)
             .returning(|_| Ok(()));
         let handle = spawn_test_actor(
+            "record-apply",
             history,
             MockShellTrait::new(),
             MockFileSystemTrait::new(),
@@ -587,6 +676,7 @@ mod tests {
             .times(1)
             .returning(|_| Err(FileSystemError::IoError(io::Error::other("disk full"))));
         let handle = spawn_test_actor(
+            "record-apply-error",
             history,
             MockShellTrait::new(),
             MockFileSystemTrait::new(),
@@ -602,6 +692,7 @@ mod tests {
     #[tokio::test]
     async fn get_status_reports_idle_before_any_job() {
         let handle = spawn_test_actor(
+            "idle-status",
             MockKwHistoryStore::new(),
             MockShellTrait::new(),
             MockFileSystemTrait::new(),
@@ -617,6 +708,7 @@ mod tests {
     #[tokio::test]
     async fn watch_status_receiver_sees_current_snapshot() {
         let handle = spawn_test_actor(
+            "watch-idle",
             MockKwHistoryStore::new(),
             MockShellTrait::new(),
             MockFileSystemTrait::new(),
@@ -667,7 +759,7 @@ mod tests {
                     success: true,
                 })
             });
-        let handle = spawn_test_actor(history, shell, fs, env);
+        let handle = spawn_test_actor("readiness", history, shell, fs, env);
 
         let readiness = handle.get_readiness("mainline", &tree).await.unwrap();
 
@@ -682,11 +774,13 @@ mod tests {
 
     /// Waits until the status leaves `Idle`/`Running` and returns the
     /// terminal status. The receiver may have observed the `Running`
-    /// transition first, so a single `changed()` is not enough.
+    /// transition first, so a single `changed()` is not enough. The timeout
+    /// is generous because the SIGKILL-escalation test waits out the
+    /// SIGTERM grace period.
     async fn wait_for_terminal_status(
         watch: &mut watch::Receiver<KwStatusSnapshot>,
     ) -> KwJobStatus {
-        tokio::time::timeout(Duration::from_secs(1), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             loop {
                 let status = watch.borrow().job.clone();
                 if !matches!(status, KwJobStatus::Idle | KwJobStatus::Running { .. }) {
@@ -735,11 +829,15 @@ mod tests {
         process.last_child().finish(0);
         let mut watch = handle.watch_status().await.unwrap();
         let status = wait_for_terminal_status(&mut watch).await;
-        assert_eq!(
-            KwJobStatus::Succeeded {
-                kind: KwJobKind::Build
-            },
-            status
+        assert!(
+            matches!(
+                status,
+                KwJobStatus::Succeeded {
+                    kind: KwJobKind::Build,
+                    ..
+                }
+            ),
+            "unexpected status: {status:?}"
         );
 
         handle.shutdown().await;
@@ -821,12 +919,9 @@ mod tests {
         let (handle, process, log_dir) = spawn_job_actor("shutdown-kill");
 
         handle.start_build(start_request()).await.unwrap();
+        // shutdown() returns only after the kill escalation has completed.
         handle.shutdown().await;
 
-        // shutdown() only enqueues the message; the actor being gone
-        // proves the Shutdown (and its kill) was processed.
-        let err = handle.get_status().await.unwrap_err();
-        assert!(matches!(err, KwError::ActorUnavailable(_)));
         assert!(process.last_child().was_killed());
         std::fs::remove_dir_all(&log_dir).unwrap();
     }
@@ -852,6 +947,7 @@ mod tests {
     #[tokio::test]
     async fn start_deploy_still_refused_until_the_deploy_step() {
         let handle = spawn_test_actor(
+            "deploy-refused",
             MockKwHistoryStore::new(),
             MockShellTrait::new(),
             MockFileSystemTrait::new(),
@@ -870,6 +966,7 @@ mod tests {
     #[tokio::test]
     async fn cancel_and_restore_without_job_are_immediate_errors() {
         let handle = spawn_test_actor(
+            "no-job",
             MockKwHistoryStore::new(),
             MockShellTrait::new(),
             MockFileSystemTrait::new(),
@@ -892,6 +989,7 @@ mod tests {
     #[tokio::test]
     async fn shutdown_stops_actor() {
         let handle = spawn_test_actor(
+            "shutdown",
             MockKwHistoryStore::new(),
             MockShellTrait::new(),
             MockFileSystemTrait::new(),
@@ -902,5 +1000,72 @@ mod tests {
         let err = handle.get_status().await.unwrap_err();
 
         assert!(matches!(err, KwError::ActorUnavailable(_)));
+    }
+
+    #[tokio::test]
+    async fn log_dir_creation_failure_refuses_start_and_stays_idle() {
+        let mut fs = MockFileSystemTrait::new();
+        fs.expect_create_dir_all().returning(|_| {
+            Err(FileSystemError::IoError(io::Error::other(
+                "read-only filesystem",
+            )))
+        });
+        let (handle, process, log_dir) = spawn_job_actor_with_fs("log-dir-fail", fs);
+
+        let err = handle.start_build(start_request()).await.unwrap_err();
+
+        assert!(matches!(err, KwStartError::Fs(_)));
+        assert_eq!(KwJobStatus::Idle, handle.get_status().await.unwrap().job);
+        assert!(process.spawned().is_empty());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn cancel_racing_a_successful_exit_reports_success() {
+        let (handle, process, log_dir) = spawn_job_actor("cancel-race");
+        let mut watch = handle.watch_status().await.unwrap();
+
+        handle.start_build(start_request()).await.unwrap();
+        process.last_child().finish(0);
+        // Whether the actor processes the exit or the cancel first is
+        // timing-dependent, but the terminal status must be Succeeded
+        // either way: the process exited before any signal landed.
+        let _ = handle.cancel().await;
+
+        let status = wait_for_terminal_status(&mut watch).await;
+        assert!(
+            matches!(status, KwJobStatus::Succeeded { .. }),
+            "expected Succeeded, got {status:?}"
+        );
+        // Killing an already-finished process is a no-op, not a kill.
+        assert!(!process.last_child().was_killed());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn cancel_escalates_to_sigkill_when_sigterm_is_ignored() {
+        let (handle, process, log_dir) = spawn_job_actor("sigkill-escalation");
+        process.ignore_sigterm(true);
+        let mut watch = handle.watch_status().await.unwrap();
+
+        handle.start_build(start_request()).await.unwrap();
+        handle.cancel().await.unwrap();
+
+        // Waits out the SIGTERM grace period before the escalation.
+        let status = wait_for_terminal_status(&mut watch).await;
+        assert!(
+            matches!(status, KwJobStatus::Cancelled { .. }),
+            "expected Cancelled, got {status:?}"
+        );
+        let child = process.last_child();
+        assert!(child.was_killed());
+        assert!(child.was_force_killed());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
     }
 }

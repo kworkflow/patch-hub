@@ -41,6 +41,11 @@ pub struct FakeControl {
 struct FakeState {
     raw_status: Option<i32>,
     killed: bool,
+    force_killed: bool,
+    /// When set, `kill()` (SIGTERM) is recorded but the process keeps
+    /// "running": the model for a process group that ignores SIGTERM, so
+    /// tests can exercise the SIGKILL escalation.
+    ignores_sigterm: bool,
 }
 
 impl FakeControl {
@@ -66,6 +71,10 @@ impl FakeControl {
     pub fn was_killed(&self) -> bool {
         self.state.lock().unwrap().killed
     }
+
+    pub fn was_force_killed(&self) -> bool {
+        self.state.lock().unwrap().force_killed
+    }
 }
 
 struct FakeSpawn {
@@ -80,6 +89,7 @@ struct FakeSpawn {
 pub struct FakeProcess {
     spawns: Mutex<Vec<FakeSpawn>>,
     refuse_spawns: AtomicBool,
+    ignore_sigterm: AtomicBool,
 }
 
 impl FakeProcess {
@@ -92,6 +102,12 @@ impl FakeProcess {
     /// recorded, mirroring `OsProcess`'s failure behavior.
     pub fn refuse_spawns(&self, refuse: bool) {
         self.refuse_spawns.store(refuse, Ordering::Relaxed);
+    }
+
+    /// Make subsequently spawned processes ignore `kill()` (SIGTERM): the
+    /// kill is recorded but they keep "running" until `force_kill()`.
+    pub fn ignore_sigterm(&self, ignore: bool) {
+        self.ignore_sigterm.store(ignore, Ordering::Relaxed);
     }
 
     pub fn spawned(&self) -> Vec<SpawnRecord> {
@@ -135,6 +151,8 @@ impl ProcessTrait for FakeProcess {
             state: Mutex::new(FakeState {
                 raw_status: None,
                 killed: false,
+                force_killed: false,
+                ignores_sigterm: self.ignore_sigterm.load(Ordering::Relaxed),
             }),
             notify: Notify::new(),
             log_path: log_path.to_path_buf(),
@@ -177,7 +195,21 @@ impl RunningProcess for FakeRunningProcess {
         // process is a successful no-op, not a kill.
         if state.raw_status.is_none() {
             state.killed = true;
-            state.raw_status = Some(Signal::SIGTERM as i32);
+            if !state.ignores_sigterm {
+                state.raw_status = Some(Signal::SIGTERM as i32);
+                drop(state);
+                self.control.notify.notify_one();
+            }
+        }
+        Ok(())
+    }
+
+    fn force_kill(&mut self) -> Result<(), ProcessError> {
+        let mut state = self.control.state.lock().unwrap();
+        // SIGKILL cannot be ignored: even a SIGTERM-stubborn process dies.
+        if state.raw_status.is_none() {
+            state.force_killed = true;
+            state.raw_status = Some(Signal::SIGKILL as i32);
             drop(state);
             self.control.notify.notify_one();
         }
