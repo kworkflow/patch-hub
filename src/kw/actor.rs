@@ -31,7 +31,7 @@ use crate::{
         handle::KwHandle,
         history::KwHistoryStore,
         messages::{KwMessage, StartRequest},
-        readiness::{self, KwReadiness},
+        readiness::{self, KwReadiness, KwVersionCheck, TreeReadiness},
         status::{KwJobKind, KwJobStatus, KwPhase, KwStatusSnapshot},
     },
 };
@@ -241,15 +241,49 @@ impl KwActor {
     /// caller right after this returns: the job itself keeps running in a
     /// detached task and is observed via the status snapshot.
     ///
-    /// The argv is `kw build --alert=n`. The `branch` on the Running status
-    /// is the requested branch; this skeleton does not switch the tree.
+    /// Refusals, in order: a job already running, no kw binary on PATH,
+    /// unresolvable kw-env state, or a tree that fails the readiness
+    /// probes. The argv is still the skeleton's minimal `kw build
+    /// --alert=n`; the real argv builder (reserved flags, extra-args merge)
+    /// and the checkout policy land later in the build step. The `branch`
+    /// carried by the Running status is the *requested* branch; the
+    /// checkout policy is what will make the tree actually sit on it.
     fn start_job(&mut self, kind: KwJobKind, request: StartRequest) -> Result<(), KwStartError> {
         if self.job.is_some() {
             return Err(KwStartError::JobAlreadyRunning);
         }
 
-        // Recorded at accept so RestorePreviousBranch can switch back.
-        // An unprobed HEAD (detached, or not a git repo) records nothing.
+        // Hard fail on invoke (integration plan §2.4): with no kw binary on
+        // PATH no job can run. The version check is advisory only — kw's
+        // shipped VERSION file is stale, so Below/Unknown are logged, never
+        // gated.
+        let kw_binary = readiness::probe_kw_binary(&*self.env, &*self.shell);
+        if !kw_binary.available {
+            return Err(KwStartError::KwBinaryMissing);
+        }
+        if let KwVersionCheck::Below(version_line) = &kw_binary.check {
+            tracing::warn!(
+                version = %version_line,
+                minimum = ?readiness::KW_MIN_VERSION,
+                "kw reports a version below the verified floor"
+            );
+        }
+
+        let tree_path = PathBuf::from(request.tree.path());
+        // Unresolvable env state refuses the start: the build record this
+        // job writes at completion must know whether it ran under an O=.
+        let output_dir = readiness::resolve_output_dir(&*self.fs, &*self.env, &tree_path)?;
+        let tree_readiness = readiness::probe_tree(&*self.fs, &tree_path, output_dir.as_deref());
+        if !matches!(tree_readiness, TreeReadiness::Ready { .. }) {
+            return Err(KwStartError::TreeNotReady(tree_readiness));
+        }
+
+        // Probed before anything touches the tree: once the checkout policy
+        // lands, `git switch <selected branch>` goes between this probe and
+        // the spawn, and the probe must still capture the pre-job HEAD or
+        // RestorePreviousBranch would "restore" the branch the job switched
+        // to. An unprobed HEAD (detached, or not a git repo) records
+        // nothing rather than a wrong branch.
         let pre_job_branch = match self.head_branch(&request.tree) {
             branch if branch.is_empty() => None,
             branch => Some(branch),
@@ -619,9 +653,26 @@ mod tests {
         )
     }
 
+    /// fs answers for a ready kernel tree with no active kw env: the
+    /// kernel-root probes pass, `.config` exists, `.kw/env.current` is
+    /// absent, and `.kw/build.config` is unreadable (arch probes as None).
+    fn expect_ready_tree(fs: &mut MockFileSystemTrait) {
+        fs.expect_is_dir().returning(|_| true);
+        fs.expect_is_file()
+            .returning(|path| !path.ends_with(".kw/env.current"));
+        fs.expect_exists().returning(|_| true);
+        fs.expect_read_to_string().returning(|_| {
+            Err(FileSystemError::IoError(io::Error::new(
+                io::ErrorKind::NotFound,
+                "missing",
+            )))
+        });
+    }
+
     /// Spawns the actor with a real temp log dir and exposes the
-    /// [`FakeProcess`] so tests drive the "running" process. The shell mock
-    /// answers the pre-job HEAD probe.
+    /// [`FakeProcess`] so tests drive the "running" process. The env mock
+    /// has kw on PATH; the shell mock answers the kw version probe and the
+    /// pre-job HEAD probe.
     fn spawn_job_actor_with_fs(
         test_name: &str,
         fs: MockFileSystemTrait,
@@ -629,19 +680,25 @@ mod tests {
         let process = Arc::new(FakeProcess::new());
         let log_dir = tmp_log_dir(test_name);
         let mut shell = MockShellTrait::new();
-        shell.expect_execute().returning(|_| {
+        shell.expect_execute().returning(|cmd| {
+            let stdout = match cmd.program.as_str() {
+                "kw" => b"kw, version 0.10.0\n".to_vec(),
+                _ => b"master\n".to_vec(),
+            };
             Ok(ShellOutput {
-                stdout: b"master\n".to_vec(),
+                stdout,
                 stderr: Vec::new(),
                 success: true,
             })
         });
+        let mut env = MockEnvTrait::new();
+        env.expect_which().returning(|_| true);
         let handle = KwActor::spawn(
             Arc::new(MockKwHistoryStore::new()),
             process.clone(),
             Arc::new(shell),
             Arc::new(fs),
-            Arc::new(MockEnvTrait::new()),
+            Arc::new(env),
             log_dir.clone(),
         );
         (handle, process, log_dir)
@@ -649,6 +706,7 @@ mod tests {
 
     fn spawn_job_actor(test_name: &str) -> (KwHandle, Arc<FakeProcess>, PathBuf) {
         let mut fs = MockFileSystemTrait::new();
+        expect_ready_tree(&mut fs);
         fs.expect_create_dir_all().returning(|_| Ok(()));
         spawn_job_actor_with_fs(test_name, fs)
     }
@@ -962,6 +1020,118 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn start_build_refused_when_kw_binary_missing() {
+        let process = Arc::new(FakeProcess::new());
+        let mut env = MockEnvTrait::new();
+        env.expect_which().returning(|_| false);
+        let log_dir = tmp_log_dir("kw-missing");
+        let handle = KwActor::spawn(
+            Arc::new(MockKwHistoryStore::new()),
+            process.clone(),
+            // No shell or fs calls are expected: the missing binary
+            // short-circuits the start before any other probe or spawn.
+            Arc::new(MockShellTrait::new()),
+            Arc::new(MockFileSystemTrait::new()),
+            Arc::new(env),
+            log_dir.clone(),
+        );
+
+        let err = handle.start_build(start_request()).await.unwrap_err();
+
+        assert!(matches!(err, KwStartError::KwBinaryMissing));
+        assert_eq!(KwJobStatus::Idle, handle.get_status().await.unwrap().job);
+        assert!(process.spawned().is_empty());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_build_refused_when_tree_not_ready() {
+        let process = Arc::new(FakeProcess::new());
+        let mut env = MockEnvTrait::new();
+        env.expect_which().returning(|_| true);
+        let mut shell = MockShellTrait::new();
+        shell.expect_execute().returning(|_| {
+            Ok(ShellOutput {
+                stdout: b"kw, version 0.10.0\n".to_vec(),
+                stderr: Vec::new(),
+                success: true,
+            })
+        });
+        // The kernel-root probes pass, but there is no .kw directory: kw
+        // init was never run in this tree.
+        let mut fs = MockFileSystemTrait::new();
+        fs.expect_is_dir()
+            .returning(|path| path.file_name().is_none_or(|name| name != ".kw"));
+        fs.expect_is_file()
+            .returning(|path| !path.ends_with(".kw/env.current"));
+        fs.expect_exists().returning(|_| true);
+        let log_dir = tmp_log_dir("tree-not-ready");
+        let handle = KwActor::spawn(
+            Arc::new(MockKwHistoryStore::new()),
+            process.clone(),
+            Arc::new(shell),
+            Arc::new(fs),
+            Arc::new(env),
+            log_dir.clone(),
+        );
+
+        let err = handle.start_build(start_request()).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            KwStartError::TreeNotReady(TreeReadiness::MissingKwDir)
+        ));
+        assert_eq!(KwJobStatus::Idle, handle.get_status().await.unwrap().job);
+        assert!(process.spawned().is_empty());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_build_allowed_when_kw_version_below_floor() {
+        let process = Arc::new(FakeProcess::new());
+        let log_dir = tmp_log_dir("version-below");
+        let mut env = MockEnvTrait::new();
+        env.expect_which().returning(|_| true);
+        let mut shell = MockShellTrait::new();
+        shell.expect_execute().returning(|cmd| {
+            let stdout = match cmd.program.as_str() {
+                // kw's shipped VERSION file is stale (`beta-0.9` even at
+                // the 0.10 tag): a below-floor report warns but never
+                // gates the start.
+                "kw" => b"kw, version beta-0.9\n".to_vec(),
+                _ => b"master\n".to_vec(),
+            };
+            Ok(ShellOutput {
+                stdout,
+                stderr: Vec::new(),
+                success: true,
+            })
+        });
+        let mut fs = MockFileSystemTrait::new();
+        expect_ready_tree(&mut fs);
+        fs.expect_create_dir_all().returning(|_| Ok(()));
+        let handle = KwActor::spawn(
+            Arc::new(MockKwHistoryStore::new()),
+            process.clone(),
+            Arc::new(shell),
+            Arc::new(fs),
+            Arc::new(env),
+            log_dir.clone(),
+        );
+
+        handle.start_build(start_request()).await.unwrap();
+        assert_eq!(1, process.spawned().len());
+
+        process.last_child().finish(0);
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
     async fn start_deploy_still_refused_until_the_deploy_step() {
         let handle = spawn_test_actor(
             "deploy-refused",
@@ -1022,6 +1192,7 @@ mod tests {
     #[tokio::test]
     async fn log_dir_creation_failure_refuses_start_and_stays_idle() {
         let mut fs = MockFileSystemTrait::new();
+        expect_ready_tree(&mut fs);
         fs.expect_create_dir_all().returning(|_| {
             Err(FileSystemError::IoError(io::Error::other(
                 "read-only filesystem",
