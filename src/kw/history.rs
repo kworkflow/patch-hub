@@ -80,6 +80,20 @@ pub trait KwHistoryStore: Send + Sync {
         kernel_tree_id: &str,
     ) -> Result<Option<KwApplyRecord>, FileSystemError>;
 
+    /// Returns the newest apply record for the tree whose applied branch
+    /// is `branch` — the link from a build's branch back to the patchset
+    /// it came from. A missing history file is a normal state, not an
+    /// error. Records with unparseable `applied_at` values sort oldest,
+    /// same convention as the build records.
+    // Read by KwActor when writing build records (the build step); kept
+    // per the CachePolicy precedent (src/lore/application/cache.rs).
+    #[allow(dead_code)]
+    fn apply_record_for_branch(
+        &self,
+        kernel_tree_id: &str,
+        branch: &str,
+    ) -> Result<Option<KwApplyRecord>, FileSystemError>;
+
     /// Inserts or replaces the build record for the record's
     /// `(kernel_tree_id, branch)` pair.
     #[allow(dead_code)]
@@ -194,6 +208,25 @@ impl KwHistoryStore for FileKwHistoryStore {
             .map_err(|e| self.error_with_path(&self.apply_history_path, e))
     }
 
+    fn apply_record_for_branch(
+        &self,
+        kernel_tree_id: &str,
+        branch: &str,
+    ) -> Result<Option<KwApplyRecord>, FileSystemError> {
+        self.load_records(&self.apply_history_path)
+            .map(|records: ApplyRecords| {
+                records
+                    .values()
+                    .filter_map(|by_tree| by_tree.get(kernel_tree_id))
+                    .filter(|record| record.applied_branch == branch)
+                    .max_by_key(|record| {
+                        chrono::DateTime::parse_from_rfc3339(&record.applied_at).ok()
+                    })
+                    .cloned()
+            })
+            .map_err(|e| self.error_with_path(&self.apply_history_path, e))
+    }
+
     fn record_build(&self, record: KwBuildRecord) -> Result<(), FileSystemError> {
         self.store_build_record(record)
             .map_err(|e| self.error_with_path(&self.build_history_path, e))
@@ -281,6 +314,18 @@ mod tests {
             applied_branch: branch.to_string(),
             base_branch: "master".to_string(),
             applied_at: "2026-08-01T17:30:00Z".to_string(),
+        }
+    }
+
+    fn record_at(
+        message_id: &str,
+        kernel_tree_id: &str,
+        branch: &str,
+        applied_at: &str,
+    ) -> KwApplyRecord {
+        KwApplyRecord {
+            applied_at: applied_at.to_string(),
+            ..record(message_id, kernel_tree_id, branch)
         }
     }
 
@@ -375,6 +420,126 @@ mod tests {
         let store = store_at(&dir);
 
         assert_eq!(None, store.apply_record("msg-1", "mainline").unwrap());
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn apply_record_for_branch_finds_record_across_message_ids() {
+        let dir = tmp_dir("branch-lookup");
+        let store = store_at(&dir);
+
+        store
+            .record_apply(record("msg-1", "mainline", "patchset-x"))
+            .unwrap();
+        store
+            .record_apply(record("msg-2", "mainline", "patchset-y"))
+            .unwrap();
+
+        assert_eq!(
+            Some(record("msg-2", "mainline", "patchset-y")),
+            store
+                .apply_record_for_branch("mainline", "patchset-y")
+                .unwrap()
+        );
+        assert_eq!(
+            None,
+            store
+                .apply_record_for_branch("mainline", "never-applied")
+                .unwrap()
+        );
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn apply_record_for_branch_scopes_to_the_tree() {
+        let dir = tmp_dir("branch-tree-scope");
+        let store = store_at(&dir);
+
+        // The same branch name applied to two trees resolves per tree.
+        store
+            .record_apply(record("msg-1", "mainline", "patchset-x"))
+            .unwrap();
+        store
+            .record_apply(record("msg-2", "stable", "patchset-x"))
+            .unwrap();
+
+        assert_eq!(
+            Some(record("msg-2", "stable", "patchset-x")),
+            store
+                .apply_record_for_branch("stable", "patchset-x")
+                .unwrap()
+        );
+        assert_eq!(
+            None,
+            store
+                .apply_record_for_branch("amd-gfx", "patchset-x")
+                .unwrap()
+        );
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn apply_record_for_branch_returns_newest_reapply() {
+        let dir = tmp_dir("branch-newest");
+        let store = store_at(&dir);
+
+        // Two patchsets applied onto the same branch name: the newest
+        // applied_at wins, and unparseable timestamps sort oldest (the
+        // build records' convention).
+        store
+            .record_apply(record_at(
+                "msg-old",
+                "mainline",
+                "patchset-x",
+                "2026-08-01T10:00:00Z",
+            ))
+            .unwrap();
+        store
+            .record_apply(record_at(
+                "msg-new",
+                "mainline",
+                "patchset-x",
+                "2026-08-02T10:00:00Z",
+            ))
+            .unwrap();
+        store
+            .record_apply(record_at(
+                "msg-broken",
+                "mainline",
+                "patchset-x",
+                "not a timestamp",
+            ))
+            .unwrap();
+
+        assert_eq!(
+            Some(record_at(
+                "msg-new",
+                "mainline",
+                "patchset-x",
+                "2026-08-02T10:00:00Z"
+            )),
+            store
+                .apply_record_for_branch("mainline", "patchset-x")
+                .unwrap()
+        );
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn apply_record_for_branch_missing_history_reads_as_none() {
+        let dir = tmp_dir("branch-missing");
+        let store = store_at(&dir);
+
+        assert_eq!(
+            None,
+            store
+                .apply_record_for_branch("mainline", "patchset-x")
+                .unwrap()
+        );
 
         fs::remove_dir_all(&dir).unwrap();
     }
