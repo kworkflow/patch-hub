@@ -1,8 +1,7 @@
-//! User-local history of patchset applies (and, in later steps, kw builds),
-//! stored as JSON under the configured `data_dir`.
+//! User-local history of patchset applies, stored as JSON under the
+//! configured `data_dir`.
 //!
-//! Apply records feed kw build/deploy readiness and the KwOps branch prefill,
-//! so they are user state — not a cache — and are never refreshed from lore.
+//! Records are user state — not a cache — and are never refreshed from lore.
 
 use mockall::automock;
 use serde::{Deserialize, Serialize};
@@ -19,8 +18,7 @@ pub const APPLY_HISTORY_FILENAME: &str = "kw_apply_history.json";
 pub struct KwApplyRecord {
     pub message_id: String,
     pub kernel_tree_id: String,
-    /// Snapshot of `KernelTree.path` when the record was written, so later
-    /// readiness checks can detect the tree being repointed or moved.
+    /// Snapshot of `KernelTree.path` when the record was written.
     pub tree_path: String,
     pub applied_branch: String,
     pub base_branch: String,
@@ -41,8 +39,6 @@ pub trait KwHistoryStore: Send + Sync {
     /// Returns the apply record for the `(message_id, kernel_tree_id)` pair,
     /// or `None` if it was never recorded. A missing history file is a normal
     /// state, not an error.
-    // Read by the kw readiness checks in a later step; kept per the
-    // CachePolicy precedent (src/lore/application/cache.rs).
     #[allow(dead_code)]
     fn apply_record(
         &self,
