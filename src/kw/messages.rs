@@ -24,8 +24,7 @@ pub struct StartRequest {
     /// before spawning and leaves HEAD there after the job.
     pub branch: String,
     /// Extra kw CLI tokens, already whitespace-split by the caller.
-    /// Reserved options (integration plan §2.1f: `--alert`,
-    /// `--save-log-to`, and the deploy-time set) are stripped from them —
+    /// Reserved options (`--alert`, `--save-log-to`) are stripped —
     /// patch-hub's own argv wins.
     pub extra_args: Vec<String>,
 }

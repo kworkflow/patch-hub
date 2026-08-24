@@ -1,9 +1,7 @@
 //! kw argv construction: patch-hub's base command lines plus the user
-//! extra-args merge in which reserved options always win (integration
-//! plan §2.1f).
+//! extra-args merge in which reserved options always win.
 
-// The only caller is the unix-only actor until the KwOps screen shows
-// the final argv before Start (§2.1f item 6).
+// Production caller is the unix-only actor.
 #![cfg_attr(not(unix), allow(dead_code))]
 
 /// A CLI option patch-hub controls: user-supplied extra args that set it
@@ -27,10 +25,9 @@ impl ReservedOption {
 
 /// Reserved for `kw build`: patch-hub forces non-interactive alerts, owns
 /// the job's log file (ProcessTrait captures kw's stdout/stderr to it) —
-/// a user-supplied `--save-log-to` would fork the log to a second file,
-/// leaving KwOps tailing only half the output — and never runs `--menu`
-/// from automation (plan §1.1): the job's stdio is a log file, so
-/// menuconfig would hang until cancelled.
+/// a user-supplied `--save-log-to` would split stdout/stderr away from
+/// the job log — and never runs `--menu` from automation: the job's
+/// stdio is a log file, so menuconfig would hang until cancelled.
 const BUILD_RESERVED: &[ReservedOption] = &[
     ReservedOption::new(&["--alert"], true),
     ReservedOption::new(&["--save-log-to"], true),
@@ -161,8 +158,7 @@ mod tests {
 
     #[test]
     fn boolean_reserved_strips_only_itself_in_all_spellings() {
-        // The deploy step's reserved set has booleans with short forms;
-        // the merge must not eat the token after one.
+        // A boolean reserved option must not eat the following token.
         let reserved = [ReservedOption::new(&["--force", "-f"], false)];
         assert_eq!(
             vec!["deploy", "extra"],
