@@ -428,10 +428,9 @@ impl App {
 
         if patchset_action_selected(details, &PatchsetAction::Apply) {
             debug!("applying patchset via git-am");
-            // A running kw job owns the tree: applying would rewrite the
-            // branch the job is building under it (integration plan
-            // §2.1i). No Start can race this check: both paths are
-            // serialized by the AppActor loop.
+            // A running kw job owns the tree; applying would rewrite the
+            // branch it is building. AppActor serializes this with Start,
+            // so the two cannot race.
             let popup = match self.kw_job_running_popup().await {
                 Some(popup) => popup,
                 None => self.apply_patchset_popup(details).await,

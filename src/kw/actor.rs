@@ -8,14 +8,8 @@
 //! [`crate::kw::readiness`] and records applies through the shared
 //! [`KwHistoryStore`](crate::kw::history::KwHistoryStore).
 //!
-//! Tracked note (same class as the integration plan's §2.1i): the actor
-//! runs quick blocking calls inline in its async task — `create_dir_all`,
-//! the build-record completion probes, and the history store's atomic
-//! writes — per the ConfigActor precedent. The checkout policy's git
-//! calls are different: `git switch` rewrites the worktree (seconds on a
-//! kernel tree), so the start and restore paths run them behind
-//! `spawn_blocking` and the `Start*`/`RestorePreviousBranch` replies stay
-//! immediate.
+//! Git checkout runs on the blocking pool. `create_dir_all`, history
+//! writes, and completion probes run inline on the actor task.
 
 use std::{
     ops::ControlFlow,
@@ -75,7 +69,7 @@ enum JobEvent {
 
 /// Where RestorePreviousBranch switches back to: the branch HEAD was on
 /// when the last job was accepted, and the tree that branch lives in.
-/// Session-only (integration plan §2.1a), deliberately not persisted.
+/// Session-only, deliberately not persisted.
 struct RestoreContext {
     tree_path: String,
     branch: String,
@@ -91,7 +85,7 @@ struct JobState {
     /// Tree path, kw-env output dir, and build arch as probed at accept
     /// time. The build runs under these, so the completion record
     /// describes this snapshot — not whatever the tree's configuration
-    /// says by the time the job ends (§2.1e drift detection).
+    /// says by the time the job ends.
     tree_path: String,
     output_dir: Option<PathBuf>,
     arch: Option<String>,
@@ -269,11 +263,10 @@ impl KwActor {
     ///
     /// Refusals, in order: a job already running, no kw binary on PATH,
     /// unresolvable kw-env state, a tree that fails the readiness probes,
-    /// a dirty worktree, or a failed branch switch. The argv comes from
-    /// the reserved-flags merge (§2.1f): patch-hub's own flags win over
-    /// the request's extra args. A start refused after the branch switch
-    /// rolls the switch back: a refused start never leaves the tree on a
-    /// branch the user did not check out.
+    /// a dirty worktree, or a failed branch switch. Reserved flags on
+    /// patch-hub's own argv win over the request's extra args. A start
+    /// refused after the branch switch rolls the switch back: a refused
+    /// start never leaves the tree on a branch the user did not check out.
     async fn start_job(
         &mut self,
         kind: KwJobKind,
@@ -283,10 +276,9 @@ impl KwActor {
             return Err(KwStartError::JobAlreadyRunning);
         }
 
-        // Hard fail on invoke (integration plan §2.4): with no kw binary on
-        // PATH no job can run. The version check is advisory only — kw's
-        // shipped VERSION file is stale, so Below/Unknown are logged, never
-        // gated.
+        // Hard fail on invoke: with no kw binary on PATH no job can run.
+        // The version check is advisory only — kw's shipped VERSION file
+        // is stale, so Below/Unknown are logged, never gated.
         let kw_binary = readiness::probe_kw_binary(&*self.env, &*self.shell);
         if !kw_binary.available {
             return Err(KwStartError::KwBinaryMissing);
@@ -362,15 +354,13 @@ impl KwActor {
         Ok(())
     }
 
-    /// The checkout policy (§2.1a): refuse on a dirty worktree, probe the
-    /// pre-job HEAD, then switch the tree onto the requested branch. The
-    /// git calls rewrite the worktree — seconds on a kernel tree, not
-    /// milliseconds — so they run on the blocking pool and the accept
-    /// reply stays immediate.
+    /// Refuse a dirty worktree, record HEAD, then `git switch` to the
+    /// requested branch. The git calls run on the blocking pool so the
+    /// accept reply stays immediate.
     ///
     /// The HEAD probe sits between the dirty check and the switch: it
     /// must capture the branch the user was on, or RestorePreviousBranch
-    /// would "restore" the branch the job switched to. An unprobed HEAD
+    /// would restore the branch the job switched to. An unprobed HEAD
     /// (detached, or not a git repo) yields `None` rather than a wrong
     /// branch.
     async fn checkout_build_branch(
@@ -525,16 +515,9 @@ impl KwActor {
         }
     }
 
-    /// Writes the build record for a finished job (§2.1e): success and
-    /// failure both — KwOps shows "last build failed" from the stored
-    /// record, and deploy-alone readiness requires `success == true`. A
-    /// cancelled job writes nothing: it never completed. History and
-    /// patchset-link errors are logged, never reported in the job's
-    /// status — the build's real outcome already reached the user.
-    ///
-    /// Build-then-deploy jobs (the deploy step) must instead write this
-    /// record at the Building → Deploying phase transition, so a failed
-    /// deploy cannot mask a good build.
+    /// Persist a finished build (success or failure). Cancel writes
+    /// nothing. History and patchset-link errors are logged, not folded
+    /// into job status — the build's real outcome already reached the user.
     fn record_build_outcome(&self, job: &JobState, outcome: &JobOutcome) {
         let success = match outcome {
             JobOutcome::Exited(exit) => exit.success(),
@@ -624,7 +607,7 @@ impl KwActor {
     }
 
     /// Switches the tree that ran the last job back to the branch HEAD was
-    /// on when that job was accepted (§2.1a). Refuses while a job is
+    /// on when that job was accepted. Refuses while a job is
     /// running (its branch is in use), when nothing was recorded, and on
     /// a dirty worktree. Only a successful switch consumes the context —
     /// a refused restore stays available for a retry.
@@ -664,13 +647,10 @@ impl KwActor {
     }
 }
 
-/// Fails unless the tree's git state verifies clean (§2.1a). Untracked
-/// files don't count: kernel trees accumulate local scratch files, and
-/// only tracked changes can corrupt the branch a job builds — an
-/// untracked file that would collide with the switch is still caught by
-/// git itself. A probe that itself fails — git missing, not a repository
-/// — fails too: starting a job or restoring a branch on a tree whose
-/// state is unknown could carry unrecorded changes across branches.
+/// Fails unless the tree's git state verifies clean. Untracked files
+/// don't count: kernel trees accumulate local scratch files, and only
+/// tracked changes can corrupt the branch a job builds. A probe that
+/// itself fails — git missing, not a repository — fails too.
 fn check_worktree_clean(shell: &dyn ShellTrait, tree_path: &str) -> Result<(), TreeGitError> {
     let cmd = ShellCommand::new("git").args([
         "-C",
