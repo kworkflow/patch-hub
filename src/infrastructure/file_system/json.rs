@@ -9,7 +9,7 @@ use crate::infrastructure::file_system::{FileSystemError, FileSystemTrait};
 
 /// Shared JSON persistence operations. Stateless namespace for methods used
 /// by the JSON-backed stores (config repository, lore persistence, kw
-/// history); grows as more shared JSON behavior appears.
+/// history).
 pub struct JsonUtils;
 
 impl JsonUtils {
