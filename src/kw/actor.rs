@@ -784,10 +784,18 @@ fn outcome_after_cancel(result: Result<ExitStatus, ProcessError>) -> JobOutcome 
     use std::os::unix::process::ExitStatusExt;
 
     match result {
-        Ok(status) => match status.signal() {
-            Some(_) => JobOutcome::Cancelled,
-            None => JobOutcome::Exited(status),
-        },
+        Ok(status) => {
+            if status.signal().is_some() {
+                return JobOutcome::Cancelled;
+            }
+            // kw is a bash wrapper: a process-group SIGTERM/SIGKILL often
+            // surfaces as a plain exit of 128+signum (143 / 137) rather than
+            // WIFSIGNALED. After a cancel request those are still cancels.
+            match status.code() {
+                Some(143 | 137) => JobOutcome::Cancelled,
+                _ => JobOutcome::Exited(status),
+            }
+        }
         Err(error) => JobOutcome::WaitFailed(error),
     }
 }
@@ -1367,7 +1375,7 @@ mod tests {
         let spawned = process.spawned();
         assert_eq!(1, spawned.len());
         assert_eq!("kw", spawned[0].program);
-        assert_eq!(["build", "--alert=n"], spawned[0].args.as_slice());
+        assert_eq!(["build"], spawned[0].args.as_slice());
         assert_eq!(Path::new("/home/user/linux"), spawned[0].cwd);
         assert!(spawned[0].log_path.starts_with(&log_dir));
 
@@ -1421,10 +1429,10 @@ mod tests {
         handle.start_build(request).await.unwrap();
 
         let spawned = process.spawned();
-        // Reserved options win: the user's --alert and --save-log-to are
-        // stripped, the rest passes through in order.
+        // Reserved options are stripped: the user's --alert and --save-log-to
+        // do not reach kw; the rest passes through in order.
         assert_eq!(
-            ["build", "--alert=n", "--verbose", "--ccache"].as_slice(),
+            ["build", "--verbose", "--ccache"].as_slice(),
             spawned[0].args.as_slice()
         );
 

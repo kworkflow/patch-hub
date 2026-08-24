@@ -23,20 +23,25 @@ impl ReservedOption {
     }
 }
 
-/// Reserved for `kw build`: patch-hub forces non-interactive alerts, owns
-/// the job's log file (ProcessTrait captures kw's stdout/stderr to it) —
-/// a user-supplied `--save-log-to` would split stdout/stderr away from
-/// the job log — and never runs `--menu` from automation: the job's
-/// stdio is a log file, so menuconfig would hang until cancelled.
+/// Reserved for `kw build`: patch-hub owns the job's log file
+/// (`ProcessTrait` captures kw's stdout/stderr to it) — a user-supplied
+/// `--save-log-to` would split stdout/stderr away from the job log — and
+/// never runs `--menu` from automation: the job's stdio is a log file, so
+/// menuconfig would hang until cancelled.
+///
+/// `--alert` is stripped from extras (and not injected on the base argv):
+/// kw beta-0.9 (still what many installs report, including this lab) treats
+/// unrecognized options as hard failures (`Invalid option`), and the
+/// unattended default is already `alert=n` in kw's own config.
 const BUILD_RESERVED: &[ReservedOption] = &[
     ReservedOption::new(&["--alert"], true),
     ReservedOption::new(&["--save-log-to"], true),
     ReservedOption::new(&["--menu"], false),
 ];
 
-/// The argv for a build job: `kw build --alert=n <extras>`.
+/// The argv for a build job: `kw build <extras>` (reserved extras stripped).
 pub fn build_argv(extra_args: &[String]) -> Vec<String> {
-    merge_extra_args(&["build", "--alert=n"], BUILD_RESERVED, extra_args)
+    merge_extra_args(&["build"], BUILD_RESERVED, extra_args)
 }
 
 /// Appends user-supplied extra args to `base`, stripping every token that
@@ -93,26 +98,26 @@ mod tests {
 
     #[test]
     fn build_argv_without_extras_is_the_base_command() {
-        assert_eq!(vec!["build", "--alert=n"], build_argv(&[]));
+        assert_eq!(vec!["build"], build_argv(&[]));
     }
 
     #[test]
     fn extras_are_appended_in_order() {
         assert_eq!(
-            vec!["build", "--alert=n", "--verbose", "--ccache", "-j8"],
+            vec!["build", "--verbose", "--ccache", "-j8"],
             build_argv(&extras(&["--verbose", "--ccache", "-j8"]))
         );
     }
 
     #[test]
-    fn reserved_alert_wins_over_user_value_forms() {
+    fn reserved_alert_is_stripped_from_extras() {
         assert_eq!(
-            vec!["build", "--alert=n", "--verbose"],
+            vec!["build", "--verbose"],
             build_argv(&extras(&["--alert=vv", "--verbose"]))
         );
         // Separate-token value form: the value token is consumed too.
         assert_eq!(
-            vec!["build", "--alert=n", "--verbose"],
+            vec!["build", "--verbose"],
             build_argv(&extras(&["--alert", "v", "--verbose"]))
         );
     }
@@ -120,11 +125,11 @@ mod tests {
     #[test]
     fn save_log_to_is_reserved_in_both_value_forms() {
         assert_eq!(
-            vec!["build", "--alert=n"],
+            vec!["build"],
             build_argv(&extras(&["--save-log-to=/tmp/x.log"]))
         );
         assert_eq!(
-            vec!["build", "--alert=n"],
+            vec!["build"],
             build_argv(&extras(&["--save-log-to", "/tmp/x.log"]))
         );
     }
@@ -133,17 +138,14 @@ mod tests {
     fn similar_prefix_is_not_reserved() {
         // `--alertness` only shares a prefix with `--alert`.
         assert_eq!(
-            vec!["build", "--alert=n", "--alertness"],
+            vec!["build", "--alertness"],
             build_argv(&extras(&["--alertness"]))
         );
     }
 
     #[test]
     fn trailing_reserved_option_without_value_is_stripped() {
-        assert_eq!(
-            vec!["build", "--alert=n"],
-            build_argv(&extras(&["--alert"]))
-        );
+        assert_eq!(vec!["build"], build_argv(&extras(&["--alert"])));
     }
 
     #[test]
@@ -151,7 +153,7 @@ mod tests {
         // kw build --menu would open menuconfig with the job's stdio
         // redirected to a log file — a hang, not a build.
         assert_eq!(
-            vec!["build", "--alert=n", "--verbose"],
+            vec!["build", "--verbose"],
             build_argv(&extras(&["--menu", "--verbose"]))
         );
     }
