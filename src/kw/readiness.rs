@@ -114,8 +114,6 @@ pub fn is_kernel_root(fs: &dyn FileSystemTrait, path: &Path) -> bool {
 /// refuses to activate an env while an in-tree `.config` exists
 /// (`kw_env.sh::validate_env_before_switch`), so with an env active the
 /// `.config` lives only at the env's `O=` dir.
-// No production caller until the readiness aggregation lands; kept per the
-// CachePolicy precedent (src/lore/application/cache.rs).
 #[allow(dead_code)]
 pub fn probe_tree(
     fs: &dyn FileSystemTrait,
@@ -179,8 +177,6 @@ pub fn read_build_arch(fs: &dyn FileSystemTrait, tree_path: &Path) -> Option<Str
 /// `env.current` or an unresolvable cache base (neither `XDG_CACHE_HOME`
 /// nor `HOME` set) is an error, since the env state is then unknown —
 /// kw's "active but unresolvable" case.
-// No production caller until the readiness aggregation lands; kept per the
-// CachePolicy precedent (src/lore/application/cache.rs).
 #[allow(dead_code)]
 pub fn resolve_output_dir(
     fs: &dyn FileSystemTrait,
@@ -245,8 +241,6 @@ pub fn resolve_output_dir(
 /// compressed/ or dts/ never hold `*Image` files), and find does not
 /// descend into symlinked dirs either, so the behaviors agree on real
 /// trees.
-// No production caller until the readiness aggregation lands; kept per the
-// CachePolicy precedent (src/lore/application/cache.rs).
 #[allow(dead_code)]
 pub fn find_newest_kernel_image(
     fs: &dyn FileSystemTrait,
@@ -391,8 +385,8 @@ impl std::fmt::Display for TreeReadiness {
     }
 }
 
-/// Why a deploy-without-build was refused (integration plan §2.1d). Each
-/// variant's message is the actionable explanation KwOps shows.
+/// Why a deploy-without-build was refused. Each variant's message is the
+/// actionable explanation.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum DeployAloneRefusal {
     #[error("the kernel tree is not ready: {0}")]
@@ -424,17 +418,15 @@ pub enum DeployAloneRefusal {
     ImageMissing,
 }
 
-/// Deploy-alone readiness gate (integration plan §2.1d steps 1–4): a deploy
-/// without a preceding build is only allowed when a successful build record
-/// exists for the tree and current HEAD, written against the same tree path
-/// and kw env, and a kernel image is still discoverable.
+/// Deploy-alone readiness gate: a deploy without a preceding build is only
+/// allowed when a successful build record exists for the tree and current
+/// HEAD, written against the same tree path and kw env, and a kernel image
+/// is still discoverable.
 ///
 /// This is only the record-matching half of the gate — it says nothing
 /// about the tree's *current* state. [`evaluate_readiness`] conjoins
 /// [`TreeReadiness`] into its `deploy_alone` verdict; prefer it over
 /// calling this directly.
-// Consumed by KwActor deploy in a later step; kept per the CachePolicy
-// precedent (src/lore/application/cache.rs).
 #[allow(dead_code)]
 pub fn check_deploy_alone(
     record: Option<&KwBuildRecord>,
@@ -471,10 +463,8 @@ pub fn check_deploy_alone(
     Ok(())
 }
 
-/// Snapshot of everything KwOps needs to decide whether build/deploy can
-/// start, and why not — returned by KwActor's `GetReadiness` (§2.3).
-// Assembled by KwActor in a later step; kept per the CachePolicy precedent
-// (src/lore/application/cache.rs).
+/// Snapshot of tree, kw binary, and history probes used to decide whether
+/// a job can start, and why not.
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct KwReadiness {
@@ -486,8 +476,8 @@ pub struct KwReadiness {
     pub kernel_image: Option<PathBuf>,
     /// Build record for `(kernel_tree_id, head_branch)`, if any.
     pub build_record: Option<KwBuildRecord>,
-    /// Newest build record for the tree across branches, so KwOps can show
-    /// "last build was on branch X" copy even when HEAD has no record.
+    /// Newest build record for the tree across branches, even when HEAD
+    /// has none.
     pub latest_build: Option<KwBuildRecord>,
     /// `Ok(())` is a self-sufficient verdict: tree readiness is already
     /// conjoined in, so a caller cannot forget to check `tree` as well.
@@ -497,8 +487,6 @@ pub struct KwReadiness {
 /// Runs all readiness probes for `tree` and composes them into a
 /// [`KwReadiness`] snapshot. `head_branch` is the tree's current branch —
 /// resolving it (via git) is the caller's job, keeping these probes pure.
-// Composed by KwActor in a later step; kept per the CachePolicy precedent
-// (src/lore/application/cache.rs).
 #[allow(dead_code)]
 pub fn evaluate_readiness(
     fs: &dyn FileSystemTrait,

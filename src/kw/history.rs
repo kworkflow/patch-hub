@@ -1,9 +1,8 @@
 //! User-local history of patchset applies and kw builds, stored as JSON
 //! under the configured `data_dir`.
 //!
-//! Apply records feed kw build/deploy readiness and the KwOps branch
-//! prefill, and build records feed deploy-alone readiness, so they are
-//! user state — not a cache — and are never refreshed from lore.
+//! Apply and build records are user state — not a cache — and are never
+//! refreshed from lore.
 
 use mockall::automock;
 use serde::{Deserialize, Serialize};
@@ -30,9 +29,8 @@ pub struct KwApplyRecord {
 }
 
 /// One recorded `kw build` attempt on a kernel tree branch, whether it
-/// succeeded or not: storing failures lets KwOps show "last build failed"
-/// instead of "no build recorded", and deploy-alone readiness requires
-/// `success == true` on the matching record.
+/// succeeded or not. Failed attempts are stored so deploy-alone can refuse
+/// them instead of treating the tree as never built.
 ///
 /// `message_id`, `arch`, `image_path`, and `kernelrelease` are optional: a
 /// build can target a branch no patchset was applied to, `arch` is unknown
@@ -41,8 +39,7 @@ pub struct KwApplyRecord {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct KwBuildRecord {
     pub kernel_tree_id: String,
-    /// Snapshot of `KernelTree.path` when the record was written, so later
-    /// readiness checks can detect the tree being repointed or moved.
+    /// Snapshot of `KernelTree.path` when the record was written.
     pub tree_path: String,
     pub message_id: Option<String>,
     pub branch: String,
@@ -85,16 +82,12 @@ pub trait KwHistoryStore: Send + Sync {
 
     /// Inserts or replaces the build record for the record's
     /// `(kernel_tree_id, branch)` pair.
-    // Written by KwActor once builds land; kept per the CachePolicy
-    // precedent (src/lore/application/cache.rs).
     #[allow(dead_code)]
     fn record_build(&self, record: KwBuildRecord) -> Result<(), FileSystemError>;
 
     /// Returns the build record for the `(kernel_tree_id, branch)` pair, or
     /// `None` if it was never recorded. A missing history file is a normal
     /// state, not an error.
-    // Read by the kw readiness checks in a later step; kept per the
-    // CachePolicy precedent (src/lore/application/cache.rs).
     #[allow(dead_code)]
     fn build_record(
         &self,
@@ -104,8 +97,6 @@ pub trait KwHistoryStore: Send + Sync {
 
     /// Returns the chronologically newest build record for the tree, across
     /// branches, or `None` if none was recorded.
-    // Read by the kw readiness checks in a later step; kept per the
-    // CachePolicy precedent (src/lore/application/cache.rs).
     #[allow(dead_code)]
     fn latest_build_record(
         &self,
@@ -115,8 +106,6 @@ pub trait KwHistoryStore: Send + Sync {
     /// Returns the record for `(kernel_tree_id, branch)` and the newest
     /// record for the tree across branches from a single load of the
     /// history file — the pair a readiness snapshot is computed from.
-    // Read by the kw readiness aggregation in a later step; kept per the
-    // CachePolicy precedent (src/lore/application/cache.rs).
     #[allow(dead_code)]
     fn build_records(
         &self,
@@ -467,8 +456,8 @@ mod tests {
         failed.kernelrelease = None;
         store.record_build(failed.clone()).unwrap();
 
-        // A failed attempt is stored, not dropped: KwOps can show "last
-        // build failed" and deploy-alone readiness refuses it.
+        // A failed attempt is stored, not dropped: deploy-alone readiness
+        // refuses it.
         assert_eq!(
             Some(build("mainline", "for-next", "2026-08-01T18:10:00Z")),
             store.build_record("mainline", "for-next").unwrap()

@@ -24,9 +24,6 @@ pub trait FileSystemTrait: Send + Sync {
     /// Returns the immediate children of directory `path` as full paths,
     /// sorted for determinism. Entry kind and metadata are queried
     /// separately via `is_dir`/`is_file`/`metadata`.
-    // No production caller until the kw readiness probes land; kept per the
-    // CachePolicy precedent (src/lore/application/cache.rs).
-    #[allow(dead_code)]
     fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>, FileSystemError>;
     fn rename(&self, from: &Path, to: &Path) -> Result<(), FileSystemError>;
     fn create_writer(&self, path: &Path) -> Result<Box<dyn io::Write + Send>, FileSystemError>;
