@@ -33,8 +33,6 @@ use tokio::process::{Child, Command};
 
 use crate::infrastructure::shell::ShellCommand;
 
-// No production caller exists until the kw integration wires KwActor;
-// kept per the CachePolicy precedent (src/lore/application/cache.rs).
 #[allow(dead_code)]
 pub struct OsProcess;
 
