@@ -12,9 +12,6 @@ pub enum ProcessError {
     IoError(#[from] io::Error),
 }
 
-// The two traits in this module have no production caller until the kw
-// integration wires KwActor; kept per the CachePolicy precedent
-// (src/lore/application/cache.rs).
 #[allow(dead_code)]
 #[automock]
 pub trait ProcessTrait: Send + Sync {
