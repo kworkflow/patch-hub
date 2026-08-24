@@ -27,7 +27,9 @@ chrono = "0.4.41"
 ansi-to-tui = "7.0.0"
 which = "8.0.0"
 ureq = { version = "3.0.12", features = ["rustls"] }
-tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "sync"] }
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "sync", "process", "time"] }
+async-trait = "0.1"
+nix = { version = "0.31", features = ["signal"] }
 
 [dev-dependencies]
 ctor = "0.2"
