@@ -11,8 +11,6 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KwJobKind {
     Build,
-    // Constructed once deploy execution lands; kept per the CachePolicy
-    // precedent (src/lore/application/cache.rs).
     #[allow(dead_code)]
     Deploy,
     #[allow(dead_code)]
@@ -23,7 +21,6 @@ pub enum KwJobKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KwPhase {
     Building,
-    // Constructed once deploy execution lands (CachePolicy precedent).
     #[allow(dead_code)]
     Deploying,
 }

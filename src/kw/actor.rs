@@ -8,12 +8,8 @@
 //! [`crate::kw::readiness`] and records applies through the shared
 //! [`KwHistoryStore`](crate::kw::history::KwHistoryStore).
 //!
-//! Tracked note (same class as the integration plan's §2.1i): the actor
-//! runs quick blocking calls inline in its async task — `create_dir_all`,
-//! the HEAD-probe `git` call, and the history store's atomic write — per
-//! the ConfigActor precedent. They are all milliseconds-scale; if a real
-//! stall ever shows up while a long job runs, they should move behind
-//! `spawn_blocking` like the other actors' heavy work.
+//! `create_dir_all`, the HEAD-probe `git` call, and history writes run
+//! inline on the actor task.
 
 use std::{ops::ControlFlow, path::PathBuf, process::ExitStatus, sync::Arc, time::Duration};
 
@@ -177,9 +173,7 @@ impl KwActor {
                 );
                 ControlFlow::Continue(())
             }
-            // Deploy acceptance lands with the deploy step; the
-            // immediate-reply contract already holds, so callers never
-            // learn to depend on a blocking reply.
+            // Not implemented: reply immediately with NotImplemented.
             KwMessage::StartDeploy { reply, .. }
             | KwMessage::StartBuildThenDeploy { reply, .. } => {
                 send_start_reply(message_name, reply, Err(KwStartError::NotImplemented));
@@ -247,25 +241,15 @@ impl KwActor {
     /// caller right after this returns: the job itself keeps running in a
     /// detached task and is observed via the status snapshot.
     ///
-    /// The argv is the skeleton's minimal `kw build --alert=n`; the real
-    /// argv builder (reserved flags, extra-args merge) and the checkout
-    /// policy land with the build step — as does the readiness-based
-    /// refusal from the message protocol (refuse Start when readiness
-    /// fails); until then the only caller is the KwOps screen, which
-    /// surfaces readiness before offering Start. The `branch` carried by
-    /// the Running status is the *requested* branch; the checkout policy is
-    /// what will make the tree actually sit on it.
+    /// The argv is `kw build --alert=n`. The `branch` on the Running status
+    /// is the requested branch; this skeleton does not switch the tree.
     fn start_job(&mut self, kind: KwJobKind, request: StartRequest) -> Result<(), KwStartError> {
         if self.job.is_some() {
             return Err(KwStartError::JobAlreadyRunning);
         }
 
-        // Probed before anything touches the tree: once the checkout policy
-        // lands, `git switch <selected branch>` goes between this probe and
-        // the spawn, and the probe must still capture the pre-job HEAD or
-        // RestorePreviousBranch would "restore" the branch the job switched
-        // to. An unprobed HEAD (detached, or not a git repo) records
-        // nothing rather than a wrong branch.
+        // Recorded at accept so RestorePreviousBranch can switch back.
+        // An unprobed HEAD (detached, or not a git repo) records nothing.
         let pre_job_branch = match self.head_branch(&request.tree) {
             branch if branch.is_empty() => None,
             branch => Some(branch),
@@ -830,8 +814,8 @@ mod tests {
     async fn start_build_replies_immediately_and_runs_in_background() {
         let (handle, process, log_dir) = spawn_job_actor("start-immediate");
 
-        // The §3.1 reply contract: start_build resolves while the spawned
-        // process is still running (no finish() was ever signaled).
+        // start_build resolves while the spawned process is still running
+        // (no finish() was ever signaled).
         let result =
             tokio::time::timeout(Duration::from_secs(1), handle.start_build(start_request()))
                 .await
