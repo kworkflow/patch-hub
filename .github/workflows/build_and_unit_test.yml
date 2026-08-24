@@ -10,9 +10,13 @@ on:
       - labeled
     paths:
       - src/**
+      - Cargo.toml
+      - Cargo.lock
   push:
     paths:
       - src/**
+      - Cargo.toml
+      - Cargo.lock
     branches:
       - master
       - unstable
@@ -50,3 +54,37 @@ jobs:
           printf '\e[1;33m\tPLEASE, SOLVE THEM LOCALLY W/ `cargo test`\e[0m\n'
           printf '\e[1;33m\t==========================================\n\e[0m'
           exit 1
+
+  # The kw actor and the process infrastructure it uses are unix-only
+  # (#[cfg(unix)]). This job exists so a cfg leak — non-gated code
+  # referencing them — fails mechanically instead of in review.
+  check-non-unix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    if: '!github.event.pull_request.draft'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Update rustup and install rustc and cargo
+        shell: bash
+        run: |
+          rustup update
+          rustup install stable
+
+      # rustls/ring needs a C toolchain for the target; windows-gnu builds
+      # with mingw on Ubuntu, unlike the MSVC target.
+      - name: Install the mingw cross toolchain
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64
+
+      - name: Check non-unix compilation
+        shell: bash
+        env:
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
+        run: |
+          rustup target add x86_64-pc-windows-gnu
+          cargo check --target x86_64-pc-windows-gnu --verbose
