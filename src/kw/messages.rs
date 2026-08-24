@@ -20,8 +20,7 @@ use crate::{
 pub struct StartRequest {
     pub kernel_tree_id: String,
     pub tree: KernelTree,
-    /// Branch the job must run on; the checkout policy that gets the tree
-    /// onto it lands with the build step.
+    /// Branch the job must run on.
     pub branch: String,
 }
 
@@ -35,7 +34,6 @@ pub enum KwMessage {
         reply: oneshot::Sender<Result<(), KwStartError>>,
     },
     StartDeploy {
-        // Read once deploy execution lands (CachePolicy precedent).
         #[allow(dead_code)]
         request: StartRequest,
         reply: oneshot::Sender<Result<(), KwStartError>>,
