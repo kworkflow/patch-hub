@@ -3,6 +3,7 @@ mod cli;
 mod config;
 mod infrastructure;
 mod input;
+mod kw;
 mod lore;
 mod macros;
 mod render;
@@ -24,6 +25,7 @@ use infrastructure::{
     terminal::init,
 };
 use input::{actor::InputActor, event::InputEvent};
+use kw::history::{FileKwHistoryStore, KwHistoryStore, APPLY_HISTORY_FILENAME};
 use lore::{
     application::{actor::LoreApiActor, cache::CacheTtl, service::LoreService},
     infrastructure::{
@@ -94,6 +96,10 @@ async fn main() -> Result<()> {
         config.patchsets_cache_dir().to_string(),
     ));
     let parser = Arc::new(MboxPatchsetParser::new(fs_arc.clone()));
+    let kw_history: Arc<dyn KwHistoryStore> = Arc::new(FileKwHistoryStore::new(
+        fs_arc.clone(),
+        format!("{}/{}", config.data_dir(), APPLY_HISTORY_FILENAME),
+    ));
 
     let render = RenderActor::spawn(Box::new(ShellRenderService::new(shell_arc.clone())));
 
@@ -125,6 +131,7 @@ async fn main() -> Result<()> {
         Box::new(OsShell),
         lore_api.clone(),
         render.clone(),
+        kw_history.clone(),
     )?;
     let (app_input_tx, app_input_rx) = mpsc::channel::<InputEvent>(64);
     let input_handle = InputActor::spawn(terminal_handle.clone(), app.input_context());

@@ -9,7 +9,9 @@ pub enum ConfigMessage {
         reply: oneshot::Sender<ConfigSnapshot>,
     },
     ValidateAndApply {
-        draft: ConfigUpdateDraft,
+        // Boxed to keep the enum small (clippy::large_enum_variant): the draft
+        // holds one `Option<String>` per editable field.
+        draft: Box<ConfigUpdateDraft>,
         reply: oneshot::Sender<ConfigResult<ConfigSnapshot>>,
     },
     Shutdown,

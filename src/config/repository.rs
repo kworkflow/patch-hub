@@ -1,11 +1,10 @@
-use std::path::Path;
-
-use serde_json::to_writer_pretty;
-
 use crate::config::errors::ConfigError;
 use crate::config::state::ConfigState;
 use crate::config::DEFAULT_CONFIG_PATH_SUFFIX;
-use crate::infrastructure::{env::EnvTrait, file_system::FileSystemTrait};
+use crate::infrastructure::{
+    env::EnvTrait,
+    file_system::{FileSystemTrait, JsonUtils},
+};
 
 pub trait ConfigRepository: Send + Sync {
     fn save(&self, state: &ConfigState) -> Result<(), ConfigError>;
@@ -46,24 +45,7 @@ impl<FS> JsonConfigRepository<FS> {
 
 impl<FS: FileSystemTrait> ConfigRepository for JsonConfigRepository<FS> {
     fn save(&self, state: &ConfigState) -> Result<(), ConfigError> {
-        let config_path = Path::new(&self.config_path);
-        if let Some(parent_dir) = Path::parent(config_path) {
-            self.fs
-                .create_dir_all(parent_dir)
-                .map_err(ConfigError::from)?;
-        }
-
-        let tmp_filename = format!("{}.tmp", config_path.display());
-        {
-            let tmp_file = self
-                .fs
-                .create_writer(Path::new(&tmp_filename))
-                .map_err(ConfigError::from)?;
-            to_writer_pretty(tmp_file, state).map_err(|e| ConfigError::Save(e.to_string()))?;
-        }
-        self.fs
-            .rename(Path::new(&tmp_filename), config_path)
-            .map_err(ConfigError::from)?;
+        JsonUtils::atomic_write_json(&self.fs, state, &self.config_path)?;
         Ok(())
     }
 }

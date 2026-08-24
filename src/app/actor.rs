@@ -168,6 +168,7 @@ mod tests {
         config::{ConfigHandle, ConfigState},
         infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
         input::{event::InputEvent, handle::InputHandle, messages::InputMessage},
+        kw::history::MockKwHistoryStore,
         lore::{
             application::{
                 actor::LoreApiActor, cache::CacheTtl, handle::LoreApiHandle, service::LoreService,
@@ -232,6 +233,7 @@ mod tests {
                 shell: Box::new(MockShellTrait::new()),
                 fs: Box::new(MockFileSystemTrait::new()),
                 config: dummy_config_handle(),
+                kw_history: Arc::new(MockKwHistoryStore::new()),
             },
         }
     }
@@ -333,6 +335,7 @@ mod tests {
             Box::new(MockShellTrait::new()),
             lore_api.clone(),
             render.clone(),
+            Arc::new(MockKwHistoryStore::new()),
         )
         .expect("App::new must succeed");
 
