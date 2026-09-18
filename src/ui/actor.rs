@@ -120,6 +120,7 @@ mod tests {
                 target_list_status: TargetListStatus::Empty,
             }),
             popup: None,
+            kw_running: None,
         }
     }
 

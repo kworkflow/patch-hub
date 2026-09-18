@@ -15,6 +15,7 @@ use super::{
     screens::{details_actions::PatchsetAction, CurrentScreen},
     state::AppState,
 };
+use crate::kw::status::KwStatusSnapshot;
 
 /// One mailing list entry shown in the selection list.
 #[derive(Clone, Debug)]
@@ -160,6 +161,9 @@ pub enum ScreenViewModel {
 pub struct AppViewModel {
     pub screen: ScreenViewModel,
     pub popup: Option<PopupViewModel>,
+    /// Compact running-job copy for the nav bar. `None` when idle or
+    /// after a terminal outcome — those belong on KwOps, not globally.
+    pub kw_running: Option<String>,
 }
 
 /// Projects `state` into an owned [`AppViewModel`].
@@ -168,7 +172,16 @@ pub struct AppViewModel {
 pub fn project_state(state: &AppState) -> AppViewModel {
     let screen = project_screen(state);
     let popup = state.popup.as_ref().map(project_popup);
-    AppViewModel { screen, popup }
+    let kw_running = state
+        .kw
+        .status
+        .as_ref()
+        .and_then(KwStatusSnapshot::running_indicator);
+    AppViewModel {
+        screen,
+        popup,
+        kw_running,
+    }
 }
 fn project_screen(state: &AppState) -> ScreenViewModel {
     match state.navigation.current_screen {
@@ -437,5 +450,92 @@ fn project_popup(popup: &AppPopup) -> PopupViewModel {
             scroll_offset: *scroll,
             dimensions: *dimensions,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, path::PathBuf};
+
+    use crate::{
+        app::{
+            screens::{bookmarked::BookmarkedPatchsetsState, mail_list::MailingListSelectionState},
+            state::{
+                AppState, ConfigUiState, KwUiState, LoreUiState, NavigationState, UserLoreState,
+            },
+        },
+        config::ConfigState,
+        kw::status::{KwJobKind, KwJobStatus, KwPhase, KwStatusSnapshot},
+        lore::domain::mailing_list::MailingList,
+    };
+
+    use super::*;
+
+    fn app_state_with_kw(status: Option<KwStatusSnapshot>) -> AppState {
+        let dummy_list = MailingList::new("test-list", "Test list");
+        AppState {
+            navigation: NavigationState {
+                current_screen: CurrentScreen::MailingListSelection,
+            },
+            lore: LoreUiState {
+                mailing_list_selection: MailingListSelectionState {
+                    mailing_lists: vec![dummy_list.clone()],
+                    target_list: String::new(),
+                    possible_mailing_lists: vec![dummy_list],
+                    highlighted_list_index: 0,
+                },
+                latest_patchsets: None,
+                details: None,
+            },
+            user_state: UserLoreState {
+                bookmarked_patchsets: BookmarkedPatchsetsState {
+                    bookmarked_patchsets: vec![],
+                    patchset_index: 0,
+                },
+                reviewed_patchsets: HashMap::new(),
+            },
+            config_state: ConfigUiState { edit_config: None },
+            config: ConfigState::default().to_snapshot(),
+            popup: None,
+            kw: KwUiState { status },
+        }
+    }
+
+    #[test]
+    fn running_job_projects_a_global_indicator() {
+        let vm = project_state(&app_state_with_kw(Some(KwStatusSnapshot {
+            job: KwJobStatus::Running {
+                kind: KwJobKind::Build,
+                phase: KwPhase::Building,
+                kernel_tree_id: "mainline".to_string(),
+                branch: "patchset-x".to_string(),
+                log_path: PathBuf::from("/tmp/build.log"),
+            },
+            restore_branch: Some("master".to_string()),
+        })));
+
+        assert_eq!(Some("kw: building patchset-x".to_string()), vm.kw_running);
+    }
+
+    #[test]
+    fn idle_succeeded_and_missing_status_have_no_global_indicator() {
+        assert_eq!(None, project_state(&app_state_with_kw(None)).kw_running);
+        assert_eq!(
+            None,
+            project_state(&app_state_with_kw(Some(KwStatusSnapshot::idle()))).kw_running
+        );
+        assert_eq!(
+            None,
+            project_state(&app_state_with_kw(Some(KwStatusSnapshot {
+                job: KwJobStatus::Succeeded {
+                    kind: KwJobKind::Build,
+                    kernel_tree_id: "mainline".to_string(),
+                    branch: "patchset-x".to_string(),
+                    log_path: PathBuf::from("/tmp/build.log"),
+                },
+                restore_branch: Some("master".to_string()),
+            })))
+            .kw_running
+        );
     }
 }

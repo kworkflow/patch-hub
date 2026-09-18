@@ -3,8 +3,7 @@
 //! Each frame: process system updates → project state to [`AppViewModel`] via
 //! [`UiHandle`](crate::ui::handle::UiHandle) → draw through
 //! [`TerminalHandle`](crate::terminal::handle::TerminalHandle) → await the next
-//! [`InputEvent`](crate::input::event::InputEvent) from the channel registered
-//! with [`InputHandle`](crate::input::handle::InputHandle).
+//! [`InputEvent`](crate::input::event::InputEvent) or a kw-status change.
 //!
 //! The actor stops when the input event channel closes (user quit) or when I/O
 //! returns an unrecoverable error. Startup dependency checks run before this
@@ -12,7 +11,7 @@
 use std::ops::ControlFlow;
 
 use color_eyre::{eyre::eyre, Result};
-use tokio::{spawn, sync::mpsc};
+use tokio::{spawn, sync::mpsc, sync::watch};
 
 use crate::{
     app::{
@@ -27,6 +26,7 @@ use crate::{
         App,
     },
     input::{event::InputEvent, handle::InputHandle},
+    kw::status::KwStatusSnapshot,
     terminal::{handle::TerminalHandle, messages::TerminalFrame},
     ui::handle::UiHandle,
 };
@@ -44,6 +44,11 @@ pub struct AppActor {
     ui_handle: UiHandle,
     input_handle: InputHandle,
     event_rx: mpsc::Receiver<InputEvent>,
+}
+
+enum KwWatchEvent {
+    Updated(KwStatusSnapshot),
+    Closed,
 }
 
 impl AppActor {
@@ -71,6 +76,7 @@ impl AppActor {
         tracing::info!("app actor started");
         tracing::info!("app actor initialized");
 
+        let mut kw_status_rx = self.subscribe_kw_status().await;
         let mut loading = TerminalLoadingIndicator::new(self.terminal_handle.clone());
 
         loop {
@@ -86,29 +92,81 @@ impl AppActor {
                 .await
                 .map_err(terminal_error)?;
 
-            match self.event_rx.recv().await {
-                Some(event) => {
-                    match on_input(&mut self.app, event, &self.terminal_handle, &mut loading)
-                        .await?
-                    {
-                        ControlFlow::Continue(()) => {
-                            self.input_handle
-                                .update_context(self.app.input_context())
-                                .await
-                                .ok();
+            tokio::select! {
+                event = self.event_rx.recv() => {
+                    match event {
+                        Some(event) => {
+                            match on_input(&mut self.app, event, &self.terminal_handle, &mut loading)
+                                .await?
+                            {
+                                ControlFlow::Continue(()) => {
+                                    self.input_handle
+                                        .update_context(self.app.input_context())
+                                        .await
+                                        .ok();
+                                }
+                                ControlFlow::Break(()) => break,
+                            }
                         }
-                        ControlFlow::Break(()) => break,
+                        None => {
+                            tracing::info!("input channel closed; app actor stopping");
+                            break;
+                        }
                     }
                 }
-                None => {
-                    tracing::info!("input channel closed; app actor stopping");
-                    break;
+                watch_event = kw_status_changed(&mut kw_status_rx) => {
+                    match watch_event {
+                        KwWatchEvent::Updated(snapshot) => {
+                            self.app.state.kw.status = Some(snapshot);
+                        }
+                        KwWatchEvent::Closed => {
+                            tracing::warn!(
+                                "kw status watch closed; falling back to keyboard-only redraws"
+                            );
+                            kw_status_rx = None;
+                        }
+                    }
                 }
             }
         }
 
         tracing::info!("app actor stopped");
         Ok(())
+    }
+
+    /// Subscribes once at startup. A missing handle or a failed
+    /// subscription leaves the app on keyboard-only redraws rather than
+    /// failing to start.
+    async fn subscribe_kw_status(&mut self) -> Option<watch::Receiver<KwStatusSnapshot>> {
+        let Some(kw) = self.app.services.kw.as_ref() else {
+            return None;
+        };
+        match kw.watch_status().await {
+            Ok(mut rx) => {
+                self.app.state.kw.status = Some(rx.borrow_and_update().clone());
+                Some(rx)
+            }
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    "failed to subscribe to kw status; keyboard-only redraws"
+                );
+                None
+            }
+        }
+    }
+}
+
+/// Waits for the next kw-status change. With no receiver this future
+/// never completes, so `select!` stays on the input arm instead of
+/// spinning.
+async fn kw_status_changed(rx: &mut Option<watch::Receiver<KwStatusSnapshot>>) -> KwWatchEvent {
+    match rx.as_mut() {
+        Some(rx) => match rx.changed().await {
+            Ok(()) => KwWatchEvent::Updated(rx.borrow_and_update().clone()),
+            Err(_) => KwWatchEvent::Closed,
+        },
+        None => std::future::pending().await,
     }
 }
 
@@ -226,6 +284,7 @@ mod tests {
                 config_state: ConfigUiState { edit_config: None },
                 config: ConfigState::default().to_snapshot(),
                 popup: None,
+                kw: Default::default(),
             },
             services: AppServices {
                 lore_api: LoreApiHandle::new(lore_tx),

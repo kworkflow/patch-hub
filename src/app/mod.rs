@@ -148,6 +148,7 @@ impl App {
                 config_state: ConfigUiState { edit_config: None },
                 config,
                 popup: None,
+                kw: Default::default(),
             },
             services: AppServices {
                 lore_api,
