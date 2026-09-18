@@ -114,6 +114,23 @@ async fn closed_watch_does_not_busy_loop_and_input_still_works() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn quit_with_no_job_exits_without_confirm() {
+    let log_dir = kw_log_dir("quit-idle");
+    let (app, kw, _process) = app_with_kw(&log_dir);
+    let (scenes, event_tx, handle) = spawn_app_actor(app);
+
+    wait_for_nav(&scenes, |_| true).await;
+    event_tx.send(InputEvent::Quit).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), handle.run_until_done())
+        .await
+        .expect("quit with no running job must exit without a confirm popup")
+        .unwrap();
+
+    kw.shutdown().await;
+    std::fs::remove_dir_all(&log_dir).unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn quit_while_job_running_opens_confirm_and_wait_keeps_app_alive() {
     let log_dir = kw_log_dir("quit-wait");
     let (app, kw, process) = app_with_kw(&log_dir);
@@ -265,7 +282,7 @@ fn app_with_kw(
             bookmarks: vec![],
             reviewed: Default::default(),
         },
-        Box::new(MockFileSystemTrait::new()),
+        Arc::new(MockFileSystemTrait::new()),
         Box::new(MockShellTrait::new()),
         lore_handle_with_persistence(),
         dummy_render_handle(),

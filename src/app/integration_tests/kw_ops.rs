@@ -73,7 +73,10 @@ mod unix {
     use crate::{
         app::{
             actor::AppActor,
-            flows::{details_actions::handle_patchset_details, kw_ops::handle_kw_ops},
+            flows::{
+                details_actions::handle_patchset_details,
+                kw_ops::{fallback_kw_status, handle_kw_ops, refresh_kw_ops_log_tail},
+            },
             screens::CurrentScreen,
             App,
         },
@@ -85,7 +88,11 @@ mod unix {
             shell::{MockShellTrait, ShellOutput},
         },
         input::{event::InputEvent, handle::InputHandle, messages::InputMessage},
-        kw::{actor::KwActor, history::MockKwHistoryStore, status::KwJobStatus},
+        kw::{
+            actor::KwActor,
+            history::MockKwHistoryStore,
+            status::{KwJobKind, KwJobStatus, KwPhase, KwStatusSnapshot},
+        },
         lore::application::cache::BootstrapLoreData,
         terminal::{
             actor::TerminalActor, messages::TerminalFrame, session::MockTerminalSessionApi,
@@ -158,7 +165,7 @@ mod unix {
             &log_dir,
             head_branch_shell("feature"),
             process.clone(),
-            Box::new(MockFileSystemTrait::new()),
+            Arc::new(MockFileSystemTrait::new()),
         );
         handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
@@ -196,6 +203,135 @@ mod unix {
     }
 
     #[tokio::test]
+    async fn second_start_while_busy_is_absorbed() {
+        let log_dir = kw_log_dir("double-start");
+        let process = Arc::new(FakeProcess::new());
+        let mut app = app_with_details_and_kw_process(
+            &log_dir,
+            head_branch_shell("feature"),
+            process.clone(),
+            Arc::new(MockFileSystemTrait::new()),
+        );
+        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+            .await
+            .unwrap();
+
+        handle_kw_ops(&mut app, InputEvent::StartKwBuild)
+            .await
+            .unwrap();
+        assert!(app.state.popup.is_none());
+        assert!(matches!(
+            app.state.kw.status.as_ref().map(|s| &s.job),
+            Some(KwJobStatus::Running { .. })
+        ));
+        assert!(!app
+            .state
+            .kw
+            .ops
+            .as_ref()
+            .is_some_and(|ops| ops.start_requested));
+
+        handle_kw_ops(&mut app, InputEvent::StartKwBuild)
+            .await
+            .unwrap();
+        assert!(app.state.popup.is_none());
+        assert_eq!(1, process.spawned().len());
+
+        process.last_child().finish(0);
+        shutdown_kw(&app).await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn fallback_seeds_a_running_job_when_projection_is_empty() {
+        let log_dir = kw_log_dir("fallback-seed");
+        let process = Arc::new(FakeProcess::new());
+        let mut app = app_with_details_and_kw_process(
+            &log_dir,
+            head_branch_shell("feature"),
+            process.clone(),
+            Arc::new(MockFileSystemTrait::new()),
+        );
+        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+            .await
+            .unwrap();
+        handle_kw_ops(&mut app, InputEvent::StartKwBuild)
+            .await
+            .unwrap();
+        app.state.kw.status = None;
+
+        fallback_kw_status(&mut app).await;
+        assert!(matches!(
+            app.state.kw.status.as_ref().map(|s| &s.job),
+            Some(KwJobStatus::Running { .. })
+        ));
+
+        process.last_child().finish(0);
+        shutdown_kw(&app).await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn refresh_log_tail_goes_through_injected_fs() {
+        let log_dir = kw_log_dir("injected-fs");
+        let mut fs = MockFileSystemTrait::new();
+        fs.expect_read_tail_to_string()
+            .times(1)
+            .returning(|_, _| Ok("cc1: compiling from mock\n".to_string()));
+        let mut app = app_with_details_and_kw_process(
+            &log_dir,
+            head_branch_shell("feature"),
+            Arc::new(FakeProcess::new()),
+            Arc::new(fs),
+        );
+        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+            .await
+            .unwrap();
+        app.state.kw.status = Some(KwStatusSnapshot {
+            job: KwJobStatus::Running {
+                kind: KwJobKind::Build,
+                phase: KwPhase::Building,
+                kernel_tree_id: "linux".to_string(),
+                branch: "feature".to_string(),
+                log_path: log_dir.join("build.log"),
+            },
+            restore_branch: None,
+        });
+
+        refresh_kw_ops_log_tail(&mut app).await;
+        assert!(app
+            .state
+            .kw
+            .ops
+            .as_ref()
+            .is_some_and(|ops| ops.log_tail.contains("from mock")));
+
+        shutdown_kw(&app).await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn reenter_keeps_typed_extras() {
+        let log_dir = kw_log_dir("reenter-extras");
+        let mut app = app_with_details_and_kw(&log_dir, head_branch_shell("feature"));
+        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+            .await
+            .unwrap();
+        app.state.kw.ops.as_mut().unwrap().extra_args = "--verbose".to_string();
+
+        handle_kw_ops(&mut app, InputEvent::Back).await.unwrap();
+        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+            .await
+            .unwrap();
+
+        assert_eq!("--verbose", app.state.kw.ops.as_ref().unwrap().extra_args);
+        assert_eq!(CurrentScreen::KwOps, app.state.navigation.current_screen);
+
+        shutdown_kw(&app).await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
     async fn back_returns_to_details() {
         let log_dir = kw_log_dir("back");
         let mut app = app_with_details_and_kw(&log_dir, head_branch_shell("feature"));
@@ -221,7 +357,7 @@ mod unix {
             &log_dir,
             head_branch_shell("feature"),
             process.clone(),
-            Box::new(OsFileSystem),
+            Arc::new(OsFileSystem),
         );
         let kw = app.services.kw.as_ref().unwrap().clone();
         let (scenes, event_tx, handle) = spawn_app_actor(app);
@@ -280,6 +416,14 @@ mod unix {
         })
         .await;
 
+        let draws_after_success = scene_count(&scenes);
+        tokio::time::sleep(Duration::from_millis(800)).await;
+        assert_eq!(
+            draws_after_success,
+            scene_count(&scenes),
+            "log ticks must stop after the job finishes"
+        );
+
         drop(event_tx);
         handle.run_until_done().await.unwrap();
         kw.shutdown().await;
@@ -291,7 +435,7 @@ mod unix {
             log_dir,
             kw_shell,
             Arc::new(FakeProcess::new()),
-            Box::new(MockFileSystemTrait::new()),
+            Arc::new(MockFileSystemTrait::new()),
         )
     }
 
@@ -299,7 +443,7 @@ mod unix {
         log_dir: &std::path::Path,
         kw_shell: MockShellTrait,
         process: Arc<FakeProcess>,
-        app_fs: Box<dyn FileSystemTrait>,
+        app_fs: Arc<dyn FileSystemTrait>,
     ) -> App {
         let mut history = MockKwHistoryStore::new();
         history

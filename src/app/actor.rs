@@ -20,7 +20,10 @@ use crate::{
             bookmarked::handle_bookmarked_patchsets,
             details_actions::handle_patchset_details,
             edit_config::handle_edit_config,
-            kw_ops::{handle_kw_ops, refresh_kw_ops_log_tail},
+            kw_ops::{
+                apply_kw_snapshot, fallback_kw_status, handle_kw_ops, poll_kw_status,
+                refresh_kw_ops_log_tail,
+            },
             latest::handle_latest_patchsets,
             mail_list::handle_mailing_list_selection,
         },
@@ -96,7 +99,10 @@ impl AppActor {
 
         let mut redraw = true;
         loop {
-            self.app.process_system_updates(&mut loading).await?;
+            let system_changed = self.app.process_system_updates(&mut loading).await?;
+            if system_changed {
+                redraw = true;
+            }
 
             if redraw {
                 let scene = self
@@ -111,6 +117,7 @@ impl AppActor {
             }
 
             let tail_while_running = kw_ops_should_tail(&self.app);
+            let poll_status = kw_status_rx.is_none() && should_poll_kw_status(&self.app);
             tokio::select! {
                 event = self.event_rx.recv() => {
                     match event {
@@ -137,9 +144,10 @@ impl AppActor {
                 watch_event = kw_status_changed(&mut kw_status_rx) => {
                     match watch_event {
                         KwWatchEvent::Updated(snapshot) => {
-                            self.app.state.kw.status = Some(snapshot);
-                            if self.app.state.kw.ops.is_some() {
-                                refresh_kw_ops_log_tail(&mut self.app);
+                            apply_kw_snapshot(&mut self.app, snapshot);
+                            if self.app.state.navigation.current_screen == CurrentScreen::KwOps
+                            {
+                                refresh_kw_ops_log_tail(&mut self.app).await;
                             }
                         }
                         KwWatchEvent::Closed => {
@@ -147,12 +155,20 @@ impl AppActor {
                                 "kw status watch closed; falling back to keyboard-only redraws"
                             );
                             kw_status_rx = None;
+                            fallback_kw_status(&mut self.app).await;
                         }
                     }
                     redraw = true;
                 }
-                _ = log_interval.tick(), if tail_while_running => {
-                    redraw = refresh_kw_ops_log_tail(&mut self.app);
+                _ = log_interval.tick(), if tail_while_running || poll_status => {
+                    let mut changed = false;
+                    if poll_status {
+                        changed |= poll_kw_status(&mut self.app).await;
+                    }
+                    if tail_while_running {
+                        changed |= refresh_kw_ops_log_tail(&mut self.app).await;
+                    }
+                    redraw = changed;
                 }
             }
         }
@@ -163,14 +179,14 @@ impl AppActor {
 
     /// Subscribes once at startup. A missing handle or a failed
     /// subscription leaves the app on keyboard-only redraws rather than
-    /// failing to start.
+    /// failing to start. A failed subscribe still seeds the projection
+    /// from GetStatus so a job already running is visible and the poll
+    /// arm can engage.
     async fn subscribe_kw_status(&mut self) -> Option<watch::Receiver<KwStatusSnapshot>> {
-        let Some(kw) = self.app.services.kw.as_ref() else {
-            return None;
-        };
+        let kw = self.app.services.kw.clone()?;
         match kw.watch_status().await {
             Ok(mut rx) => {
-                self.app.state.kw.status = Some(rx.borrow_and_update().clone());
+                apply_kw_snapshot(&mut self.app, rx.borrow_and_update().clone());
                 Some(rx)
             }
             Err(error) => {
@@ -178,6 +194,7 @@ impl AppActor {
                     %error,
                     "failed to subscribe to kw status; keyboard-only redraws"
                 );
+                fallback_kw_status(&mut self.app).await;
                 None
             }
         }
@@ -203,6 +220,20 @@ fn kw_ops_should_tail(app: &App) -> bool {
             app.state.kw.status.as_ref().map(|status| &status.job),
             Some(KwJobStatus::Running { .. })
         )
+}
+
+/// When the status watch is missing, poll GetStatus while a start is
+/// in flight or a job is running so `start_requested` cannot latch and
+/// the nav indicator can leave "building".
+fn should_poll_kw_status(app: &App) -> bool {
+    app.services.kw.is_some()
+        && (kw_job_is_running(app)
+            || app
+                .state
+                .kw
+                .ops
+                .as_ref()
+                .is_some_and(|ops| ops.start_requested))
 }
 
 async fn on_input(
@@ -365,7 +396,7 @@ mod tests {
                 lore_api: LoreApiHandle::new(lore_tx),
                 render: RenderHandle::new(render_tx),
                 shell: Box::new(MockShellTrait::new()),
-                fs: Box::new(MockFileSystemTrait::new()),
+                fs: Arc::new(MockFileSystemTrait::new()),
                 config: dummy_config_handle(),
                 kw_history: Arc::new(MockKwHistoryStore::new()),
                 kw: None,
@@ -466,7 +497,7 @@ mod tests {
             ConfigState::default().to_snapshot(),
             dummy_config_handle(),
             bootstrap,
-            Box::new(MockFileSystemTrait::new()),
+            Arc::new(MockFileSystemTrait::new()),
             Box::new(MockShellTrait::new()),
             lore_api.clone(),
             render.clone(),

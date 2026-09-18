@@ -138,7 +138,7 @@ impl AppPopup {
                 ("Wait".to_string(), ConfirmAction::Wait),
             ],
             selected: 1,
-            dimensions: (40, 60),
+            dimensions: (50, 30),
         }
     }
 

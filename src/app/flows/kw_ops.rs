@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use color_eyre::Result;
 
 use crate::{
@@ -8,7 +10,11 @@ use crate::{
     },
     infrastructure::file_system::FileSystemError,
     input::event::InputEvent,
-    kw::{errors::KwError, messages::StartRequest, status::KwJobStatus},
+    kw::{
+        errors::KwError,
+        messages::StartRequest,
+        status::{KwJobStatus, KwStatusSnapshot},
+    },
 };
 
 /// Bytes read from the end of a kw job log. Kernel build logs can be
@@ -21,7 +27,13 @@ pub(crate) const LOG_TAIL_MAX_BYTES: usize = 64 * 1024;
 /// is projected from an empty tail). Other read errors become a
 /// non-fatal diagnostic in the panel and do not change job status.
 /// Returns whether the displayed text changed.
-pub(crate) fn refresh_kw_ops_log_tail(app: &mut App) -> bool {
+///
+/// The read runs on the blocking pool: the log is a real file, and
+/// AppActor's loop must not stall on disk I/O.
+pub(crate) async fn refresh_kw_ops_log_tail(app: &mut App) -> bool {
+    if app.state.kw.ops.is_none() {
+        return false;
+    }
     let Some(path) = app
         .state
         .kw
@@ -32,14 +44,14 @@ pub(crate) fn refresh_kw_ops_log_tail(app: &mut App) -> bool {
     else {
         return false;
     };
-    if app.state.kw.ops.is_none() {
-        return false;
-    }
-    let text = tail_text_from_read(
-        app.services
-            .fs
-            .read_tail_to_string(&path, LOG_TAIL_MAX_BYTES),
-    );
+    let fs = Arc::clone(&app.services.fs);
+    let result =
+        tokio::task::spawn_blocking(move || fs.read_tail_to_string(&path, LOG_TAIL_MAX_BYTES))
+            .await;
+    let text = match result {
+        Ok(read) => tail_text_from_read(read),
+        Err(error) => format!("(could not read log: {error})"),
+    };
     let Some(ops) = app.state.kw.ops.as_mut() else {
         return false;
     };
@@ -62,6 +74,47 @@ fn assign_log_tail(ops: &mut KwOpsState, text: String) -> bool {
     } else {
         ops.log_tail = text;
         true
+    }
+}
+
+/// Projects a kw snapshot into App state and releases the optimistic
+/// start lock once the actor has left Idle.
+pub(crate) fn apply_kw_snapshot(app: &mut App, snapshot: KwStatusSnapshot) {
+    if let Some(ops) = app.state.kw.ops.as_mut() {
+        if !matches!(snapshot.job, KwJobStatus::Idle) {
+            ops.start_requested = false;
+        }
+    }
+    app.state.kw.status = Some(snapshot);
+}
+
+/// Keyboard-only fallback: pull status when the watch is unavailable.
+pub(crate) async fn poll_kw_status(app: &mut App) -> bool {
+    let Some(kw) = app.services.kw.clone() else {
+        return false;
+    };
+    let Ok(snapshot) = kw.get_status().await else {
+        return false;
+    };
+    let changed = app.state.kw.status.as_ref() != Some(&snapshot);
+    apply_kw_snapshot(app, snapshot);
+    changed
+}
+
+/// Seed the projection from GetStatus after the watch is gone.
+///
+/// A successful query lets the poll arm engage if a job is already
+/// running (the subscribe-failed-with-live-job corner). A failed query
+/// clears status so a dead actor cannot leave a stale "building"
+/// indicator.
+pub(crate) async fn fallback_kw_status(app: &mut App) {
+    let Some(kw) = app.services.kw.clone() else {
+        app.state.kw.status = None;
+        return;
+    };
+    match kw.get_status().await {
+        Ok(snapshot) => apply_kw_snapshot(app, snapshot),
+        Err(_) => app.state.kw.status = None,
     }
 }
 
@@ -99,7 +152,7 @@ pub async fn handle_kw_ops(app: &mut App, input: InputEvent) -> Result<()> {
             }
         }
         InputEvent::EditKwOpsField => {
-            if !job_is_running(app) {
+            if !job_is_busy(app) {
                 if let Some(ops) = app.state.kw.ops.as_mut() {
                     ops.begin_edit();
                 }
@@ -146,15 +199,24 @@ pub async fn open_kw_ops(app: &mut App) -> Result<()> {
 
     match kw.get_readiness(&kernel_tree_id, &tree).await {
         Ok(readiness) => {
-            app.state.kw.ops = Some(KwOpsState::new(
-                patchset_title,
-                message_id,
-                kernel_tree_id,
-                tree,
-                readiness,
-            ));
+            let reuse = app.state.kw.ops.as_ref().is_some_and(|ops| {
+                ops.message_id == message_id && ops.kernel_tree_id == kernel_tree_id
+            });
+            if reuse {
+                if let Some(ops) = app.state.kw.ops.as_mut() {
+                    ops.reenter(patchset_title, tree, readiness);
+                }
+            } else {
+                app.state.kw.ops = Some(KwOpsState::new(
+                    patchset_title,
+                    message_id,
+                    kernel_tree_id,
+                    tree,
+                    readiness,
+                ));
+            }
             app.set_current_screen(CurrentScreen::KwOps);
-            refresh_kw_ops_log_tail(app);
+            refresh_kw_ops_log_tail(app).await;
         }
         Err(error) => {
             app.state.popup = Some(AppPopup::info(
@@ -167,7 +229,7 @@ pub async fn open_kw_ops(app: &mut App) -> Result<()> {
 }
 
 async fn start_build(app: &mut App) -> Result<()> {
-    if job_is_running(app) {
+    if job_is_busy(app) {
         return Ok(());
     }
     let Some(ops) = app.state.kw.ops.as_ref() else {
@@ -200,6 +262,13 @@ async fn start_build(app: &mut App) -> Result<()> {
         Ok(()) => {
             if let Some(ops) = app.state.kw.ops.as_mut() {
                 ops.cancel_requested = false;
+                ops.start_requested = true;
+            }
+            // Apply the actor's snapshot immediately so keyboard-only
+            // mode (no watch) cannot latch on start_requested, and so a
+            // second Start in the same loop turn sees the job as busy.
+            if let Ok(snapshot) = kw.get_status().await {
+                apply_kw_snapshot(app, snapshot);
             }
         }
         Err(error) => {
@@ -269,6 +338,16 @@ fn job_is_running(app: &App) -> bool {
         app.state.kw.status.as_ref().map(|status| &status.job),
         Some(KwJobStatus::Running { .. })
     )
+}
+
+fn job_is_busy(app: &App) -> bool {
+    job_is_running(app)
+        || app
+            .state
+            .kw
+            .ops
+            .as_ref()
+            .is_some_and(|ops| ops.start_requested)
 }
 
 pub fn generate_help_popup() -> AppPopup {

@@ -89,10 +89,30 @@ fn paint_form(f: &mut Frame, scene: &KwOpsScene, chunk: Rect) {
 }
 
 fn paint_log(f: &mut Frame, scene: &KwOpsScene, chunk: Rect) {
+    let inner_width = chunk.width.saturating_sub(2);
+    let inner_height = chunk.height.saturating_sub(2);
+    let offset = log_scroll_offset(&scene.log_tail, inner_width, inner_height);
     let paragraph = Paragraph::new(scene.log_tail.clone())
         .block(Block::default().borders(Borders::ALL).title(" Build log "))
-        .wrap(Wrap { trim: false });
+        .wrap(Wrap { trim: false })
+        .scroll((offset, 0));
     f.render_widget(paragraph, chunk);
+}
+
+/// Scroll so the newest wrapped rows sit at the bottom of the pane.
+///
+/// Uses ratatui's wrap-aware [`Paragraph::line_count`] so the offset
+/// matches what the painter actually renders (word wrap, tabs, wide
+/// chars). Counted without a [`Block`] and with the inner width, so
+/// border rows are not mixed into the text height.
+pub(crate) fn log_scroll_offset(text: &str, inner_width: u16, inner_height: u16) -> u16 {
+    if inner_height == 0 || inner_width == 0 {
+        return 0;
+    }
+    let rows = Paragraph::new(text)
+        .wrap(Wrap { trim: false })
+        .line_count(inner_width);
+    rows.saturating_sub(inner_height as usize) as u16
 }
 
 fn labeled(label: &str, value: &str) -> Line<'static> {
@@ -141,5 +161,49 @@ pub fn keys_hint_span(editing: bool) -> Span<'static> {
             "(ESC / q) back | (e) edit | (b) build | (c) cancel | (r) restore | (?) help",
             Style::default().fg(Color::Red),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn short_log_does_not_scroll() {
+        assert_eq!(0, log_scroll_offset("cc1: compiling\n", 40, 10));
+    }
+
+    #[test]
+    fn tall_log_pins_the_newest_rows() {
+        let text = (0..20)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(15, log_scroll_offset(&text, 40, 5));
+    }
+
+    #[test]
+    fn hard_wrapped_lines_count_toward_the_offset() {
+        assert_eq!(1, log_scroll_offset("abcdefghij", 4, 2));
+    }
+
+    #[test]
+    fn word_wrapped_lines_pin_the_newest_rows() {
+        // Width 10, "aaaaa aaaaa aaaaa": char-ceil would be 2 rows; ratatui
+        // word-wraps to 3, so height 2 must scroll by 1 to keep the end visible.
+        assert_eq!(1, log_scroll_offset("aaaaa aaaaa aaaaa", 10, 2));
+    }
+
+    #[test]
+    fn trailing_newline_does_not_invent_an_extra_row() {
+        // ratatui's line_count does not treat a trailing newline as a
+        // blank wrapped row, so a one-line pane shows "a" with no scroll.
+        assert_eq!(0, log_scroll_offset("a\n", 10, 1));
+    }
+
+    #[test]
+    fn zero_inner_area_does_not_scroll() {
+        assert_eq!(0, log_scroll_offset("line\nline\n", 0, 10));
+        assert_eq!(0, log_scroll_offset("line\nline\n", 10, 0));
     }
 }

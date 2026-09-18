@@ -8,8 +8,9 @@
 //! [`crate::kw::readiness`] and records applies through the shared
 //! [`KwHistoryStore`](crate::kw::history::KwHistoryStore).
 //!
-//! Git checkout runs on the blocking pool. `create_dir_all`, history
-//! writes, and completion probes run inline on the actor task.
+//! Git checkout and readiness probes run on the blocking pool.
+//! `create_dir_all`, history writes, and completion probes run inline
+//! on the actor task.
 
 use std::{
     ops::ControlFlow,
@@ -221,7 +222,7 @@ impl KwActor {
                 send_kw_reply(
                     message_name,
                     reply,
-                    self.evaluate_readiness(&kernel_tree_id, &tree),
+                    self.evaluate_readiness(&kernel_tree_id, &tree).await,
                 );
                 ControlFlow::Continue(())
             }
@@ -606,21 +607,34 @@ impl KwActor {
         self.set_status(job);
     }
 
-    fn evaluate_readiness(
+    /// Git probes and history I/O run on the blocking pool so a slow
+    /// tree cannot stall Cancel (or any other message) for the duration.
+    async fn evaluate_readiness(
         &self,
         kernel_tree_id: &str,
         tree: &KernelTree,
     ) -> Result<KwReadiness, KwError> {
-        let head = head_branch(&*self.shell, tree.path());
-        Ok(readiness::evaluate_readiness(
-            &*self.fs,
-            &*self.env,
-            &*self.shell,
-            &*self.history,
-            kernel_tree_id,
-            tree,
-            &head,
-        )?)
+        let fs = Arc::clone(&self.fs);
+        let env = Arc::clone(&self.env);
+        let shell = Arc::clone(&self.shell);
+        let history = Arc::clone(&self.history);
+        let kernel_tree_id = kernel_tree_id.to_string();
+        let tree = tree.clone();
+        tokio::task::spawn_blocking(move || {
+            let head = head_branch(&*shell, tree.path());
+            readiness::evaluate_readiness(
+                &*fs,
+                &*env,
+                &*shell,
+                &*history,
+                &kernel_tree_id,
+                &tree,
+                &head,
+            )
+            .map_err(KwError::from)
+        })
+        .await
+        .map_err(|error| KwError::GitStateProbe(error.to_string()))?
     }
 
     /// Switches the tree that ran the last job back to the branch HEAD was

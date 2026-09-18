@@ -450,6 +450,7 @@ fn project_kw_ops(state: &AppState) -> KwOpsViewModel {
         state.kw.status.as_ref().map(|status| &status.job),
         Some(KwJobStatus::Running { .. })
     );
+    let start_requested = ops.start_requested;
     let restore_branch = state
         .kw
         .status
@@ -465,7 +466,7 @@ fn project_kw_ops(state: &AppState) -> KwOpsViewModel {
     } else {
         ops.extra_args.clone()
     };
-    let start_label = if running {
+    let start_label = if running || start_requested {
         "unavailable (a job is already running)".to_string()
     } else if ops.branch.trim().is_empty() {
         "unavailable (set a branch first)".to_string()
@@ -512,18 +513,24 @@ fn project_kw_ops(state: &AppState) -> KwOpsViewModel {
             .readiness
             .output_dir
             .as_ref()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "(none)".to_string()),
-        job_status: format_job_status(
-            state.kw.status.as_ref().map(|status| &status.job),
-            ops.cancel_requested,
+            .map_or_else(|| "(none)".to_string(), |path| path.display().to_string()),
+        job_status: if start_requested && !running {
+            "starting…".to_string()
+        } else {
+            format_job_status(
+                state.kw.status.as_ref().map(|status| &status.job),
+                ops.cancel_requested,
+            )
+        },
+        command: format!(
+            "kw {}",
+            argv::build_argv(&ops.extra_arg_tokens_for_preview()).join(" ")
         ),
-        command: format!("kw {}", argv::build_argv(&ops.extra_arg_tokens()).join(" ")),
         start_label,
         cancel_label,
         restore_label,
         deploy_placeholder: "not available yet".to_string(),
-        branch_guidance: if ops.branch.trim().is_empty() {
+        branch_guidance: if ops.head_unreadable && ops.branch.trim().is_empty() {
             Some(
                 "HEAD is detached or unverifiable; type a branch before starting a build."
                     .to_string(),
@@ -766,6 +773,101 @@ mod tests {
         assert_eq!("feature", vm.branch);
         assert_eq!("available (b)", vm.start_label);
         assert_eq!("not available yet", vm.deploy_placeholder);
+    }
+
+    fn sample_kw_ops(branch: Option<&str>) -> crate::app::screens::kw_ops::KwOpsState {
+        crate::app::screens::kw_ops::KwOpsState::new(
+            "[PATCH] test".to_string(),
+            "http://lore.example/123".to_string(),
+            "linux".to_string(),
+            serde_json::from_value(serde_json::json!({
+                "path": "/kernel",
+                "branch": "main"
+            }))
+            .unwrap(),
+            crate::kw::readiness::KwReadiness {
+                kw_binary: crate::kw::readiness::KwBinaryProbe {
+                    available: true,
+                    version_line: Some("kw, version 0.10.0".to_string()),
+                    check: crate::kw::readiness::KwVersionCheck::Meets,
+                },
+                tree: crate::kw::readiness::TreeReadiness::Ready {
+                    arch: Some("x86_64".to_string()),
+                },
+                output_dir: None,
+                kernel_image: None,
+                build_record: None,
+                latest_build: None,
+                deploy_alone: Err(crate::kw::readiness::DeployAloneRefusal::NoBuildRecord),
+                current_branch: branch.map(str::to_string),
+            },
+        )
+    }
+
+    #[test]
+    fn cleared_readable_branch_does_not_claim_detached_head() {
+        let mut state = app_state_with_kw(None);
+        state.navigation.current_screen = CurrentScreen::KwOps;
+        let mut ops = sample_kw_ops(Some("feature"));
+        ops.branch.clear();
+        state.kw.ops = Some(ops);
+
+        let ScreenViewModel::KwOps(vm) = project_state(&state).screen else {
+            panic!("expected KwOps projection");
+        };
+        assert_eq!(None, vm.branch_guidance);
+        assert_eq!("unavailable (set a branch first)", vm.start_label);
+    }
+
+    #[test]
+    fn detached_head_projects_branch_guidance() {
+        let mut state = app_state_with_kw(None);
+        state.navigation.current_screen = CurrentScreen::KwOps;
+        state.kw.ops = Some(sample_kw_ops(None));
+
+        let ScreenViewModel::KwOps(vm) = project_state(&state).screen else {
+            panic!("expected KwOps projection");
+        };
+        assert!(vm
+            .branch_guidance
+            .as_deref()
+            .is_some_and(|text| text.contains("detached or unverifiable")));
+    }
+
+    #[test]
+    fn command_preview_tracks_in_progress_extra_args() {
+        let mut state = app_state_with_kw(None);
+        state.navigation.current_screen = CurrentScreen::KwOps;
+        let mut ops = sample_kw_ops(Some("feature"));
+        ops.extra_args = "--verbose".to_string();
+        ops.highlight_next();
+        ops.begin_edit();
+        ops.append_edit(' ');
+        ops.append_edit('-');
+        ops.append_edit('j');
+        ops.append_edit('8');
+        state.kw.ops = Some(ops);
+
+        let ScreenViewModel::KwOps(vm) = project_state(&state).screen else {
+            panic!("expected KwOps projection");
+        };
+        assert_eq!("kw build --verbose -j8", vm.command);
+        assert_eq!("--verbose -j8", vm.extra_args);
+    }
+
+    #[test]
+    fn start_requested_projects_as_busy() {
+        let mut state = app_state_with_kw(None);
+        state.navigation.current_screen = CurrentScreen::KwOps;
+        let mut ops = sample_kw_ops(Some("feature"));
+        ops.start_requested = true;
+        state.kw.ops = Some(ops);
+
+        let ScreenViewModel::KwOps(vm) = project_state(&state).screen else {
+            panic!("expected KwOps projection");
+        };
+        assert_eq!("starting…", vm.job_status);
+        assert_eq!("unavailable (a job is already running)", vm.start_label);
     }
 
     #[test]

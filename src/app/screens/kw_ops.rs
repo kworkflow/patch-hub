@@ -28,6 +28,9 @@ pub struct KwOpsState {
     /// visible and a job is running.
     pub log_tail: String,
     pub cancel_requested: bool,
+    /// Optimistic lock so a second Start before the watch snapshot
+    /// arrives is ignored instead of refused with an error popup.
+    pub start_requested: bool,
 }
 
 impl KwOpsState {
@@ -54,14 +57,38 @@ impl KwOpsState {
             head_unreadable,
             log_tail: String::new(),
             cancel_requested: false,
+            start_requested: false,
         }
     }
 
+    /// Re-open KwOps for the same patchset/tree without dropping extras
+    /// or an in-flight cancel/start indication.
+    ///
+    /// Branch and `head_unreadable` stay as the user last edited them.
+    /// An external HEAD change while away is not applied, so a stale
+    /// detached-HEAD flag can survive a tree that has since become
+    /// readable.
+    pub fn reenter(&mut self, patchset_title: String, tree: KernelTree, readiness: KwReadiness) {
+        self.patchset_title = patchset_title;
+        self.tree = tree;
+        self.readiness = readiness;
+        self.editing = false;
+        self.edit_buffer.clear();
+    }
+
     pub fn extra_arg_tokens(&self) -> Vec<String> {
-        self.extra_args
-            .split_whitespace()
-            .map(str::to_string)
-            .collect()
+        split_extra_args(&self.extra_args)
+    }
+
+    /// Extra args shown in the command preview, including in-progress
+    /// edits so the Command line tracks the Extra args field.
+    pub fn extra_arg_tokens_for_preview(&self) -> Vec<String> {
+        let raw = if self.editing && self.focus == KwOpsFocus::ExtraArgs {
+            self.edit_buffer.as_str()
+        } else {
+            self.extra_args.as_str()
+        };
+        split_extra_args(raw)
     }
 
     pub fn highlight_prev(&mut self) {
@@ -101,6 +128,10 @@ impl KwOpsState {
     pub fn append_edit(&mut self, ch: char) {
         self.edit_buffer.push(ch);
     }
+}
+
+fn split_extra_args(raw: &str) -> Vec<String> {
+    raw.split_whitespace().map(str::to_string).collect()
 }
 
 #[cfg(test)]
@@ -189,5 +220,47 @@ mod tests {
         ops.cancel_edit();
         assert_eq!("main", ops.branch);
         assert!(!ops.editing);
+    }
+
+    #[test]
+    fn reenter_keeps_extras_and_cancel_requested() {
+        let mut ops = KwOpsState::new(
+            "title".to_string(),
+            "mid".to_string(),
+            "linux".to_string(),
+            sample_tree(),
+            readiness(Some("main")),
+        );
+        ops.extra_args = "--verbose".to_string();
+        ops.cancel_requested = true;
+        ops.reenter(
+            "new title".to_string(),
+            sample_tree(),
+            readiness(Some("feature")),
+        );
+        assert_eq!("--verbose", ops.extra_args);
+        assert!(ops.cancel_requested);
+        assert_eq!("new title", ops.patchset_title);
+        assert_eq!("main", ops.branch);
+    }
+
+    #[test]
+    fn extra_arg_preview_tokens_follow_the_edit_buffer() {
+        let mut ops = KwOpsState::new(
+            "title".to_string(),
+            "mid".to_string(),
+            "linux".to_string(),
+            sample_tree(),
+            readiness(Some("main")),
+        );
+        ops.extra_args = "--verbose".to_string();
+        ops.highlight_next();
+        ops.begin_edit();
+        ops.append_edit(' ');
+        ops.append_edit('-');
+        ops.append_edit('j');
+        ops.append_edit('8');
+        assert_eq!(vec!["--verbose", "-j8"], ops.extra_arg_tokens_for_preview());
+        assert_eq!(vec!["--verbose"], ops.extra_arg_tokens());
     }
 }
