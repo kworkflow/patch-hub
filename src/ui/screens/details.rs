@@ -186,6 +186,17 @@ fn paint_details_and_actions(
             ),
             Span::styled("eviewed-by", Style::default().fg(Color::Cyan)),
         ]),
+        Line::from(vec![
+            Span::styled("    ", Style::default()),
+            Span::styled(
+                "w",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::UNDERLINED)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" Kw operations", Style::default().fg(Color::Cyan)),
+        ]),
     ];
     let patchset_actions = Paragraph::new(patchset_actions)
         .block(
@@ -232,7 +243,7 @@ pub fn mode_spans() -> Vec<Span<'static>> {
 
 pub fn keys_hint_span() -> Span<'static> {
     Span::styled(
-        "(ESC / q) to return | (ENTER) run actions | (?) help",
+        "(ESC / q) to return | (ENTER) run actions | (w) kw | (?) help",
         Style::default().fg(Color::Red),
     )
 }

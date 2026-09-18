@@ -12,10 +12,14 @@ use ratatui::text::Text;
 
 use super::{
     popup::AppPopup,
-    screens::{details_actions::PatchsetAction, CurrentScreen},
+    screens::{details_actions::PatchsetAction, kw_ops::KwOpsFocus, CurrentScreen},
     state::AppState,
 };
-use crate::kw::status::KwStatusSnapshot;
+use crate::kw::{
+    argv,
+    readiness::TreeReadiness,
+    status::{KwJobStatus, KwStatusSnapshot},
+};
 
 /// One mailing list entry shown in the selection list.
 #[derive(Clone, Debug)]
@@ -122,6 +126,31 @@ pub struct EditConfigViewModel {
     pub is_editing_mode: bool,
 }
 
+/// Build-only KwOps dashboard. Labels only; actions stay in AppState.
+#[derive(Clone, Debug)]
+pub struct KwOpsViewModel {
+    pub patchset_title: String,
+    pub message_id: String,
+    pub kernel_tree_id: String,
+    pub tree_path: String,
+    pub branch: String,
+    pub extra_args: String,
+    pub branch_focused: bool,
+    pub extras_focused: bool,
+    pub editing: bool,
+    pub kw_binary: String,
+    pub tree_readiness: String,
+    pub output_dir: String,
+    pub job_status: String,
+    pub command: String,
+    pub start_label: String,
+    pub cancel_label: String,
+    pub restore_label: String,
+    pub deploy_placeholder: String,
+    pub branch_guidance: Option<String>,
+    pub log_tail: String,
+}
+
 #[derive(Clone, Debug)]
 pub enum PopupViewBody {
     Text(String),
@@ -158,6 +187,7 @@ pub enum ScreenViewModel {
     Latest(LatestPatchsetsViewModel),
     PatchsetDetails(PatchsetDetailsViewModel),
     EditConfig(EditConfigViewModel),
+    KwOps(KwOpsViewModel),
 }
 
 /// Owned, typed projection of [`AppState`] for one TUI frame.
@@ -200,6 +230,7 @@ fn project_screen(state: &AppState) -> ScreenViewModel {
         CurrentScreen::LatestPatchsets => ScreenViewModel::Latest(project_latest(state)),
         CurrentScreen::PatchsetDetails => ScreenViewModel::PatchsetDetails(project_details(state)),
         CurrentScreen::EditConfig => ScreenViewModel::EditConfig(project_edit_config(state)),
+        CurrentScreen::KwOps => ScreenViewModel::KwOps(project_kw_ops(state)),
     }
 }
 
@@ -409,6 +440,142 @@ fn project_edit_config(state: &AppState) -> EditConfigViewModel {
     }
 }
 
+fn project_kw_ops(state: &AppState) -> KwOpsViewModel {
+    let ops = state
+        .kw
+        .ops
+        .as_ref()
+        .expect("KwOps must be initialised before projecting");
+    let running = matches!(
+        state.kw.status.as_ref().map(|status| &status.job),
+        Some(KwJobStatus::Running { .. })
+    );
+    let restore_branch = state
+        .kw
+        .status
+        .as_ref()
+        .and_then(|status| status.restore_branch.clone());
+    let branch = if ops.editing && ops.focus == KwOpsFocus::Branch {
+        ops.edit_buffer.clone()
+    } else {
+        ops.branch.clone()
+    };
+    let extra_args = if ops.editing && ops.focus == KwOpsFocus::ExtraArgs {
+        ops.edit_buffer.clone()
+    } else {
+        ops.extra_args.clone()
+    };
+    let start_label = if running {
+        "unavailable (a job is already running)".to_string()
+    } else if ops.branch.trim().is_empty() {
+        "unavailable (set a branch first)".to_string()
+    } else {
+        "available (b)".to_string()
+    };
+    let cancel_label = if running {
+        if ops.cancel_requested {
+            "requested; waiting for the job to stop".to_string()
+        } else {
+            "available (c)".to_string()
+        }
+    } else {
+        "unavailable".to_string()
+    };
+    let restore_label = match (running, restore_branch.as_deref()) {
+        (true, _) => "unavailable (a job is running)".to_string(),
+        (false, Some(branch)) => format!("available (r) to {branch}"),
+        (false, None) => "unavailable".to_string(),
+    };
+    let log_tail = if ops.log_tail.is_empty() {
+        if running {
+            "Waiting for kw output…".to_string()
+        } else {
+            "(no log yet)".to_string()
+        }
+    } else {
+        ops.log_tail.clone()
+    };
+
+    KwOpsViewModel {
+        patchset_title: ops.patchset_title.clone(),
+        message_id: ops.message_id.clone(),
+        kernel_tree_id: ops.kernel_tree_id.clone(),
+        tree_path: ops.tree.path().clone(),
+        branch,
+        extra_args,
+        branch_focused: ops.focus == KwOpsFocus::Branch,
+        extras_focused: ops.focus == KwOpsFocus::ExtraArgs,
+        editing: ops.editing,
+        kw_binary: format_kw_binary(&ops.readiness.kw_binary),
+        tree_readiness: format_tree_readiness(&ops.readiness.tree),
+        output_dir: ops
+            .readiness
+            .output_dir
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "(none)".to_string()),
+        job_status: format_job_status(
+            state.kw.status.as_ref().map(|status| &status.job),
+            ops.cancel_requested,
+        ),
+        command: format!("kw {}", argv::build_argv(&ops.extra_arg_tokens()).join(" ")),
+        start_label,
+        cancel_label,
+        restore_label,
+        deploy_placeholder: "not available yet".to_string(),
+        branch_guidance: if ops.branch.trim().is_empty() {
+            Some(
+                "HEAD is detached or unverifiable; type a branch before starting a build."
+                    .to_string(),
+            )
+        } else {
+            None
+        },
+        log_tail,
+    }
+}
+
+fn format_kw_binary(probe: &crate::kw::readiness::KwBinaryProbe) -> String {
+    if !probe.available {
+        return "not on PATH".to_string();
+    }
+    match &probe.version_line {
+        Some(line) => line.clone(),
+        None => "available (version unknown)".to_string(),
+    }
+}
+
+fn format_tree_readiness(tree: &TreeReadiness) -> String {
+    match tree {
+        TreeReadiness::Ready { arch: Some(arch) } => format!("ready (arch={arch})"),
+        TreeReadiness::Ready { arch: None } => "ready (arch unset)".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn format_job_status(job: Option<&KwJobStatus>, cancel_requested: bool) -> String {
+    match job {
+        None | Some(KwJobStatus::Idle) => "idle".to_string(),
+        Some(KwJobStatus::Running { phase, branch, .. }) => {
+            let phase = match phase {
+                crate::kw::status::KwPhase::Building => "building",
+                crate::kw::status::KwPhase::Deploying => "deploying",
+            };
+            if cancel_requested {
+                format!("cancelling {phase} {branch}")
+            } else {
+                format!("{phase} {branch}")
+            }
+        }
+        Some(KwJobStatus::Succeeded { branch, .. }) => format!("succeeded on {branch}"),
+        Some(KwJobStatus::Failed { exit_code, .. }) => match exit_code {
+            Some(code) => format!("failed (exit {code})"),
+            None => "failed (exit unknown)".to_string(),
+        },
+        Some(KwJobStatus::Cancelled { .. }) => "cancelled".to_string(),
+    }
+}
+
 fn project_popup(popup: &AppPopup) -> PopupViewModel {
     match popup {
         AppPopup::Info {
@@ -519,7 +686,7 @@ mod tests {
             config_state: ConfigUiState { edit_config: None },
             config: ConfigState::default().to_snapshot(),
             popup: None,
-            kw: KwUiState { status },
+            kw: KwUiState { status, ops: None },
         }
     }
 
@@ -557,6 +724,48 @@ mod tests {
             options
         );
         assert_eq!(1, selected);
+    }
+
+    #[test]
+    fn kw_ops_command_strips_reserved_extras() {
+        let mut state = app_state_with_kw(None);
+        state.navigation.current_screen = CurrentScreen::KwOps;
+        let mut ops = crate::app::screens::kw_ops::KwOpsState::new(
+            "[PATCH] test".to_string(),
+            "http://lore.example/123".to_string(),
+            "linux".to_string(),
+            serde_json::from_value(serde_json::json!({
+                "path": "/kernel",
+                "branch": "main"
+            }))
+            .unwrap(),
+            crate::kw::readiness::KwReadiness {
+                kw_binary: crate::kw::readiness::KwBinaryProbe {
+                    available: true,
+                    version_line: Some("kw, version 0.10.0".to_string()),
+                    check: crate::kw::readiness::KwVersionCheck::Meets,
+                },
+                tree: crate::kw::readiness::TreeReadiness::Ready {
+                    arch: Some("x86_64".to_string()),
+                },
+                output_dir: None,
+                kernel_image: None,
+                build_record: None,
+                latest_build: None,
+                deploy_alone: Err(crate::kw::readiness::DeployAloneRefusal::NoBuildRecord),
+                current_branch: Some("feature".to_string()),
+            },
+        );
+        ops.extra_args = "--verbose --clean --from-sha abc --doc".to_string();
+        state.kw.ops = Some(ops);
+
+        let ScreenViewModel::KwOps(vm) = project_state(&state).screen else {
+            panic!("expected KwOps projection");
+        };
+        assert_eq!("kw build --verbose", vm.command);
+        assert_eq!("feature", vm.branch);
+        assert_eq!("available (b)", vm.start_label);
+        assert_eq!("not available yet", vm.deploy_placeholder);
     }
 
     #[test]

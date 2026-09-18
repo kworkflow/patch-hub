@@ -5,7 +5,7 @@ use crate::{
         popup::AppPopup,
         screens::{
             bookmarked::BookmarkedPatchsetsState, details_actions::PatchsetDetailsState,
-            edit_config::EditConfigState, latest::LatestPatchsetsState,
+            edit_config::EditConfigState, kw_ops::KwOpsState, latest::LatestPatchsetsState,
             mail_list::MailingListSelectionState, CurrentScreen,
         },
     },
@@ -47,6 +47,7 @@ pub struct ConfigUiState {
 #[derive(Clone, Debug, Default)]
 pub struct KwUiState {
     pub status: Option<KwStatusSnapshot>,
+    pub ops: Option<KwOpsState>,
 }
 
 /// All application state grouped as the App actor's state.

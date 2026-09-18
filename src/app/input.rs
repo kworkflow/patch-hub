@@ -12,6 +12,7 @@ impl App {
                 .edit_config
                 .as_ref()
                 .is_some_and(|edit_config| edit_config.is_editing()),
+            kw_ops_editing: self.state.kw.ops.as_ref().is_some_and(|ops| ops.editing),
             preview_fullscreen: self
                 .state
                 .lore

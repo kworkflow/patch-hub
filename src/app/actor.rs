@@ -17,8 +17,8 @@ use crate::{
     app::{
         flows::{
             bookmarked::handle_bookmarked_patchsets, details_actions::handle_patchset_details,
-            edit_config::handle_edit_config, latest::handle_latest_patchsets,
-            mail_list::handle_mailing_list_selection,
+            edit_config::handle_edit_config, kw_ops::handle_kw_ops,
+            latest::handle_latest_patchsets, mail_list::handle_mailing_list_selection,
         },
         handle::AppHandle,
         loading::{terminal_error, TerminalLoadingIndicator},
@@ -219,6 +219,9 @@ async fn on_input(
             }
             CurrentScreen::LatestPatchsets => {
                 handle_latest_patchsets(app, input, loading).await?;
+            }
+            CurrentScreen::KwOps => {
+                handle_kw_ops(app, input).await?;
             }
         }
     }

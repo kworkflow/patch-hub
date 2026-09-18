@@ -2,6 +2,7 @@ mod actor_lifecycle;
 mod flow_errors;
 mod flow_navigation;
 mod helpers;
+mod kw_ops;
 #[cfg(unix)]
 mod kw_status;
 mod patchset_actions;

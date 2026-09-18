@@ -38,6 +38,7 @@ impl UiCore {
             ScreenViewModel::EditConfig(ec_vm) => {
                 UiBody::EditConfig(screens::edit_config::build_scene(ec_vm))
             }
+            ScreenViewModel::KwOps(kw_vm) => UiBody::KwOps(screens::kw_ops::build_scene(kw_vm)),
         };
 
         let navigation = self.build_navigation(&vm.screen, vm.kw_running.as_deref());
@@ -75,6 +76,10 @@ impl UiCore {
             ScreenViewModel::EditConfig(vm) => (
                 screens::edit_config::mode_spans(vm),
                 screens::edit_config::keys_hint_span(vm),
+            ),
+            ScreenViewModel::KwOps(vm) => (
+                screens::kw_ops::mode_spans(),
+                screens::kw_ops::keys_hint_span(vm.editing),
             ),
         };
         if let Some(indicator) = kw_running {
