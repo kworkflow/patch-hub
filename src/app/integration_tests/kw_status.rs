@@ -113,6 +113,99 @@ async fn closed_watch_does_not_busy_loop_and_input_still_works() {
     std::fs::remove_dir_all(&log_dir).unwrap();
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn quit_while_job_running_opens_confirm_and_wait_keeps_app_alive() {
+    let log_dir = kw_log_dir("quit-wait");
+    let (app, kw, process) = app_with_kw(&log_dir);
+    kw.start_build(start_request()).await.unwrap();
+
+    let (scenes, event_tx, handle) = spawn_app_actor(app);
+    wait_for_nav(&scenes, |text| text.contains("kw: building")).await;
+
+    event_tx.send(InputEvent::Quit).await.unwrap();
+    wait_for_latest_popup(&scenes, |popup| {
+        popup.is_some_and(|popup| popup.title == "Cancel build and quit?")
+    })
+    .await;
+    let latest = scenes.lock().unwrap().last().cloned().unwrap();
+    let popup = latest.popup.expect("confirm popup");
+    match popup.body {
+        crate::ui::scene::PopupBody::Confirm {
+            options, selected, ..
+        } => {
+            assert_eq!(
+                vec!["Cancel and quit".to_string(), "Wait".to_string()],
+                options
+            );
+            assert_eq!(1, selected);
+        }
+        other => panic!("expected Confirm scene, got {other:?}"),
+    }
+
+    event_tx.send(InputEvent::ConfirmPopup).await.unwrap();
+    wait_for_latest_popup(&scenes, |popup| popup.is_none()).await;
+    wait_for_nav(&scenes, |text| text.contains("kw: building")).await;
+
+    event_tx.send(InputEvent::NavigateDown).await.unwrap();
+    process.last_child().finish(0);
+    drop(event_tx);
+    handle.run_until_done().await.unwrap();
+    kw.shutdown().await;
+    std::fs::remove_dir_all(&log_dir).unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn quit_confirm_esc_is_wait() {
+    let log_dir = kw_log_dir("quit-esc-wait");
+    let (app, kw, process) = app_with_kw(&log_dir);
+    kw.start_build(start_request()).await.unwrap();
+
+    let (scenes, event_tx, handle) = spawn_app_actor(app);
+    wait_for_nav(&scenes, |text| text.contains("kw: building")).await;
+
+    event_tx.send(InputEvent::Quit).await.unwrap();
+    wait_for_latest_popup(&scenes, |popup| popup.is_some()).await;
+    event_tx.send(InputEvent::ClosePopup).await.unwrap();
+    wait_for_latest_popup(&scenes, |popup| popup.is_none()).await;
+    wait_for_nav(&scenes, |text| text.contains("kw: building")).await;
+
+    process.last_child().finish(0);
+    drop(event_tx);
+    handle.run_until_done().await.unwrap();
+    kw.shutdown().await;
+    std::fs::remove_dir_all(&log_dir).unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn cancel_and_quit_requests_cancellation() {
+    let log_dir = kw_log_dir("quit-cancel");
+    let (app, kw, process) = app_with_kw(&log_dir);
+    kw.start_build(start_request()).await.unwrap();
+
+    let (scenes, event_tx, handle) = spawn_app_actor(app);
+    wait_for_nav(&scenes, |text| text.contains("kw: building")).await;
+
+    event_tx.send(InputEvent::Quit).await.unwrap();
+    wait_for_latest_popup(&scenes, |popup| popup.is_some()).await;
+    event_tx.send(InputEvent::NavigateLeft).await.unwrap();
+    event_tx.send(InputEvent::ConfirmPopup).await.unwrap();
+
+    handle.run_until_done().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if process.last_child().was_killed() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("cancel-and-quit must request kw cancellation");
+    drop(event_tx);
+    kw.shutdown().await;
+    std::fs::remove_dir_all(&log_dir).unwrap();
+}
+
 fn spawn_app_actor(
     app: crate::app::App,
 ) -> (
@@ -199,6 +292,27 @@ async fn wait_for_nav(scenes: &Arc<Mutex<Vec<UiScene>>>, predicate: impl Fn(&str
     })
     .await
     .expect("expected navigation text did not appear");
+}
+
+async fn wait_for_latest_popup(
+    scenes: &Arc<Mutex<Vec<UiScene>>>,
+    predicate: impl Fn(Option<&crate::ui::scene::PopupScene>) -> bool,
+) {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let matches = scenes
+                .lock()
+                .unwrap()
+                .last()
+                .is_some_and(|scene| predicate(scene.popup.as_ref()));
+            if matches {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("expected popup state did not appear");
 }
 
 fn scene_count(scenes: &Arc<Mutex<Vec<UiScene>>>) -> usize {

@@ -22,11 +22,15 @@ use crate::{
         },
         handle::AppHandle,
         loading::{terminal_error, TerminalLoadingIndicator},
+        popup::{AppPopup, ConfirmAction},
         screens::CurrentScreen,
         App,
     },
     input::{event::InputEvent, handle::InputHandle},
-    kw::status::KwStatusSnapshot,
+    kw::{
+        errors::KwError,
+        status::{KwJobStatus, KwStatusSnapshot},
+    },
     terminal::{handle::TerminalHandle, messages::TerminalFrame},
     ui::handle::UiHandle,
 };
@@ -177,11 +181,24 @@ async fn on_input(
     loading: &mut TerminalLoadingIndicator,
 ) -> Result<ControlFlow<()>> {
     if let Some(popup) = app.state.popup.as_mut() {
-        if input == InputEvent::ClosePopup {
-            app.state.popup = None;
-        } else {
-            popup.handle_scroll(input);
+        match input {
+            InputEvent::ClosePopup => {
+                app.state.popup = None;
+            }
+            InputEvent::ConfirmPopup => match popup.selected_confirm_action() {
+                Some(ConfirmAction::CancelKwAndQuit) => {
+                    app.state.popup = None;
+                    return Ok(cancel_kw_and_quit(app).await);
+                }
+                Some(ConfirmAction::Wait) => {
+                    app.state.popup = None;
+                }
+                None => {}
+            },
+            _ => popup.handle_input(input),
         }
+    } else if input == InputEvent::Quit && kw_job_is_running(app) {
+        app.state.popup = Some(AppPopup::quit_while_job_running());
     } else {
         tracing::debug!(screen = ?app.state.navigation.current_screen, "dispatching input to screen handler");
         match app.state.navigation.current_screen {
@@ -206,6 +223,30 @@ async fn on_input(
         }
     }
     Ok(ControlFlow::Continue(()))
+}
+
+fn kw_job_is_running(app: &App) -> bool {
+    matches!(
+        app.state.kw.status.as_ref().map(|status| &status.job),
+        Some(KwJobStatus::Running { .. })
+    )
+}
+
+/// Cancel then leave. A job that finished while the confirm popup was
+/// open is `NoJobRunning`; that race is harmless and still quits.
+async fn cancel_kw_and_quit(app: &App) -> ControlFlow<()> {
+    if let Some(kw) = app.services.kw.as_ref() {
+        match kw.cancel().await {
+            Ok(()) => {}
+            Err(KwError::NoJobRunning) => {
+                tracing::debug!("kw job already finished before cancel-and-quit");
+            }
+            Err(error) => {
+                tracing::warn!(%error, "kw cancel failed while quitting");
+            }
+        }
+    }
+    ControlFlow::Break(())
 }
 
 #[cfg(test)]

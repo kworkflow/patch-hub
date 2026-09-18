@@ -52,6 +52,7 @@ pub enum InputEvent {
     Quit,
     Back,
     ClosePopup,
+    ConfirmPopup,
     OpenHelp,
     TextInput(char),
     Backspace,

@@ -65,6 +65,7 @@ impl InputMapper {
     fn map_popup_key(&mut self, key: &KeyInput) -> Option<InputEvent> {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => Some(InputEvent::ClosePopup),
+            KeyCode::Enter => Some(InputEvent::ConfirmPopup),
             KeyCode::Char('j') | KeyCode::Down => Some(InputEvent::NavigateDown),
             KeyCode::Char('k') | KeyCode::Up => Some(InputEvent::NavigateUp),
             KeyCode::Char('h') | KeyCode::Left => Some(InputEvent::NavigateLeft),
@@ -249,6 +250,16 @@ mod tests {
         let event = mapper.map_terminal_event(key(KeyCode::Esc), &context);
 
         assert_eq!(event, Some(InputEvent::ClosePopup));
+    }
+
+    #[test]
+    fn maps_enter_to_confirm_popup_when_popup_is_open() {
+        let mut mapper = InputMapper::default();
+        let context = context(CurrentScreen::MailingListSelection).with_popup_open(true);
+
+        let event = mapper.map_terminal_event(key(KeyCode::Enter), &context);
+
+        assert_eq!(event, Some(InputEvent::ConfirmPopup));
     }
 
     #[test]

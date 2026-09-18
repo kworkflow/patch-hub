@@ -134,6 +134,12 @@ pub enum PopupViewBody {
         tested_by: String,
         acked_by: String,
     },
+    /// Choice labels only; the selected action stays in `AppPopup`.
+    Confirm {
+        body: String,
+        options: Vec<String>,
+        selected: usize,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -450,6 +456,22 @@ fn project_popup(popup: &AppPopup) -> PopupViewModel {
             scroll_offset: *scroll,
             dimensions: *dimensions,
         },
+        AppPopup::Confirm {
+            title,
+            body,
+            options,
+            selected,
+            dimensions,
+        } => PopupViewModel {
+            title: title.clone(),
+            body: PopupViewBody::Confirm {
+                body: body.clone(),
+                options: options.iter().map(|(label, _)| label.clone()).collect(),
+                selected: *selected,
+            },
+            scroll_offset: (0, 0),
+            dimensions: *dimensions,
+        },
     }
 }
 
@@ -515,6 +537,26 @@ mod tests {
         })));
 
         assert_eq!(Some("kw: building patchset-x".to_string()), vm.kw_running);
+    }
+
+    #[test]
+    fn confirm_popup_projects_labels_without_actions() {
+        let mut state = app_state_with_kw(None);
+        state.popup = Some(AppPopup::quit_while_job_running());
+        let vm = project_state(&state);
+        let popup = vm.popup.expect("confirm popup should project");
+        assert_eq!("Cancel build and quit?", popup.title);
+        let PopupViewBody::Confirm {
+            options, selected, ..
+        } = popup.body
+        else {
+            panic!("expected Confirm projection");
+        };
+        assert_eq!(
+            vec!["Cancel and quit".to_string(), "Wait".to_string()],
+            options
+        );
+        assert_eq!(1, selected);
     }
 
     #[test]

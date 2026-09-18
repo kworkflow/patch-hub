@@ -105,6 +105,12 @@ pub enum PopupBody {
         tested_by: String,
         acked_by: String,
     },
+    /// Confirmation choices. Labels only; the application owns the action.
+    Confirm {
+        body: String,
+        options: Vec<String>,
+        selected: usize,
+    },
 }
 
 /// Fully projected popup ready to be painted.
