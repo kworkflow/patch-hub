@@ -6,9 +6,64 @@ use crate::{
         screens::{kw_ops::KwOpsState, CurrentScreen},
         App,
     },
+    infrastructure::file_system::FileSystemError,
     input::event::InputEvent,
     kw::{errors::KwError, messages::StartRequest, status::KwJobStatus},
 };
+
+/// Bytes read from the end of a kw job log. Kernel build logs can be
+/// far larger than this; the TUI only needs a bounded tail.
+pub(crate) const LOG_TAIL_MAX_BYTES: usize = 64 * 1024;
+
+/// Refresh the KwOps log panel from the current job's log file.
+///
+/// A missing file is normal just after accept (`Waiting for kw output…`
+/// is projected from an empty tail). Other read errors become a
+/// non-fatal diagnostic in the panel and do not change job status.
+/// Returns whether the displayed text changed.
+pub(crate) fn refresh_kw_ops_log_tail(app: &mut App) -> bool {
+    let Some(path) = app
+        .state
+        .kw
+        .status
+        .as_ref()
+        .and_then(|status| status.job.log_path())
+        .map(std::path::PathBuf::from)
+    else {
+        return false;
+    };
+    if app.state.kw.ops.is_none() {
+        return false;
+    }
+    let text = tail_text_from_read(
+        app.services
+            .fs
+            .read_tail_to_string(&path, LOG_TAIL_MAX_BYTES),
+    );
+    let Some(ops) = app.state.kw.ops.as_mut() else {
+        return false;
+    };
+    assign_log_tail(ops, text)
+}
+
+fn tail_text_from_read(result: Result<String, FileSystemError>) -> String {
+    match result {
+        Ok(text) => text,
+        Err(FileSystemError::IoError(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+            String::new()
+        }
+        Err(error) => format!("(could not read log: {error})"),
+    }
+}
+
+fn assign_log_tail(ops: &mut KwOpsState, text: String) -> bool {
+    if ops.log_tail == text {
+        false
+    } else {
+        ops.log_tail = text;
+        true
+    }
+}
 
 pub async fn handle_kw_ops(app: &mut App, input: InputEvent) -> Result<()> {
     let editing = app.state.kw.ops.as_ref().is_some_and(|ops| ops.editing);
@@ -99,6 +154,7 @@ pub async fn open_kw_ops(app: &mut App) -> Result<()> {
                 readiness,
             ));
             app.set_current_screen(CurrentScreen::KwOps);
+            refresh_kw_ops_log_tail(app);
         }
         Err(error) => {
             app.state.popup = Some(AppPopup::info(
@@ -229,4 +285,69 @@ pub fn generate_help_popup() -> AppPopup {
         .keybind("r", "Restore the previous branch")
         .keybind("?", "Show this help screen")
         .build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::screens::kw_ops::KwOpsState;
+    use crate::kw::readiness::{
+        DeployAloneRefusal, KwBinaryProbe, KwReadiness, KwVersionCheck, TreeReadiness,
+    };
+
+    fn sample_ops() -> KwOpsState {
+        KwOpsState::new(
+            "title".to_string(),
+            "mid".to_string(),
+            "linux".to_string(),
+            serde_json::from_value(serde_json::json!({
+                "path": "/kernel",
+                "branch": "main"
+            }))
+            .unwrap(),
+            KwReadiness {
+                kw_binary: KwBinaryProbe {
+                    available: true,
+                    version_line: Some("kw, version 0.10.0".to_string()),
+                    check: KwVersionCheck::Meets,
+                },
+                tree: TreeReadiness::Ready {
+                    arch: Some("x86_64".to_string()),
+                },
+                output_dir: None,
+                kernel_image: None,
+                build_record: None,
+                latest_build: None,
+                deploy_alone: Err(DeployAloneRefusal::NoBuildRecord),
+                current_branch: Some("main".to_string()),
+            },
+        )
+    }
+
+    #[test]
+    fn missing_log_is_an_empty_tail_not_a_diagnostic() {
+        let missing =
+            FileSystemError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "missing"));
+        assert_eq!("", tail_text_from_read(Err(missing)));
+    }
+
+    #[test]
+    fn other_read_errors_become_a_panel_diagnostic() {
+        let error = FileSystemError::IoError(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "denied",
+        ));
+        let text = tail_text_from_read(Err(error));
+        assert!(text.contains("could not read log"));
+        assert!(text.contains("denied"));
+    }
+
+    #[test]
+    fn assign_log_tail_reports_whether_text_changed() {
+        let mut ops = sample_ops();
+        assert!(assign_log_tail(&mut ops, "cc1: compiling".to_string()));
+        assert!(!assign_log_tail(&mut ops, "cc1: compiling".to_string()));
+        assert!(assign_log_tail(&mut ops, "done".to_string()));
+        assert_eq!("done", ops.log_tail);
+    }
 }

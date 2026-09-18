@@ -3,22 +3,26 @@
 //! Each frame: process system updates → project state to [`AppViewModel`] via
 //! [`UiHandle`](crate::ui::handle::UiHandle) → draw through
 //! [`TerminalHandle`](crate::terminal::handle::TerminalHandle) → await the next
-//! [`InputEvent`](crate::input::event::InputEvent) or a kw-status change.
+//! [`InputEvent`](crate::input::event::InputEvent), a kw-status change, or a
+//! KwOps log-tail tick while a build is running on that screen.
 //!
 //! The actor stops when the input event channel closes (user quit) or when I/O
 //! returns an unrecoverable error. Startup dependency checks run before this
 //! actor is spawned.
-use std::ops::ControlFlow;
+use std::{ops::ControlFlow, time::Duration};
 
 use color_eyre::{eyre::eyre, Result};
-use tokio::{spawn, sync::mpsc, sync::watch};
+use tokio::{spawn, sync::mpsc, sync::watch, time::MissedTickBehavior};
 
 use crate::{
     app::{
         flows::{
-            bookmarked::handle_bookmarked_patchsets, details_actions::handle_patchset_details,
-            edit_config::handle_edit_config, kw_ops::handle_kw_ops,
-            latest::handle_latest_patchsets, mail_list::handle_mailing_list_selection,
+            bookmarked::handle_bookmarked_patchsets,
+            details_actions::handle_patchset_details,
+            edit_config::handle_edit_config,
+            kw_ops::{handle_kw_ops, refresh_kw_ops_log_tail},
+            latest::handle_latest_patchsets,
+            mail_list::handle_mailing_list_selection,
         },
         handle::AppHandle,
         loading::{terminal_error, TerminalLoadingIndicator},
@@ -55,6 +59,8 @@ enum KwWatchEvent {
     Closed,
 }
 
+const KW_OPS_LOG_TICK: Duration = Duration::from_millis(350);
+
 impl AppActor {
     /// Moves all resources into a new `AppActor`, spawns it on the Tokio
     /// runtime, and returns an [`AppHandle`] to wait on it.
@@ -82,20 +88,29 @@ impl AppActor {
 
         let mut kw_status_rx = self.subscribe_kw_status().await;
         let mut loading = TerminalLoadingIndicator::new(self.terminal_handle.clone());
+        let mut log_interval = tokio::time::interval_at(
+            tokio::time::Instant::now() + KW_OPS_LOG_TICK,
+            KW_OPS_LOG_TICK,
+        );
+        log_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
+        let mut redraw = true;
         loop {
             self.app.process_system_updates(&mut loading).await?;
 
-            let scene = self
-                .ui_handle
-                .build_scene(self.app.present())
-                .await
-                .map_err(|e| eyre!("{e}"))?;
-            self.terminal_handle
-                .draw(TerminalFrame::Main(Box::new(scene)))
-                .await
-                .map_err(terminal_error)?;
+            if redraw {
+                let scene = self
+                    .ui_handle
+                    .build_scene(self.app.present())
+                    .await
+                    .map_err(|e| eyre!("{e}"))?;
+                self.terminal_handle
+                    .draw(TerminalFrame::Main(Box::new(scene)))
+                    .await
+                    .map_err(terminal_error)?;
+            }
 
+            let tail_while_running = kw_ops_should_tail(&self.app);
             tokio::select! {
                 event = self.event_rx.recv() => {
                     match event {
@@ -108,6 +123,7 @@ impl AppActor {
                                         .update_context(self.app.input_context())
                                         .await
                                         .ok();
+                                    redraw = true;
                                 }
                                 ControlFlow::Break(()) => break,
                             }
@@ -122,6 +138,9 @@ impl AppActor {
                     match watch_event {
                         KwWatchEvent::Updated(snapshot) => {
                             self.app.state.kw.status = Some(snapshot);
+                            if self.app.state.kw.ops.is_some() {
+                                refresh_kw_ops_log_tail(&mut self.app);
+                            }
                         }
                         KwWatchEvent::Closed => {
                             tracing::warn!(
@@ -130,6 +149,10 @@ impl AppActor {
                             kw_status_rx = None;
                         }
                     }
+                    redraw = true;
+                }
+                _ = log_interval.tick(), if tail_while_running => {
+                    redraw = refresh_kw_ops_log_tail(&mut self.app);
                 }
             }
         }
@@ -172,6 +195,14 @@ async fn kw_status_changed(rx: &mut Option<watch::Receiver<KwStatusSnapshot>>) -
         },
         None => std::future::pending().await,
     }
+}
+
+fn kw_ops_should_tail(app: &App) -> bool {
+    app.state.navigation.current_screen == CurrentScreen::KwOps
+        && matches!(
+            app.state.kw.status.as_ref().map(|status| &status.job),
+            Some(KwJobStatus::Running { .. })
+        )
 }
 
 async fn on_input(

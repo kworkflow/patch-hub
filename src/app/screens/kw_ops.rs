@@ -24,7 +24,8 @@ pub struct KwOpsState {
     /// True when readiness could not name HEAD; Start stays disabled until
     /// the user types a branch (we never guess from `KernelTree.branch`).
     pub head_unreadable: bool,
-    /// Presentation-only; the next commit fills this from a bounded tail.
+    /// Bounded tail of the job log, refreshed by AppActor while KwOps is
+    /// visible and a job is running.
     pub log_tail: String,
     pub cancel_requested: bool,
 }

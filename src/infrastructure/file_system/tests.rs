@@ -192,3 +192,57 @@ fn metadata_returns_error_for_missing_path() {
     let result = fs.metadata(Path::new("/nonexistent/path"));
     assert!(result.is_err());
 }
+
+#[test]
+fn read_tail_returns_the_whole_file_when_it_fits() {
+    let dir = TempDir::new("read_tail_fits");
+    let file_path = dir.path().join("log.txt");
+    std::fs::write(&file_path, "line1\nline2\n").unwrap();
+
+    let fs = OsFileSystem;
+    assert_eq!(
+        "line1\nline2\n",
+        fs.read_tail_to_string(&file_path, 64).unwrap()
+    );
+}
+
+#[test]
+fn read_tail_drops_a_partial_first_line_when_seeking() {
+    let dir = TempDir::new("read_tail_partial");
+    let file_path = dir.path().join("log.txt");
+    // 14 bytes; an 8-byte window starts mid-"BBBB".
+    std::fs::write(&file_path, "AAAA\nBBBB\nCCCC").unwrap();
+
+    let fs = OsFileSystem;
+    assert_eq!("CCCC", fs.read_tail_to_string(&file_path, 8).unwrap());
+}
+
+#[test]
+fn read_tail_keeps_a_window_with_no_newline() {
+    let dir = TempDir::new("read_tail_nonewline");
+    let file_path = dir.path().join("log.txt");
+    std::fs::write(&file_path, "abcdefghijklmnopqrst").unwrap();
+
+    let fs = OsFileSystem;
+    assert_eq!("mnopqrst", fs.read_tail_to_string(&file_path, 8).unwrap());
+}
+
+#[test]
+fn read_tail_decodes_invalid_utf8_lossily() {
+    let dir = TempDir::new("read_tail_utf8");
+    let file_path = dir.path().join("log.txt");
+    std::fs::write(&file_path, b"ok\n\xff\xfeworld").unwrap();
+
+    let fs = OsFileSystem;
+    let text = fs.read_tail_to_string(&file_path, 64).unwrap();
+    assert!(text.starts_with("ok\n"));
+    assert!(text.contains('\u{FFFD}'));
+    assert!(text.ends_with("world"));
+}
+
+#[test]
+fn read_tail_errors_for_a_missing_file() {
+    let fs = OsFileSystem;
+    let result = fs.read_tail_to_string(Path::new("/nonexistent/path/log.txt"), 64);
+    assert!(result.is_err());
+}

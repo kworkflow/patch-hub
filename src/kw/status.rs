@@ -87,6 +87,19 @@ impl KwStatusSnapshot {
     }
 }
 
+impl KwJobStatus {
+    /// Log file for the current or last job, if the actor has opened one.
+    pub fn log_path(&self) -> Option<&std::path::Path> {
+        match self {
+            Self::Idle => None,
+            Self::Running { log_path, .. }
+            | Self::Succeeded { log_path, .. }
+            | Self::Failed { log_path, .. }
+            | Self::Cancelled { log_path, .. } => Some(log_path),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -112,6 +125,15 @@ mod tests {
             Some("kw: building patchset-x".to_string()),
             running("patchset-x").running_indicator()
         );
+    }
+
+    #[test]
+    fn log_path_is_present_for_jobs_with_a_log() {
+        assert_eq!(
+            Some(PathBuf::from("/tmp/build.log").as_path()),
+            running("patchset-x").job.log_path()
+        );
+        assert_eq!(None, KwJobStatus::Idle.log_path());
     }
 
     #[test]

@@ -9,7 +9,7 @@ pub use r#trait::MockFileSystemTrait;
 
 use std::{
     fs::{self, File},
-    io::{self, BufReader},
+    io::{self, BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
 
@@ -67,5 +67,28 @@ impl FileSystemTrait for OsFileSystem {
 
     fn metadata(&self, path: &Path) -> Result<fs::Metadata, FileSystemError> {
         Ok(fs::metadata(path)?)
+    }
+
+    fn read_tail_to_string(
+        &self,
+        path: &Path,
+        max_bytes: usize,
+    ) -> Result<String, FileSystemError> {
+        let mut file = File::open(path)?;
+        let len = file.metadata()?.len();
+        let window = max_bytes as u64;
+        let start = len.saturating_sub(window);
+        file.seek(SeekFrom::Start(start))?;
+        let mut buf = vec![0u8; (len - start) as usize];
+        file.read_exact(&mut buf)?;
+        let bytes = if start > 0 {
+            match buf.iter().position(|&b| b == b'\n') {
+                Some(index) => &buf[index + 1..],
+                None => buf.as_slice(),
+            }
+        } else {
+            buf.as_slice()
+        };
+        Ok(String::from_utf8_lossy(bytes).into_owned())
     }
 }

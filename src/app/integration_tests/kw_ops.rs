@@ -65,12 +65,14 @@ mod unix {
         path::PathBuf,
         sync::{
             atomic::{AtomicU64, Ordering},
-            Arc,
+            Arc, Mutex,
         },
+        time::Duration,
     };
 
     use crate::{
         app::{
+            actor::AppActor,
             flows::{details_actions::handle_patchset_details, kw_ops::handle_kw_ops},
             screens::CurrentScreen,
             App,
@@ -78,13 +80,20 @@ mod unix {
         config::{ConfigSnapshot, ConfigState},
         infrastructure::{
             env::MockEnvTrait,
-            file_system::{FileSystemError, MockFileSystemTrait},
+            file_system::{FileSystemError, FileSystemTrait, MockFileSystemTrait, OsFileSystem},
             process::FakeProcess,
             shell::{MockShellTrait, ShellOutput},
         },
-        input::event::InputEvent,
+        input::{event::InputEvent, handle::InputHandle, messages::InputMessage},
         kw::{actor::KwActor, history::MockKwHistoryStore, status::KwJobStatus},
         lore::application::cache::BootstrapLoreData,
+        terminal::{
+            actor::TerminalActor, messages::TerminalFrame, session::MockTerminalSessionApi,
+        },
+        ui::{
+            actor::UiActor,
+            scene::{UiBody, UiScene},
+        },
     };
 
     use super::{assert_info_popup, details_state};
@@ -149,6 +158,7 @@ mod unix {
             &log_dir,
             head_branch_shell("feature"),
             process.clone(),
+            Box::new(MockFileSystemTrait::new()),
         );
         handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
@@ -203,14 +213,93 @@ mod unix {
         std::fs::remove_dir_all(&log_dir).unwrap();
     }
 
+    #[tokio::test(flavor = "multi_thread")]
+    async fn live_tail_updates_without_input_and_pauses_off_screen() {
+        let log_dir = kw_log_dir("live-tail");
+        let process = Arc::new(FakeProcess::new());
+        let app = app_with_details_and_kw_process(
+            &log_dir,
+            head_branch_shell("feature"),
+            process.clone(),
+            Box::new(OsFileSystem),
+        );
+        let kw = app.services.kw.as_ref().unwrap().clone();
+        let (scenes, event_tx, handle) = spawn_app_actor(app);
+
+        event_tx.send(InputEvent::OpenKwOps).await.unwrap();
+        wait_for_kw_ops(&scenes, |_| true).await;
+
+        event_tx.send(InputEvent::StartKwBuild).await.unwrap();
+        wait_for_nav(&scenes, |text| text.contains("kw: building feature")).await;
+        wait_for_kw_ops(&scenes, |ops| {
+            ops.log_tail.contains("Waiting for kw output")
+        })
+        .await;
+
+        process.last_child().write_log(b"cc1: compiling foo.c\n");
+        wait_for_kw_ops(&scenes, |ops| ops.log_tail.contains("cc1: compiling foo.c")).await;
+
+        event_tx.send(InputEvent::Back).await.unwrap();
+        wait_for_details(&scenes).await;
+        wait_for_nav(&scenes, |text| text.contains("kw: building feature")).await;
+
+        let draws_on_details = scene_count(&scenes);
+        tokio::time::sleep(Duration::from_millis(800)).await;
+        process.last_child().write_log(b"ld: linking vmlinux\n");
+        tokio::time::sleep(Duration::from_millis(800)).await;
+        assert_eq!(
+            draws_on_details,
+            scene_count(&scenes),
+            "log ticks must not redraw while away from KwOps"
+        );
+
+        event_tx.send(InputEvent::ToggleBookmark).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if scene_count(&scenes) > draws_on_details {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("input must still redraw off KwOps");
+
+        event_tx.send(InputEvent::OpenKwOps).await.unwrap();
+        wait_for_kw_ops(&scenes, |ops| {
+            ops.log_tail.contains("cc1: compiling foo.c")
+                && ops.log_tail.contains("ld: linking vmlinux")
+        })
+        .await;
+
+        process.last_child().finish(0);
+        wait_for_kw_ops(&scenes, |ops| ops.job_status.contains("succeeded")).await;
+        wait_for_kw_ops(&scenes, |ops| {
+            ops.log_tail.contains("cc1: compiling foo.c")
+                && ops.log_tail.contains("ld: linking vmlinux")
+        })
+        .await;
+
+        drop(event_tx);
+        handle.run_until_done().await.unwrap();
+        kw.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
     fn app_with_details_and_kw(log_dir: &std::path::Path, kw_shell: MockShellTrait) -> App {
-        app_with_details_and_kw_process(log_dir, kw_shell, Arc::new(FakeProcess::new()))
+        app_with_details_and_kw_process(
+            log_dir,
+            kw_shell,
+            Arc::new(FakeProcess::new()),
+            Box::new(MockFileSystemTrait::new()),
+        )
     }
 
     fn app_with_details_and_kw_process(
         log_dir: &std::path::Path,
         kw_shell: MockShellTrait,
         process: Arc<FakeProcess>,
+        app_fs: Box<dyn FileSystemTrait>,
     ) -> App {
         let mut history = MockKwHistoryStore::new();
         history
@@ -236,7 +325,7 @@ mod unix {
                 bookmarks: vec![],
                 reviewed: Default::default(),
             },
-            Box::new(MockFileSystemTrait::new()),
+            app_fs,
             Box::new(MockShellTrait::new()),
             lore_handle_with_persistence(),
             dummy_render_handle(),
@@ -325,5 +414,103 @@ mod unix {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    fn spawn_app_actor(
+        app: App,
+    ) -> (
+        Arc<Mutex<Vec<UiScene>>>,
+        tokio::sync::mpsc::Sender<InputEvent>,
+        crate::app::handle::AppHandle,
+    ) {
+        let scenes = Arc::new(Mutex::new(Vec::new()));
+        let scenes_for_draw = Arc::clone(&scenes);
+        let mut session = MockTerminalSessionApi::new();
+        session
+            .expect_draw()
+            .withf(|frame| matches!(frame, TerminalFrame::Main(_)))
+            .times(1..)
+            .returning(move |frame| {
+                if let TerminalFrame::Main(scene) = frame {
+                    scenes_for_draw.lock().unwrap().push(*scene);
+                }
+                Ok(())
+            });
+
+        let terminal_handle = TerminalActor::spawn(Box::new(session));
+        let ui_handle = UiActor::spawn();
+        let (event_tx, event_rx) = tokio::sync::mpsc::channel::<InputEvent>(8);
+        let (input_tx, _input_rx) = tokio::sync::mpsc::channel::<InputMessage>(1);
+        let input_handle = InputHandle::new(input_tx);
+        let handle = AppActor::spawn(app, terminal_handle, ui_handle, input_handle, event_rx);
+        (scenes, event_tx, handle)
+    }
+
+    async fn wait_for_nav(scenes: &Arc<Mutex<Vec<UiScene>>>, predicate: impl Fn(&str) -> bool) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if scenes
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|scene| predicate(&nav_text(scene)))
+                {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("expected navigation text did not appear");
+    }
+
+    async fn wait_for_kw_ops(
+        scenes: &Arc<Mutex<Vec<UiScene>>>,
+        predicate: impl Fn(&crate::ui::scene::KwOpsScene) -> bool,
+    ) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let matches = scenes.lock().unwrap().last().is_some_and(
+                    |scene| matches!(&scene.body, UiBody::KwOps(ops) if predicate(ops)),
+                );
+                if matches {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("expected KwOps scene did not appear");
+    }
+
+    async fn wait_for_details(scenes: &Arc<Mutex<Vec<UiScene>>>) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if scenes
+                    .lock()
+                    .unwrap()
+                    .last()
+                    .is_some_and(|scene| matches!(scene.body, UiBody::PatchsetDetails(_)))
+                {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("expected Patchset Details scene did not appear");
+    }
+
+    fn scene_count(scenes: &Arc<Mutex<Vec<UiScene>>>) -> usize {
+        scenes.lock().unwrap().len()
+    }
+
+    fn nav_text(scene: &UiScene) -> String {
+        scene
+            .navigation
+            .mode_spans
+            .iter()
+            .map(|span| span.content.to_string())
+            .collect()
     }
 }
