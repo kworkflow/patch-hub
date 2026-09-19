@@ -9,4 +9,5 @@ pub mod handle;
 pub mod history;
 pub mod messages;
 pub mod readiness;
+pub mod remote;
 pub mod status;
