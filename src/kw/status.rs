@@ -100,6 +100,28 @@ impl KwJobStatus {
     }
 }
 
+/// Human-readable hint for a `kw deploy` exit code, when we know it.
+///
+/// Codes are the ones verified in kw 0.10's deploy path (`src/deploy.sh`,
+/// `install.sh`, `bootloader.sh`). Unknown codes — including errno 30
+/// (EROFS), which is not used there — return `None` so the UI can still
+/// show the raw number. 68 can still surface even with `--force`: force
+/// only skips the interactive prompt, not the underlying initramfs
+/// errors.
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn deploy_exit_hint(code: i32) -> Option<&'static str> {
+    Some(match code {
+        2 => "kernel image not found",
+        22 => "invalid option or kernel name",
+        68 => "initramfs generation reported errors",
+        95 => "unsupported bootloader",
+        101 => "SSH unreachable after setup",
+        103 => "passwordless root SSH setup failed",
+        124 | 125 => "deploy cancelled, no valid kernel image, or not a kernel root",
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -164,5 +186,36 @@ mod tests {
             }
             .running_indicator()
         );
+    }
+
+    #[test]
+    fn deploy_exit_hint_names_the_known_deploy_codes() {
+        let cases = [
+            (2, "kernel image not found"),
+            (22, "invalid option or kernel name"),
+            (68, "initramfs generation reported errors"),
+            (95, "unsupported bootloader"),
+            (101, "SSH unreachable after setup"),
+            (103, "passwordless root SSH setup failed"),
+            (
+                124,
+                "deploy cancelled, no valid kernel image, or not a kernel root",
+            ),
+            (
+                125,
+                "deploy cancelled, no valid kernel image, or not a kernel root",
+            ),
+        ];
+        for (code, hint) in cases {
+            assert_eq!(Some(hint), deploy_exit_hint(code), "code {code}");
+        }
+    }
+
+    #[test]
+    fn deploy_exit_hint_leaves_unknown_codes_unnamed() {
+        // 30/EROFS was a stale map entry: kw's deploy path never returns it.
+        assert_eq!(None, deploy_exit_hint(30));
+        assert_eq!(None, deploy_exit_hint(1));
+        assert_eq!(None, deploy_exit_hint(0));
     }
 }
