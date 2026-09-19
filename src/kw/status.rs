@@ -12,7 +12,6 @@ use std::path::PathBuf;
 pub enum KwJobKind {
     Build,
     Deploy,
-    #[allow(dead_code)]
     BuildThenDeploy,
 }
 

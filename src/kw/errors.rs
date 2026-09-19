@@ -66,8 +66,6 @@ pub enum KwStartError {
     BootOnceNotAcknowledged,
     #[error("{0}")]
     DeployAloneRefused(DeployAloneRefusal),
-    #[error("kw jobs are not supported yet")]
-    NotImplemented,
     // Spawning a process is unix-only (ProcessTrait is cfg(unix)).
     #[cfg(unix)]
     #[error("failed to spawn the kw process: {0}")]

@@ -58,7 +58,6 @@ pub enum KwMessage {
         reply: oneshot::Sender<Result<(), KwStartError>>,
     },
     StartBuildThenDeploy {
-        #[allow(dead_code)]
         request: StartRequest,
         reply: oneshot::Sender<Result<(), KwStartError>>,
     },
