@@ -217,12 +217,14 @@ impl KwActor {
             KwMessage::GetReadiness {
                 kernel_tree_id,
                 tree,
+                for_branch,
                 reply,
             } => {
                 send_kw_reply(
                     message_name,
                     reply,
-                    self.evaluate_readiness(&kernel_tree_id, &tree).await,
+                    self.evaluate_readiness(&kernel_tree_id, &tree, for_branch)
+                        .await,
                 );
                 ControlFlow::Continue(())
             }
@@ -613,6 +615,7 @@ impl KwActor {
         &self,
         kernel_tree_id: &str,
         tree: &KernelTree,
+        for_branch: Option<String>,
     ) -> Result<KwReadiness, KwError> {
         let fs = Arc::clone(&self.fs);
         let env = Arc::clone(&self.env);
@@ -630,6 +633,7 @@ impl KwActor {
                 &kernel_tree_id,
                 &tree,
                 &head,
+                for_branch.as_deref(),
             )
             .map_err(KwError::from)
         })
@@ -906,7 +910,8 @@ mod tests {
             errors::KwStartError,
             history::{KwApplyRecord, KwBuildRecord, MockKwHistoryStore},
             messages::StartRequest,
-            readiness::{DeployAloneRefusal, TreeReadiness},
+            readiness::{BootOnceState, DeployAloneRefusal, TreeReadiness},
+            remote::RemoteRefusal,
             status::{KwJobKind, KwJobStatus, KwPhase},
         },
     };
@@ -1329,6 +1334,8 @@ mod tests {
         env.expect_which()
             .withf(|name| name == "kw")
             .returning(|_| false);
+        env.expect_var()
+            .returning(|_| Err(std::env::VarError::NotPresent.into()));
         let mut fs = MockFileSystemTrait::new();
         fs.expect_is_file().returning(|_| false);
         fs.expect_is_dir().returning(|_| false);
@@ -1361,7 +1368,7 @@ mod tests {
             });
         let handle = spawn_test_actor("readiness", history, shell, fs, env);
 
-        let readiness = handle.get_readiness("mainline", &tree).await.unwrap();
+        let readiness = handle.get_readiness("mainline", &tree, None).await.unwrap();
 
         assert!(!readiness.kw_binary.available);
         assert_eq!(TreeReadiness::Missing, readiness.tree);
@@ -1369,6 +1376,64 @@ mod tests {
             Err(DeployAloneRefusal::TreeNotReady(TreeReadiness::Missing)),
             readiness.deploy_alone
         );
+        assert_eq!(Some("for-next".to_string()), readiness.current_branch);
+        assert_eq!(
+            Err(RemoteRefusal::NoRemotesConfigured),
+            readiness.deploy_remote
+        );
+        assert_eq!(BootOnceState::Unknown, readiness.boot_once);
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn get_readiness_for_branch_looks_up_that_branch_not_head() {
+        let tree = kernel_tree(Path::new("/home/user/linux"));
+
+        let mut env = MockEnvTrait::new();
+        env.expect_which()
+            .withf(|name| name == "kw")
+            .returning(|_| false);
+        env.expect_var()
+            .returning(|_| Err(std::env::VarError::NotPresent.into()));
+        let mut fs = MockFileSystemTrait::new();
+        fs.expect_is_file().returning(|_| false);
+        fs.expect_is_dir().returning(|_| false);
+        fs.expect_read_dir().returning(|_| {
+            Err(FileSystemError::IoError(io::Error::new(
+                io::ErrorKind::NotFound,
+                "missing",
+            )))
+        });
+        let mut history = MockKwHistoryStore::new();
+        history
+            .expect_build_records()
+            .withf(|kernel_tree_id, branch| kernel_tree_id == "mainline" && branch == "patchset-x")
+            .times(1)
+            .returning(|_, _| Ok((None, None)));
+        let mut shell = MockShellTrait::new();
+        shell
+            .expect_execute()
+            .withf(|cmd| {
+                cmd.program == "git"
+                    && cmd.args == ["-C", "/home/user/linux", "branch", "--show-current"]
+            })
+            .times(1)
+            .returning(|_| {
+                Ok(ShellOutput {
+                    stdout: b"master\n".to_vec(),
+                    stderr: Vec::new(),
+                    success: true,
+                })
+            });
+        let handle = spawn_test_actor("readiness-for-branch", history, shell, fs, env);
+
+        let readiness = handle
+            .get_readiness("mainline", &tree, Some("patchset-x"))
+            .await
+            .unwrap();
+
+        assert_eq!(Some("master".to_string()), readiness.current_branch);
+        assert_eq!(None, readiness.build_record);
         handle.shutdown().await;
     }
 

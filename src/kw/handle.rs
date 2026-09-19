@@ -61,10 +61,12 @@ impl KwHandle {
         &self,
         kernel_tree_id: &str,
         tree: &KernelTree,
+        for_branch: Option<&str>,
     ) -> Result<KwReadiness, KwError> {
         self.request_result(|reply| KwMessage::GetReadiness {
             kernel_tree_id: kernel_tree_id.to_string(),
             tree: tree.clone(),
+            for_branch: for_branch.map(str::to_string),
             reply,
         })
         .await

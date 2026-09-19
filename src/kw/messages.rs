@@ -64,6 +64,9 @@ pub enum KwMessage {
     GetReadiness {
         kernel_tree_id: String,
         tree: KernelTree,
+        /// When set, deploy-alone is judged against this branch instead of
+        /// HEAD. `KwReadiness::current_branch` still reports the real HEAD.
+        for_branch: Option<String>,
         reply: oneshot::Sender<Result<KwReadiness, KwError>>,
     },
     RestorePreviousBranch {

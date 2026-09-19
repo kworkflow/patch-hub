@@ -197,7 +197,7 @@ pub async fn open_kw_ops(app: &mut App) -> Result<()> {
         return Ok(());
     };
 
-    match kw.get_readiness(&kernel_tree_id, &tree).await {
+    match kw.get_readiness(&kernel_tree_id, &tree, None).await {
         Ok(readiness) => {
             let reuse = app.state.kw.ops.as_ref().is_some_and(|ops| {
                 ops.message_id == message_id && ops.kernel_tree_id == kernel_tree_id
@@ -371,8 +371,10 @@ mod tests {
     use super::*;
     use crate::app::screens::kw_ops::KwOpsState;
     use crate::kw::readiness::{
-        DeployAloneRefusal, KwBinaryProbe, KwReadiness, KwVersionCheck, TreeReadiness,
+        BootOnceState, DeployAloneRefusal, KwBinaryProbe, KwReadiness, KwVersionCheck,
+        TreeReadiness,
     };
+    use crate::kw::remote::RemoteRefusal;
 
     fn sample_ops() -> KwOpsState {
         KwOpsState::new(
@@ -399,6 +401,8 @@ mod tests {
                 latest_build: None,
                 deploy_alone: Err(DeployAloneRefusal::NoBuildRecord),
                 current_branch: Some("main".to_string()),
+                deploy_remote: Err(RemoteRefusal::NoRemotesConfigured),
+                boot_once: BootOnceState::Unknown,
             },
         )
     }

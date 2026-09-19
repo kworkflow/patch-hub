@@ -12,10 +12,10 @@
 //! to the home copy would silently deploy to a different machine than the
 //! tree is configured for.
 //!
-//! Production callers land with the deploy start path; until then this
-//! module is exercised by its tests.
+//! Production callers are readiness probes and the unix-only deploy start
+//! path.
 
-#![cfg_attr(not(test), allow(dead_code))]
+#![cfg_attr(not(unix), allow(dead_code))]
 
 use std::path::{Path, PathBuf};
 

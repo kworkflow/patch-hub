@@ -138,8 +138,10 @@ fn split_extra_args(raw: &str) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::kw::readiness::{
-        DeployAloneRefusal, KwBinaryProbe, KwReadiness, KwVersionCheck, TreeReadiness,
+        BootOnceState, DeployAloneRefusal, KwBinaryProbe, KwReadiness, KwVersionCheck,
+        TreeReadiness,
     };
+    use crate::kw::remote::RemoteRefusal;
 
     fn sample_tree() -> KernelTree {
         serde_json::from_value(serde_json::json!({
@@ -165,6 +167,8 @@ mod tests {
             latest_build: None,
             deploy_alone: Err(DeployAloneRefusal::NoBuildRecord),
             current_branch: branch.map(str::to_string),
+            deploy_remote: Err(RemoteRefusal::NoRemotesConfigured),
+            boot_once: BootOnceState::Unknown,
         }
     }
 

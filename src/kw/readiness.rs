@@ -27,7 +27,10 @@ use crate::infrastructure::{
 };
 use crate::{
     config::KernelTree,
-    kw::history::{KwBuildRecord, KwHistoryStore},
+    kw::{
+        history::{KwBuildRecord, KwHistoryStore},
+        remote::{self, KwRemote, RemoteRefusal},
+    },
 };
 
 /// Errors from readiness probes for states where "absent" is not a normal
@@ -439,10 +442,76 @@ pub enum DeployAloneRefusal {
     ImageMissing,
 }
 
+/// Whether `.kw/deploy.config` (then the user-level copy) sets
+/// `boot_into_new_kernel_once=no`.
+///
+/// kw only treats the literal value `no` as off (`src/deploy.sh`); any other
+/// value, including a missing key, leaves the option on. [`Unknown`] is
+/// therefore a confirm-to-proceed gate, same as [`On`]: patch-hub cannot
+/// pass a CLI off-switch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BootOnceState {
+    Off,
+    On,
+    Unknown,
+}
+
+/// Reads `boot_into_new_kernel_once` from `<tree>/.kw/deploy.config`, then
+/// `${XDG_CONFIG_HOME:-$HOME/.config}/kw/deploy.config`. A present but
+/// unreadable tree file is [`BootOnceState::Unknown`] rather than a guess
+/// at the home copy. A readable tree file that simply omits the key still
+/// falls through, matching kw's merged-config lookup.
+pub fn probe_boot_once(
+    fs: &dyn FileSystemTrait,
+    env: &dyn EnvTrait,
+    tree_path: &Path,
+) -> BootOnceState {
+    let local = tree_path.join(".kw").join("deploy.config");
+    if fs.is_file(&local) {
+        match boot_once_from_file(fs, &local) {
+            Err(()) => return BootOnceState::Unknown,
+            Ok(Some(state)) => return state,
+            Ok(None) => {}
+        }
+    }
+    let Some(global) = xdg_kw_config_file(env, "deploy.config") else {
+        return BootOnceState::Unknown;
+    };
+    if !fs.is_file(&global) {
+        return BootOnceState::Unknown;
+    }
+    match boot_once_from_file(fs, &global) {
+        Ok(Some(state)) => state,
+        Ok(None) | Err(()) => BootOnceState::Unknown,
+    }
+}
+
+fn boot_once_from_file(fs: &dyn FileSystemTrait, path: &Path) -> Result<Option<BootOnceState>, ()> {
+    let content = fs.read_to_string(path).map_err(|_| ())?;
+    Ok(parse_kw_config(&content)
+        .remove("boot_into_new_kernel_once")
+        .map(|value| match value.as_str() {
+            "no" => BootOnceState::Off,
+            "yes" => BootOnceState::On,
+            _ => BootOnceState::Unknown,
+        }))
+}
+
+/// `${XDG_CONFIG_HOME:-$HOME/.config}/kw/<filename>`. A set-but-empty
+/// `XDG_CONFIG_HOME` is treated as unset, matching bash `:-` and the XDG
+/// spec.
+fn xdg_kw_config_file(env: &dyn EnvTrait, filename: &str) -> Option<PathBuf> {
+    let config_home = match env.var("XDG_CONFIG_HOME") {
+        Ok(xdg) if !xdg.is_empty() => xdg,
+        _ => format!("{}/.config", env.var("HOME").ok()?),
+    };
+    Some(Path::new(&config_home).join("kw").join(filename))
+}
+
 /// Deploy-alone readiness gate: a deploy without a preceding build is only
-/// allowed when a successful build record exists for the tree and current
-/// HEAD, written against the same tree path and kw env, and a kernel image
-/// is still discoverable.
+/// allowed when a successful build record exists for the tree and the
+/// lookup branch, written against the same tree path and kw env, and a
+/// kernel image is still discoverable.
 ///
 /// This is only the record-matching half of the gate — it says nothing
 /// about the tree's *current* state. [`evaluate_readiness`] conjoins
@@ -494,7 +563,7 @@ pub struct KwReadiness {
     pub output_dir: Option<PathBuf>,
     /// Newest discoverable kernel image under the build root, if any.
     pub kernel_image: Option<PathBuf>,
-    /// Build record for `(kernel_tree_id, head_branch)`, if any.
+    /// Build record for `(kernel_tree_id, lookup_branch)`, if any.
     pub build_record: Option<KwBuildRecord>,
     /// Newest build record for the tree across branches, even when HEAD
     /// has none.
@@ -505,11 +574,18 @@ pub struct KwReadiness {
     /// Currently checked-out branch. `None` when HEAD is detached or
     /// `git branch --show-current` could not be read.
     pub current_branch: Option<String>,
+    /// Resolved `--remote` target, or why none could be chosen.
+    pub deploy_remote: Result<KwRemote, RemoteRefusal>,
+    pub boot_once: BootOnceState,
 }
 
 /// Runs all readiness probes for `tree` and composes them into a
 /// [`KwReadiness`] snapshot. `head_branch` is the tree's current branch —
 /// resolving it (via git) is the caller's job, keeping these probes pure.
+///
+/// `for_branch`, when set, is the branch deploy-alone should be judged
+/// against (the branch typed on KwOps). `current_branch` still reports
+/// the real HEAD so the UI can show both.
 // The only caller is the unix-only actor's GetReadiness.
 #[cfg_attr(not(unix), allow(dead_code))]
 pub fn evaluate_readiness(
@@ -520,6 +596,7 @@ pub fn evaluate_readiness(
     kernel_tree_id: &str,
     tree: &KernelTree,
     head_branch: &str,
+    for_branch: Option<&str>,
 ) -> Result<KwReadiness, KwReadinessError> {
     let tree_path = Path::new(tree.path());
     let kw_binary = probe_kw_binary(env, shell);
@@ -534,7 +611,14 @@ pub fn evaluate_readiness(
         output_dir.as_deref().unwrap_or(tree_path),
         arch.as_deref(),
     );
-    let (build_record, latest_build) = history.build_records(kernel_tree_id, head_branch)?;
+    let lookup_branch = match for_branch
+        .map(str::trim)
+        .filter(|branch| !branch.is_empty())
+    {
+        Some(branch) => branch,
+        None => head_branch,
+    };
+    let (build_record, latest_build) = history.build_records(kernel_tree_id, lookup_branch)?;
     // The tree's current state is part of the verdict: a stale image and a
     // matching record must not green-light a deploy on a tree that has
     // since lost its .config, .kw/, or kernel-root files.
@@ -542,7 +626,7 @@ pub fn evaluate_readiness(
         TreeReadiness::Ready { .. } => check_deploy_alone(
             build_record.as_ref(),
             tree,
-            head_branch,
+            lookup_branch,
             output_dir.as_deref(),
             kernel_image.as_deref(),
         ),
@@ -564,6 +648,8 @@ pub fn evaluate_readiness(
                 Some(trimmed.to_string())
             }
         },
+        deploy_remote: remote::resolve_deploy_remote(fs, env, tree_path),
+        boot_once: probe_boot_once(fs, env, tree_path),
     })
 }
 
@@ -1315,6 +1401,16 @@ last_line_without_newline=yes";
     fn evaluate_readiness_composes_all_probes() {
         let dir = make_ready_tree("evaluate");
         fs::write(dir.path().join(".kw/build.config"), "arch=x86\n").unwrap();
+        fs::write(
+            dir.path().join(".kw/deploy.config"),
+            "boot_into_new_kernel_once=no\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join(".kw/remote.config"),
+            "#kw-default=dut\nHost dut\n  Hostname box\n  Port 22\n  User root\n",
+        )
+        .unwrap();
         let boot = dir.path().join("arch/x86/boot");
         fs::create_dir_all(&boot).unwrap();
         write_file_with_mtime(&boot.join("bzImage"), 100);
@@ -1343,6 +1439,7 @@ last_line_without_newline=yes";
             "mainline",
             &tree,
             "patchset-x",
+            None,
         )
         .unwrap();
 
@@ -1360,6 +1457,8 @@ last_line_without_newline=yes";
         assert!(readiness.kw_binary.available);
         assert_eq!(KwVersionCheck::Meets, readiness.kw_binary.check);
         assert_eq!(Some("patchset-x".to_string()), readiness.current_branch);
+        assert_eq!("root@box:22", readiness.deploy_remote.unwrap().endpoint());
+        assert_eq!(BootOnceState::Off, readiness.boot_once);
     }
 
     #[test]
@@ -1374,6 +1473,8 @@ last_line_without_newline=yes";
 
         let mut env = MockEnvTrait::new();
         env.expect_which().returning(|_| false);
+        env.expect_var()
+            .returning(|_| Err(std::env::VarError::NotPresent.into()));
         let mut shell = MockShellTrait::new();
         shell.expect_execute().times(0);
 
@@ -1386,6 +1487,7 @@ last_line_without_newline=yes";
             "mainline",
             &tree,
             "patchset-x",
+            None,
         )
         .unwrap();
 
@@ -1399,6 +1501,11 @@ last_line_without_newline=yes";
             Err(DeployAloneRefusal::TreeNotReady(TreeReadiness::Missing)),
             readiness.deploy_alone
         );
+        assert_eq!(
+            Err(RemoteRefusal::NoRemotesConfigured),
+            readiness.deploy_remote
+        );
+        assert_eq!(BootOnceState::Unknown, readiness.boot_once);
     }
 
     #[test]
@@ -1412,6 +1519,8 @@ last_line_without_newline=yes";
 
         let mut env = MockEnvTrait::new();
         env.expect_which().returning(|_| false);
+        env.expect_var()
+            .returning(|_| Err(std::env::VarError::NotPresent.into()));
         let mut shell = MockShellTrait::new();
         shell.expect_execute().times(0);
 
@@ -1424,6 +1533,7 @@ last_line_without_newline=yes";
             "mainline",
             &tree,
             "patchset-x",
+            None,
         )
         .unwrap();
 
@@ -1438,6 +1548,7 @@ last_line_without_newline=yes";
         );
         assert!(!readiness.kw_binary.available);
         assert_eq!(Some("patchset-x".to_string()), readiness.current_branch);
+        assert_eq!(BootOnceState::Unknown, readiness.boot_once);
     }
 
     #[test]
@@ -1450,12 +1561,190 @@ last_line_without_newline=yes";
         );
         let mut env = MockEnvTrait::new();
         env.expect_which().returning(|_| false);
+        env.expect_var()
+            .returning(|_| Err(std::env::VarError::NotPresent.into()));
         let mut shell = MockShellTrait::new();
         shell.expect_execute().times(0);
         let tree = kernel_tree(dir.path());
-        let readiness =
-            evaluate_readiness(&OsFileSystem, &env, &shell, &history, "mainline", &tree, "")
-                .unwrap();
+        let readiness = evaluate_readiness(
+            &OsFileSystem,
+            &env,
+            &shell,
+            &history,
+            "mainline",
+            &tree,
+            "",
+            None,
+        )
+        .unwrap();
         assert_eq!(None, readiness.current_branch);
+    }
+
+    #[test]
+    fn evaluate_readiness_for_branch_looks_up_that_branch_not_head() {
+        let dir = make_ready_tree("evaluate-for-branch");
+        let data = TempDir::new("evaluate-for-branch-data");
+        let history = FileKwHistoryStore::new(
+            Arc::new(OsFileSystem),
+            data.path().to_str().unwrap().to_string(),
+        );
+        let record = built_record(dir.path(), "patchset-x");
+        history.record_build(record.clone()).unwrap();
+        let boot = dir.path().join("arch/x86/boot");
+        fs::create_dir_all(&boot).unwrap();
+        write_file_with_mtime(&boot.join("bzImage"), 100);
+        fs::write(dir.path().join(".kw/build.config"), "arch=x86\n").unwrap();
+
+        let mut env = MockEnvTrait::new();
+        env.expect_which().returning(|_| false);
+        env.expect_var()
+            .returning(|_| Err(std::env::VarError::NotPresent.into()));
+        let mut shell = MockShellTrait::new();
+        shell.expect_execute().times(0);
+        let tree = kernel_tree(dir.path());
+
+        let on_head = evaluate_readiness(
+            &OsFileSystem,
+            &env,
+            &shell,
+            &history,
+            "mainline",
+            &tree,
+            "master",
+            None,
+        )
+        .unwrap();
+        assert_eq!(Some("master".to_string()), on_head.current_branch);
+        assert_eq!(None, on_head.build_record);
+        assert_eq!(Err(DeployAloneRefusal::NoBuildRecord), on_head.deploy_alone);
+
+        let for_typed = evaluate_readiness(
+            &OsFileSystem,
+            &env,
+            &shell,
+            &history,
+            "mainline",
+            &tree,
+            "master",
+            Some("patchset-x"),
+        )
+        .unwrap();
+        // HEAD is still master; deploy-alone is judged against the typed branch.
+        assert_eq!(Some("master".to_string()), for_typed.current_branch);
+        assert_eq!(Some(record), for_typed.build_record);
+        assert_eq!(Ok(()), for_typed.deploy_alone);
+    }
+
+    #[test]
+    fn probe_boot_once_reads_literal_no_and_yes() {
+        let off = make_ready_tree("boot-once-off");
+        fs::write(
+            off.path().join(".kw/deploy.config"),
+            "boot_into_new_kernel_once=no\n",
+        )
+        .unwrap();
+        let env = MockEnvTrait::new();
+        assert_eq!(
+            BootOnceState::Off,
+            probe_boot_once(&OsFileSystem, &env, off.path())
+        );
+
+        let on = make_ready_tree("boot-once-on");
+        fs::write(
+            on.path().join(".kw/deploy.config"),
+            "boot_into_new_kernel_once=yes\n",
+        )
+        .unwrap();
+        assert_eq!(
+            BootOnceState::On,
+            probe_boot_once(&OsFileSystem, &env, on.path())
+        );
+    }
+
+    #[test]
+    fn probe_boot_once_unknown_values_and_missing_files_gate() {
+        let empty = make_ready_tree("boot-once-missing");
+        let mut env = MockEnvTrait::new();
+        env.expect_var()
+            .returning(|_| Err(std::env::VarError::NotPresent.into()));
+        assert_eq!(
+            BootOnceState::Unknown,
+            probe_boot_once(&OsFileSystem, &env, empty.path())
+        );
+
+        let weird = make_ready_tree("boot-once-weird");
+        fs::write(
+            weird.path().join(".kw/deploy.config"),
+            "boot_into_new_kernel_once=true\n",
+        )
+        .unwrap();
+        assert_eq!(
+            BootOnceState::Unknown,
+            probe_boot_once(&OsFileSystem, &MockEnvTrait::new(), weird.path())
+        );
+    }
+
+    #[test]
+    fn probe_boot_once_falls_through_to_xdg_when_the_tree_omits_the_key() {
+        let mut fs = MockFileSystemTrait::new();
+        fs.expect_is_file().returning(|path| {
+            path.ends_with(".kw/deploy.config") || path == Path::new("/xdg/kw/deploy.config")
+        });
+        fs.expect_read_to_string().returning(|path| {
+            if path.ends_with(".kw/deploy.config") {
+                Ok("reboot=no\n".to_string())
+            } else {
+                Ok("boot_into_new_kernel_once=no\n".to_string())
+            }
+        });
+        let mut env = MockEnvTrait::new();
+        env.expect_var()
+            .withf(|key| key == "XDG_CONFIG_HOME")
+            .returning(|_| Ok("/xdg".to_string()));
+
+        assert_eq!(
+            BootOnceState::Off,
+            probe_boot_once(&fs, &env, Path::new("/kernel"))
+        );
+    }
+
+    #[test]
+    fn probe_boot_once_unreadable_tree_file_does_not_fall_through() {
+        let mut fs = MockFileSystemTrait::new();
+        fs.expect_is_file()
+            .returning(|path| path.ends_with(".kw/deploy.config"));
+        fs.expect_read_to_string().returning(|_| {
+            Err(FileSystemError::IoError(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "denied",
+            )))
+        });
+        let env = MockEnvTrait::new();
+
+        assert_eq!(
+            BootOnceState::Unknown,
+            probe_boot_once(&fs, &env, Path::new("/kernel"))
+        );
+    }
+
+    #[test]
+    fn probe_boot_once_treats_empty_xdg_config_home_as_unset() {
+        let mut fs = MockFileSystemTrait::new();
+        fs.expect_is_file()
+            .returning(|path| path == Path::new("/home/user/.config/kw/deploy.config"));
+        fs.expect_read_to_string()
+            .returning(|_| Ok("boot_into_new_kernel_once=no\n".to_string()));
+        let mut env = MockEnvTrait::new();
+        env.expect_var()
+            .withf(|key| key == "XDG_CONFIG_HOME")
+            .returning(|_| Ok(String::new()));
+        env.expect_var()
+            .withf(|key| key == "HOME")
+            .returning(|_| Ok("/home/user".to_string()));
+
+        assert_eq!(
+            BootOnceState::Off,
+            probe_boot_once(&fs, &env, Path::new("/kernel"))
+        );
     }
 }

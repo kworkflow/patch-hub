@@ -761,6 +761,8 @@ mod tests {
                 latest_build: None,
                 deploy_alone: Err(crate::kw::readiness::DeployAloneRefusal::NoBuildRecord),
                 current_branch: Some("feature".to_string()),
+                deploy_remote: Err(crate::kw::remote::RemoteRefusal::NoRemotesConfigured),
+                boot_once: crate::kw::readiness::BootOnceState::Unknown,
             },
         );
         ops.extra_args = "--verbose --clean --from-sha abc --doc".to_string();
@@ -800,6 +802,8 @@ mod tests {
                 latest_build: None,
                 deploy_alone: Err(crate::kw::readiness::DeployAloneRefusal::NoBuildRecord),
                 current_branch: branch.map(str::to_string),
+                deploy_remote: Err(crate::kw::remote::RemoteRefusal::NoRemotesConfigured),
+                boot_once: crate::kw::readiness::BootOnceState::Unknown,
             },
         )
     }
