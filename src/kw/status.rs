@@ -11,7 +11,6 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KwJobKind {
     Build,
-    #[allow(dead_code)]
     Deploy,
     #[allow(dead_code)]
     BuildThenDeploy,
@@ -21,7 +20,6 @@ pub enum KwJobKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KwPhase {
     Building,
-    #[allow(dead_code)]
     Deploying,
 }
 

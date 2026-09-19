@@ -7,7 +7,10 @@ use thiserror::Error;
 use crate::infrastructure::process::ProcessError;
 use crate::{
     infrastructure::{file_system::FileSystemError, shell::ShellError},
-    kw::readiness::{KwReadinessError, TreeReadiness},
+    kw::{
+        readiness::{DeployAloneRefusal, KwReadinessError, TreeReadiness},
+        remote::RemoteRefusal,
+    },
 };
 
 #[derive(Debug, Error)]
@@ -55,6 +58,14 @@ pub enum KwStartError {
     GitStateProbe(String),
     #[error("failed to switch the kernel tree to the requested branch: {0}")]
     CheckoutFailed(String),
+    #[error("{0}")]
+    RemoteUnresolved(RemoteRefusal),
+    #[error(
+        "boot-into-new-kernel-once is on; confirm before deploying — kw has no CLI off-switch"
+    )]
+    BootOnceNotAcknowledged,
+    #[error("{0}")]
+    DeployAloneRefused(DeployAloneRefusal),
     #[error("kw jobs are not supported yet")]
     NotImplemented,
     // Spawning a process is unix-only (ProcessTrait is cfg(unix)).

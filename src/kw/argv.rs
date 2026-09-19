@@ -89,7 +89,7 @@ pub fn build_argv(extra_args: &[String]) -> Vec<String> {
 /// stripped so the injected remote, reboot, and force flags win.
 /// `--force` is omitted entirely when `force` is false rather than
 /// passing a no-op, because kw has no `--no-force`.
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg_attr(not(unix), allow(dead_code))]
 pub fn deploy_argv(
     endpoint: &str,
     reboot: bool,

@@ -257,6 +257,7 @@ async fn start_build(app: &mut App) -> Result<()> {
         tree: ops.tree.clone(),
         branch,
         extra_args: ops.extra_arg_tokens(),
+        deploy: None,
     };
     match kw.start_build(request).await {
         Ok(()) => {

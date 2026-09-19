@@ -367,6 +367,7 @@ fn start_request() -> StartRequest {
         .expect("kernel tree should deserialize"),
         branch: BUILD_BRANCH.to_string(),
         extra_args: Vec::new(),
+        deploy: None,
     }
 }
 

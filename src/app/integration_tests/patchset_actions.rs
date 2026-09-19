@@ -739,6 +739,7 @@ fn kw_start_request() -> StartRequest {
         .expect("kernel tree should deserialize"),
         branch: "patchset-2026-08-20-15-00-00".to_string(),
         extra_args: Vec::new(),
+        deploy: None,
     }
 }
 
