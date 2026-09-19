@@ -145,6 +145,30 @@ pub(crate) fn validate_update(
         ),
     };
 
+    let kw_reboot_after_deploy = match &draft.kw_reboot_after_deploy {
+        None => None,
+        Some(s) if s.trim().is_empty() => {
+            return Err(ConfigError::InvalidKwRebootAfterDeploy(s.clone()));
+        }
+        Some(s) => Some(
+            s.trim()
+                .parse::<bool>()
+                .map_err(|_| ConfigError::InvalidKwRebootAfterDeploy(s.clone()))?,
+        ),
+    };
+
+    let kw_deploy_force = match &draft.kw_deploy_force {
+        None => None,
+        Some(s) if s.trim().is_empty() => {
+            return Err(ConfigError::InvalidKwDeployForce(s.clone()));
+        }
+        Some(s) => Some(
+            s.trim()
+                .parse::<bool>()
+                .map_err(|_| ConfigError::InvalidKwDeployForce(s.clone()))?,
+        ),
+    };
+
     Ok(ValidatedConfigUpdate {
         page_size,
         cache_dir,
@@ -155,6 +179,8 @@ pub(crate) fn validate_update(
         cover_renderer,
         max_log_age,
         stay_on_applied_branch,
+        kw_reboot_after_deploy,
+        kw_deploy_force,
     })
 }
 

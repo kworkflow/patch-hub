@@ -39,6 +39,10 @@ pub struct ConfigState {
     pub(crate) git_am_options: String,
     pub(crate) git_am_branch_prefix: String,
     pub(crate) stay_on_applied_branch: bool,
+    /// When false (the default), `kw deploy` is invoked with `--no-reboot`.
+    pub(crate) kw_reboot_after_deploy: bool,
+    /// When true (the default), `kw deploy` is invoked with `--force`.
+    pub(crate) kw_deploy_force: bool,
 }
 
 impl Default for ConfigState {
@@ -81,6 +85,8 @@ impl ConfigState {
             git_am_options: String::new(),
             git_am_branch_prefix: String::from("patchset-"),
             stay_on_applied_branch: true,
+            kw_reboot_after_deploy: false,
+            kw_deploy_force: true,
         }
     }
 
@@ -130,6 +136,14 @@ impl ConfigState {
         self.stay_on_applied_branch = stay_on_applied_branch;
     }
 
+    fn set_kw_reboot_after_deploy(&mut self, kw_reboot_after_deploy: bool) {
+        self.kw_reboot_after_deploy = kw_reboot_after_deploy;
+    }
+
+    fn set_kw_deploy_force(&mut self, kw_deploy_force: bool) {
+        self.kw_deploy_force = kw_deploy_force;
+    }
+
     /// Merges validated field updates from the edit-config flow.
     pub fn apply_update(&mut self, u: &ValidatedConfigUpdate) {
         if let Some(page_size) = u.page_size {
@@ -158,6 +172,12 @@ impl ConfigState {
         }
         if let Some(stay_on_applied_branch) = u.stay_on_applied_branch {
             self.set_stay_on_applied_branch(stay_on_applied_branch);
+        }
+        if let Some(kw_reboot_after_deploy) = u.kw_reboot_after_deploy {
+            self.set_kw_reboot_after_deploy(kw_reboot_after_deploy);
+        }
+        if let Some(kw_deploy_force) = u.kw_deploy_force {
+            self.set_kw_deploy_force(kw_deploy_force);
         }
     }
 
@@ -199,6 +219,8 @@ pub struct ConfigSnapshot {
     git_am_options: String,
     git_am_branch_prefix: String,
     stay_on_applied_branch: bool,
+    kw_reboot_after_deploy: bool,
+    kw_deploy_force: bool,
 }
 
 impl ConfigSnapshot {
@@ -221,6 +243,8 @@ impl ConfigSnapshot {
             git_am_options: s.git_am_options.clone(),
             git_am_branch_prefix: s.git_am_branch_prefix.clone(),
             stay_on_applied_branch: s.stay_on_applied_branch,
+            kw_reboot_after_deploy: s.kw_reboot_after_deploy,
+            kw_deploy_force: s.kw_deploy_force,
         }
     }
 
