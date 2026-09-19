@@ -48,9 +48,64 @@ const BUILD_RESERVED: &[ReservedOption] = &[
     ReservedOption::new(&["--from-sha"], true),
 ];
 
+/// Reserved for `kw deploy`. Patch-hub always injects a resolved
+/// `--remote host:port` and the reboot/force knobs; user extras that
+/// would override those, switch to local, list/uninstall kernels, run
+/// interactive `--setup`, or flip `boot_into_new_kernel_once` via `-n`
+/// are stripped.
+///
+/// Short-flag collisions with ssh-config intuition matter here: `-l` is
+/// `--list`, not `--local` (`--local` has no short form); `-r` is
+/// `--reboot`, not `--remote`. `--uninstall`/`-u` takes an optional
+/// value in kw (`uninstall::`) but is reserved as a boolean so `-u`
+/// does not eat the following token. `--alert` is not a deploy option
+/// at all — injecting or forwarding it hard-fails on kw beta-0.9
+/// (`Invalid option`), the version this lab still reports.
+const DEPLOY_RESERVED: &[ReservedOption] = &[
+    ReservedOption::new(&["--remote"], true),
+    ReservedOption::new(&["--local"], false),
+    ReservedOption::new(&["--reboot", "-r"], false),
+    ReservedOption::new(&["--no-reboot"], false),
+    ReservedOption::new(&["--force", "-f"], false),
+    ReservedOption::new(&["--list", "-l"], false),
+    ReservedOption::new(&["--ls-line", "-s"], false),
+    ReservedOption::new(&["--list-all", "-a"], false),
+    ReservedOption::new(&["--setup"], false),
+    ReservedOption::new(&["--uninstall", "-u"], false),
+    ReservedOption::new(&["--from-package", "-F"], true),
+    ReservedOption::new(&["--create-package", "-p"], false),
+    ReservedOption::new(&["--boot-into-new-kernel-once", "-n"], false),
+    ReservedOption::new(&["--save-log-to"], true),
+    ReservedOption::new(&["--alert"], true),
+];
+
 /// The argv for a build job: `kw build <extras>` (reserved extras stripped).
 pub fn build_argv(extra_args: &[String]) -> Vec<String> {
     merge_extra_args(&["build"], BUILD_RESERVED, extra_args)
+}
+
+/// The argv for a deploy job: `kw deploy --remote <endpoint>
+/// --no-reboot|--reboot [--force] <extras>`. Reserved extras are
+/// stripped so the injected remote, reboot, and force flags win.
+/// `--force` is omitted entirely when `force` is false rather than
+/// passing a no-op, because kw has no `--no-force`.
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn deploy_argv(
+    endpoint: &str,
+    reboot: bool,
+    force: bool,
+    extra_args: &[String],
+) -> Vec<String> {
+    let mut base = vec![
+        "deploy",
+        "--remote",
+        endpoint,
+        if reboot { "--reboot" } else { "--no-reboot" },
+    ];
+    if force {
+        base.push("--force");
+    }
+    merge_extra_args(&base, DEPLOY_RESERVED, extra_args)
 }
 
 /// Appends user-supplied extra args to `base`, stripping every token that
@@ -208,6 +263,141 @@ mod tests {
                 &reserved,
                 &extras(&["--remote", "host:22", "--no-reboot"])
             )
+        );
+    }
+
+    const ENDPOINT: &str = "root@lima-ph-dut.internal:22";
+
+    fn deploy(extra: &[&str]) -> Vec<String> {
+        deploy_argv(ENDPOINT, false, true, &extras(extra))
+    }
+
+    #[test]
+    fn deploy_argv_without_extras_is_remote_no_reboot_force() {
+        assert_eq!(
+            vec!["deploy", "--remote", ENDPOINT, "--no-reboot", "--force",],
+            deploy_argv(ENDPOINT, false, true, &[])
+        );
+    }
+
+    #[test]
+    fn deploy_argv_reboot_and_unforced_swap_the_injected_flags() {
+        assert_eq!(
+            vec!["deploy", "--remote", ENDPOINT, "--reboot"],
+            deploy_argv(ENDPOINT, true, false, &[])
+        );
+    }
+
+    #[test]
+    fn deploy_remote_always_wins_over_user_remote_and_local() {
+        assert_eq!(
+            vec![
+                "deploy",
+                "--remote",
+                ENDPOINT,
+                "--no-reboot",
+                "--force",
+                "--verbose",
+            ],
+            deploy(&[
+                "--remote",
+                "other:22",
+                "--local",
+                "--remote=evil:1",
+                "--verbose",
+            ])
+        );
+    }
+
+    #[test]
+    fn deploy_strips_query_modes_setup_and_package_flags() {
+        assert_eq!(
+            vec![
+                "deploy",
+                "--remote",
+                ENDPOINT,
+                "--no-reboot",
+                "--force",
+                "--verbose",
+            ],
+            deploy(&[
+                "--list",
+                "-l",
+                "--ls-line",
+                "-s",
+                "--list-all",
+                "-a",
+                "--setup",
+                "--from-package",
+                "kernel.kw.tar",
+                "--from-package=other.kw.tar",
+                "-F",
+                "also.kw.tar",
+                "--create-package",
+                "-p",
+                "--verbose",
+            ])
+        );
+    }
+
+    #[test]
+    fn deploy_strips_boot_once_alert_save_log_and_reboot_overrides() {
+        assert_eq!(
+            vec![
+                "deploy",
+                "--remote",
+                ENDPOINT,
+                "--no-reboot",
+                "--force",
+                "--modules",
+            ],
+            deploy(&[
+                "--boot-into-new-kernel-once",
+                "-n",
+                "--alert=n",
+                "--alert",
+                "v",
+                "--save-log-to",
+                "/tmp/x.log",
+                "--reboot",
+                "-r",
+                "--no-reboot",
+                "--force",
+                "-f",
+                "--modules",
+            ])
+        );
+    }
+
+    #[test]
+    fn uninstall_short_flag_does_not_eat_the_next_token() {
+        // kw's `-u` takes an optional value (`uninstall::`). Treating it as
+        // a boolean reserved option keeps a following extra from vanishing.
+        assert_eq!(
+            vec![
+                "deploy",
+                "--remote",
+                ENDPOINT,
+                "--no-reboot",
+                "--force",
+                "--verbose",
+            ],
+            deploy(&["-u", "--verbose"])
+        );
+        assert_eq!(
+            vec![
+                "deploy",
+                "--remote",
+                ENDPOINT,
+                "--no-reboot",
+                "--force",
+                "--verbose",
+            ],
+            deploy(&["--uninstall", "--verbose"])
+        );
+        assert_eq!(
+            vec!["deploy", "--remote", ENDPOINT, "--no-reboot", "--force",],
+            deploy(&["--uninstall=old-kernel"])
         );
     }
 }
