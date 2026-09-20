@@ -88,7 +88,11 @@ pub struct KwOpsScene {
     pub start_label: String,
     pub cancel_label: String,
     pub restore_label: String,
-    pub deploy_placeholder: String,
+    pub remote: String,
+    pub boot_once: String,
+    pub deploy_command: String,
+    pub deploy_label: String,
+    pub build_deploy_label: String,
     pub branch_guidance: Option<String>,
     pub log_tail: String,
 }

@@ -17,8 +17,9 @@ use super::{
 };
 use crate::kw::{
     argv,
-    readiness::TreeReadiness,
-    status::{KwJobStatus, KwStatusSnapshot},
+    readiness::{BootOnceState, DeployAloneRefusal, TreeReadiness},
+    remote::{KwRemote, RemoteRefusal},
+    status::{deploy_exit_hint, KwJobStatus, KwPhase, KwStatusSnapshot},
 };
 
 /// One mailing list entry shown in the selection list.
@@ -146,7 +147,11 @@ pub struct KwOpsViewModel {
     pub start_label: String,
     pub cancel_label: String,
     pub restore_label: String,
-    pub deploy_placeholder: String,
+    pub remote: String,
+    pub boot_once: String,
+    pub deploy_command: String,
+    pub deploy_label: String,
+    pub build_deploy_label: String,
     pub branch_guidance: Option<String>,
     pub log_tail: String,
 }
@@ -466,13 +471,25 @@ fn project_kw_ops(state: &AppState) -> KwOpsViewModel {
     } else {
         ops.extra_args.clone()
     };
-    let start_label = if running || start_requested {
-        "unavailable (a job is already running)".to_string()
-    } else if ops.branch.trim().is_empty() {
-        "unavailable (set a branch first)".to_string()
-    } else {
-        "available (b)".to_string()
+    let branch_empty = ops.branch.trim().is_empty();
+    let start_block = start_block_reason(running, start_requested, branch_empty);
+    let start_label = action_label(start_block.clone(), 'b');
+    let remote_block = match &ops.readiness.deploy_remote {
+        Err(reason) => Some(format!("unavailable ({})", compact_remote_refusal(reason))),
+        Ok(_) => None,
     };
+    let deploy_block = start_block
+        .clone()
+        .or_else(|| remote_block.clone())
+        .or_else(|| match &ops.readiness.deploy_alone {
+            Err(reason) => Some(format!(
+                "unavailable ({})",
+                compact_deploy_alone_refusal(reason)
+            )),
+            Ok(()) => None,
+        });
+    let deploy_label = action_label(deploy_block, 'd');
+    let build_deploy_label = action_label(start_block.or(remote_block), 'D');
     let cancel_label = if running {
         if ops.cancel_requested {
             "requested; waiting for the job to stop".to_string()
@@ -529,16 +546,91 @@ fn project_kw_ops(state: &AppState) -> KwOpsViewModel {
         start_label,
         cancel_label,
         restore_label,
-        deploy_placeholder: "not available yet".to_string(),
+        remote: format_deploy_remote(&ops.readiness.deploy_remote),
+        boot_once: format_boot_once(ops.readiness.boot_once, ops.boot_once_acknowledged),
+        deploy_command: format_deploy_command(
+            &ops.readiness.deploy_remote,
+            state.config.kw_reboot_after_deploy(),
+            state.config.kw_deploy_force(),
+            &ops.extra_arg_tokens_for_preview(),
+        ),
+        deploy_label,
+        build_deploy_label,
         branch_guidance: if ops.head_unreadable && ops.branch.trim().is_empty() {
             Some(
-                "HEAD is detached or unverifiable; type a branch before starting a build."
+                "HEAD is detached or unverifiable; type a branch before starting a job."
                     .to_string(),
             )
         } else {
             None
         },
         log_tail,
+    }
+}
+
+fn start_block_reason(running: bool, start_requested: bool, branch_empty: bool) -> Option<String> {
+    if running || start_requested {
+        Some("unavailable (a job is already running)".to_string())
+    } else if branch_empty {
+        Some("unavailable (set a branch first)".to_string())
+    } else {
+        None
+    }
+}
+
+fn action_label(blocked: Option<String>, key: char) -> String {
+    blocked.unwrap_or_else(|| format!("available ({key})"))
+}
+
+fn format_deploy_remote(remote: &Result<KwRemote, RemoteRefusal>) -> String {
+    match remote {
+        Ok(remote) => remote.endpoint(),
+        Err(reason) => reason.to_string(),
+    }
+}
+
+fn format_boot_once(state: BootOnceState, acknowledged: bool) -> String {
+    match (state, acknowledged) {
+        (BootOnceState::Off, _) => "off".to_string(),
+        (BootOnceState::On, true) => "on (confirmed)".to_string(),
+        (BootOnceState::Unknown, true) => "unknown (confirmed)".to_string(),
+        (BootOnceState::On, false) => "on (confirm before deploy)".to_string(),
+        (BootOnceState::Unknown, false) => "unknown (confirm before deploy)".to_string(),
+    }
+}
+
+fn format_deploy_command(
+    remote: &Result<KwRemote, RemoteRefusal>,
+    reboot: bool,
+    force: bool,
+    extra_args: &[String],
+) -> String {
+    match remote {
+        Ok(remote) => format!(
+            "kw {}",
+            argv::deploy_argv(&remote.endpoint(), reboot, force, extra_args).join(" ")
+        ),
+        Err(_) => "(no remote)".to_string(),
+    }
+}
+
+fn compact_remote_refusal(reason: &RemoteRefusal) -> &'static str {
+    match reason {
+        RemoteRefusal::NoRemotesConfigured => "no remotes configured",
+        RemoteRefusal::NoDefault { .. } => "no default remote",
+        RemoteRefusal::DefaultNotFound { .. } => "default remote missing",
+    }
+}
+
+fn compact_deploy_alone_refusal(reason: &DeployAloneRefusal) -> &'static str {
+    match reason {
+        DeployAloneRefusal::TreeNotReady(_) => "tree not ready",
+        DeployAloneRefusal::NoBuildRecord => "no build recorded",
+        DeployAloneRefusal::LastBuildFailed => "last build failed",
+        DeployAloneRefusal::HeadMismatch { .. } => "build was on another branch",
+        DeployAloneRefusal::TreePathDrift { .. } => "tree path changed",
+        DeployAloneRefusal::OutputDirMismatch => "kw env changed",
+        DeployAloneRefusal::ImageMissing => "kernel image missing",
     }
 }
 
@@ -565,8 +657,8 @@ fn format_job_status(job: Option<&KwJobStatus>, cancel_requested: bool) -> Strin
         None | Some(KwJobStatus::Idle) => "idle".to_string(),
         Some(KwJobStatus::Running { phase, branch, .. }) => {
             let phase = match phase {
-                crate::kw::status::KwPhase::Building => "building",
-                crate::kw::status::KwPhase::Deploying => "deploying",
+                KwPhase::Building => "building",
+                KwPhase::Deploying => "deploying",
             };
             if cancel_requested {
                 format!("cancelling {phase} {branch}")
@@ -575,6 +667,17 @@ fn format_job_status(job: Option<&KwJobStatus>, cancel_requested: bool) -> Strin
             }
         }
         Some(KwJobStatus::Succeeded { branch, .. }) => format!("succeeded on {branch}"),
+        Some(KwJobStatus::Failed {
+            phase: KwPhase::Deploying,
+            exit_code,
+            ..
+        }) => match exit_code {
+            Some(code) => match deploy_exit_hint(*code) {
+                Some(hint) => format!("failed during deploy (exit {code}: {hint})"),
+                None => format!("failed during deploy (exit {code})"),
+            },
+            None => "failed during deploy (exit unknown)".to_string(),
+        },
         Some(KwJobStatus::Failed { exit_code, .. }) => match exit_code {
             Some(code) => format!("failed (exit {code})"),
             None => "failed (exit unknown)".to_string(),
@@ -791,7 +894,14 @@ mod tests {
         assert_eq!("kw build --verbose", vm.command);
         assert_eq!("feature", vm.branch);
         assert_eq!("available (b)", vm.start_label);
-        assert_eq!("not available yet", vm.deploy_placeholder);
+        assert_eq!(
+            "no remotes configured; configure a remote with `kw remote --set-default` or edit `.kw/remote.config`",
+            vm.remote
+        );
+        assert_eq!("unknown (confirm before deploy)", vm.boot_once);
+        assert_eq!("(no remote)", vm.deploy_command);
+        assert_eq!("unavailable (no remotes configured)", vm.deploy_label);
+        assert_eq!("unavailable (no remotes configured)", vm.build_deploy_label);
     }
 
     fn sample_kw_ops(branch: Option<&str>) -> crate::app::screens::kw_ops::KwOpsState {
@@ -838,6 +948,8 @@ mod tests {
         };
         assert_eq!(None, vm.branch_guidance);
         assert_eq!("unavailable (set a branch first)", vm.start_label);
+        assert_eq!("unavailable (set a branch first)", vm.deploy_label);
+        assert_eq!("unavailable (set a branch first)", vm.build_deploy_label);
     }
 
     #[test]
@@ -889,6 +1001,147 @@ mod tests {
         };
         assert_eq!("starting…", vm.job_status);
         assert_eq!("unavailable (a job is already running)", vm.start_label);
+        assert_eq!("unavailable (a job is already running)", vm.deploy_label);
+        assert_eq!(
+            "unavailable (a job is already running)",
+            vm.build_deploy_label
+        );
+    }
+
+    fn sample_remote() -> crate::kw::remote::KwRemote {
+        crate::kw::remote::KwRemote {
+            name: "dut".to_string(),
+            hostname: "box".to_string(),
+            port: 22,
+            user: Some("root".to_string()),
+        }
+    }
+
+    #[test]
+    fn deploy_alone_refusal_disables_deploy_but_not_build_then_deploy() {
+        let mut state = app_state_with_kw(None);
+        state.navigation.current_screen = CurrentScreen::KwOps;
+        let mut ops = sample_kw_ops(Some("feature"));
+        ops.readiness.deploy_remote = Ok(sample_remote());
+        ops.readiness.deploy_alone = Err(crate::kw::readiness::DeployAloneRefusal::NoBuildRecord);
+        ops.readiness.boot_once = crate::kw::readiness::BootOnceState::On;
+        state.kw.ops = Some(ops);
+
+        let ScreenViewModel::KwOps(vm) = project_state(&state).screen else {
+            panic!("expected KwOps projection");
+        };
+        assert_eq!("root@box:22", vm.remote);
+        assert_eq!("on (confirm before deploy)", vm.boot_once);
+        assert_eq!(
+            "kw deploy --remote root@box:22 --no-reboot --force",
+            vm.deploy_command
+        );
+        assert_eq!("unavailable (no build recorded)", vm.deploy_label);
+        assert_eq!("available (D)", vm.build_deploy_label);
+    }
+
+    #[test]
+    fn matching_record_and_remote_enable_deploy_actions() {
+        let mut state = app_state_with_kw(None);
+        state.navigation.current_screen = CurrentScreen::KwOps;
+        let mut ops = sample_kw_ops(Some("feature"));
+        ops.readiness.deploy_remote = Ok(sample_remote());
+        ops.readiness.deploy_alone = Ok(());
+        ops.readiness.boot_once = crate::kw::readiness::BootOnceState::Off;
+        ops.extra_args = "--verbose --local".to_string();
+        state.kw.ops = Some(ops);
+
+        let ScreenViewModel::KwOps(vm) = project_state(&state).screen else {
+            panic!("expected KwOps projection");
+        };
+        assert_eq!("off", vm.boot_once);
+        assert_eq!("available (d)", vm.deploy_label);
+        assert_eq!("available (D)", vm.build_deploy_label);
+        assert_eq!(
+            "kw deploy --remote root@box:22 --no-reboot --force --verbose",
+            vm.deploy_command
+        );
+    }
+
+    #[test]
+    fn boot_once_acknowledgement_does_not_change_deploy_availability() {
+        let mut state = app_state_with_kw(None);
+        state.navigation.current_screen = CurrentScreen::KwOps;
+        let mut ops = sample_kw_ops(Some("feature"));
+        ops.readiness.deploy_remote = Ok(sample_remote());
+        ops.readiness.deploy_alone = Ok(());
+        ops.readiness.boot_once = crate::kw::readiness::BootOnceState::Unknown;
+        ops.boot_once_acknowledged = true;
+        state.kw.ops = Some(ops);
+
+        let ScreenViewModel::KwOps(vm) = project_state(&state).screen else {
+            panic!("expected KwOps projection");
+        };
+        assert_eq!("unknown (confirmed)", vm.boot_once);
+        assert_eq!("available (d)", vm.deploy_label);
+    }
+
+    #[test]
+    fn deploy_command_follows_reboot_and_force_config() {
+        let mut state = app_state_with_kw(None);
+        state.navigation.current_screen = CurrentScreen::KwOps;
+        let mut config = ConfigState::default();
+        config.kw_reboot_after_deploy = true;
+        config.kw_deploy_force = false;
+        state.config = config.to_snapshot();
+        let mut ops = sample_kw_ops(Some("feature"));
+        ops.readiness.deploy_remote = Ok(sample_remote());
+        state.kw.ops = Some(ops);
+
+        let ScreenViewModel::KwOps(vm) = project_state(&state).screen else {
+            panic!("expected KwOps projection");
+        };
+        assert_eq!("kw deploy --remote root@box:22 --reboot", vm.deploy_command);
+    }
+
+    #[test]
+    fn failed_deploy_projects_known_exit_hint() {
+        let mut state = app_state_with_kw(Some(KwStatusSnapshot {
+            job: KwJobStatus::Failed {
+                kind: KwJobKind::Deploy,
+                phase: KwPhase::Deploying,
+                exit_code: Some(101),
+                log_path: PathBuf::from("/tmp/deploy.log"),
+            },
+            restore_branch: None,
+        }));
+        state.navigation.current_screen = CurrentScreen::KwOps;
+        let mut ops = sample_kw_ops(Some("feature"));
+        ops.readiness.deploy_remote = Ok(sample_remote());
+        state.kw.ops = Some(ops);
+
+        let ScreenViewModel::KwOps(vm) = project_state(&state).screen else {
+            panic!("expected KwOps projection");
+        };
+        assert_eq!(
+            "failed during deploy (exit 101: SSH unreachable after setup)",
+            vm.job_status
+        );
+    }
+
+    #[test]
+    fn failed_build_keeps_the_generic_exit_line() {
+        let mut state = app_state_with_kw(Some(KwStatusSnapshot {
+            job: KwJobStatus::Failed {
+                kind: KwJobKind::Build,
+                phase: KwPhase::Building,
+                exit_code: Some(1),
+                log_path: PathBuf::from("/tmp/build.log"),
+            },
+            restore_branch: None,
+        }));
+        state.navigation.current_screen = CurrentScreen::KwOps;
+        state.kw.ops = Some(sample_kw_ops(Some("feature")));
+
+        let ScreenViewModel::KwOps(vm) = project_state(&state).screen else {
+            panic!("expected KwOps projection");
+        };
+        assert_eq!("failed (exit 1)", vm.job_status);
     }
 
     #[test]

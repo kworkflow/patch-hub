@@ -105,7 +105,7 @@ impl KwJobStatus {
 /// show the raw number. 68 can still surface even with `--force`: force
 /// only skips the interactive prompt, not the underlying initramfs
 /// errors.
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg_attr(not(unix), allow(dead_code))]
 pub fn deploy_exit_hint(code: i32) -> Option<&'static str> {
     Some(match code {
         2 => "kernel image not found",
