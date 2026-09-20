@@ -302,7 +302,10 @@ Host ph-dut
             ],
             parsed.hosts
         );
-        assert_eq!("abc@arch-tm:22", choose(SAMPLE_REMOTE_CONFIG).unwrap().endpoint());
+        assert_eq!(
+            "abc@arch-tm:22",
+            choose(SAMPLE_REMOTE_CONFIG).unwrap().endpoint()
+        );
     }
 
     #[test]

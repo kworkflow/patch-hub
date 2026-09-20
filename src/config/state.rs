@@ -259,7 +259,6 @@ impl ConfigSnapshot {
         self.page_size
     }
 
-    #[allow(dead_code)]
     pub fn kernel_trees(&self) -> HashSet<&String> {
         self.kernel_trees.keys().collect::<HashSet<&String>>()
     }
