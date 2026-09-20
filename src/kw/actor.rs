@@ -290,18 +290,9 @@ impl KwActor {
     }
 
     /// Accepts and starts a job, or refuses. The reply is sent by the
-    /// caller right after this returns: the job itself keeps running in a
-    /// detached task and is observed via the status snapshot.
-    ///
-    /// Refusals, in order: a job already running, no kw binary on PATH,
-    /// unresolvable kw-env state, a tree that fails the readiness probes,
-    /// a dirty worktree, or a failed branch switch. Deploy kinds then also
-    /// refuse on an unresolved remote; StartDeploy additionally requires a
-    /// matching build record and image, then an acknowledged boot-once
-    /// setting. Reserved flags on patch-hub's own argv win over the
-    /// request's extra args. A start refused after the branch switch rolls
-    /// the switch back: a refused start never leaves the tree on a branch
-    /// the user did not check out.
+    /// caller right after this returns; the job keeps running in a
+    /// detached task. A start refused after the branch switch rolls
+    /// the switch back.
     async fn start_job(
         &mut self,
         kind: KwJobKind,

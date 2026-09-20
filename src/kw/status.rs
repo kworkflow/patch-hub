@@ -97,14 +97,10 @@ impl KwJobStatus {
     }
 }
 
-/// Human-readable hint for a `kw deploy` exit code, when we know it.
-///
-/// Codes are the ones verified in kw 0.10's deploy path (`src/deploy.sh`,
-/// `install.sh`, `bootloader.sh`). Unknown codes — including errno 30
-/// (EROFS), which is not used there — return `None` so the UI can still
-/// show the raw number. 68 can still surface even with `--force`: force
-/// only skips the interactive prompt, not the underlying initramfs
-/// errors.
+/// Human-readable hint for a known `kw deploy` exit code.
+/// Unknown codes return `None` so the UI can still show the raw number.
+/// 68 can still surface with `--force`: force skips the prompt, not the
+/// initramfs errors.
 #[cfg_attr(not(unix), allow(dead_code))]
 pub fn deploy_exit_hint(code: i32) -> Option<&'static str> {
     Some(match code {
@@ -210,7 +206,7 @@ mod tests {
 
     #[test]
     fn deploy_exit_hint_leaves_unknown_codes_unnamed() {
-        // 30/EROFS was a stale map entry: kw's deploy path never returns it.
+        // Unknown codes have no hint.
         assert_eq!(None, deploy_exit_hint(30));
         assert_eq!(None, deploy_exit_hint(1));
         assert_eq!(None, deploy_exit_hint(0));

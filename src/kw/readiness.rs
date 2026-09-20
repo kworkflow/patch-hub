@@ -168,8 +168,7 @@ pub fn read_build_arch(fs: &dyn FileSystemTrait, tree_path: &Path) -> Option<Str
 /// base64 with padding, no wrapping — after trimming trailing slashes,
 /// since kw encodes `$PWD` after changing into the tree. The encoded path
 /// may contain `/` (standard alphabet), producing nested directories; kw
-/// has the same behavior. kw master later strips padding (`tr --delete
-/// '='`); that is an upstream-watch item, not this floor.
+/// has the same behavior.
 ///
 /// kw's launcher recomputes the cache dir unconditionally, so a
 /// user-exported `KW_CACHE_DIR` is intentionally ignored here too. The
@@ -517,7 +516,7 @@ fn xdg_kw_config_file(env: &dyn EnvTrait, filename: &str) -> Option<PathBuf> {
 /// `record` is the lookup keyed by the deploy target branch. `latest` is
 /// the newest record for the tree across branches. When the target has
 /// no keyed record but another branch does, that is
-/// [`DeployAloneRefusal::HeadMismatch`] (M18), not "no build recorded".
+/// [`DeployAloneRefusal::HeadMismatch`], not "no build recorded".
 ///
 /// This is only the record-matching half of the gate — it says nothing
 /// about the tree's *current* state. [`evaluate_readiness`] conjoins
@@ -1364,8 +1363,8 @@ last_line_without_newline=yes";
             check_deploy_alone(Some(&record), None, &tree, "master", None, Some(&image))
         );
 
-        // Production M18: no keyed row for the target, but the tree has
-        // a latest build on another branch.
+        // No keyed row for the target, but the tree has a latest build
+        // on another branch.
         assert_eq!(
             Err(DeployAloneRefusal::HeadMismatch {
                 recorded: "patchset-x".to_string(),

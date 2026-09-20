@@ -254,9 +254,8 @@ mod tests {
 
     use super::*;
 
-    /// The example from kw's own writer (`src/kw_remote.sh`) / the
-    /// integration plan: two hosts, default on the second, fields indented.
-    const PLAN_FIXTURE: &str = "\
+    /// Example remote.config: two hosts, default on the second, fields indented.
+    const SAMPLE_REMOTE_CONFIG: &str = "\
 #kw-default=arch-test
 Host steamos
   Hostname steamdeck
@@ -294,7 +293,7 @@ Host ph-dut
 
     #[test]
     fn plan_fixture_picks_the_default_host() {
-        let parsed = parse_remote_config(PLAN_FIXTURE);
+        let parsed = parse_remote_config(SAMPLE_REMOTE_CONFIG);
         assert_eq!(Some("arch-test"), parsed.default.as_deref());
         assert_eq!(
             vec![
@@ -303,7 +302,7 @@ Host ph-dut
             ],
             parsed.hosts
         );
-        assert_eq!("abc@arch-tm:22", choose(PLAN_FIXTURE).unwrap().endpoint());
+        assert_eq!("abc@arch-tm:22", choose(SAMPLE_REMOTE_CONFIG).unwrap().endpoint());
     }
 
     #[test]

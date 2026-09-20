@@ -66,43 +66,15 @@ const BUILD_RESERVED: &[ReservedOption] = &[
     ReservedOption::gnu_abbrev(&["--from-sha"], true),
 ];
 
-/// Reserved for `kw deploy`. Patch-hub always injects a resolved
-/// `--remote host:port` and the reboot/force knobs; user extras that
-/// would override those, switch to local, list/uninstall kernels, run
-/// interactive `--setup`, or flip `boot_into_new_kernel_once` via `-n`
-/// are stripped.
+/// Reserved for `kw deploy`. Injected `--remote` / reboot / force win.
+/// User extras that override those, switch to local, list/uninstall,
+/// run `--setup`, or pass `-n` are stripped. Build-only extras are
+/// stripped too (one KwOps field; unknown flags are exit 22).
+/// GNU getopt forms (`-rf`, `-Fpkg`, unique `--boot`) are stripped as well.
 ///
-/// Short-flag collisions with ssh-config intuition matter here: `-l` is
-/// `--list`, not `--local` (`--local` has no short form); `-r` is
-/// `--reboot`, not `--remote`. `--uninstall`/`-u` takes an optional
-/// value in kw (`uninstall::`) but is reserved as a boolean so `-u`
-/// does not eat the following token. `--alert` is not a deploy option
-/// at all — injecting or forwarding it hard-fails on kw beta-0.9
-/// (`Invalid option`), the version this lab still reports.
-///
-/// Build-only flags are stripped too: KwOps has one extras field, and
-/// kw deploy's getopt (`src/deploy.sh` at 0.10: `remote:,local,reboot,
-/// no-reboot,modules,list,ls-line,uninstall::,list-all,force,setup,
-/// verbose,create-package,from-package:,boot-into-new-kernel-once`)
-/// rejects unrecognized options with exit 22. Without this, `D` with
-/// `--ccache` would build successfully then die at the deploy boundary.
-/// Short spellings that collide with deploy's own flags (`-n` menu vs
-/// boot-once, `-f` full-cleanup vs force, `-s` save-log-to vs ls-line)
-/// stay on the deploy meaning already reserved above.
-///
-/// kw_parse is GNU `getopt -q`, so exact-token stripping is not enough:
-/// `-rf` bundles `--reboot --force`, `-Fpkg.kw.tar` attaches a
-/// from-package value, and `--boot` uniquely abbreviates
-/// `--boot-into-new-kernel-once`. Those forms are stripped too.
-/// `gnu_abbrev` is only set on flags deploy's getopt actually honors,
-/// so `--m` still reaches `--modules` instead of matching build-only
-/// `--menu`. Ambiguous prefixes (`--re` → remote and reboot) pass
-/// through and fail getopt rather than eating the next token.
-/// Abbreviation uniqueness is among this reserved table, not kw's full
-/// option set. For deploy those coincide (the only passthrough longs are
-/// `--modules`/`--verbose`). For build, `--c` is ambiguous in kw
-/// (`ccache`/`cpu-scaling`/`clean`/`cflags`) but uniquely matches
-/// `--clean` here, so it is stripped instead of failing getopt.
+/// `-l` is `--list`, not `--local`; `-r` is `--reboot`, not `--remote`.
+/// `--uninstall`/`-u` is reserved as a boolean so `-u` does not eat the
+/// next token. `--alert` is not a deploy option.
 const DEPLOY_RESERVED: &[ReservedOption] = &[
     ReservedOption::gnu_abbrev(&["--remote"], true),
     ReservedOption::gnu_abbrev(&["--local"], false),
