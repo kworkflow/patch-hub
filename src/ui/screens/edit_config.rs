@@ -84,7 +84,7 @@ pub fn keys_hint_span(vm: &EditConfigViewModel) -> Span<'static> {
         )
     } else {
         Span::styled(
-            "(ESC / q) exit | (ENTER) edit | (jk| 🡇 🡅 ) down up",
+            "(ESC / q) save and exit | (ENTER) edit | (jk| 🡇 🡅 ) down up",
             Style::default().fg(Color::Red),
         )
     }
@@ -115,5 +115,11 @@ mod tests {
         let hint = keys_hint_span(&vm(true, false));
         assert!(hint.content.contains("(ESC) cancel"));
         assert!(!hint.content.contains("cycle"));
+    }
+
+    #[test]
+    fn keys_hint_says_save_and_exit_when_browsing() {
+        let hint = keys_hint_span(&vm(false, false));
+        assert!(hint.content.contains("(ESC / q) save and exit"));
     }
 }

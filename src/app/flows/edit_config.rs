@@ -164,25 +164,20 @@ mod tests {
         (mock, home)
     }
 
-    fn app_with_trees() -> (App, ConfigHandle, PathBuf) {
+    fn app_with_kernel_trees(keys: &[&str], target: Option<&str>) -> (App, ConfigHandle, PathBuf) {
         let (env, home) = default_env();
         let (mut state, repo) = bootstrap_parts(&env, OsFileSystem).unwrap();
-        state.kernel_trees.insert(
-            "linux".into(),
-            serde_json::from_value(serde_json::json!({
-                "path": "/linux",
-                "branch": "master"
-            }))
-            .unwrap(),
-        );
-        state.kernel_trees.insert(
-            "zebra".into(),
-            serde_json::from_value(serde_json::json!({
-                "path": "/zebra",
-                "branch": "master"
-            }))
-            .unwrap(),
-        );
+        for key in keys {
+            state.kernel_trees.insert(
+                (*key).to_string(),
+                serde_json::from_value(serde_json::json!({
+                    "path": format!("/{key}"),
+                    "branch": "master"
+                }))
+                .unwrap(),
+            );
+        }
+        state.target_kernel_tree = target.map(str::to_string);
         let snapshot = state.to_snapshot();
         let config = ConfigActor::spawn(state, repo);
 
@@ -250,7 +245,7 @@ mod tests {
 
     #[tokio::test]
     async fn cycling_the_tree_row_and_saving_updates_the_snapshot() {
-        let (mut app, config, home) = app_with_trees();
+        let (mut app, config, home) = app_with_kernel_trees(&["linux", "zebra"], None);
         app.init_edit_config();
 
         for _ in 0..11 {
@@ -284,6 +279,26 @@ mod tests {
         let raw = fs::read_to_string(home.join(DEFAULT_CONFIG_PATH_SUFFIX)).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(parsed["target_kernel_tree"], "linux");
+        config.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn saving_with_a_dangling_target_unsets_it_instead_of_crashing() {
+        let (mut app, config, home) = app_with_kernel_trees(&["zebra"], Some("linux"));
+        assert_eq!(
+            Some("linux"),
+            app.state.config.target_kernel_tree().as_deref()
+        );
+        app.init_edit_config();
+
+        handle_edit_config(&mut app, InputEvent::SaveConfig)
+            .await
+            .unwrap();
+
+        assert!(app.state.config.target_kernel_tree().is_none());
+        let raw = fs::read_to_string(home.join(DEFAULT_CONFIG_PATH_SUFFIX)).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert!(parsed["target_kernel_tree"].is_null());
         config.shutdown().await;
     }
 }

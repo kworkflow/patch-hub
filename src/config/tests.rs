@@ -710,8 +710,11 @@ fn validate_update_rejects_unknown_target_kernel_tree() {
     .unwrap_err();
     assert!(matches!(
         err,
-        ConfigError::InvalidTargetKernelTree(ref s) if s == "missing"
+        ConfigError::InvalidTargetKernelTree { ref key, .. } if key == "missing"
     ));
+    let message = err.to_string();
+    assert!(message.contains("known keys: amd-gfx, linux"));
+    assert!(message.contains("unset the target"));
 }
 
 #[test]
@@ -865,7 +868,7 @@ async fn invalid_target_kernel_tree_keeps_existing_state() {
         .unwrap_err();
     assert!(matches!(
         err,
-        ConfigError::InvalidTargetKernelTree(ref s) if s == "missing"
+        ConfigError::InvalidTargetKernelTree { ref key, .. } if key == "missing"
     ));
     assert_eq!(
         Some("linux"),

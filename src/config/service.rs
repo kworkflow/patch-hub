@@ -178,7 +178,7 @@ pub(crate) fn validate_update(
             if current.kernel_trees.contains_key(key) {
                 Some(Some(key.to_string()))
             } else {
-                return Err(ConfigError::InvalidTargetKernelTree(s.clone()));
+                return Err(unknown_target_kernel_tree(s, current));
             }
         }
     };
@@ -197,6 +197,24 @@ pub(crate) fn validate_update(
         kw_deploy_force,
         target_kernel_tree,
     })
+}
+
+fn unknown_target_kernel_tree(raw: &str, current: &ConfigState) -> ConfigError {
+    let mut keys: Vec<String> = current.kernel_trees.keys().cloned().collect();
+    keys.sort();
+    let hint = if keys.is_empty() {
+        "no kernel trees are configured; unset the target or add trees in the config file"
+            .to_string()
+    } else {
+        format!(
+            "known keys: {}; unset the target or pick one of these",
+            keys.join(", ")
+        )
+    };
+    ConfigError::InvalidTargetKernelTree {
+        key: raw.to_string(),
+        hint,
+    }
 }
 
 fn validate_dir(fs: &dyn FileSystemTrait, dir_path: &str) -> Result<(), ConfigError> {

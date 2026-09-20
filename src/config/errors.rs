@@ -22,8 +22,8 @@ pub enum ConfigError {
     InvalidKwRebootAfterDeploy(String),
     #[error("invalid kw deploy-force value: {0}")]
     InvalidKwDeployForce(String),
-    #[error("unknown kernel tree key '{0}'; edit the config file to add trees")]
-    InvalidTargetKernelTree(String),
+    #[error("unknown kernel tree key '{key}'; {hint}")]
+    InvalidTargetKernelTree { key: String, hint: String },
     #[error("filesystem error: {0}")]
     Fs(#[from] FileSystemError),
 }

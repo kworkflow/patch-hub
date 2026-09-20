@@ -14,7 +14,7 @@ pub struct EditConfigState {
     #[getter(skip)]
     config_buffer: HashMap<EditableConfig, String>,
     #[getter(skip)]
-    tree_options: Vec<String>,
+    cycle_options: Vec<String>,
     highlighted: usize,
     is_editing: bool,
     curr_edit: String,
@@ -55,17 +55,34 @@ impl EditConfigState {
             EditableConfig::KwDeployForce,
             config.kw_deploy_force().to_string(),
         );
-        config_buffer.insert(
-            EditableConfig::TargetKernelTree,
-            config.target_kernel_tree().clone().unwrap_or_default(),
-        );
 
-        let mut tree_options: Vec<String> = config.kernel_trees().into_iter().cloned().collect();
-        tree_options.sort();
+        let mut keys: Vec<String> = config.kernel_trees().into_iter().cloned().collect();
+        keys.sort();
+        let raw_target = config
+            .target_kernel_tree()
+            .as_ref()
+            .map(|target| target.trim().to_string())
+            .unwrap_or_default();
+        let target = if raw_target.is_empty() {
+            String::new()
+        } else if keys.iter().any(|key| key == &raw_target) {
+            raw_target
+        } else {
+            tracing::warn!(
+                target = %raw_target,
+                "configured target is not a known kernel tree; treating as unset"
+            );
+            String::new()
+        };
+        config_buffer.insert(EditableConfig::TargetKernelTree, target);
+
+        let mut cycle_options = Vec::with_capacity(keys.len() + 1);
+        cycle_options.push(String::new());
+        cycle_options.extend(keys);
 
         EditConfigState {
             config_buffer,
-            tree_options,
+            cycle_options,
             highlighted: 0,
             is_editing: false,
             curr_edit: String::new(),
@@ -109,22 +126,19 @@ impl EditConfigState {
             return;
         }
 
-        let mut options = Vec::with_capacity(self.tree_options.len() + 1);
-        options.push(String::new());
-        options.extend(self.tree_options.iter().cloned());
-
-        let current = options
+        let current = self
+            .cycle_options
             .iter()
             .position(|key| key == &self.curr_edit)
             .unwrap_or(0);
         let next = if forward {
-            (current + 1) % options.len()
+            (current + 1) % self.cycle_options.len()
         } else if current == 0 {
-            options.len() - 1
+            self.cycle_options.len() - 1
         } else {
             current - 1
         };
-        self.curr_edit = options[next].clone();
+        self.curr_edit = self.cycle_options[next].clone();
     }
 
     /// Toggle editing mode
@@ -436,6 +450,32 @@ mod tests {
                 "<none>".to_string()
             )),
             edit.config(11)
+        );
+    }
+
+    #[test]
+    fn dangling_target_is_seeded_as_unset() {
+        let snapshot = snapshot_with_trees(&["zebra"], Some("linux"));
+        let edit = EditConfigState::new(&snapshot);
+        let draft = edit.to_update_draft();
+
+        assert_eq!(Some(String::new()), draft.target_kernel_tree);
+        assert_eq!(
+            Some((
+                "Target Kernel Tree (ENTER, then ←/→ to cycle)".to_string(),
+                "<none>".to_string()
+            )),
+            edit.config(11)
+        );
+    }
+
+    #[test]
+    fn padded_target_is_trimmed_to_a_known_key() {
+        let snapshot = snapshot_with_trees(&["linux"], Some(" linux "));
+        let edit = EditConfigState::new(&snapshot);
+        assert_eq!(
+            Some("linux".to_string()),
+            edit.to_update_draft().target_kernel_tree
         );
     }
 }
