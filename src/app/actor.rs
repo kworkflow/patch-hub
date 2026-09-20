@@ -4,7 +4,7 @@
 //! [`UiHandle`](crate::ui::handle::UiHandle) → draw through
 //! [`TerminalHandle`](crate::terminal::handle::TerminalHandle) → await the next
 //! [`InputEvent`](crate::input::event::InputEvent), a kw-status change, or a
-//! KwOps log-tail tick while a build is running on that screen.
+//! KwOps log-tail tick while a job is running on that screen.
 //!
 //! The actor stops when the input event channel closes (user quit) or when I/O
 //! returns an unrecoverable error. Startup dependency checks run before this

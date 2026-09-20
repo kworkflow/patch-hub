@@ -12,9 +12,6 @@ use crate::{
 };
 
 /// Action taken when the user confirms a choice popup.
-///
-/// Step 7's boot-once gate will add its own variant; do not reuse
-/// [`ConfirmAction::Wait`] or [`ConfirmAction::CancelKwAndQuit`] for that.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConfirmAction {
     CancelKwAndQuit,

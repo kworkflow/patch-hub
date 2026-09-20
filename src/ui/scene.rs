@@ -68,7 +68,7 @@ pub struct EditConfigScene {
     pub entries: Vec<ConfigEntryRow>,
 }
 
-/// Scene for the KwOps build dashboard.
+/// Scene for the KwOps dashboard.
 #[derive(Clone, Debug)]
 pub struct KwOpsScene {
     pub patchset_title: String,

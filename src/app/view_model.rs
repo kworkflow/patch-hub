@@ -126,7 +126,7 @@ pub struct EditConfigViewModel {
     pub is_editing_mode: bool,
 }
 
-/// Build-only KwOps dashboard. Labels only; actions stay in AppState.
+/// KwOps dashboard. Labels only; actions stay in AppState.
 #[derive(Clone, Debug)]
 pub struct KwOpsViewModel {
     pub patchset_title: String,
