@@ -719,7 +719,7 @@ mod tests {
         state.popup = Some(AppPopup::quit_while_job_running());
         let vm = project_state(&state);
         let popup = vm.popup.expect("confirm popup should project");
-        assert_eq!("Cancel build and quit?", popup.title);
+        assert_eq!("Cancel job and quit?", popup.title);
         let PopupViewBody::Confirm {
             options, selected, ..
         } = popup.body
@@ -731,6 +731,23 @@ mod tests {
             options
         );
         assert_eq!(1, selected);
+    }
+
+    #[test]
+    fn boot_once_popup_projects_back_out_as_default() {
+        let mut state = app_state_with_kw(None);
+        state.popup = Some(AppPopup::boot_once_warning());
+        let vm = project_state(&state);
+        let popup = vm.popup.expect("boot-once popup should project");
+        assert_eq!("Boot into new kernel once?", popup.title);
+        let PopupViewBody::Confirm {
+            options, selected, ..
+        } = popup.body
+        else {
+            panic!("expected Confirm projection");
+        };
+        assert_eq!(vec!["Back out".to_string(), "Proceed".to_string()], options);
+        assert_eq!(0, selected);
     }
 
     #[test]

@@ -16,6 +16,10 @@ use crate::{
 pub enum ConfirmAction {
     CancelKwAndQuit,
     Wait,
+    /// User accepted kw's one-shot boot into the new kernel.
+    ProceedWithBootOnce,
+    /// User declined the boot-once gate; the pending deploy is dropped.
+    BackOut,
 }
 
 /// Concrete, cloneable popup state stored in `AppState`.
@@ -124,7 +128,7 @@ impl AppPopup {
     /// Esc, stays in the app unless the user explicitly picks cancel.
     pub fn quit_while_job_running() -> Self {
         AppPopup::Confirm {
-            title: "Cancel build and quit?".to_string(),
+            title: "Cancel job and quit?".to_string(),
             body: "A kw job is still running. Cancel it and quit, or wait and stay in the app?"
                 .to_string(),
             options: vec![
@@ -135,6 +139,26 @@ impl AppPopup {
                 ("Wait".to_string(), ConfirmAction::Wait),
             ],
             selected: 1,
+            dimensions: (50, 30),
+        }
+    }
+
+    /// Choice popup shown when a deploy would boot the new kernel once.
+    ///
+    /// kw has no CLI off-switch for `boot_into_new_kernel_once`; this is
+    /// only a proceed/back-out gate. [`ConfirmAction::BackOut`] is the
+    /// highlighted default so Enter, like Esc, does not deploy.
+    pub fn boot_once_warning() -> Self {
+        AppPopup::Confirm {
+            title: "Boot into new kernel once?".to_string(),
+            body: "kw will set a one-shot boot into the new kernel on the target. \
+There is no CLI off-switch; this popup only lets you proceed or back out."
+                .to_string(),
+            options: vec![
+                ("Back out".to_string(), ConfirmAction::BackOut),
+                ("Proceed".to_string(), ConfirmAction::ProceedWithBootOnce),
+            ],
+            selected: 0,
             dimensions: (50, 30),
         }
     }
@@ -297,6 +321,40 @@ mod tests {
         let mut popup = AppPopup::quit_while_job_running();
         popup.handle_input(InputEvent::NavigateRight);
         assert_eq!(Some(ConfirmAction::Wait), popup.selected_confirm_action());
+    }
+
+    #[test]
+    fn boot_once_warning_defaults_to_back_out() {
+        let popup = AppPopup::boot_once_warning();
+        assert_eq!(
+            Some(ConfirmAction::BackOut),
+            popup.selected_confirm_action()
+        );
+    }
+
+    #[test]
+    fn boot_once_warning_right_selects_proceed() {
+        let mut popup = AppPopup::boot_once_warning();
+        popup.handle_input(InputEvent::NavigateRight);
+        assert_eq!(
+            Some(ConfirmAction::ProceedWithBootOnce),
+            popup.selected_confirm_action()
+        );
+        popup.handle_input(InputEvent::NavigateRight);
+        assert_eq!(
+            Some(ConfirmAction::ProceedWithBootOnce),
+            popup.selected_confirm_action()
+        );
+    }
+
+    #[test]
+    fn boot_once_warning_left_stays_on_back_out() {
+        let mut popup = AppPopup::boot_once_warning();
+        popup.handle_input(InputEvent::NavigateLeft);
+        assert_eq!(
+            Some(ConfirmAction::BackOut),
+            popup.selected_confirm_action()
+        );
     }
 
     #[test]

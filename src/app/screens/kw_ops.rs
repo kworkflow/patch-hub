@@ -8,6 +8,13 @@ pub enum KwOpsFocus {
     ExtraArgs,
 }
 
+/// Which deploy start was interrupted by the boot-once confirm popup.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeployStartKind {
+    Deploy,
+    BuildThenDeploy,
+}
+
 /// Form state on the KwOps screen. Job status lives in [`crate::app::state::KwUiState::status`].
 #[derive(Clone, Debug)]
 pub struct KwOpsState {
@@ -31,6 +38,12 @@ pub struct KwOpsState {
     /// Optimistic lock so a second Start before the watch snapshot
     /// arrives is ignored instead of refused with an error popup.
     pub start_requested: bool,
+    /// True after the user confirmed boot-into-new-kernel-once for this
+    /// KwOps visit. Preserved across `reenter` so a later Start does not
+    /// re-prompt in the same session.
+    pub boot_once_acknowledged: bool,
+    /// Deploy start waiting on the boot-once confirm popup.
+    pub pending_deploy: Option<DeployStartKind>,
 }
 
 impl KwOpsState {
@@ -58,11 +71,13 @@ impl KwOpsState {
             log_tail: String::new(),
             cancel_requested: false,
             start_requested: false,
+            boot_once_acknowledged: false,
+            pending_deploy: None,
         }
     }
 
-    /// Re-open KwOps for the same patchset/tree without dropping extras
-    /// or an in-flight cancel/start indication.
+    /// Re-open KwOps for the same patchset/tree without dropping extras,
+    /// an in-flight cancel/start indication, or a boot-once acknowledgement.
     ///
     /// Branch and `head_unreadable` stay as the user last edited them.
     /// An external HEAD change while away is not applied, so a stale
@@ -246,6 +261,26 @@ mod tests {
         assert!(ops.cancel_requested);
         assert_eq!("new title", ops.patchset_title);
         assert_eq!("main", ops.branch);
+    }
+
+    #[test]
+    fn reenter_keeps_boot_once_ack_and_pending_deploy() {
+        let mut ops = KwOpsState::new(
+            "title".to_string(),
+            "mid".to_string(),
+            "linux".to_string(),
+            sample_tree(),
+            readiness(Some("main")),
+        );
+        ops.boot_once_acknowledged = true;
+        ops.pending_deploy = Some(DeployStartKind::BuildThenDeploy);
+        ops.reenter(
+            "new title".to_string(),
+            sample_tree(),
+            readiness(Some("feature")),
+        );
+        assert!(ops.boot_once_acknowledged);
+        assert_eq!(Some(DeployStartKind::BuildThenDeploy), ops.pending_deploy);
     }
 
     #[test]

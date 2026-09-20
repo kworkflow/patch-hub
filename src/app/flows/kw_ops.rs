@@ -351,6 +351,25 @@ fn job_is_busy(app: &App) -> bool {
             .is_some_and(|ops| ops.start_requested)
 }
 
+/// Records that the user confirmed boot-once and consumes the pending
+/// deploy kind. The KwOps input commit re-issues Start against this
+/// acknowledgement; until then Proceed only stores the ack.
+pub(crate) async fn resume_pending_deploy(app: &mut App) -> Result<()> {
+    let Some(ops) = app.state.kw.ops.as_mut() else {
+        return Ok(());
+    };
+    ops.boot_once_acknowledged = true;
+    let _kind = ops.pending_deploy.take();
+    Ok(())
+}
+
+/// Drops a deploy start that was waiting on the boot-once confirm popup.
+pub(crate) fn clear_pending_deploy(app: &mut App) {
+    if let Some(ops) = app.state.kw.ops.as_mut() {
+        ops.pending_deploy = None;
+    }
+}
+
 pub fn generate_help_popup() -> AppPopup {
     AppPopup::help()
         .title("Kw operations")
