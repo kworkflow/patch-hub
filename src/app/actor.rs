@@ -21,8 +21,9 @@ use crate::{
             details_actions::handle_patchset_details,
             edit_config::handle_edit_config,
             kw_ops::{
-                apply_kw_snapshot, clear_pending_deploy, fallback_kw_status, handle_kw_ops,
-                poll_kw_status, refresh_kw_ops_log_tail, resume_pending_deploy,
+                apply_kw_snapshot, apply_kw_snapshot_refreshing_readiness, clear_pending_deploy,
+                fallback_kw_status, handle_kw_ops, poll_kw_status, refresh_kw_ops_log_tail,
+                resume_pending_deploy,
             },
             latest::handle_latest_patchsets,
             mail_list::handle_mailing_list_selection,
@@ -144,7 +145,7 @@ impl AppActor {
                 watch_event = kw_status_changed(&mut kw_status_rx) => {
                     match watch_event {
                         KwWatchEvent::Updated(snapshot) => {
-                            apply_kw_snapshot(&mut self.app, snapshot);
+                            apply_kw_snapshot_refreshing_readiness(&mut self.app, snapshot).await;
                             if self.app.state.navigation.current_screen == CurrentScreen::KwOps
                             {
                                 refresh_kw_ops_log_tail(&mut self.app).await;
@@ -605,7 +606,10 @@ mod tests {
             panic!("resume without a kw actor should explain that deploy cannot start");
         };
         assert_eq!("Cannot start deploy", title);
-        assert!(body.contains("not attached"));
+        assert!(
+            body.contains("no build recorded"),
+            "resume with a stale deploy-alone snapshot should refuse before the missing-actor path, got {body:?}"
+        );
     }
 
     #[tokio::test]

@@ -384,11 +384,13 @@ mod unix {
     async fn start_deploy_opens_the_boot_once_gate() {
         let log_dir = kw_log_dir("deploy-gate");
         let process = Arc::new(FakeProcess::new());
-        let mut app = app_with_details_and_kw_process(
+        let mut app = app_with_kw(
             &log_dir,
             head_branch_shell("feature"),
             process.clone(),
             Arc::new(MockFileSystemTrait::new()),
+            deploy_kw_fs(false),
+            feature_build_history(Some(matching_feature_build_record())),
         );
         handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await

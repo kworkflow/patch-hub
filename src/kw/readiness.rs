@@ -164,11 +164,12 @@ pub fn read_build_arch(fs: &dyn FileSystemTrait, tree_path: &Path) -> Option<Str
 /// `<tree>/.kw/env.current` (trailing newlines stripped, like bash's
 /// `$(< ...)`), and the output dir is
 /// `{XDG_CACHE_HOME | ~/.cache}/kw/envs/<base64(tree path)>/<env name>`.
-/// The tree path is encoded exactly like kw's `get_encoded_pwd` — standard
+/// The tree path is encoded like kw 0.10's `get_encoded_pwd` — standard
 /// base64 with padding, no wrapping — after trimming trailing slashes,
 /// since kw encodes `$PWD` after changing into the tree. The encoded path
 /// may contain `/` (standard alphabet), producing nested directories; kw
-/// has the same behavior.
+/// has the same behavior. kw master later strips padding (`tr --delete
+/// '='`); that is an upstream-watch item, not this floor.
 ///
 /// kw's launcher recomputes the cache dir unconditionally, so a
 /// user-exported `KW_CACHE_DIR` is intentionally ignored here too. The
@@ -420,8 +421,8 @@ pub enum DeployAloneRefusal {
     #[error("the last build of this branch failed; rebuild before deploying")]
     LastBuildFailed,
     #[error(
-        "the last build was on branch '{recorded}', but HEAD is '{current}'; \
-         rebuild on the current branch before deploying"
+        "the last build was on branch '{recorded}', but the deploy target is '{current}'; \
+         rebuild on the target branch before deploying"
     )]
     HeadMismatch { recorded: String, current: String },
     #[error(
@@ -513,18 +514,37 @@ fn xdg_kw_config_file(env: &dyn EnvTrait, filename: &str) -> Option<PathBuf> {
 /// lookup branch, written against the same tree path and kw env, and a
 /// kernel image is still discoverable.
 ///
+/// `record` is the lookup keyed by the deploy target branch. `latest` is
+/// the newest record for the tree across branches. When the target has
+/// no keyed record but another branch does, that is
+/// [`DeployAloneRefusal::HeadMismatch`] (M18), not "no build recorded".
+///
 /// This is only the record-matching half of the gate — it says nothing
 /// about the tree's *current* state. [`evaluate_readiness`] conjoins
 /// [`TreeReadiness`] into its `deploy_alone` verdict; prefer it over
 /// calling this directly.
 pub fn check_deploy_alone(
     record: Option<&KwBuildRecord>,
+    latest: Option<&KwBuildRecord>,
     tree: &KernelTree,
     head_branch: &str,
     output_dir: Option<&Path>,
     image: Option<&Path>,
 ) -> Result<(), DeployAloneRefusal> {
-    let record = record.ok_or(DeployAloneRefusal::NoBuildRecord)?;
+    let record = match record {
+        Some(record) => record,
+        None => {
+            if let Some(latest) = latest {
+                if latest.branch != head_branch {
+                    return Err(DeployAloneRefusal::HeadMismatch {
+                        recorded: latest.branch.clone(),
+                        current: head_branch.to_string(),
+                    });
+                }
+            }
+            return Err(DeployAloneRefusal::NoBuildRecord);
+        }
+    };
     if !record.success {
         return Err(DeployAloneRefusal::LastBuildFailed);
     }
@@ -625,6 +645,7 @@ pub fn evaluate_readiness(
     let deploy_alone = match &tree_status {
         TreeReadiness::Ready { .. } => check_deploy_alone(
             build_record.as_ref(),
+            latest_build.as_ref(),
             tree,
             lookup_branch,
             output_dir.as_deref(),
@@ -1315,14 +1336,14 @@ last_line_without_newline=yes";
 
         assert_eq!(
             Err(DeployAloneRefusal::NoBuildRecord),
-            check_deploy_alone(None, &tree, "patchset-x", None, Some(&image))
+            check_deploy_alone(None, None, &tree, "patchset-x", None, Some(&image))
         );
 
         let mut failed = built_record(dir.path(), "patchset-x");
         failed.success = false;
         assert_eq!(
             Err(DeployAloneRefusal::LastBuildFailed),
-            check_deploy_alone(Some(&failed), &tree, "patchset-x", None, Some(&image))
+            check_deploy_alone(Some(&failed), None, &tree, "patchset-x", None, Some(&image))
         );
     }
 
@@ -1333,13 +1354,24 @@ last_line_without_newline=yes";
         let image = dir.path().join("arch/x86/boot/bzImage");
         let record = built_record(dir.path(), "patchset-x");
 
-        // HEAD moved to another branch since the build.
+        // Keyed-record sanity: the store returned a row whose branch
+        // field does not match the lookup key.
         assert_eq!(
             Err(DeployAloneRefusal::HeadMismatch {
                 recorded: "patchset-x".to_string(),
                 current: "master".to_string(),
             }),
-            check_deploy_alone(Some(&record), &tree, "master", None, Some(&image))
+            check_deploy_alone(Some(&record), None, &tree, "master", None, Some(&image))
+        );
+
+        // Production M18: no keyed row for the target, but the tree has
+        // a latest build on another branch.
+        assert_eq!(
+            Err(DeployAloneRefusal::HeadMismatch {
+                recorded: "patchset-x".to_string(),
+                current: "master".to_string(),
+            }),
+            check_deploy_alone(None, Some(&record), &tree, "master", None, Some(&image))
         );
 
         // The config repointed the same tree id at another path.
@@ -1349,7 +1381,14 @@ last_line_without_newline=yes";
                 recorded: dir.path().to_str().unwrap().to_string(),
                 current: "/elsewhere/linux".to_string(),
             }),
-            check_deploy_alone(Some(&record), &moved_tree, "patchset-x", None, Some(&image))
+            check_deploy_alone(
+                Some(&record),
+                None,
+                &moved_tree,
+                "patchset-x",
+                None,
+                Some(&image)
+            )
         );
 
         // The active kw env changed since the build.
@@ -1357,6 +1396,7 @@ last_line_without_newline=yes";
             Err(DeployAloneRefusal::OutputDirMismatch),
             check_deploy_alone(
                 Some(&record),
+                None,
                 &tree,
                 "patchset-x",
                 Some(Path::new("/cache/kw/envs/xyz/minix")),
@@ -1367,12 +1407,12 @@ last_line_without_newline=yes";
         // The image the build produced is gone.
         assert_eq!(
             Err(DeployAloneRefusal::ImageMissing),
-            check_deploy_alone(Some(&record), &tree, "patchset-x", None, None)
+            check_deploy_alone(Some(&record), None, &tree, "patchset-x", None, None)
         );
 
         assert_eq!(
             Ok(()),
-            check_deploy_alone(Some(&record), &tree, "patchset-x", None, Some(&image))
+            check_deploy_alone(Some(&record), None, &tree, "patchset-x", None, Some(&image))
         );
 
         // A trailing-slash-only difference is the same tree, not drift.
@@ -1380,7 +1420,14 @@ last_line_without_newline=yes";
         slashed.tree_path = format!("{}/", dir.path().to_str().unwrap());
         assert_eq!(
             Ok(()),
-            check_deploy_alone(Some(&slashed), &tree, "patchset-x", None, Some(&image))
+            check_deploy_alone(
+                Some(&slashed),
+                None,
+                &tree,
+                "patchset-x",
+                None,
+                Some(&image)
+            )
         );
     }
 
@@ -1393,7 +1440,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             Err(DeployAloneRefusal::LastBuildFailed),
-            check_deploy_alone(Some(&failed), &tree, "master", None, None)
+            check_deploy_alone(Some(&failed), None, &tree, "master", None, None)
         );
     }
 
@@ -1616,7 +1663,13 @@ last_line_without_newline=yes";
         .unwrap();
         assert_eq!(Some("master".to_string()), on_head.current_branch);
         assert_eq!(None, on_head.build_record);
-        assert_eq!(Err(DeployAloneRefusal::NoBuildRecord), on_head.deploy_alone);
+        assert_eq!(
+            Err(DeployAloneRefusal::HeadMismatch {
+                recorded: "patchset-x".to_string(),
+                current: "master".to_string(),
+            }),
+            on_head.deploy_alone
+        );
 
         let for_typed = evaluate_readiness(
             &OsFileSystem,

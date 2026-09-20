@@ -174,8 +174,12 @@ impl KwActor {
         tracing::info!("kw actor started");
         // The job-event sender is held by the actor itself, so that arm of
         // the select never closes while the actor is alive.
+        // Prefer control messages over job events so a Cancel that races a
+        // successful build exit is observed before BuildThenDeploy would
+        // chain into deploy.
         loop {
             tokio::select! {
+                biased;
                 message = self.rx.recv() => {
                     let Some(message) = message else { break };
                     if let ControlFlow::Break(()) = self.handle_message(message).await {
@@ -292,9 +296,9 @@ impl KwActor {
     /// Refusals, in order: a job already running, no kw binary on PATH,
     /// unresolvable kw-env state, a tree that fails the readiness probes,
     /// a dirty worktree, or a failed branch switch. Deploy kinds then also
-    /// refuse on an unresolved remote or an unacknowledged boot-once
-    /// setting; StartDeploy additionally requires a matching build record
-    /// and image. Reserved flags on patch-hub's own argv win over the
+    /// refuse on an unresolved remote; StartDeploy additionally requires a
+    /// matching build record and image, then an acknowledged boot-once
+    /// setting. Reserved flags on patch-hub's own argv win over the
     /// request's extra args. A start refused after the branch switch rolls
     /// the switch back: a refused start never leaves the tree on a branch
     /// the user did not check out.
@@ -307,13 +311,29 @@ impl KwActor {
             return Err(KwStartError::JobAlreadyRunning);
         }
 
+        let tree_path = PathBuf::from(request.tree.path());
         // Hard fail on invoke: with no kw binary on PATH no job can run.
         // The version check is advisory only — kw's shipped VERSION file
         // is stale, so Below/Unknown are logged, never gated.
-        let kw_binary = readiness::probe_kw_binary(&*self.env, &*self.shell);
-        if !kw_binary.available {
-            return Err(KwStartError::KwBinaryMissing);
-        }
+        // Probes run on the blocking pool so a slow tree or cold
+        // `kw --version` cannot stall the Tokio worker (or delay Cancel
+        // past this Start's await).
+        let fs = Arc::clone(&self.fs);
+        let env = Arc::clone(&self.env);
+        let shell = Arc::clone(&self.shell);
+        let tree_path_for_probe = tree_path.clone();
+        let (kw_binary, output_dir, tree_readiness) = tokio::task::spawn_blocking(move || {
+            let kw_binary = readiness::probe_kw_binary(&*env, &*shell);
+            if !kw_binary.available {
+                return Err(KwStartError::KwBinaryMissing);
+            }
+            let output_dir = readiness::resolve_output_dir(&*fs, &*env, &tree_path_for_probe)?;
+            let tree_readiness =
+                readiness::probe_tree(&*fs, &tree_path_for_probe, output_dir.as_deref());
+            Ok((kw_binary, output_dir, tree_readiness))
+        })
+        .await
+        .map_err(|error| KwStartError::GitStateProbe(error.to_string()))??;
         if let KwVersionCheck::Below(version_line) = &kw_binary.check {
             tracing::warn!(
                 version = %version_line,
@@ -322,14 +342,11 @@ impl KwActor {
             );
         }
 
-        let tree_path = PathBuf::from(request.tree.path());
         // Unresolvable env state refuses the start: the build record this
         // job writes at completion must know whether it ran under an O=.
         // Both values are then snapshotted onto the job — the build runs
         // under them, so the completion record describes them, not the
         // tree's configuration at whatever time the job ends.
-        let output_dir = readiness::resolve_output_dir(&*self.fs, &*self.env, &tree_path)?;
-        let tree_readiness = readiness::probe_tree(&*self.fs, &tree_path, output_dir.as_deref());
         let TreeReadiness::Ready { arch } = tree_readiness else {
             return Err(KwStartError::TreeNotReady(tree_readiness));
         };
@@ -337,13 +354,16 @@ impl KwActor {
         let pre_job_branch = self.checkout_build_branch(&request).await?;
 
         let deploy = if matches!(kind, KwJobKind::Deploy | KwJobKind::BuildThenDeploy) {
-            match self.prepare_deploy(
-                kind,
-                &request,
-                &tree_path,
-                output_dir.as_deref(),
-                arch.as_deref(),
-            ) {
+            match self
+                .prepare_deploy(
+                    kind,
+                    &request,
+                    &tree_path,
+                    output_dir.as_deref(),
+                    arch.as_deref(),
+                )
+                .await
+            {
                 Ok(deploy) => Some(deploy),
                 Err(error) => {
                     self.rollback_switch(request.tree.path(), pre_job_branch.as_deref())
@@ -425,12 +445,14 @@ impl KwActor {
         Ok(())
     }
 
-    /// Deploy-kind gates after the branch switch: resolved remote and
-    /// boot-once confirm for every deploy kind; the deploy-alone record
-    /// match only for StartDeploy, against the requested (now checked-out)
-    /// branch. Any refusal is rolled back by the caller. BuildThenDeploy
-    /// skips the record gate because the build has not run yet.
-    fn prepare_deploy(
+    /// Deploy-kind gates after the branch switch: resolved remote for
+    /// every deploy kind; the deploy-alone record match only for
+    /// StartDeploy, against the requested (now checked-out) branch;
+    /// boot-once confirm last so a missing record refuses before the
+    /// confirm popup. Any refusal is rolled back by the caller.
+    /// BuildThenDeploy skips the record gate because the build has not
+    /// run yet. Probes run on the blocking pool.
+    async fn prepare_deploy(
         &self,
         kind: KwJobKind,
         request: &StartRequest,
@@ -438,42 +460,27 @@ impl KwActor {
         output_dir: Option<&Path>,
         arch: Option<&str>,
     ) -> Result<JobDeploy, KwStartError> {
-        let options = request.deploy.clone().unwrap_or(DeployOptions {
-            reboot: false,
-            force: true,
-            boot_once_acknowledged: false,
-        });
-        let remote = remote::resolve_deploy_remote(&*self.fs, &*self.env, tree_path)
-            .map_err(KwStartError::RemoteUnresolved)?;
-        let boot_once = readiness::probe_boot_once(&*self.fs, &*self.env, tree_path);
-        if matches!(boot_once, BootOnceState::On | BootOnceState::Unknown)
-            && !options.boot_once_acknowledged
-        {
-            return Err(KwStartError::BootOnceNotAcknowledged);
-        }
-        if kind == KwJobKind::Deploy {
-            let (record, _) = self
-                .history
-                .build_records(&request.kernel_tree_id, &request.branch)?;
-            let image = readiness::find_newest_kernel_image(
-                &*self.fs,
-                output_dir.unwrap_or(tree_path),
-                arch,
-            );
-            readiness::check_deploy_alone(
-                record.as_ref(),
-                &request.tree,
-                &request.branch,
-                output_dir,
-                image.as_deref(),
+        let fs = Arc::clone(&self.fs);
+        let env = Arc::clone(&self.env);
+        let history = Arc::clone(&self.history);
+        let request = request.clone();
+        let tree_path = tree_path.to_path_buf();
+        let output_dir = output_dir.map(Path::to_path_buf);
+        let arch = arch.map(str::to_string);
+        tokio::task::spawn_blocking(move || {
+            prepare_deploy_blocking(
+                kind,
+                &request,
+                &*fs,
+                &*env,
+                &*history,
+                &tree_path,
+                output_dir.as_deref(),
+                arch.as_deref(),
             )
-            .map_err(KwStartError::DeployAloneRefused)?;
-        }
-        Ok(JobDeploy {
-            remote,
-            options,
-            extra_args: request.extra_args.clone(),
         })
+        .await
+        .map_err(|error| KwStartError::GitStateProbe(error.to_string()))?
     }
 
     /// Refuse a dirty worktree, record HEAD, then `git switch` to the
@@ -606,6 +613,7 @@ impl KwActor {
                     tracing::warn!("kw job finished with no job state recorded");
                     return;
                 };
+                let outcome = outcome_after_building_cancel(&job, outcome);
                 let job = match self.advance_build_then_deploy(job, &outcome) {
                     ControlFlow::Break(()) => return,
                     ControlFlow::Continue(job) => job,
@@ -680,6 +688,10 @@ impl KwActor {
         if job.kind != KwJobKind::BuildThenDeploy
             || job.phase != KwPhase::Building
             || !exit.success()
+            // A cancel during Building must not deploy, even if the build
+            // process exited 0 (wait racing the cancel arm, or a trapped
+            // SIGTERM). `cancel_tx` is taken when Cancel is requested.
+            || job.cancel_tx.is_none()
         {
             return ControlFlow::Continue(job);
         }
@@ -905,6 +917,52 @@ impl KwActor {
     }
 }
 
+/// Deploy gates that must not run on the actor task: remote.config,
+/// history JSON, image globs, and boot-once files. Record match runs
+/// before the boot-once confirm so a missing build refuses cheaper.
+fn prepare_deploy_blocking(
+    kind: KwJobKind,
+    request: &StartRequest,
+    fs: &dyn FileSystemTrait,
+    env: &dyn EnvTrait,
+    history: &dyn KwHistoryStore,
+    tree_path: &Path,
+    output_dir: Option<&Path>,
+    arch: Option<&str>,
+) -> Result<JobDeploy, KwStartError> {
+    let options = request.deploy.clone().unwrap_or(DeployOptions {
+        reboot: false,
+        force: true,
+        boot_once_acknowledged: false,
+    });
+    let remote = remote::resolve_deploy_remote(fs, env, tree_path)
+        .map_err(KwStartError::RemoteUnresolved)?;
+    if kind == KwJobKind::Deploy {
+        let (record, latest) = history.build_records(&request.kernel_tree_id, &request.branch)?;
+        let image = readiness::find_newest_kernel_image(fs, output_dir.unwrap_or(tree_path), arch);
+        readiness::check_deploy_alone(
+            record.as_ref(),
+            latest.as_ref(),
+            &request.tree,
+            &request.branch,
+            output_dir,
+            image.as_deref(),
+        )
+        .map_err(KwStartError::DeployAloneRefused)?;
+    }
+    let boot_once = readiness::probe_boot_once(fs, env, tree_path);
+    if matches!(boot_once, BootOnceState::On | BootOnceState::Unknown)
+        && !options.boot_once_acknowledged
+    {
+        return Err(KwStartError::BootOnceNotAcknowledged);
+    }
+    Ok(JobDeploy {
+        remote,
+        options,
+        extra_args: request.extra_args.clone(),
+    })
+}
+
 /// Fails unless the tree's git state verifies clean. Untracked files
 /// don't count: kernel trees accumulate local scratch files, and only
 /// tracked changes can corrupt the branch a job builds. A probe that
@@ -1026,6 +1084,22 @@ async fn cancel_job(process: &mut dyn RunningProcess) -> JobOutcome {
     }
 }
 
+/// A cancel during Building of a BuildThenDeploy job must not chain into
+/// deploy, even when the build process reports exit 0. Rewriting the
+/// outcome to [`JobOutcome::Cancelled`] also skips the build record, matching
+/// the "cancel in Building writes nothing" rule.
+fn outcome_after_building_cancel(job: &JobState, outcome: JobOutcome) -> JobOutcome {
+    if job.cancel_tx.is_none()
+        && job.kind == KwJobKind::BuildThenDeploy
+        && job.phase == KwPhase::Building
+        && matches!(&outcome, JobOutcome::Exited(exit) if exit.success())
+    {
+        JobOutcome::Cancelled
+    } else {
+        outcome
+    }
+}
+
 /// Maps a reap result observed after a cancel request. A signal-terminated
 /// process means our SIGTERM/SIGKILL landed — the job was really cancelled.
 /// A plain exit means the process finished on its own before the signal:
@@ -1033,11 +1107,13 @@ async fn cancel_job(process: &mut dyn RunningProcess) -> JobOutcome {
 /// build history (and deploy-alone readiness) needs to see.
 ///
 /// Known, accepted edges: a process that *traps* our SIGTERM and exits 0
-/// counts as success (kw is bash, so this is possible in principle), and an
-/// external signal racing a cancel (e.g. the OOM killer) reads as
-/// Cancelled. Both are indistinguishable from the honest cases without
-/// comparing who signaled first, and both favor showing the user real
-/// output over inventing failures.
+/// counts as success for a standalone build (kw is bash, so this is
+/// possible in principle). BuildThenDeploy does not chain that exit into
+/// deploy — see [`outcome_after_building_cancel`]. An external signal
+/// racing a cancel (e.g. the OOM killer) reads as Cancelled. Those cases
+/// are indistinguishable from the honest ones without comparing who
+/// signaled first, and both favor showing the user real output over
+/// inventing failures.
 fn outcome_after_cancel(result: Result<ExitStatus, ProcessError>) -> JobOutcome {
     use std::os::unix::process::ExitStatusExt;
 
@@ -2453,13 +2529,37 @@ mod tests {
     async fn start_deploy_refused_when_boot_once_is_on_and_unacked() {
         let (handle, process, log_dir) = spawn_deploy_actor(
             "deploy-boot-once",
-            MockKwHistoryStore::new(),
+            deploy_history(Some(matching_build_record())),
             deploy_fs(DEPLOY_REMOTE_CONFIG, DEPLOY_BOOT_ONCE_ON, true),
         );
 
         let err = handle.start_deploy(deploy_request()).await.unwrap_err();
 
         assert!(matches!(err, KwStartError::BootOnceNotAcknowledged));
+        assert!(process.spawned().is_empty());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_deploy_refused_when_latest_build_is_on_another_branch() {
+        let mut latest = matching_build_record();
+        latest.branch = "other".to_string();
+        let mut history = MockKwHistoryStore::new();
+        history
+            .expect_build_records()
+            .returning(move |_, _| Ok((None, Some(latest.clone()))));
+        history.expect_record_build().times(0);
+        let (handle, process, log_dir) =
+            spawn_deploy_actor("deploy-head-mismatch", history, deploy_ready_fs());
+
+        let err = handle.start_deploy(deploy_request()).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            KwStartError::DeployAloneRefused(DeployAloneRefusal::HeadMismatch { .. })
+        ));
         assert!(process.spawned().is_empty());
 
         handle.shutdown().await;
@@ -2581,7 +2681,6 @@ mod tests {
                 "--no-reboot",
                 "--force",
                 "--verbose",
-                "--ccache"
             ]
             .as_slice(),
             spawned[1].args.as_slice()
@@ -2672,6 +2771,36 @@ mod tests {
         }
         assert_eq!(1, process.spawned().len());
         assert!(process.last_child().was_killed());
+        assert!(builds.lock().unwrap().is_empty());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_build_then_deploy_cancel_then_exit_zero_skips_deploy() {
+        let (history, builds) = recording_history(None);
+        let (handle, process, log_dir) =
+            spawn_deploy_actor("chain-cancel-exit-zero", history, deploy_ready_fs());
+        let mut watch = handle.watch_status().await.unwrap();
+
+        process.ignore_sigterm(true);
+        handle
+            .start_build_then_deploy(deploy_request())
+            .await
+            .unwrap();
+        handle.cancel().await.unwrap();
+        process.last_child().finish(0);
+
+        let status = wait_for_terminal_status(&mut watch).await;
+        match status {
+            KwJobStatus::Cancelled { kind, phase, .. } => {
+                assert_eq!(KwJobKind::BuildThenDeploy, kind);
+                assert_eq!(KwPhase::Building, phase);
+            }
+            other => panic!("expected Cancelled Building, got {other:?}"),
+        }
+        assert_eq!(1, process.spawned().len());
         assert!(builds.lock().unwrap().is_empty());
 
         handle.shutdown().await;

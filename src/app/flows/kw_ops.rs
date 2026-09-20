@@ -92,6 +92,27 @@ pub(crate) fn apply_kw_snapshot(app: &mut App, snapshot: KwStatusSnapshot) {
     app.state.kw.status = Some(snapshot);
 }
 
+fn snapshot_job_is_terminal(job: &KwJobStatus) -> bool {
+    matches!(
+        job,
+        KwJobStatus::Succeeded { .. } | KwJobStatus::Failed { .. } | KwJobStatus::Cancelled { .. }
+    )
+}
+
+/// Re-probe deploy-alone after a job ends so the (d) label tracks the
+/// in-session build record instead of staying on the pre-build snapshot.
+pub(crate) async fn apply_kw_snapshot_refreshing_readiness(
+    app: &mut App,
+    snapshot: KwStatusSnapshot,
+) {
+    let refresh = snapshot_job_is_terminal(&snapshot.job)
+        && app.state.navigation.current_screen == CurrentScreen::KwOps;
+    apply_kw_snapshot(app, snapshot);
+    if refresh {
+        refresh_kw_ops_readiness(app).await;
+    }
+}
+
 /// Keyboard-only fallback: pull status when the watch is unavailable.
 pub(crate) async fn poll_kw_status(app: &mut App) -> bool {
     let Some(kw) = app.services.kw.clone() else {
@@ -101,7 +122,7 @@ pub(crate) async fn poll_kw_status(app: &mut App) -> bool {
         return false;
     };
     let changed = app.state.kw.status.as_ref() != Some(&snapshot);
-    apply_kw_snapshot(app, snapshot);
+    apply_kw_snapshot_refreshing_readiness(app, snapshot).await;
     changed
 }
 
@@ -117,7 +138,7 @@ pub(crate) async fn fallback_kw_status(app: &mut App) {
         return;
     };
     match kw.get_status().await {
-        Ok(snapshot) => apply_kw_snapshot(app, snapshot),
+        Ok(snapshot) => apply_kw_snapshot_refreshing_readiness(app, snapshot).await,
         Err(_) => app.state.kw.status = None,
     }
 }
@@ -302,6 +323,14 @@ async fn start_job(app: &mut App, kind: KwStartKind) -> Result<()> {
         };
         app.state.popup = Some(AppPopup::info(kind.title(), body));
         return Ok(());
+    }
+    // Record/tree refusals before the boot-once confirm so a deploy
+    // without a build does not ask the user to proceed, then refuse.
+    if matches!(kind, KwStartKind::Deploy) {
+        if let Err(reason) = &ops.readiness.deploy_alone {
+            app.state.popup = Some(AppPopup::info(kind.title(), reason.to_string()));
+            return Ok(());
+        }
     }
     if kind.pending_kind().is_some() && needs_boot_once_confirm(ops) {
         if let Some(ops) = app.state.kw.ops.as_mut() {

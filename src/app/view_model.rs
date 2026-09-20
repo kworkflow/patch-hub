@@ -472,7 +472,8 @@ fn project_kw_ops(state: &AppState) -> KwOpsViewModel {
         ops.extra_args.clone()
     };
     let branch_empty = ops.branch.trim().is_empty();
-    let start_block = start_block_reason(running, start_requested, branch_empty);
+    let kw_available = ops.readiness.kw_binary.available;
+    let start_block = start_block_reason(running, start_requested, branch_empty, kw_available);
     let start_label = action_label(start_block.clone(), 'b');
     let remote_block = match &ops.readiness.deploy_remote {
         Err(reason) => Some(format!("unavailable ({})", compact_remote_refusal(reason))),
@@ -568,9 +569,16 @@ fn project_kw_ops(state: &AppState) -> KwOpsViewModel {
     }
 }
 
-fn start_block_reason(running: bool, start_requested: bool, branch_empty: bool) -> Option<String> {
+fn start_block_reason(
+    running: bool,
+    start_requested: bool,
+    branch_empty: bool,
+    kw_available: bool,
+) -> Option<String> {
     if running || start_requested {
         Some("unavailable (a job is already running)".to_string())
+    } else if !kw_available {
+        Some("unavailable (kw not on PATH)".to_string())
     } else if branch_empty {
         Some("unavailable (set a branch first)".to_string())
     } else {
@@ -1048,7 +1056,7 @@ mod tests {
         ops.readiness.deploy_remote = Ok(sample_remote());
         ops.readiness.deploy_alone = Ok(());
         ops.readiness.boot_once = crate::kw::readiness::BootOnceState::Off;
-        ops.extra_args = "--verbose --local".to_string();
+        ops.extra_args = "--verbose --local --ccache".to_string();
         state.kw.ops = Some(ops);
 
         let ScreenViewModel::KwOps(vm) = project_state(&state).screen else {
@@ -1164,5 +1172,22 @@ mod tests {
             })))
             .kw_running
         );
+    }
+
+    #[test]
+    fn missing_kw_binary_disables_start_labels() {
+        let mut state = app_state_with_kw(None);
+        state.navigation.current_screen = CurrentScreen::KwOps;
+        let mut ops = sample_kw_ops(Some("feature"));
+        ops.readiness.kw_binary.available = false;
+        ops.readiness.kw_binary.version_line = None;
+        state.kw.ops = Some(ops);
+
+        let ScreenViewModel::KwOps(vm) = project_state(&state).screen else {
+            panic!("expected KwOps projection");
+        };
+        assert_eq!("unavailable (kw not on PATH)", vm.start_label);
+        assert_eq!("unavailable (kw not on PATH)", vm.deploy_label);
+        assert_eq!("unavailable (kw not on PATH)", vm.build_deploy_label);
     }
 }
