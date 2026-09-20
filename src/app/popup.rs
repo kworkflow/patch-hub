@@ -11,6 +11,13 @@ use crate::{
     lore::domain::patch::Author,
 };
 
+/// Action taken when the user confirms a choice popup.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConfirmAction {
+    CancelKwAndQuit,
+    Wait,
+}
+
 /// Concrete, cloneable popup state stored in `AppState`.
 #[derive(Clone, Debug)]
 pub enum AppPopup {
@@ -35,6 +42,13 @@ pub enum AppPopup {
         acked_by: String,
         scroll: (u16, u16),
         max_scroll: (u16, u16),
+        dimensions: (u16, u16),
+    },
+    Confirm {
+        title: String,
+        body: String,
+        options: Vec<(String, ConfirmAction)>,
+        selected: usize,
         dimensions: (u16, u16),
     },
 }
@@ -103,9 +117,64 @@ impl AppPopup {
             dimensions: (50, 40),
         }
     }
+
+    /// Choice popup shown when the user tries to quit while a kw job runs.
+    ///
+    /// [`ConfirmAction::Wait`] is the highlighted default so Enter, like
+    /// Esc, stays in the app unless the user explicitly picks cancel.
+    pub fn quit_while_job_running() -> Self {
+        AppPopup::Confirm {
+            title: "Cancel build and quit?".to_string(),
+            body: "A kw job is still running. Cancel it and quit, or wait and stay in the app?"
+                .to_string(),
+            options: vec![
+                (
+                    "Cancel and quit".to_string(),
+                    ConfirmAction::CancelKwAndQuit,
+                ),
+                ("Wait".to_string(), ConfirmAction::Wait),
+            ],
+            selected: 1,
+            dimensions: (50, 30),
+        }
+    }
+
+    /// The currently highlighted confirm action, if this is a choice popup.
+    pub fn selected_confirm_action(&self) -> Option<ConfirmAction> {
+        match self {
+            AppPopup::Confirm {
+                options, selected, ..
+            } => options.get(*selected).map(|(_, action)| *action),
+            _ => None,
+        }
+    }
+
+    /// Handle input for whichever popup is open.
+    ///
+    /// Info/Help/ReviewTrailers scroll. Confirm moves the highlighted
+    /// option; Enter is handled by the caller via [`InputEvent::ConfirmPopup`].
+    pub fn handle_input(&mut self, input: InputEvent) {
+        match self {
+            AppPopup::Confirm {
+                options, selected, ..
+            } => match input {
+                InputEvent::NavigateLeft | InputEvent::NavigateUp => {
+                    *selected = selected.saturating_sub(1);
+                }
+                InputEvent::NavigateRight | InputEvent::NavigateDown => {
+                    if *selected + 1 < options.len() {
+                        *selected += 1;
+                    }
+                }
+                _ => {}
+            },
+            _ => self.handle_scroll(input),
+        }
+    }
+
     /// Advance scroll position in response to a navigation input.
     ///
-    /// All popup variants share identical two-axis scroll semantics.
+    /// Scrollable popup variants share identical two-axis scroll semantics.
     pub fn handle_scroll(&mut self, input: InputEvent) {
         let (scroll, max_scroll) = match self {
             AppPopup::Info {
@@ -117,6 +186,7 @@ impl AppPopup {
             | AppPopup::ReviewTrailers {
                 scroll, max_scroll, ..
             } => (scroll, max_scroll),
+            AppPopup::Confirm { .. } => return,
         };
 
         match input {
@@ -142,6 +212,7 @@ impl AppPopup {
         }
     }
 }
+
 /// Fluent builder for `AppPopup::Help`.
 ///
 /// Mirrors the API of the old `HelpPopUpBuilder` so handler call sites change
@@ -193,5 +264,48 @@ impl AppHelpBuilder {
             max_scroll: (lines, columns),
             dimensions: (50, 50),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quit_confirm_defaults_to_wait() {
+        let popup = AppPopup::quit_while_job_running();
+        assert_eq!(Some(ConfirmAction::Wait), popup.selected_confirm_action());
+    }
+
+    #[test]
+    fn quit_confirm_left_selects_cancel_and_quit() {
+        let mut popup = AppPopup::quit_while_job_running();
+        popup.handle_input(InputEvent::NavigateLeft);
+        assert_eq!(
+            Some(ConfirmAction::CancelKwAndQuit),
+            popup.selected_confirm_action()
+        );
+        popup.handle_input(InputEvent::NavigateLeft);
+        assert_eq!(
+            Some(ConfirmAction::CancelKwAndQuit),
+            popup.selected_confirm_action()
+        );
+    }
+
+    #[test]
+    fn quit_confirm_right_stays_on_wait() {
+        let mut popup = AppPopup::quit_while_job_running();
+        popup.handle_input(InputEvent::NavigateRight);
+        assert_eq!(Some(ConfirmAction::Wait), popup.selected_confirm_action());
+    }
+
+    #[test]
+    fn info_popup_still_scrolls() {
+        let mut popup = AppPopup::info("Title", "line 1\nline 2\nline 3");
+        popup.handle_input(InputEvent::NavigateDown);
+        let AppPopup::Info { scroll, .. } = popup else {
+            panic!("expected Info popup");
+        };
+        assert_eq!((1, 0), scroll);
     }
 }

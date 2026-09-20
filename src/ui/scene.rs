@@ -68,6 +68,31 @@ pub struct EditConfigScene {
     pub entries: Vec<ConfigEntryRow>,
 }
 
+/// Scene for the KwOps dashboard.
+#[derive(Clone, Debug)]
+pub struct KwOpsScene {
+    pub patchset_title: String,
+    pub message_id: String,
+    pub kernel_tree_id: String,
+    pub tree_path: String,
+    pub branch: String,
+    pub extra_args: String,
+    pub branch_focused: bool,
+    pub extras_focused: bool,
+    pub editing: bool,
+    pub kw_binary: String,
+    pub tree_readiness: String,
+    pub output_dir: String,
+    pub job_status: String,
+    pub command: String,
+    pub start_label: String,
+    pub cancel_label: String,
+    pub restore_label: String,
+    pub deploy_placeholder: String,
+    pub branch_guidance: Option<String>,
+    pub log_tail: String,
+}
+
 /// Which screen's scene the body carries.
 #[derive(Clone, Debug)]
 pub enum UiBody {
@@ -76,6 +101,7 @@ pub enum UiBody {
     Latest(LatestScene),
     PatchsetDetails(PatchsetDetailsScene),
     EditConfig(EditConfigScene),
+    KwOps(KwOpsScene),
 }
 
 /// Pre-computed navigation-bar content.
@@ -104,6 +130,12 @@ pub enum PopupBody {
         reviewed_by: String,
         tested_by: String,
         acked_by: String,
+    },
+    /// Confirmation choices. Labels only; the application owns the action.
+    Confirm {
+        body: String,
+        options: Vec<String>,
+        selected: usize,
     },
 }
 

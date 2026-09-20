@@ -50,7 +50,7 @@ impl InputMapper {
         }
 
         if context.popup_open {
-            return self.map_popup_key(&key);
+            return self.map_popup_key(&key, context);
         }
 
         match &context.current_screen {
@@ -59,12 +59,14 @@ impl InputMapper {
             CurrentScreen::LatestPatchsets => self.map_latest_key(&key),
             CurrentScreen::PatchsetDetails => self.map_details_key(&key),
             CurrentScreen::EditConfig => self.map_edit_config_key(&key, context),
+            CurrentScreen::KwOps => self.map_kw_ops_key(&key, context),
         }
     }
 
-    fn map_popup_key(&mut self, key: &KeyInput) -> Option<InputEvent> {
+    fn map_popup_key(&mut self, key: &KeyInput, context: &InputContext) -> Option<InputEvent> {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => Some(InputEvent::ClosePopup),
+            KeyCode::Enter if context.confirm_popup_open => Some(InputEvent::ConfirmPopup),
             KeyCode::Char('j') | KeyCode::Down => Some(InputEvent::NavigateDown),
             KeyCode::Char('k') | KeyCode::Up => Some(InputEvent::NavigateUp),
             KeyCode::Char('h') | KeyCode::Left => Some(InputEvent::NavigateLeft),
@@ -177,7 +179,32 @@ impl InputMapper {
             KeyCode::Char('p') => Some(InputEvent::PreviewPrevious),
             KeyCode::Char('b') => Some(InputEvent::ToggleBookmark),
             KeyCode::Char('r') => Some(InputEvent::ToggleReplyWithReviewedBy),
+            KeyCode::Char('w') => Some(InputEvent::OpenKwOps),
             KeyCode::Enter => Some(InputEvent::ConsolidatePatchsetActions),
+            _ => None,
+        }
+    }
+
+    fn map_kw_ops_key(&mut self, key: &KeyInput, context: &InputContext) -> Option<InputEvent> {
+        if context.kw_ops_editing {
+            return match key.code {
+                KeyCode::Esc => Some(InputEvent::CancelKwOpsEdit),
+                KeyCode::Backspace => Some(InputEvent::Backspace),
+                KeyCode::Enter => Some(InputEvent::StageKwOpsEdit),
+                KeyCode::Char(ch) => Some(InputEvent::TextInput(ch)),
+                _ => None,
+            };
+        }
+
+        match key.code {
+            KeyCode::Char('?') => Some(InputEvent::OpenHelp),
+            KeyCode::Esc | KeyCode::Char('q') => Some(InputEvent::Back),
+            KeyCode::Char('j') | KeyCode::Down => Some(InputEvent::NavigateDown),
+            KeyCode::Char('k') | KeyCode::Up => Some(InputEvent::NavigateUp),
+            KeyCode::Char('e') | KeyCode::Enter => Some(InputEvent::EditKwOpsField),
+            KeyCode::Char('b') => Some(InputEvent::StartKwBuild),
+            KeyCode::Char('c') => Some(InputEvent::CancelKwJob),
+            KeyCode::Char('r') => Some(InputEvent::RestoreKwBranch),
             _ => None,
         }
     }
@@ -249,6 +276,19 @@ mod tests {
         let event = mapper.map_terminal_event(key(KeyCode::Esc), &context);
 
         assert_eq!(event, Some(InputEvent::ClosePopup));
+    }
+
+    #[test]
+    fn maps_enter_to_confirm_popup_only_for_confirm_popups() {
+        let mut mapper = InputMapper::default();
+        let confirm = context(CurrentScreen::MailingListSelection).with_confirm_popup_open();
+        assert_eq!(
+            mapper.map_terminal_event(key(KeyCode::Enter), &confirm),
+            Some(InputEvent::ConfirmPopup)
+        );
+
+        let info = context(CurrentScreen::MailingListSelection).with_popup_open(true);
+        assert_eq!(mapper.map_terminal_event(key(KeyCode::Enter), &info), None);
     }
 
     #[test]
@@ -365,6 +405,50 @@ mod tests {
         assert_eq!(
             mapper.map_terminal_event(key(KeyCode::Char('g')), &context),
             Some(InputEvent::PreviewGoToFirstLine)
+        );
+    }
+
+    #[test]
+    fn maps_w_on_details_to_open_kw_ops() {
+        let mut mapper = InputMapper::default();
+        let context = context(CurrentScreen::PatchsetDetails);
+
+        assert_eq!(
+            mapper.map_terminal_event(key(KeyCode::Char('w')), &context),
+            Some(InputEvent::OpenKwOps)
+        );
+    }
+
+    #[test]
+    fn maps_kw_ops_keys_and_treats_letters_as_text_while_editing() {
+        let mut mapper = InputMapper::default();
+        let context = context(CurrentScreen::KwOps);
+
+        assert_eq!(
+            mapper.map_terminal_event(key(KeyCode::Char('b')), &context),
+            Some(InputEvent::StartKwBuild)
+        );
+        assert_eq!(
+            mapper.map_terminal_event(key(KeyCode::Char('c')), &context),
+            Some(InputEvent::CancelKwJob)
+        );
+        assert_eq!(
+            mapper.map_terminal_event(key(KeyCode::Char('r')), &context),
+            Some(InputEvent::RestoreKwBranch)
+        );
+        assert_eq!(
+            mapper.map_terminal_event(key(KeyCode::Char('e')), &context),
+            Some(InputEvent::EditKwOpsField)
+        );
+
+        let editing = context.with_kw_ops_editing(true);
+        assert_eq!(
+            mapper.map_terminal_event(key(KeyCode::Char('b')), &editing),
+            Some(InputEvent::TextInput('b'))
+        );
+        assert_eq!(
+            mapper.map_terminal_event(key(KeyCode::Esc), &editing),
+            Some(InputEvent::CancelKwOpsEdit)
         );
     }
 

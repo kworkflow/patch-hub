@@ -78,7 +78,7 @@ pub struct AppServices {
     pub lore_api: LoreApiHandle,
     pub render: RenderHandle,
     pub shell: Box<dyn ShellTrait>,
-    pub fs: Box<dyn FileSystemTrait>,
+    pub fs: Arc<dyn FileSystemTrait>,
     pub config: ConfigHandle,
     /// Direct access to the store, for the non-unix fallback below.
     pub kw_history: Arc<dyn KwHistoryStore>,
@@ -113,7 +113,7 @@ impl App {
         config: ConfigSnapshot,
         config_handle: ConfigHandle,
         bootstrap: BootstrapLoreData,
-        fs: Box<dyn FileSystemTrait>,
+        fs: Arc<dyn FileSystemTrait>,
         shell: Box<dyn ShellTrait>,
         lore_api: LoreApiHandle,
         render: RenderHandle,
@@ -148,6 +148,7 @@ impl App {
                 config_state: ConfigUiState { edit_config: None },
                 config,
                 popup: None,
+                kw: Default::default(),
             },
             services: AppServices {
                 lore_api,

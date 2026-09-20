@@ -502,6 +502,9 @@ pub struct KwReadiness {
     /// `Ok(())` is a self-sufficient verdict: tree readiness is already
     /// conjoined in, so a caller cannot forget to check `tree` as well.
     pub deploy_alone: Result<(), DeployAloneRefusal>,
+    /// Currently checked-out branch. `None` when HEAD is detached or
+    /// `git branch --show-current` could not be read.
+    pub current_branch: Option<String>,
 }
 
 /// Runs all readiness probes for `tree` and composes them into a
@@ -553,6 +556,14 @@ pub fn evaluate_readiness(
         build_record,
         latest_build,
         deploy_alone,
+        current_branch: {
+            let trimmed = head_branch.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        },
     })
 }
 
@@ -1348,6 +1359,7 @@ last_line_without_newline=yes";
         assert_eq!(None, readiness.output_dir);
         assert!(readiness.kw_binary.available);
         assert_eq!(KwVersionCheck::Meets, readiness.kw_binary.check);
+        assert_eq!(Some("patchset-x".to_string()), readiness.current_branch);
     }
 
     #[test]
@@ -1425,5 +1437,25 @@ last_line_without_newline=yes";
             readiness.deploy_alone
         );
         assert!(!readiness.kw_binary.available);
+        assert_eq!(Some("patchset-x".to_string()), readiness.current_branch);
+    }
+
+    #[test]
+    fn evaluate_readiness_empty_head_has_no_current_branch() {
+        let dir = make_ready_tree("evaluate-detached");
+        let data = TempDir::new("evaluate-detached-data");
+        let history = FileKwHistoryStore::new(
+            Arc::new(OsFileSystem),
+            data.path().to_str().unwrap().to_string(),
+        );
+        let mut env = MockEnvTrait::new();
+        env.expect_which().returning(|_| false);
+        let mut shell = MockShellTrait::new();
+        shell.expect_execute().times(0);
+        let tree = kernel_tree(dir.path());
+        let readiness =
+            evaluate_readiness(&OsFileSystem, &env, &shell, &history, "mainline", &tree, "")
+                .unwrap();
+        assert_eq!(None, readiness.current_branch);
     }
 }

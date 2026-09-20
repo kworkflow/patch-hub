@@ -17,6 +17,10 @@ pub async fn handle_patchset_details(
     input: InputEvent,
     terminal_handle: &TerminalHandle,
 ) -> Result<()> {
+    if input == InputEvent::OpenKwOps {
+        return crate::app::flows::kw_ops::open_kw_ops(app).await;
+    }
+
     let patchset_details_and_actions = app
         .state
         .lore
@@ -139,5 +143,6 @@ pub fn generate_help_popup() -> AppPopup {
         .keybind("r", "Toggle reply with Reviewed-by action")
         .keybind("Shift+r", "Toggle reply with Reviewed-by action for all patches")
         .keybind("Ctrl+t", "Show code-review trailers details")
+        .keybind("w", "Kw operations")
         .build()
 }

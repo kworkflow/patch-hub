@@ -1,6 +1,7 @@
 pub mod bookmarked;
 pub mod details_actions;
 pub mod edit_config;
+pub mod kw_ops;
 pub mod latest;
 pub mod mail_list;
 
@@ -11,4 +12,5 @@ pub enum CurrentScreen {
     LatestPatchsets,
     PatchsetDetails,
     EditConfig,
+    KwOps,
 }

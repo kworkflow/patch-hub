@@ -515,7 +515,7 @@ fn app_with_details_and_kw(
             bookmarks: vec![],
             reviewed: Default::default(),
         },
-        Box::new(fs),
+        Arc::new(fs),
         Box::new(shell),
         lore_api,
         dummy_render_handle(),

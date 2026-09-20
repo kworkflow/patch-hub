@@ -29,4 +29,11 @@ pub trait FileSystemTrait: Send + Sync {
     fn create_writer(&self, path: &Path) -> Result<Box<dyn io::Write + Send>, FileSystemError>;
     fn open_bufreader(&self, path: &Path) -> Result<Box<dyn io::BufRead + Send>, FileSystemError>;
     fn metadata(&self, path: &Path) -> Result<Metadata, FileSystemError>;
+    /// Read at most `max_bytes` from the end of `path`.
+    ///
+    /// When the read does not start at byte zero, an initial partial line
+    /// is discarded so the returned text begins on a line boundary.
+    /// Invalid UTF-8 is decoded lossily.
+    fn read_tail_to_string(&self, path: &Path, max_bytes: usize)
+        -> Result<String, FileSystemError>;
 }

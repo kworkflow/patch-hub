@@ -38,6 +38,7 @@ pub fn paint(f: &mut Frame, scene: &UiScene) {
         UiBody::Latest(s) => screens::latest::paint(f, s, chunks[1]),
         UiBody::PatchsetDetails(s) => screens::details::paint(f, s, chunks[1]),
         UiBody::EditConfig(s) => screens::edit_config::paint(f, s, chunks[1]),
+        UiBody::KwOps(s) => screens::kw_ops::paint(f, s, chunks[1]),
     }
 
     screens::navigation_bar::paint(f, &scene.navigation, chunks[2]);

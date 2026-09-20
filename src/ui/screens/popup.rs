@@ -1,7 +1,7 @@
 use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style, Stylize},
-    text::Line,
+    text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap},
     Frame,
 };
@@ -10,6 +10,7 @@ use crate::{
     app::view_model::{PopupViewBody, PopupViewModel},
     ui::scene::{PopupBody, PopupScene},
 };
+
 pub fn build_scene(vm: &PopupViewModel) -> PopupScene {
     let body = match &vm.body {
         PopupViewBody::Text(text) => PopupBody::Text(text.clone()),
@@ -28,6 +29,15 @@ pub fn build_scene(vm: &PopupViewModel) -> PopupScene {
             reviewed_by: reviewed_by.clone(),
             tested_by: tested_by.clone(),
             acked_by: acked_by.clone(),
+        },
+        PopupViewBody::Confirm {
+            body,
+            options,
+            selected,
+        } => PopupBody::Confirm {
+            body: body.clone(),
+            options: options.clone(),
+            selected: *selected,
         },
     };
 
@@ -65,6 +75,11 @@ pub fn paint(f: &mut Frame, scene: &PopupScene, chunk: Rect) {
             scene.scroll_offset,
             chunk,
         ),
+        PopupBody::Confirm {
+            body,
+            options,
+            selected,
+        } => paint_confirm(f, &scene.title, body, options, *selected, chunk),
     }
 }
 
@@ -174,6 +189,53 @@ fn paint_review_trailers(
         .block(block)
         .alignment(Alignment::Left)
         .scroll(scroll);
+
+    f.render_widget(Clear, chunk);
+    f.render_widget(paragraph, chunk);
+}
+
+fn paint_confirm(
+    f: &mut Frame,
+    title: &str,
+    body: &str,
+    options: &[String],
+    selected: usize,
+    chunk: Rect,
+) {
+    let bold_blue = Style::default()
+        .add_modifier(Modifier::BOLD)
+        .fg(Color::Blue);
+    let selected_style = Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD)
+        .add_modifier(Modifier::REVERSED);
+    let block = Block::default()
+        .title(title.to_string())
+        .title_alignment(Alignment::Center)
+        .title_style(bold_blue)
+        .title_bottom(Line::styled("(ENTER) confirm | (ESC / q) wait", bold_blue))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .style(Style::default());
+
+    let mut lines = vec![Line::from(body.to_string()), Line::from("")];
+    let mut option_spans = Vec::new();
+    for (index, label) in options.iter().enumerate() {
+        if index > 0 {
+            option_spans.push(Span::raw("    "));
+        }
+        if index == selected {
+            option_spans.push(Span::styled(format!("[{label}]"), selected_style));
+        } else {
+            option_spans.push(Span::raw(format!(" {label} ")));
+        }
+    }
+    lines.push(Line::from(option_spans));
+
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
 
     f.render_widget(Clear, chunk);
     f.render_widget(paragraph, chunk);

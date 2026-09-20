@@ -146,7 +146,7 @@ async fn main() -> Result<()> {
             .map_err(|error| eyre!("{error}"))?,
         config_handle.clone(),
         bootstrap,
-        Box::new(OsFileSystem),
+        fs_arc.clone(),
         Box::new(OsShell),
         lore_api.clone(),
         render.clone(),

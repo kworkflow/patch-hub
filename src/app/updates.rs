@@ -4,10 +4,13 @@ use crate::app::{loading::LoadingIndicator, screens::CurrentScreen, App};
 
 impl App {
     /// Processes app-driven updates that are not direct user input.
+    ///
+    /// Returns whether any screen state changed, so the render loop can
+    /// draw even when no input/watch/tick arm requested a redraw.
     pub async fn process_system_updates(
         &mut self,
         loading: &mut (dyn LoadingIndicator + Send),
-    ) -> Result<()> {
+    ) -> Result<bool> {
         match self.state.navigation.current_screen {
             CurrentScreen::MailingListSelection => {
                 if self
@@ -21,7 +24,9 @@ impl App {
                     let result = self.refresh_mailing_lists().await;
                     loading.stop()?;
                     result?;
+                    return Ok(true);
                 }
+                Ok(false)
             }
             CurrentScreen::LatestPatchsets => {
                 let patchsets_state = self.state.lore.latest_patchsets.as_ref().expect(
@@ -36,7 +41,9 @@ impl App {
                     result?;
 
                     self.state.lore.mailing_list_selection.clear_target_list();
+                    return Ok(true);
                 }
+                Ok(false)
             }
             CurrentScreen::BookmarkedPatchsets => {
                 if self
@@ -47,11 +54,11 @@ impl App {
                     .is_empty()
                 {
                     self.set_current_screen(CurrentScreen::MailingListSelection);
+                    return Ok(true);
                 }
+                Ok(false)
             }
-            _ => {}
+            _ => Ok(false),
         }
-
-        Ok(())
     }
 }

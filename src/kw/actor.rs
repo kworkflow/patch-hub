@@ -8,8 +8,9 @@
 //! [`crate::kw::readiness`] and records applies through the shared
 //! [`KwHistoryStore`](crate::kw::history::KwHistoryStore).
 //!
-//! Git checkout runs on the blocking pool. `create_dir_all`, history
-//! writes, and completion probes run inline on the actor task.
+//! Git checkout and readiness probes run on the blocking pool.
+//! `create_dir_all`, history writes, and completion probes run inline
+//! on the actor task.
 
 use std::{
     ops::ControlFlow,
@@ -221,7 +222,7 @@ impl KwActor {
                 send_kw_reply(
                     message_name,
                     reply,
-                    self.evaluate_readiness(&kernel_tree_id, &tree),
+                    self.evaluate_readiness(&kernel_tree_id, &tree).await,
                 );
                 ControlFlow::Continue(())
             }
@@ -507,6 +508,7 @@ impl KwActor {
                         KwJobStatus::Cancelled {
                             kind: job.kind,
                             phase: job.phase,
+                            log_path: job.log_path,
                         }
                     }
                 };
@@ -585,25 +587,54 @@ impl KwActor {
 
     fn set_status(&mut self, job: KwJobStatus) {
         // send_replace, not send: no receiver (nobody called WatchStatus
-        // yet) is a normal state, not an error.
-        self.status_tx.send_replace(KwStatusSnapshot { job });
+        // yet) is a normal state, not an error. Restore availability is
+        // published with every snapshot so the UI does not have to guess
+        // whether RestorePreviousBranch would succeed.
+        self.status_tx.send_replace(KwStatusSnapshot {
+            job,
+            restore_branch: self
+                .last_restore
+                .as_ref()
+                .map(|restore| restore.branch.clone()),
+        });
     }
 
-    fn evaluate_readiness(
+    /// Re-broadcasts the current job with the current restore projection.
+    /// Used after restore succeeds (the branch is gone) without changing
+    /// the job's own status.
+    fn republish_status(&mut self) {
+        let job = self.status_tx.borrow().job.clone();
+        self.set_status(job);
+    }
+
+    /// Git probes and history I/O run on the blocking pool so a slow
+    /// tree cannot stall Cancel (or any other message) for the duration.
+    async fn evaluate_readiness(
         &self,
         kernel_tree_id: &str,
         tree: &KernelTree,
     ) -> Result<KwReadiness, KwError> {
-        let head = head_branch(&*self.shell, tree.path());
-        Ok(readiness::evaluate_readiness(
-            &*self.fs,
-            &*self.env,
-            &*self.shell,
-            &*self.history,
-            kernel_tree_id,
-            tree,
-            &head,
-        )?)
+        let fs = Arc::clone(&self.fs);
+        let env = Arc::clone(&self.env);
+        let shell = Arc::clone(&self.shell);
+        let history = Arc::clone(&self.history);
+        let kernel_tree_id = kernel_tree_id.to_string();
+        let tree = tree.clone();
+        tokio::task::spawn_blocking(move || {
+            let head = head_branch(&*shell, tree.path());
+            readiness::evaluate_readiness(
+                &*fs,
+                &*env,
+                &*shell,
+                &*history,
+                &kernel_tree_id,
+                &tree,
+                &head,
+            )
+            .map_err(KwError::from)
+        })
+        .await
+        .map_err(|error| KwError::GitStateProbe(error.to_string()))?
     }
 
     /// Switches the tree that ran the last job back to the branch HEAD was
@@ -637,6 +668,7 @@ impl KwActor {
                     branch = restore.branch,
                     "restored pre-job branch"
                 );
+                self.republish_status();
                 Ok(())
             }
             Err(error) => {
@@ -1269,6 +1301,7 @@ mod tests {
         let snapshot = handle.get_status().await.unwrap();
 
         assert_eq!(KwJobStatus::Idle, snapshot.job);
+        assert_eq!(None, snapshot.restore_branch);
         handle.shutdown().await;
     }
 
@@ -1499,13 +1532,18 @@ mod tests {
 
         assert!(process.last_child().was_killed());
         let status = wait_for_terminal_status(&mut watch).await;
-        assert_eq!(
+        match status {
             KwJobStatus::Cancelled {
-                kind: KwJobKind::Build,
-                phase: KwPhase::Building,
-            },
-            status
-        );
+                kind,
+                phase,
+                log_path,
+            } => {
+                assert_eq!(KwJobKind::Build, kind);
+                assert_eq!(KwPhase::Building, phase);
+                assert!(log_path.starts_with(&log_dir));
+            }
+            other => panic!("expected Cancelled, got {other:?}"),
+        }
 
         handle.shutdown().await;
         std::fs::remove_dir_all(&log_dir).unwrap();
@@ -1810,12 +1848,21 @@ mod tests {
         handle.start_build(start_request()).await.unwrap();
         // The checkout policy left HEAD on the build branch.
         assert_eq!(git.head(), "patchset-2026-08-01-17-30-00");
+        assert_eq!(
+            Some("master"),
+            handle.get_status().await.unwrap().restore_branch.as_deref()
+        );
         process.last_child().finish(0);
         let status = wait_for_terminal_status(&mut watch).await;
         assert!(matches!(status, KwJobStatus::Succeeded { .. }));
+        assert_eq!(
+            Some("master"),
+            handle.get_status().await.unwrap().restore_branch.as_deref()
+        );
 
         handle.restore_previous_branch().await.unwrap();
         assert_eq!(git.head(), "master");
+        assert_eq!(None, handle.get_status().await.unwrap().restore_branch);
 
         // A successful restore consumes the context: a second restore has
         // nothing to do.
@@ -1864,6 +1911,10 @@ mod tests {
         assert!(matches!(err, KwError::DirtyWorktree));
         // The refused restore did not touch the tree.
         assert_eq!(git.head(), "patchset-2026-08-01-17-30-00");
+        assert_eq!(
+            Some("master"),
+            handle.get_status().await.unwrap().restore_branch.as_deref()
+        );
 
         // The context survives: clean the tree and retry.
         git.set_dirty(false);

@@ -33,10 +33,19 @@ impl ReservedOption {
 /// kw beta-0.9 (still what many installs report, including this lab) treats
 /// unrecognized options as hard failures (`Invalid option`), and the
 /// unattended default is already `alert=n` in kw's own config.
+///
+/// `--clean` / `--full-cleanup` can wipe the tree, `--menu` / `--doc` /
+/// `--info` hang a redirected job, and `--from-sha` mutates git. They are
+/// stripped from extras and never injected.
 const BUILD_RESERVED: &[ReservedOption] = &[
     ReservedOption::new(&["--alert"], true),
     ReservedOption::new(&["--save-log-to"], true),
     ReservedOption::new(&["--menu"], false),
+    ReservedOption::new(&["--clean"], false),
+    ReservedOption::new(&["--full-cleanup"], false),
+    ReservedOption::new(&["--doc"], false),
+    ReservedOption::new(&["--info"], false),
+    ReservedOption::new(&["--from-sha"], true),
 ];
 
 /// The argv for a build job: `kw build <extras>` (reserved extras stripped).
@@ -156,6 +165,23 @@ mod tests {
             vec!["build", "--verbose"],
             build_argv(&extras(&["--menu", "--verbose"]))
         );
+    }
+
+    #[test]
+    fn tree_mutating_and_hanging_build_flags_are_stripped() {
+        assert_eq!(
+            vec!["build", "--verbose"],
+            build_argv(&extras(&[
+                "--clean",
+                "--full-cleanup",
+                "--doc",
+                "--info",
+                "--from-sha",
+                "abc123",
+                "--verbose",
+            ]))
+        );
+        assert_eq!(vec!["build"], build_argv(&extras(&["--from-sha=abc123"])));
     }
 
     #[test]

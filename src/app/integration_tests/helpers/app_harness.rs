@@ -51,7 +51,7 @@ pub(crate) fn app_with_bootstrap_and_handles(
         ConfigState::default().to_snapshot(),
         dummy_config_handle(),
         bootstrap,
-        Box::new(MockFileSystemTrait::new()),
+        Arc::new(MockFileSystemTrait::new()),
         Box::new(MockShellTrait::new()),
         lore_api,
         render,

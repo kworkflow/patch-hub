@@ -5,11 +5,12 @@ use crate::{
         popup::AppPopup,
         screens::{
             bookmarked::BookmarkedPatchsetsState, details_actions::PatchsetDetailsState,
-            edit_config::EditConfigState, latest::LatestPatchsetsState,
+            edit_config::EditConfigState, kw_ops::KwOpsState, latest::LatestPatchsetsState,
             mail_list::MailingListSelectionState, CurrentScreen,
         },
     },
     config::ConfigSnapshot,
+    kw::status::KwStatusSnapshot,
 };
 
 /// Navigation-only state: which screen is active.
@@ -39,6 +40,16 @@ pub struct ConfigUiState {
     pub edit_config: Option<EditConfigState>,
 }
 
+/// Projection of kw job status owned by AppActor, not the job itself.
+///
+/// `status` is `None` when no KwActor is attached (non-unix, or the
+/// watch subscription failed) rather than a fabricated idle job.
+#[derive(Clone, Debug, Default)]
+pub struct KwUiState {
+    pub status: Option<KwStatusSnapshot>,
+    pub ops: Option<KwOpsState>,
+}
+
 /// All application state grouped as the App actor's state.
 #[derive(Clone)]
 pub struct AppState {
@@ -48,4 +59,5 @@ pub struct AppState {
     pub config_state: ConfigUiState,
     pub config: ConfigSnapshot,
     pub popup: Option<AppPopup>,
+    pub kw: KwUiState,
 }

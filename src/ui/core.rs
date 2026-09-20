@@ -10,6 +10,10 @@ use crate::ui::{
     scene::{NavigationBarScene, UiBody, UiScene},
     screens,
 };
+use ratatui::{
+    style::{Color, Style},
+    text::Span,
+};
 
 pub struct UiCore;
 
@@ -34,9 +38,10 @@ impl UiCore {
             ScreenViewModel::EditConfig(ec_vm) => {
                 UiBody::EditConfig(screens::edit_config::build_scene(ec_vm))
             }
+            ScreenViewModel::KwOps(kw_vm) => UiBody::KwOps(screens::kw_ops::build_scene(kw_vm)),
         };
 
-        let navigation = self.build_navigation(&vm.screen);
+        let navigation = self.build_navigation(&vm.screen, vm.kw_running.as_deref());
         let popup = vm.popup.as_ref().map(screens::popup::build_scene);
 
         Ok(UiScene {
@@ -46,8 +51,12 @@ impl UiCore {
         })
     }
 
-    fn build_navigation(&self, screen: &ScreenViewModel) -> NavigationBarScene {
-        let (mode_spans, keys_hint) = match screen {
+    fn build_navigation(
+        &self,
+        screen: &ScreenViewModel,
+        kw_running: Option<&str>,
+    ) -> NavigationBarScene {
+        let (mut mode_spans, keys_hint) = match screen {
             ScreenViewModel::MailingListSelection(vm) => (
                 screens::mailing_list::mode_spans(vm),
                 screens::mailing_list::keys_hint_span(),
@@ -68,7 +77,18 @@ impl UiCore {
                 screens::edit_config::mode_spans(vm),
                 screens::edit_config::keys_hint_span(vm),
             ),
+            ScreenViewModel::KwOps(vm) => (
+                screens::kw_ops::mode_spans(),
+                screens::kw_ops::keys_hint_span(vm.editing),
+            ),
         };
+        if let Some(indicator) = kw_running {
+            mode_spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
+            mode_spans.push(Span::styled(
+                indicator.to_string(),
+                Style::default().fg(Color::Yellow),
+            ));
+        }
         NavigationBarScene {
             mode_spans,
             keys_hint,
@@ -79,5 +99,52 @@ impl UiCore {
 impl Default for UiCore {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::app::view_model::{
+        AppViewModel, MailingListSelectionViewModel, ScreenViewModel, TargetListStatus,
+    };
+
+    use super::UiCore;
+
+    fn mailing_list_vm(kw_running: Option<String>) -> AppViewModel {
+        AppViewModel {
+            screen: ScreenViewModel::MailingListSelection(MailingListSelectionViewModel {
+                entries: vec![],
+                highlighted_index: 0,
+                target_list: String::new(),
+                target_list_status: TargetListStatus::Empty,
+            }),
+            popup: None,
+            kw_running,
+        }
+    }
+
+    fn nav_text(vm: AppViewModel) -> String {
+        UiCore::new()
+            .build_scene(&vm)
+            .unwrap()
+            .navigation
+            .mode_spans
+            .into_iter()
+            .map(|span| span.content.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn running_indicator_is_appended_to_the_nav_bar() {
+        let text = nav_text(mailing_list_vm(Some("kw: building patchset-x".to_string())));
+        assert!(text.contains("Target List:"));
+        assert!(text.contains(" | kw: building patchset-x"));
+    }
+
+    #[test]
+    fn idle_nav_bar_has_no_kw_indicator() {
+        let text = nav_text(mailing_list_vm(None));
+        assert!(text.contains("Target List:"));
+        assert!(!text.contains("kw:"));
     }
 }
