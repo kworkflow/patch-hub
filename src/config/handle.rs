@@ -24,8 +24,11 @@ impl ConfigHandle {
         &self,
         draft: ConfigUpdateDraft,
     ) -> ConfigResult<ConfigSnapshot> {
-        self.request_result(|reply| ConfigMessage::ValidateAndApply { draft, reply })
-            .await
+        self.request_result(|reply| ConfigMessage::ValidateAndApply {
+            draft: Box::new(draft),
+            reply,
+        })
+        .await
     }
 
     /// Signals the actor to stop processing messages and exit its run loop.

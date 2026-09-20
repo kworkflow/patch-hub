@@ -16,9 +16,10 @@ use crate::{
     },
     config::{ConfigSnapshot, ConfigState},
     infrastructure::{
-        file_system::MockFileSystemTrait,
+        file_system::{FileSystemError, MockFileSystemTrait},
         shell::{MockShellTrait, ShellCommand, ShellOutput},
     },
+    kw::history::MockKwHistoryStore,
     lore::application::{
         cache::BootstrapLoreData, handle::LoreApiHandle, messages::LoreApiMessage,
     },
@@ -47,7 +48,6 @@ async fn apply_success_sets_success_popup_and_resets_apply_action() {
         output("", "", true),
         output("", "", true),
         output("", "", true),
-        output("", "", true),
     ]);
     let mut app = app_with_apply_details(clean_fs(), shell);
 
@@ -61,7 +61,43 @@ async fn apply_success_sets_success_popup_and_resets_apply_action() {
             "applied successfully",
             "Kernel Tree: '/kernel'",
             "Applied branch: 'patchset-",
+            "Current branch: 'patchset-",
         ],
+    );
+}
+
+#[tokio::test]
+async fn apply_success_switches_back_when_stay_disabled() {
+    let (shell, calls) = shell_with_outputs(vec![
+        output("", "", true),
+        output("", "", true),
+        output("feature\n", "", true),
+        output("", "", true),
+        output("", "", true),
+        output("", "", true),
+        output("", "", true),
+    ]);
+    let mut app = app_with_details(
+        clean_fs(),
+        shell,
+        lore_handle_with_persistence(),
+        apply_details_state(),
+        apply_config_stay_disabled(),
+        history_store_allowing_writes(),
+    );
+
+    app.consolidate_patchset_actions().await.unwrap();
+
+    assert_apply_action(&app, false);
+    assert_info_popup_contains(
+        app.state.popup.as_ref(),
+        "Patchset Apply Success",
+        &["Current branch: 'feature'"],
+    );
+    let calls = calls.lock().unwrap();
+    assert_eq!(
+        command(&["git", "-C", KERNEL_TREE_PATH, "switch", "feature"]),
+        calls[6]
     );
 }
 
@@ -92,6 +128,114 @@ async fn apply_failure_sets_failure_popup_and_resets_apply_action() {
         command(&["git", "-C", KERNEL_TREE_PATH, "am", "--abort"]),
         calls[6]
     );
+}
+
+#[tokio::test]
+async fn apply_success_records_apply_history() {
+    let (shell, _calls) = shell_with_outputs(vec![
+        output("", "", true),
+        output("", "", true),
+        output("feature\n", "", true),
+        output("", "", true),
+        output("", "", true),
+        output("", "", true),
+    ]);
+    let mut kw_history = MockKwHistoryStore::new();
+    kw_history
+        .expect_record_apply()
+        .times(1)
+        .withf(|record| {
+            record.message_id == "http://lore.kernel.org/test-list/1234-1-foo@bar.example"
+                && record.kernel_tree_id == "linux"
+                && record.tree_path == KERNEL_TREE_PATH
+                && record.applied_branch.starts_with("patchset-")
+                && record.base_branch == BASE_BRANCH
+                && !record.applied_at.is_empty()
+        })
+        .returning(|_| Ok(()));
+    let mut app = app_with_details(
+        clean_fs(),
+        shell,
+        lore_handle_with_persistence(),
+        apply_details_state(),
+        apply_config(),
+        kw_history,
+    );
+
+    app.consolidate_patchset_actions().await.unwrap();
+
+    assert_info_popup_contains(
+        app.state.popup.as_ref(),
+        "Patchset Apply Success",
+        &["applied successfully"],
+    );
+}
+
+#[tokio::test]
+async fn apply_success_with_history_write_failure_keeps_success_popup() {
+    let (shell, _calls) = shell_with_outputs(vec![
+        output("", "", true),
+        output("", "", true),
+        output("feature\n", "", true),
+        output("", "", true),
+        output("", "", true),
+        output("", "", true),
+    ]);
+    let mut kw_history = MockKwHistoryStore::new();
+    kw_history
+        .expect_record_apply()
+        .times(1)
+        .returning(|_| Err(FileSystemError::IoError(std::io::Error::other("disk full"))));
+    let mut app = app_with_details(
+        clean_fs(),
+        shell,
+        lore_handle_with_persistence(),
+        apply_details_state(),
+        apply_config(),
+        kw_history,
+    );
+
+    app.consolidate_patchset_actions().await.unwrap();
+
+    assert_apply_action(&app, false);
+    assert_info_popup_contains(
+        app.state.popup.as_ref(),
+        "Patchset Apply Success",
+        &[
+            "applied successfully",
+            "was not recorded in the kw history",
+            "disk full",
+            "inspect or delete that file",
+        ],
+    );
+}
+
+#[tokio::test]
+async fn apply_failure_does_not_record_history() {
+    let (shell, _calls) = shell_with_outputs(vec![
+        output("", "", true),
+        output("", "", true),
+        output("feature\n", "", true),
+        output("", "", true),
+        output("", "", true),
+        output("", "apply failed", false),
+        output("", "", true),
+        output("", "", true),
+    ]);
+    let mut kw_history = MockKwHistoryStore::new();
+    kw_history.expect_record_apply().times(0);
+    let mut app = app_with_details(
+        clean_fs(),
+        shell,
+        lore_handle_with_persistence(),
+        apply_details_state(),
+        apply_config(),
+        kw_history,
+    );
+
+    app.consolidate_patchset_actions().await.unwrap();
+
+    assert_info_popup_contains(app.state.popup.as_ref(), "Patchset Apply Fail", &[]);
 }
 
 #[tokio::test]
@@ -161,6 +305,8 @@ fn app_with_apply_details(fs: MockFileSystemTrait, shell: MockShellTrait) -> App
         shell,
         lore_handle_with_persistence(),
         apply_details_state(),
+        apply_config(),
+        history_store_allowing_writes(),
     )
 }
 
@@ -170,6 +316,8 @@ fn app_with_reviewed_reply_details(shell: MockShellTrait, lore_api: LoreApiHandl
         shell,
         lore_api,
         reviewed_reply_details_state(),
+        apply_config(),
+        MockKwHistoryStore::new(),
     )
 }
 
@@ -178,9 +326,11 @@ fn app_with_details(
     shell: MockShellTrait,
     lore_api: LoreApiHandle,
     details: PatchsetDetailsState,
+    config: ConfigSnapshot,
+    kw_history: MockKwHistoryStore,
 ) -> App {
     let mut app = App::new(
-        apply_config(),
+        config,
         dummy_config_handle(),
         BootstrapLoreData {
             mailing_lists: vec![sample_mailing_list()],
@@ -191,6 +341,7 @@ fn app_with_details(
         Box::new(shell),
         lore_api,
         dummy_render_handle(),
+        Arc::new(kw_history),
     )
     .expect("app should build");
 
@@ -258,6 +409,14 @@ fn reviewed_reply_lore_handle(saved_reviewed: SharedReviewedState) -> LoreApiHan
     LoreApiHandle::new(tx)
 }
 
+// `stay_on_applied_branch` is deliberately absent so the tests exercise the
+// serde default (true) that existing config files inherit.
+fn history_store_allowing_writes() -> MockKwHistoryStore {
+    let mut store = MockKwHistoryStore::new();
+    store.expect_record_apply().returning(|_| Ok(()));
+    store
+}
+
 fn apply_config() -> ConfigSnapshot {
     serde_json::from_value::<ConfigState>(serde_json::json!({
         "kernel_trees": {
@@ -269,6 +428,23 @@ fn apply_config() -> ConfigSnapshot {
         "target_kernel_tree": "linux",
         "git_am_options": "--signoff --3way",
         "git_am_branch_prefix": "patchset-"
+    }))
+    .expect("test config should deserialize")
+    .to_snapshot()
+}
+
+fn apply_config_stay_disabled() -> ConfigSnapshot {
+    serde_json::from_value::<ConfigState>(serde_json::json!({
+        "kernel_trees": {
+            "linux": {
+                "path": KERNEL_TREE_PATH,
+                "branch": BASE_BRANCH
+            }
+        },
+        "target_kernel_tree": "linux",
+        "git_am_options": "--signoff --3way",
+        "git_am_branch_prefix": "patchset-",
+        "stay_on_applied_branch": false
     }))
     .expect("test config should deserialize")
     .to_snapshot()

@@ -72,7 +72,7 @@ where
                 ControlFlow::Continue(())
             }
             ConfigMessage::ValidateAndApply { draft, reply } => {
-                let result = self.apply(draft);
+                let result = self.apply(*draft);
                 send_config_reply(message_name, reply, result);
                 ControlFlow::Continue(())
             }

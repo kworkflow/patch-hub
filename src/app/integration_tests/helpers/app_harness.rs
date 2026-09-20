@@ -1,9 +1,12 @@
+use std::sync::Arc;
+
 use tokio::sync::mpsc;
 
 use crate::{
     app::App,
     config::{ConfigHandle, ConfigState},
     infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
+    kw::history::MockKwHistoryStore,
     lore::application::{cache::BootstrapLoreData, handle::LoreApiHandle},
     render::handle::RenderHandle,
     terminal::{handle::TerminalHandle, messages::TerminalMessage},
@@ -52,6 +55,7 @@ pub(crate) fn app_with_bootstrap_and_handles(
         Box::new(MockShellTrait::new()),
         lore_api,
         render,
+        Arc::new(MockKwHistoryStore::new()),
     )
     .expect("minimal app should build")
 }

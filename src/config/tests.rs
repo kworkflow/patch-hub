@@ -11,7 +11,10 @@ use crate::config::actor::ConfigActor;
 use crate::config::repository::{ConfigRepository, JsonConfigRepository};
 use crate::config::service::{bootstrap_parts, validate_update};
 use crate::config::state::{normalize_derived_paths, ConfigState};
-use crate::config::{ConfigError, ConfigSnapshot, ConfigUpdateDraft, DEFAULT_CONFIG_PATH_SUFFIX};
+use crate::config::{
+    ConfigError, ConfigSnapshot, ConfigUpdateDraft, ValidatedConfigUpdate,
+    DEFAULT_CONFIG_PATH_SUFFIX,
+};
 use crate::infrastructure::{
     env::{EnvTrait, MockEnvTrait},
     file_system::OsFileSystem,
@@ -60,7 +63,7 @@ fn default_env() -> (MockEnvTrait, PathBuf) {
     (mock, home)
 }
 
-/// Same logical content as `test_samples/app/config/config.json`, but paths under `root` so
+/// Fully-populated config file content, with paths under `root` so
 /// `ensure_directories` stays inside a writable temp tree. After bootstrap, `normalize_derived_paths`
 /// overwrites patchset/data paths from `cache_dir` and `data_dir` only (explicit per-field paths
 /// in JSON are not preserved).
@@ -98,7 +101,8 @@ fn config_fixture_json(root: &Path) -> String {
       },
       "target_kernel_tree": "linux",
       "git_am_options": "--foo-bar foobar -s -n -o -r -l -a -x",
-      "git_am_branch_prefix": "really-creative-prefix-"
+      "git_am_branch_prefix": "really-creative-prefix-",
+      "stay_on_applied_branch": false
     });
     serde_json::to_string_pretty(&v).unwrap()
 }
@@ -139,6 +143,7 @@ fn bootstrap_with_default_values() {
     assert!(config.target_kernel_tree().is_none());
     assert_eq!("", config.git_am_options().as_str());
     assert_eq!("patchset-", config.git_am_branch_prefix().as_str());
+    assert!(config.stay_on_applied_branch());
 }
 
 #[test]
@@ -224,6 +229,7 @@ fn bootstrap_with_config_file() {
         "really-creative-prefix-",
         config.git_am_branch_prefix().as_str()
     );
+    assert!(!config.stay_on_applied_branch());
 }
 
 #[test]
@@ -366,6 +372,9 @@ fn deserialize_config_state_with_missing_field() {
 
     assert_eq!(state.page_size(), 30);
     assert_eq!(state.max_log_age(), 500);
+    // Missing fields fall back to the compiled-in defaults; in particular the
+    // kw-integration apply toggle defaults to staying on the applied branch.
+    assert!(state.stay_on_applied_branch());
 }
 
 #[test]
@@ -529,6 +538,41 @@ fn validate_update_rejects_invalid_max_log_age() {
         err,
         ConfigError::InvalidMaxLogAge(ref s) if s == "not-a-number"
     ));
+}
+
+#[test]
+fn validate_update_rejects_invalid_stay_on_applied_branch() {
+    for raw in ["not-a-bool", ""] {
+        let err = validate_update(
+            ConfigUpdateDraft {
+                stay_on_applied_branch: Some(raw.into()),
+                ..Default::default()
+            },
+            &os_fs(),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::InvalidStayOnAppliedBranch(ref s) if s == raw
+        ));
+    }
+}
+
+#[test]
+fn apply_update_toggles_stay_on_applied_branch() {
+    let (env, _home) = default_env();
+    let mut state = ConfigState::new_with_defaults(&env);
+    assert!(state.stay_on_applied_branch());
+
+    state.apply_update(&ValidatedConfigUpdate {
+        stay_on_applied_branch: Some(false),
+        ..Default::default()
+    });
+    assert!(!state.stay_on_applied_branch());
+
+    // A draft that omits the field leaves the current value untouched.
+    state.apply_update(&ValidatedConfigUpdate::default());
+    assert!(!state.stay_on_applied_branch());
 }
 
 #[test]
