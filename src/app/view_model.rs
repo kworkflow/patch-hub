@@ -125,6 +125,7 @@ pub struct PatchsetDetailsViewModel {
 pub struct EditConfigViewModel {
     pub entries: Vec<ConfigEntryRow>,
     pub is_editing_mode: bool,
+    pub editing_tree_selector: bool,
 }
 
 /// KwOps dashboard. Labels only; actions stay in AppState.
@@ -417,6 +418,7 @@ fn project_edit_config(state: &AppState) -> EditConfigViewModel {
 
     let is_editing_mode = ec.is_editing();
     let highlighted = ec.highlighted();
+    let editing_tree_selector = is_editing_mode && ec.highlighted_is_tree_selector();
 
     let entries = (0..ec.config_count())
         .filter_map(|i| {
@@ -424,7 +426,11 @@ fn project_edit_config(state: &AppState) -> EditConfigViewModel {
                 let is_highlighted = i == highlighted;
                 let is_editing = is_editing_mode && is_highlighted;
                 let edit_cursor_value = if is_editing {
-                    ec.curr_edit().to_string()
+                    if editing_tree_selector && ec.curr_edit().is_empty() {
+                        "<none>".to_string()
+                    } else {
+                        ec.curr_edit().to_string()
+                    }
                 } else {
                     String::new()
                 };
@@ -442,6 +448,7 @@ fn project_edit_config(state: &AppState) -> EditConfigViewModel {
     EditConfigViewModel {
         entries,
         is_editing_mode,
+        editing_tree_selector,
     }
 }
 
@@ -842,6 +849,35 @@ mod tests {
             options
         );
         assert_eq!(1, selected);
+    }
+
+    #[test]
+    fn edit_config_projects_none_placeholder_on_the_tree_row() {
+        let mut state = app_state_with_kw(None);
+        state.navigation.current_screen = CurrentScreen::EditConfig;
+        let mut config = ConfigState::default();
+        config.kernel_trees.insert(
+            "linux".into(),
+            serde_json::from_value(serde_json::json!({
+                "path": "/linux",
+                "branch": "master"
+            }))
+            .unwrap(),
+        );
+        state.config = config.to_snapshot();
+        let mut edit = crate::app::screens::edit_config::EditConfigState::new(&state.config);
+        while edit.highlighted() != 11 {
+            edit.highlight_next();
+        }
+        edit.toggle_editing();
+        state.config_state.edit_config = Some(edit);
+
+        let ScreenViewModel::EditConfig(vm) = project_state(&state).screen else {
+            panic!("expected EditConfig projection");
+        };
+        assert!(vm.editing_tree_selector);
+        assert_eq!("<none>", vm.entries[11].edit_cursor_value);
+        assert_eq!("<none>", vm.entries[11].value);
     }
 
     #[test]

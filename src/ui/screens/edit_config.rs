@@ -72,7 +72,12 @@ pub fn mode_spans(vm: &EditConfigViewModel) -> Vec<Span<'static>> {
 }
 
 pub fn keys_hint_span(vm: &EditConfigViewModel) -> Span<'static> {
-    if vm.is_editing_mode {
+    if vm.editing_tree_selector {
+        Span::styled(
+            "(←/→) cycle | (ENTER) confirm | (ESC) cancel",
+            Style::default().fg(Color::Red),
+        )
+    } else if vm.is_editing_mode {
         Span::styled(
             "(ESC) cancel | (ENTER) confirm",
             Style::default().fg(Color::Red),
@@ -82,5 +87,33 @@ pub fn keys_hint_span(vm: &EditConfigViewModel) -> Span<'static> {
             "(ESC / q) exit | (ENTER) edit | (jk| 🡇 🡅 ) down up",
             Style::default().fg(Color::Red),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::view_model::EditConfigViewModel;
+
+    fn vm(is_editing_mode: bool, editing_tree_selector: bool) -> EditConfigViewModel {
+        EditConfigViewModel {
+            entries: vec![],
+            is_editing_mode,
+            editing_tree_selector,
+        }
+    }
+
+    #[test]
+    fn keys_hint_shows_cycle_bindings_on_the_tree_row() {
+        let hint = keys_hint_span(&vm(true, true));
+        assert!(hint.content.contains("(←/→) cycle"));
+        assert!(hint.content.contains("(ENTER) confirm"));
+    }
+
+    #[test]
+    fn keys_hint_keeps_text_edit_bindings_on_other_rows() {
+        let hint = keys_hint_span(&vm(true, false));
+        assert!(hint.content.contains("(ESC) cancel"));
+        assert!(!hint.content.contains("cycle"));
     }
 }
