@@ -25,7 +25,7 @@ use infrastructure::{
     terminal::init,
 };
 use input::{actor::InputActor, event::InputEvent};
-use kw::history::{FileKwHistoryStore, KwHistoryStore, APPLY_HISTORY_FILENAME};
+use kw::history::{FileKwHistoryStore, KwHistoryStore};
 use lore::{
     application::{actor::LoreApiActor, cache::CacheTtl, service::LoreService},
     infrastructure::{
@@ -72,7 +72,7 @@ async fn main() -> Result<()> {
         ControlFlow::Continue(()) => {}
     }
 
-    check_external_deps(&env, &config)?;
+    check_external_deps(&env, &OsShell, &config)?;
 
     let config_handle = ConfigActor::spawn(config_state, config_repo);
     let terminal_handle = TerminalActor::spawn(Box::new(CrosstermTerminalSession::new(init()?)));
@@ -98,7 +98,7 @@ async fn main() -> Result<()> {
     let parser = Arc::new(MboxPatchsetParser::new(fs_arc.clone()));
     let kw_history: Arc<dyn KwHistoryStore> = Arc::new(FileKwHistoryStore::new(
         fs_arc.clone(),
-        format!("{}/{}", config.data_dir(), APPLY_HISTORY_FILENAME),
+        config.data_dir().to_string(),
     ));
 
     let render = RenderActor::spawn(Box::new(ShellRenderService::new(shell_arc.clone())));

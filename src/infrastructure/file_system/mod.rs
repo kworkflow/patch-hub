@@ -10,7 +10,7 @@ pub use r#trait::MockFileSystemTrait;
 use std::{
     fs::{self, File},
     io::{self, BufReader},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 #[cfg(test)]
@@ -41,6 +41,14 @@ impl FileSystemTrait for OsFileSystem {
 
     fn is_dir(&self, path: &Path) -> bool {
         path.is_dir()
+    }
+
+    fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>, FileSystemError> {
+        let mut entries = fs::read_dir(path)?
+            .map(|entry| entry.map(|e| e.path()))
+            .collect::<Result<Vec<_>, io::Error>>()?;
+        entries.sort();
+        Ok(entries)
     }
 
     fn rename(&self, from: &Path, to: &Path) -> Result<(), FileSystemError> {

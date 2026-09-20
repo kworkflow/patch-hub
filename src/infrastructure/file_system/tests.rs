@@ -102,6 +102,34 @@ fn is_dir_distinguishes_dirs_from_files() {
 }
 
 #[test]
+fn read_dir_lists_immediate_children_sorted() {
+    let dir = TempDir::new("read_dir");
+    std::fs::write(dir.path().join("b.txt"), "").unwrap();
+    std::fs::create_dir(dir.path().join("a_sub")).unwrap();
+    std::fs::create_dir(dir.path().join("a_sub/nested")).unwrap();
+    std::fs::write(dir.path().join("c.txt"), "").unwrap();
+
+    let fs = OsFileSystem;
+    let entries = fs.read_dir(dir.path()).unwrap();
+
+    assert_eq!(
+        entries,
+        vec![
+            dir.path().join("a_sub"),
+            dir.path().join("b.txt"),
+            dir.path().join("c.txt"),
+        ]
+    );
+}
+
+#[test]
+fn read_dir_returns_error_for_missing_dir() {
+    let fs = OsFileSystem;
+    let result = fs.read_dir(Path::new("/nonexistent/path"));
+    assert!(result.is_err());
+}
+
+#[test]
 fn rename_moves_file() {
     let dir = TempDir::new("rename");
     let src = dir.path().join("src.txt");
