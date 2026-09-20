@@ -56,6 +56,8 @@ pub enum InputEvent {
     OpenHelp,
     OpenKwOps,
     StartKwBuild,
+    StartKwDeploy,
+    StartKwBuildThenDeploy,
     CancelKwJob,
     RestoreKwBranch,
     EditKwOpsField,

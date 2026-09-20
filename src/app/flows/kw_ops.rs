@@ -5,14 +5,18 @@ use color_eyre::Result;
 use crate::{
     app::{
         popup::AppPopup,
-        screens::{kw_ops::KwOpsState, CurrentScreen},
+        screens::{
+            kw_ops::{DeployStartKind, KwOpsFocus, KwOpsState},
+            CurrentScreen,
+        },
         App,
     },
     infrastructure::file_system::FileSystemError,
     input::event::InputEvent,
     kw::{
-        errors::KwError,
-        messages::StartRequest,
+        errors::{KwError, KwStartError},
+        messages::{DeployOptions, StartRequest},
+        readiness::BootOnceState,
         status::{KwJobStatus, KwStatusSnapshot},
     },
 };
@@ -121,14 +125,31 @@ pub(crate) async fn fallback_kw_status(app: &mut App) {
 pub async fn handle_kw_ops(app: &mut App, input: InputEvent) -> Result<()> {
     let editing = app.state.kw.ops.as_ref().is_some_and(|ops| ops.editing);
     if editing {
-        let Some(ops) = app.state.kw.ops.as_mut() else {
-            return Ok(());
-        };
         match input {
-            InputEvent::CancelKwOpsEdit => ops.cancel_edit(),
-            InputEvent::Backspace => ops.backspace_edit(),
-            InputEvent::TextInput(ch) => ops.append_edit(ch),
-            InputEvent::StageKwOpsEdit => ops.commit_edit(),
+            InputEvent::CancelKwOpsEdit => {
+                if let Some(ops) = app.state.kw.ops.as_mut() {
+                    ops.cancel_edit();
+                }
+            }
+            InputEvent::Backspace => {
+                if let Some(ops) = app.state.kw.ops.as_mut() {
+                    ops.backspace_edit();
+                }
+            }
+            InputEvent::TextInput(ch) => {
+                if let Some(ops) = app.state.kw.ops.as_mut() {
+                    ops.append_edit(ch);
+                }
+            }
+            InputEvent::StageKwOpsEdit => {
+                let focus = app.state.kw.ops.as_ref().map(|ops| ops.focus);
+                if let Some(ops) = app.state.kw.ops.as_mut() {
+                    ops.commit_edit();
+                }
+                if focus == Some(KwOpsFocus::Branch) {
+                    refresh_kw_ops_readiness(app).await;
+                }
+            }
             _ => {}
         }
         return Ok(());
@@ -158,7 +179,9 @@ pub async fn handle_kw_ops(app: &mut App, input: InputEvent) -> Result<()> {
                 }
             }
         }
-        InputEvent::StartKwBuild => start_build(app).await?,
+        InputEvent::StartKwBuild => start_job(app, KwStartKind::Build).await?,
+        InputEvent::StartKwDeploy => start_job(app, KwStartKind::Deploy).await?,
+        InputEvent::StartKwBuildThenDeploy => start_job(app, KwStartKind::BuildThenDeploy).await?,
         InputEvent::CancelKwJob => cancel_job(app).await?,
         InputEvent::RestoreKwBranch => restore_branch(app).await?,
         _ => {}
@@ -228,7 +251,39 @@ pub async fn open_kw_ops(app: &mut App) -> Result<()> {
     Ok(())
 }
 
-async fn start_build(app: &mut App) -> Result<()> {
+#[derive(Clone, Copy)]
+enum KwStartKind {
+    Build,
+    Deploy,
+    BuildThenDeploy,
+}
+
+impl KwStartKind {
+    fn title(self) -> &'static str {
+        match self {
+            Self::Build => "Cannot start build",
+            Self::Deploy => "Cannot start deploy",
+            Self::BuildThenDeploy => "Cannot start build+deploy",
+        }
+    }
+
+    fn action_word(self) -> &'static str {
+        match self {
+            Self::Build => "build",
+            Self::Deploy | Self::BuildThenDeploy => "job",
+        }
+    }
+
+    fn pending_kind(self) -> Option<DeployStartKind> {
+        match self {
+            Self::Build => None,
+            Self::Deploy => Some(DeployStartKind::Deploy),
+            Self::BuildThenDeploy => Some(DeployStartKind::BuildThenDeploy),
+        }
+    }
+}
+
+async fn start_job(app: &mut App, kind: KwStartKind) -> Result<()> {
     if job_is_busy(app) {
         return Ok(());
     }
@@ -238,18 +293,27 @@ async fn start_build(app: &mut App) -> Result<()> {
     let branch = ops.branch.trim().to_string();
     if branch.is_empty() {
         let body = if ops.head_unreadable {
-            "HEAD is detached or unverifiable. Type a branch name before starting a build."
+            format!(
+                "HEAD is detached or unverifiable. Type a branch name before starting a {}.",
+                kind.action_word()
+            )
         } else {
-            "Set a branch before starting a build."
+            format!("Set a branch before starting a {}.", kind.action_word())
         };
-        app.state.popup = Some(AppPopup::info("Cannot start build", body));
+        app.state.popup = Some(AppPopup::info(kind.title(), body));
         return Ok(());
     }
-    let Some(kw) = app.services.kw.clone() else {
-        app.state.popup = Some(AppPopup::info(
-            "Cannot start build",
-            "kw jobs require a Unix kw actor, which is not attached.",
-        ));
+    if kind.pending_kind().is_some() && needs_boot_once_confirm(ops) {
+        if let Some(ops) = app.state.kw.ops.as_mut() {
+            ops.pending_deploy = kind.pending_kind();
+        }
+        app.state.popup = Some(AppPopup::boot_once_warning());
+        return Ok(());
+    }
+
+    let reboot = app.state.config.kw_reboot_after_deploy();
+    let force = app.state.config.kw_deploy_force();
+    let Some(ops) = app.state.kw.ops.as_ref() else {
         return Ok(());
     };
     let request = StartRequest {
@@ -257,9 +321,25 @@ async fn start_build(app: &mut App) -> Result<()> {
         tree: ops.tree.clone(),
         branch,
         extra_args: ops.extra_arg_tokens(),
-        deploy: None,
+        deploy: kind.pending_kind().map(|_| DeployOptions {
+            reboot,
+            force,
+            boot_once_acknowledged: ops.boot_once_acknowledged,
+        }),
     };
-    match kw.start_build(request).await {
+    let Some(kw) = app.services.kw.clone() else {
+        app.state.popup = Some(AppPopup::info(
+            kind.title(),
+            "kw jobs require a Unix kw actor, which is not attached.",
+        ));
+        return Ok(());
+    };
+    let result = match kind {
+        KwStartKind::Build => kw.start_build(request).await,
+        KwStartKind::Deploy => kw.start_deploy(request).await,
+        KwStartKind::BuildThenDeploy => kw.start_build_then_deploy(request).await,
+    };
+    match result {
         Ok(()) => {
             if let Some(ops) = app.state.kw.ops.as_mut() {
                 ops.cancel_requested = false;
@@ -272,11 +352,63 @@ async fn start_build(app: &mut App) -> Result<()> {
                 apply_kw_snapshot(app, snapshot);
             }
         }
+        Err(KwStartError::BootOnceNotAcknowledged) => {
+            if let Some(ops) = app.state.kw.ops.as_mut() {
+                ops.pending_deploy = kind.pending_kind();
+            }
+            app.state.popup = Some(AppPopup::boot_once_warning());
+        }
         Err(error) => {
-            app.state.popup = Some(AppPopup::info("Cannot start build", error.to_string()));
+            app.state.popup = Some(AppPopup::info(kind.title(), error.to_string()));
         }
     }
     Ok(())
+}
+
+fn needs_boot_once_confirm(ops: &KwOpsState) -> bool {
+    matches!(
+        ops.readiness.boot_once,
+        BootOnceState::On | BootOnceState::Unknown
+    ) && !ops.boot_once_acknowledged
+}
+
+async fn refresh_kw_ops_readiness(app: &mut App) {
+    let Some(kw) = app.services.kw.clone() else {
+        return;
+    };
+    let Some((kernel_tree_id, tree, branch)) = app.state.kw.ops.as_ref().map(|ops| {
+        (
+            ops.kernel_tree_id.clone(),
+            ops.tree.clone(),
+            ops.branch.clone(),
+        )
+    }) else {
+        return;
+    };
+    let for_branch = {
+        let trimmed = branch.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    };
+    match kw
+        .get_readiness(&kernel_tree_id, &tree, for_branch.as_deref())
+        .await
+    {
+        Ok(readiness) => {
+            if let Some(ops) = app.state.kw.ops.as_mut() {
+                ops.readiness = readiness;
+            }
+        }
+        Err(error) => {
+            app.state.popup = Some(AppPopup::info(
+                "Cannot refresh kw status",
+                error.to_string(),
+            ));
+        }
+    }
 }
 
 async fn cancel_job(app: &mut App) -> Result<()> {
@@ -351,16 +483,20 @@ fn job_is_busy(app: &App) -> bool {
             .is_some_and(|ops| ops.start_requested)
 }
 
-/// Records that the user confirmed boot-once and consumes the pending
-/// deploy kind. The KwOps input commit re-issues Start against this
-/// acknowledgement; until then Proceed only stores the ack.
+/// Records that the user confirmed boot-once and re-issues the pending
+/// StartDeploy / StartBuildThenDeploy against that acknowledgement.
 pub(crate) async fn resume_pending_deploy(app: &mut App) -> Result<()> {
     let Some(ops) = app.state.kw.ops.as_mut() else {
         return Ok(());
     };
     ops.boot_once_acknowledged = true;
-    let _kind = ops.pending_deploy.take();
-    Ok(())
+    let Some(kind) = ops.pending_deploy.take() else {
+        return Ok(());
+    };
+    match kind {
+        DeployStartKind::Deploy => start_job(app, KwStartKind::Deploy).await,
+        DeployStartKind::BuildThenDeploy => start_job(app, KwStartKind::BuildThenDeploy).await,
+    }
 }
 
 /// Drops a deploy start that was waiting on the boot-once confirm popup.
@@ -373,13 +509,13 @@ pub(crate) fn clear_pending_deploy(app: &mut App) {
 pub fn generate_help_popup() -> AppPopup {
     AppPopup::help()
         .title("Kw operations")
-        .description(
-            "Start a kw build on the configured target kernel tree. Deploy is not available yet.",
-        )
+        .description("Start a kw build and/or remote deploy on the configured target kernel tree.")
         .keybind("ESC / q", "Return to patchset details")
         .keybind("j/k", "Move between branch and extra arguments")
         .keybind("e / ENTER", "Edit the focused field")
         .keybind("b", "Start build")
+        .keybind("d", "Start deploy")
+        .keybind("D", "Start build then deploy")
         .keybind("c", "Cancel the running job")
         .keybind("r", "Restore the previous branch")
         .keybind("?", "Show this help screen")
@@ -452,5 +588,23 @@ mod tests {
         assert!(!assign_log_tail(&mut ops, "cc1: compiling".to_string()));
         assert!(assign_log_tail(&mut ops, "done".to_string()));
         assert_eq!("done", ops.log_tail);
+    }
+
+    #[test]
+    fn help_lists_deploy_keys() {
+        let AppPopup::Help {
+            description,
+            formatted_keybinds,
+            ..
+        } = generate_help_popup()
+        else {
+            panic!("expected help popup");
+        };
+        assert!(description
+            .as_deref()
+            .is_some_and(|text| text.contains("remote deploy")));
+        assert!(formatted_keybinds.contains("d: Start deploy"));
+        assert!(formatted_keybinds.contains("D: Start build then deploy"));
+        assert!(!formatted_keybinds.contains("not available yet"));
     }
 }

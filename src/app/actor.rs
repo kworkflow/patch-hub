@@ -598,10 +598,14 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(ControlFlow::Continue(()), flow);
-        assert!(app.state.popup.is_none());
         let ops = app.state.kw.ops.as_ref().unwrap();
         assert!(ops.boot_once_acknowledged);
         assert_eq!(None, ops.pending_deploy);
+        let Some(AppPopup::Info { title, body, .. }) = &app.state.popup else {
+            panic!("resume without a kw actor should explain that deploy cannot start");
+        };
+        assert_eq!("Cannot start deploy", title);
+        assert!(body.contains("not attached"));
     }
 
     #[tokio::test]

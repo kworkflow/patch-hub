@@ -203,6 +203,8 @@ impl InputMapper {
             KeyCode::Char('k') | KeyCode::Up => Some(InputEvent::NavigateUp),
             KeyCode::Char('e') | KeyCode::Enter => Some(InputEvent::EditKwOpsField),
             KeyCode::Char('b') => Some(InputEvent::StartKwBuild),
+            KeyCode::Char('d') => Some(InputEvent::StartKwDeploy),
+            KeyCode::Char('D') => Some(InputEvent::StartKwBuildThenDeploy),
             KeyCode::Char('c') => Some(InputEvent::CancelKwJob),
             KeyCode::Char('r') => Some(InputEvent::RestoreKwBranch),
             _ => None,
@@ -427,6 +429,14 @@ mod tests {
         assert_eq!(
             mapper.map_terminal_event(key(KeyCode::Char('b')), &context),
             Some(InputEvent::StartKwBuild)
+        );
+        assert_eq!(
+            mapper.map_terminal_event(key(KeyCode::Char('d')), &context),
+            Some(InputEvent::StartKwDeploy)
+        );
+        assert_eq!(
+            mapper.map_terminal_event(key(KeyCode::Char('D')), &context),
+            Some(InputEvent::StartKwBuildThenDeploy)
         );
         assert_eq!(
             mapper.map_terminal_event(key(KeyCode::Char('c')), &context),
