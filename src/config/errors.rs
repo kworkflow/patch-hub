@@ -18,6 +18,10 @@ pub enum ConfigError {
     InvalidMaxLogAge(String),
     #[error("invalid stay-on-applied-branch value: {0}")]
     InvalidStayOnAppliedBranch(String),
+    #[error("invalid kw reboot-after-deploy value: {0}")]
+    InvalidKwRebootAfterDeploy(String),
+    #[error("invalid kw deploy-force value: {0}")]
+    InvalidKwDeployForce(String),
     #[error("filesystem error: {0}")]
     Fs(#[from] FileSystemError),
 }

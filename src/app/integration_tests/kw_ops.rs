@@ -90,7 +90,8 @@ mod unix {
         input::{event::InputEvent, handle::InputHandle, messages::InputMessage},
         kw::{
             actor::KwActor,
-            history::MockKwHistoryStore,
+            history::{KwBuildRecord, MockKwHistoryStore},
+            readiness::{BootOnceState, DeployAloneRefusal},
             status::{KwJobKind, KwJobStatus, KwPhase, KwStatusSnapshot},
         },
         lore::application::cache::BootstrapLoreData,
@@ -104,9 +105,13 @@ mod unix {
     };
 
     use super::{assert_info_popup, details_state};
-    use crate::app::integration_tests::helpers::{
-        app_harness::{dummy_config_handle, dummy_render_handle, dummy_terminal_handle},
-        lore::{lore_handle_with_persistence, sample_mailing_list},
+    use crate::app::{
+        integration_tests::helpers::{
+            app_harness::{dummy_config_handle, dummy_render_handle, dummy_terminal_handle},
+            lore::{lore_handle_with_persistence, sample_mailing_list},
+        },
+        popup::AppPopup,
+        screens::kw_ops::DeployStartKind,
     };
 
     static LOG_DIR_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -349,6 +354,306 @@ mod unix {
         std::fs::remove_dir_all(&log_dir).unwrap();
     }
 
+    #[tokio::test]
+    async fn open_kw_ops_projects_the_resolved_remote() {
+        let log_dir = kw_log_dir("remote-display");
+        let mut app = app_with_kw(
+            &log_dir,
+            head_branch_shell("feature"),
+            Arc::new(FakeProcess::new()),
+            Arc::new(MockFileSystemTrait::new()),
+            deploy_kw_fs(true),
+            default_kw_history(),
+        );
+        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+            .await
+            .unwrap();
+
+        let ops = app.state.kw.ops.as_ref().expect("KwOps state");
+        assert_eq!(
+            "root@box:22",
+            ops.readiness.deploy_remote.as_ref().unwrap().endpoint()
+        );
+        assert_eq!(BootOnceState::Off, ops.readiness.boot_once);
+
+        shutdown_kw(&app).await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_deploy_opens_the_boot_once_gate() {
+        let log_dir = kw_log_dir("deploy-gate");
+        let process = Arc::new(FakeProcess::new());
+        let mut app = app_with_kw(
+            &log_dir,
+            head_branch_shell("feature"),
+            process.clone(),
+            Arc::new(MockFileSystemTrait::new()),
+            deploy_kw_fs(false),
+            feature_build_history(Some(matching_feature_build_record())),
+        );
+        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+            .await
+            .unwrap();
+
+        handle_kw_ops(&mut app, InputEvent::StartKwDeploy)
+            .await
+            .unwrap();
+
+        let Some(AppPopup::Confirm { title, .. }) = app.state.popup.as_ref() else {
+            panic!("expected boot-once confirm popup");
+        };
+        assert_eq!("Boot into new kernel once?", title);
+        assert_eq!(
+            Some(DeployStartKind::Deploy),
+            app.state.kw.ops.as_ref().unwrap().pending_deploy
+        );
+        assert!(process.spawned().is_empty());
+
+        shutdown_kw(&app).await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_deploy_refused_without_a_build_record() {
+        let log_dir = kw_log_dir("deploy-no-record");
+        let process = Arc::new(FakeProcess::new());
+        let mut app = app_with_kw(
+            &log_dir,
+            head_branch_shell("feature"),
+            process.clone(),
+            Arc::new(MockFileSystemTrait::new()),
+            deploy_kw_fs(true),
+            default_kw_history(),
+        );
+        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+            .await
+            .unwrap();
+
+        handle_kw_ops(&mut app, InputEvent::StartKwDeploy)
+            .await
+            .unwrap();
+        assert_info_popup(
+            app.state.popup.as_ref(),
+            "Cannot start deploy",
+            "no build recorded",
+        );
+        assert!(process.spawned().is_empty());
+
+        shutdown_kw(&app).await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_deploy_accepts_when_ready() {
+        let log_dir = kw_log_dir("deploy-ready");
+        let process = Arc::new(FakeProcess::new());
+        let mut app = app_with_kw(
+            &log_dir,
+            head_branch_shell("feature"),
+            process.clone(),
+            Arc::new(MockFileSystemTrait::new()),
+            deploy_kw_fs(true),
+            feature_build_history(Some(matching_feature_build_record())),
+        );
+        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+            .await
+            .unwrap();
+
+        handle_kw_ops(&mut app, InputEvent::StartKwDeploy)
+            .await
+            .unwrap();
+        assert!(app.state.popup.is_none());
+        let spawned = process.spawned();
+        assert_eq!(1, spawned.len());
+        assert_eq!(
+            [
+                "deploy",
+                "--remote",
+                "root@box:22",
+                "--no-reboot",
+                "--force"
+            ]
+            .as_slice(),
+            spawned[0].args.as_slice()
+        );
+        assert!(matches!(
+            app.state.kw.status.as_ref().map(|s| &s.job),
+            Some(KwJobStatus::Running {
+                kind: KwJobKind::Deploy,
+                phase: KwPhase::Deploying,
+                ..
+            })
+        ));
+
+        process.last_child().finish(0);
+        shutdown_kw(&app).await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_build_then_deploy_chains_two_processes() {
+        let log_dir = kw_log_dir("build-then-deploy");
+        let process = Arc::new(FakeProcess::new());
+        let mut app = app_with_kw(
+            &log_dir,
+            head_branch_shell("feature"),
+            process.clone(),
+            Arc::new(MockFileSystemTrait::new()),
+            deploy_kw_fs(true),
+            default_kw_history(),
+        );
+        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+            .await
+            .unwrap();
+
+        handle_kw_ops(&mut app, InputEvent::StartKwBuildThenDeploy)
+            .await
+            .unwrap();
+        assert!(app.state.popup.is_none());
+        assert_eq!(vec!["build"], process.spawned()[0].args);
+
+        process.last_child().finish(0);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if process.spawned().len() >= 2 {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("deploy should spawn after a successful build");
+
+        let spawned = process.spawned();
+        assert_eq!("deploy", spawned[1].args[0]);
+        assert!(spawned[1].args.iter().any(|arg| arg == "root@box:22"));
+
+        process.last_child().finish(0);
+        shutdown_kw(&app).await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn committing_a_branch_reprobes_deploy_alone() {
+        let log_dir = kw_log_dir("branch-reprobe");
+        let mut history = MockKwHistoryStore::new();
+        history
+            .expect_apply_record_for_branch()
+            .returning(|_, _| Ok(None));
+        history.expect_record_build().returning(|_| Ok(()));
+        history.expect_build_records().returning(|_, branch| {
+            if branch == "built" {
+                Ok((
+                    Some(matching_build_record("built")),
+                    Some(matching_build_record("built")),
+                ))
+            } else {
+                Ok((None, None))
+            }
+        });
+        let mut app = app_with_kw(
+            &log_dir,
+            head_branch_shell("feature"),
+            Arc::new(FakeProcess::new()),
+            Arc::new(MockFileSystemTrait::new()),
+            deploy_kw_fs(true),
+            history,
+        );
+        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+            .await
+            .unwrap();
+        assert!(matches!(
+            app.state.kw.ops.as_ref().unwrap().readiness.deploy_alone,
+            Err(DeployAloneRefusal::NoBuildRecord)
+        ));
+
+        handle_kw_ops(&mut app, InputEvent::EditKwOpsField)
+            .await
+            .unwrap();
+        app.state.kw.ops.as_mut().unwrap().edit_buffer = "built".to_string();
+        handle_kw_ops(&mut app, InputEvent::StageKwOpsEdit)
+            .await
+            .unwrap();
+
+        let ops = app.state.kw.ops.as_ref().unwrap();
+        assert_eq!("built", ops.branch);
+        assert_eq!(Ok(()), ops.readiness.deploy_alone);
+        assert_eq!(Some("feature".to_string()), ops.readiness.current_branch);
+
+        shutdown_kw(&app).await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn boot_once_enter_backs_out_without_starting() {
+        let log_dir = kw_log_dir("boot-once-back-out");
+        let process = Arc::new(FakeProcess::new());
+        let app = app_with_kw(
+            &log_dir,
+            head_branch_shell("feature"),
+            process.clone(),
+            Arc::new(MockFileSystemTrait::new()),
+            deploy_kw_fs(false),
+            feature_build_history(Some(matching_feature_build_record())),
+        );
+        let kw = app.services.kw.as_ref().unwrap().clone();
+        let (scenes, event_tx, handle) = spawn_app_actor(app);
+
+        event_tx.send(InputEvent::OpenKwOps).await.unwrap();
+        wait_for_kw_ops(&scenes, |_| true).await;
+        event_tx.send(InputEvent::StartKwDeploy).await.unwrap();
+        wait_for_latest_popup(&scenes, |popup| {
+            popup.is_some_and(|popup| popup.title == "Boot into new kernel once?")
+        })
+        .await;
+
+        event_tx.send(InputEvent::ConfirmPopup).await.unwrap();
+        wait_for_latest_popup(&scenes, |popup| popup.is_none()).await;
+        assert!(process.spawned().is_empty());
+
+        drop(event_tx);
+        handle.run_until_done().await.unwrap();
+        kw.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn boot_once_proceed_starts_deploy() {
+        let log_dir = kw_log_dir("boot-once-proceed");
+        let process = Arc::new(FakeProcess::new());
+        let app = app_with_kw(
+            &log_dir,
+            head_branch_shell("feature"),
+            process.clone(),
+            Arc::new(MockFileSystemTrait::new()),
+            deploy_kw_fs(false),
+            feature_build_history(Some(matching_feature_build_record())),
+        );
+        let kw = app.services.kw.as_ref().unwrap().clone();
+        let (scenes, event_tx, handle) = spawn_app_actor(app);
+
+        event_tx.send(InputEvent::OpenKwOps).await.unwrap();
+        wait_for_kw_ops(&scenes, |_| true).await;
+        event_tx.send(InputEvent::StartKwDeploy).await.unwrap();
+        wait_for_latest_popup(&scenes, |popup| popup.is_some()).await;
+
+        event_tx.send(InputEvent::NavigateRight).await.unwrap();
+        event_tx.send(InputEvent::ConfirmPopup).await.unwrap();
+        wait_for_nav(&scenes, |text| text.contains("kw: deploying feature")).await;
+        wait_for_latest_popup(&scenes, |popup| popup.is_none()).await;
+
+        let spawned = process.spawned();
+        assert_eq!(1, spawned.len());
+        assert_eq!("deploy", spawned[0].args[0]);
+
+        process.last_child().finish(0);
+        drop(event_tx);
+        handle.run_until_done().await.unwrap();
+        kw.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn live_tail_updates_without_input_and_pauses_off_screen() {
         let log_dir = kw_log_dir("live-tail");
@@ -445,19 +750,29 @@ mod unix {
         process: Arc<FakeProcess>,
         app_fs: Arc<dyn FileSystemTrait>,
     ) -> App {
-        let mut history = MockKwHistoryStore::new();
-        history
-            .expect_apply_record_for_branch()
-            .returning(|_, _| Ok(None));
-        history.expect_record_build().returning(|_| Ok(()));
-        history
-            .expect_build_records()
-            .returning(|_, _| Ok((None, None)));
+        app_with_kw(
+            log_dir,
+            kw_shell,
+            process,
+            app_fs,
+            kw_actor_fs(),
+            default_kw_history(),
+        )
+    }
+
+    fn app_with_kw(
+        log_dir: &std::path::Path,
+        kw_shell: MockShellTrait,
+        process: Arc<FakeProcess>,
+        app_fs: Arc<dyn FileSystemTrait>,
+        kw_fs: MockFileSystemTrait,
+        history: MockKwHistoryStore,
+    ) -> App {
         let kw = KwActor::spawn(
             Arc::new(history),
             process,
             Arc::new(kw_shell),
-            Arc::new(kw_actor_fs()),
+            Arc::new(kw_fs),
             Arc::new(kw_actor_env()),
             log_dir.to_path_buf(),
         );
@@ -480,6 +795,103 @@ mod unix {
         app.state.navigation.current_screen = CurrentScreen::PatchsetDetails;
         app.state.lore.details = Some(details_state());
         app
+    }
+
+    fn default_kw_history() -> MockKwHistoryStore {
+        let mut history = MockKwHistoryStore::new();
+        history
+            .expect_apply_record_for_branch()
+            .returning(|_, _| Ok(None));
+        history.expect_record_build().returning(|_| Ok(()));
+        history
+            .expect_build_records()
+            .returning(|_, _| Ok((None, None)));
+        history
+    }
+
+    fn feature_build_history(record: Option<KwBuildRecord>) -> MockKwHistoryStore {
+        let mut history = MockKwHistoryStore::new();
+        history
+            .expect_apply_record_for_branch()
+            .returning(|_, _| Ok(None));
+        history.expect_record_build().returning(|_| Ok(()));
+        history.expect_build_records().returning(move |_, branch| {
+            if branch == "feature" {
+                Ok((record.clone(), record.clone()))
+            } else {
+                Ok((None, None))
+            }
+        });
+        history
+    }
+
+    fn matching_feature_build_record() -> KwBuildRecord {
+        matching_build_record("feature")
+    }
+
+    fn matching_build_record(branch: &str) -> KwBuildRecord {
+        KwBuildRecord {
+            kernel_tree_id: "linux".to_string(),
+            tree_path: "/kernel".to_string(),
+            message_id: None,
+            branch: branch.to_string(),
+            arch: Some("x86".to_string()),
+            image_path: Some("/kernel/arch/x86/boot/bzImage".to_string()),
+            output_dir: None,
+            kernelrelease: Some("6.17.0".to_string()),
+            log_path: String::new(),
+            built_at: "2026-08-01T18:10:00Z".to_string(),
+            success: true,
+        }
+    }
+
+    fn deploy_kw_fs(boot_once_off: bool) -> MockFileSystemTrait {
+        let deploy_config = if boot_once_off {
+            "boot_into_new_kernel_once=no\n".to_string()
+        } else {
+            "boot_into_new_kernel_once=yes\n".to_string()
+        };
+        let mut fs = MockFileSystemTrait::new();
+        fs.expect_is_dir().returning(|_| true);
+        fs.expect_is_file()
+            .returning(|path| !path.ends_with(".kw/env.current"));
+        fs.expect_exists().returning(|_| true);
+        fs.expect_read_to_string().returning(move |path| {
+            if path.ends_with("build.config") {
+                Ok("arch=x86\n".to_string())
+            } else if path.ends_with("kernel.release") {
+                Ok("6.17.0\n".to_string())
+            } else if path.ends_with("remote.config") {
+                Ok(
+                    "#kw-default=dut\nHost dut\n  Hostname box\n  Port 22\n  User root\n"
+                        .to_string(),
+                )
+            } else if path.ends_with("deploy.config") {
+                Ok(deploy_config.clone())
+            } else {
+                Err(FileSystemError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "missing",
+                )))
+            }
+        });
+        fs.expect_read_dir().returning(|path| {
+            if path.ends_with("arch/x86/boot") {
+                Ok(vec![PathBuf::from("/kernel/arch/x86/boot/bzImage")])
+            } else {
+                Err(FileSystemError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "missing",
+                )))
+            }
+        });
+        fs.expect_metadata().returning(|_| {
+            Err(FileSystemError::IoError(std::io::Error::other(
+                "no metadata",
+            )))
+        });
+        fs.expect_create_dir_all().returning(|_| Ok(()));
+        fs
     }
 
     fn head_branch_shell(branch: &str) -> MockShellTrait {
@@ -625,6 +1037,27 @@ mod unix {
         })
         .await
         .expect("expected KwOps scene did not appear");
+    }
+
+    async fn wait_for_latest_popup(
+        scenes: &Arc<Mutex<Vec<UiScene>>>,
+        predicate: impl Fn(Option<&crate::ui::scene::PopupScene>) -> bool,
+    ) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let matches = scenes
+                    .lock()
+                    .unwrap()
+                    .last()
+                    .is_some_and(|scene| predicate(scene.popup.as_ref()));
+                if matches {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("expected popup state did not appear");
     }
 
     async fn wait_for_details(scenes: &Arc<Mutex<Vec<UiScene>>>) {

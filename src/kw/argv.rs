@@ -12,6 +12,12 @@ pub struct ReservedOption {
     /// Whether the option takes a value (`--name=value`, or `--name
     /// value` as a separate token).
     takes_value: bool,
+    /// When true, GNU getopt unique prefixes of this option's long
+    /// spellings are stripped too (`--boot` → `--boot-into-new-kernel-once`).
+    /// Only for flags the target kw command actually honors, so a
+    /// build-only `--menu` on the deploy table cannot steal `--m` from
+    /// `--modules`.
+    match_abbrev: bool,
 }
 
 impl ReservedOption {
@@ -19,6 +25,17 @@ impl ReservedOption {
         Self {
             spellings,
             takes_value,
+            match_abbrev: false,
+        }
+    }
+
+    /// Like [`Self::new`], and also strip unambiguous GNU getopt long
+    /// abbreviations of this option.
+    pub const fn gnu_abbrev(spellings: &'static [&'static str], takes_value: bool) -> Self {
+        Self {
+            spellings,
+            takes_value,
+            match_abbrev: true,
         }
     }
 }
@@ -38,13 +55,56 @@ impl ReservedOption {
 /// `--info` hang a redirected job, and `--from-sha` mutates git. They are
 /// stripped from extras and never injected.
 const BUILD_RESERVED: &[ReservedOption] = &[
-    ReservedOption::new(&["--alert"], true),
+    ReservedOption::gnu_abbrev(&["--help", "-h"], false),
+    ReservedOption::gnu_abbrev(&["--alert"], true),
+    ReservedOption::gnu_abbrev(&["--save-log-to"], true),
+    ReservedOption::gnu_abbrev(&["--menu"], false),
+    ReservedOption::gnu_abbrev(&["--clean"], false),
+    ReservedOption::gnu_abbrev(&["--full-cleanup"], false),
+    ReservedOption::gnu_abbrev(&["--doc"], false),
+    ReservedOption::gnu_abbrev(&["--info"], false),
+    ReservedOption::gnu_abbrev(&["--from-sha"], true),
+];
+
+/// Reserved for `kw deploy`. Injected `--remote` / reboot / force win.
+/// User extras that override those, switch to local, list/uninstall,
+/// run `--setup`, or pass `-n` are stripped. Build-only extras are
+/// stripped too (one KwOps field; unknown flags are exit 22).
+/// GNU getopt forms (`-rf`, `-Fpkg`, unique `--boot`) are stripped as well.
+///
+/// `-l` is `--list`, not `--local`; `-r` is `--reboot`, not `--remote`.
+/// `--uninstall`/`-u` is reserved as a boolean so `-u` does not eat the
+/// next token. `--alert` is not a deploy option.
+const DEPLOY_RESERVED: &[ReservedOption] = &[
+    ReservedOption::gnu_abbrev(&["--remote"], true),
+    ReservedOption::gnu_abbrev(&["--local"], false),
+    ReservedOption::gnu_abbrev(&["--reboot", "-r"], false),
+    ReservedOption::gnu_abbrev(&["--no-reboot"], false),
+    ReservedOption::gnu_abbrev(&["--force", "-f"], false),
+    ReservedOption::gnu_abbrev(&["--list", "-l"], false),
+    ReservedOption::gnu_abbrev(&["--ls-line", "-s"], false),
+    ReservedOption::gnu_abbrev(&["--list-all", "-a"], false),
+    ReservedOption::gnu_abbrev(&["--setup"], false),
+    ReservedOption::gnu_abbrev(&["--uninstall", "-u"], false),
+    ReservedOption::gnu_abbrev(&["--from-package", "-F"], true),
+    ReservedOption::gnu_abbrev(&["--create-package", "-p"], false),
+    ReservedOption::gnu_abbrev(&["--boot-into-new-kernel-once", "-n"], false),
+    ReservedOption::new(&["--help", "-h"], false),
     ReservedOption::new(&["--save-log-to"], true),
+    ReservedOption::new(&["--alert"], true),
+    ReservedOption::new(&["--ccache"], false),
+    ReservedOption::new(&["--llvm"], false),
+    ReservedOption::new(&["--cpu-scaling", "-S"], true),
+    // kw declares `warnings::` (optional value): GNU getopt only consumes
+    // an attached `--warnings=1` / `-w1`. Treating this as required would
+    // eat the following token (`--warnings --verbose`).
+    ReservedOption::new(&["--warnings", "-w"], false),
+    ReservedOption::new(&["--cflags"], true),
     ReservedOption::new(&["--menu"], false),
-    ReservedOption::new(&["--clean"], false),
+    ReservedOption::new(&["--doc", "-d"], false),
+    ReservedOption::new(&["--info", "-i"], false),
+    ReservedOption::new(&["--clean", "-c"], false),
     ReservedOption::new(&["--full-cleanup"], false),
-    ReservedOption::new(&["--doc"], false),
-    ReservedOption::new(&["--info"], false),
     ReservedOption::new(&["--from-sha"], true),
 ];
 
@@ -53,11 +113,38 @@ pub fn build_argv(extra_args: &[String]) -> Vec<String> {
     merge_extra_args(&["build"], BUILD_RESERVED, extra_args)
 }
 
+/// The argv for a deploy job: `kw deploy --remote <endpoint>
+/// --no-reboot|--reboot [--force] <extras>`. Reserved extras are
+/// stripped so the injected remote, reboot, and force flags win, and
+/// so build-only extras (shared KwOps field) cannot fail kw deploy's
+/// getopt. `--force` is omitted entirely when `force` is false rather
+/// than passing a no-op, because kw has no `--no-force`.
+#[cfg_attr(not(unix), allow(dead_code))]
+pub fn deploy_argv(
+    endpoint: &str,
+    reboot: bool,
+    force: bool,
+    extra_args: &[String],
+) -> Vec<String> {
+    let mut base = vec![
+        "deploy",
+        "--remote",
+        endpoint,
+        if reboot { "--reboot" } else { "--no-reboot" },
+    ];
+    if force {
+        base.push("--force");
+    }
+    merge_extra_args(&base, DEPLOY_RESERVED, extra_args)
+}
+
 /// Appends user-supplied extra args to `base`, stripping every token that
-/// would override a reserved option: `--name=value` is stripped whole,
-/// `--name value` consumes the following token too, and a boolean
-/// reserved option strips only itself. All other extras pass through in
-/// order.
+/// would override a reserved option. GNU getopt forms are stripped too:
+/// `--name=value`, `--name value`, unique long abbreviations, bundled
+/// shorts (`-rf`), and attached short values (`-Fpkg.kw.tar`). A mixed
+/// short cluster that contains any reserved flag is dropped whole, so
+/// `-uVALUE` cannot be rewritten into a leftover `-VALUE`. All other
+/// extras pass through in order.
 pub fn merge_extra_args(
     base: &[&str],
     reserved: &[ReservedOption],
@@ -68,8 +155,8 @@ pub fn merge_extra_args(
     while let Some(token) = extras.next() {
         match reserved_option_for(reserved, token) {
             Some(option) => {
-                if option.takes_value && !token.contains('=') {
-                    // `--name value`: the separate value token goes too.
+                if option.takes_value && !value_is_attached(token, option) {
+                    // `--name value` / `-F value`: the separate value token goes too.
                     extras.next();
                 }
             }
@@ -79,22 +166,131 @@ pub fn merge_extra_args(
     argv
 }
 
-/// Finds the reserved option a token sets, if any: an exact spelling
-/// match, or `--name=value` for a long spelling. The `=` boundary keeps
-/// `--alertness` from matching `--alert`.
+/// Finds the reserved option a token sets, if any: an exact spelling,
+/// `--name=value` for a long spelling, a unique GNU getopt abbreviation
+/// of a `match_abbrev` long, a bundled reserved short, or an attached
+/// short value. The `=` boundary keeps `--alertness` from matching
+/// `--alert`; an abbreviation must be a prefix of the reserved spelling,
+/// not the other way around.
 fn reserved_option_for<'a>(
     reserved: &'a [ReservedOption],
     token: &str,
 ) -> Option<&'a ReservedOption> {
-    reserved.iter().find(|option| {
-        option.spellings.iter().any(|spelling| {
-            token == *spelling
-                || spelling.starts_with("--")
-                    && token
-                        .strip_prefix(spelling)
-                        .is_some_and(|rest| rest.starts_with('='))
+    if token.starts_with("--") {
+        return reserved_long_option(reserved, token);
+    }
+    reserved_short_cluster(reserved, token)
+}
+
+fn reserved_long_option<'a>(
+    reserved: &'a [ReservedOption],
+    token: &str,
+) -> Option<&'a ReservedOption> {
+    let name = token.split_once('=').map_or(token, |(name, _)| name);
+    reserved
+        .iter()
+        .find(|option| {
+            option
+                .spellings
+                .iter()
+                .any(|spelling| spelling.starts_with("--") && name == *spelling)
         })
-    })
+        .or_else(|| unique_long_abbrev(reserved, name))
+}
+
+/// GNU getopt unique-prefix match among options that opted into
+/// `match_abbrev`. Uniqueness is against this reserved table, not kw's
+/// full option list — a prefix kw would reject as ambiguous can still
+/// strip here when only one reserved long matches. Ambiguous prefixes
+/// among reserved longs are left alone so a following value token is
+/// not eaten.
+fn unique_long_abbrev<'a>(
+    reserved: &'a [ReservedOption],
+    name: &str,
+) -> Option<&'a ReservedOption> {
+    if name.len() < 3 || !name.starts_with("--") {
+        return None;
+    }
+    let mut found: Option<&ReservedOption> = None;
+    for option in reserved {
+        if !option.match_abbrev {
+            continue;
+        }
+        let matches = option
+            .spellings
+            .iter()
+            .any(|spelling| spelling.starts_with("--") && spelling.starts_with(name));
+        if !matches {
+            continue;
+        }
+        match found {
+            None => found = Some(option),
+            Some(previous) if std::ptr::eq(previous, option) => {}
+            Some(_) => return None,
+        }
+    }
+    found
+}
+
+/// A short token that contains any reserved flag: `-f`, `-rf`, `-Fpkg`.
+/// Walking leftover letters would turn `-ukernel` into `-kernel`, so a
+/// hit drops the whole token.
+fn reserved_short_cluster<'a>(
+    reserved: &'a [ReservedOption],
+    token: &str,
+) -> Option<&'a ReservedOption> {
+    let body = token.strip_prefix('-')?;
+    if body.is_empty() || body.starts_with('-') {
+        return None;
+    }
+    let chars: Vec<char> = body.chars().collect();
+    let mut i = 0;
+    let mut hit = None;
+    while i < chars.len() {
+        let spelling = format!("-{}", chars[i]);
+        match exact_short(reserved, &spelling) {
+            Some(option) => {
+                hit = Some(option);
+                if option.takes_value {
+                    // Remainder is the attached value; stop so
+                    // `value_is_attached` can see those extra chars.
+                    break;
+                }
+                i += 1;
+            }
+            None => i += 1,
+        }
+    }
+    hit
+}
+
+fn exact_short<'a>(reserved: &'a [ReservedOption], spelling: &str) -> Option<&'a ReservedOption> {
+    reserved
+        .iter()
+        .find(|option| option.spellings.iter().any(|s| *s == spelling))
+}
+
+fn value_is_attached(token: &str, option: &ReservedOption) -> bool {
+    if token.contains('=') {
+        return true;
+    }
+    if !option.takes_value {
+        return false;
+    }
+    let Some(body) = token
+        .strip_prefix('-')
+        .filter(|body| !body.starts_with('-'))
+    else {
+        return false;
+    };
+    let mut chars = body.chars();
+    while let Some(ch) = chars.next() {
+        let spelling = format!("-{ch}");
+        if option.spellings.iter().any(|s| *s == spelling) {
+            return chars.next().is_some();
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -208,6 +404,314 @@ mod tests {
                 &reserved,
                 &extras(&["--remote", "host:22", "--no-reboot"])
             )
+        );
+    }
+
+    const ENDPOINT: &str = "root@lima-ph-dut.internal:22";
+
+    fn deploy(extra: &[&str]) -> Vec<String> {
+        deploy_argv(ENDPOINT, false, true, &extras(extra))
+    }
+
+    #[test]
+    fn deploy_argv_without_extras_is_remote_no_reboot_force() {
+        assert_eq!(
+            vec!["deploy", "--remote", ENDPOINT, "--no-reboot", "--force",],
+            deploy_argv(ENDPOINT, false, true, &[])
+        );
+    }
+
+    #[test]
+    fn deploy_argv_reboot_and_unforced_swap_the_injected_flags() {
+        assert_eq!(
+            vec!["deploy", "--remote", ENDPOINT, "--reboot"],
+            deploy_argv(ENDPOINT, true, false, &[])
+        );
+    }
+
+    #[test]
+    fn deploy_remote_always_wins_over_user_remote_and_local() {
+        assert_eq!(
+            vec![
+                "deploy",
+                "--remote",
+                ENDPOINT,
+                "--no-reboot",
+                "--force",
+                "--verbose",
+            ],
+            deploy(&[
+                "--remote",
+                "other:22",
+                "--local",
+                "--remote=evil:1",
+                "--verbose",
+            ])
+        );
+    }
+
+    #[test]
+    fn deploy_strips_query_modes_setup_and_package_flags() {
+        assert_eq!(
+            vec![
+                "deploy",
+                "--remote",
+                ENDPOINT,
+                "--no-reboot",
+                "--force",
+                "--verbose",
+            ],
+            deploy(&[
+                "--list",
+                "-l",
+                "--ls-line",
+                "-s",
+                "--list-all",
+                "-a",
+                "--setup",
+                "--from-package",
+                "kernel.kw.tar",
+                "--from-package=other.kw.tar",
+                "-F",
+                "also.kw.tar",
+                "--create-package",
+                "-p",
+                "--verbose",
+            ])
+        );
+    }
+
+    #[test]
+    fn deploy_strips_boot_once_alert_save_log_and_reboot_overrides() {
+        assert_eq!(
+            vec![
+                "deploy",
+                "--remote",
+                ENDPOINT,
+                "--no-reboot",
+                "--force",
+                "--modules",
+            ],
+            deploy(&[
+                "--boot-into-new-kernel-once",
+                "-n",
+                "--alert=n",
+                "--alert",
+                "v",
+                "--save-log-to",
+                "/tmp/x.log",
+                "--reboot",
+                "-r",
+                "--no-reboot",
+                "--force",
+                "-f",
+                "--modules",
+            ])
+        );
+    }
+
+    #[test]
+    fn uninstall_short_flag_does_not_eat_the_next_token() {
+        // kw's `-u` takes an optional value (`uninstall::`). Treating it as
+        // a boolean reserved option keeps a following extra from vanishing.
+        assert_eq!(
+            vec![
+                "deploy",
+                "--remote",
+                ENDPOINT,
+                "--no-reboot",
+                "--force",
+                "--verbose",
+            ],
+            deploy(&["-u", "--verbose"])
+        );
+        assert_eq!(
+            vec![
+                "deploy",
+                "--remote",
+                ENDPOINT,
+                "--no-reboot",
+                "--force",
+                "--verbose",
+            ],
+            deploy(&["--uninstall", "--verbose"])
+        );
+        assert_eq!(
+            vec!["deploy", "--remote", ENDPOINT, "--no-reboot", "--force",],
+            deploy(&["--uninstall=old-kernel"])
+        );
+    }
+
+    #[test]
+    fn deploy_strips_build_only_flags_that_kw_deploy_would_reject() {
+        // Shared KwOps extras: --verbose is a real deploy option; the rest
+        // are kw build-only (`src/build.sh` 0.10) and would exit 22.
+        assert_eq!(
+            vec![
+                "deploy",
+                "--remote",
+                ENDPOINT,
+                "--no-reboot",
+                "--force",
+                "--verbose",
+            ],
+            deploy(&[
+                "--ccache",
+                "--llvm",
+                "--cpu-scaling",
+                "50",
+                "--warnings=1",
+                "--cflags",
+                "-O2",
+                "--menu",
+                "--doc",
+                "--info",
+                "--clean",
+                "--full-cleanup",
+                "--from-sha",
+                "abc123",
+                "--verbose",
+            ])
+        );
+        assert_eq!(
+            vec![
+                "deploy",
+                "--remote",
+                ENDPOINT,
+                "--no-reboot",
+                "--force",
+                "--verbose",
+            ],
+            deploy(&[
+                "--cpu-scaling=50",
+                "--warnings=1",
+                "--cflags=-O2",
+                "--from-sha=abc123",
+                "-S",
+                "25",
+                "-w2",
+                "-d",
+                "-i",
+                "-c",
+                "--verbose",
+            ])
+        );
+    }
+
+    #[test]
+    fn deploy_strips_bundled_reserved_shorts_and_attached_values() {
+        // GNU getopt: `-rf` is `--reboot --force`; `-Fpkg` is from-package.
+        assert_eq!(
+            vec![
+                "deploy",
+                "--remote",
+                ENDPOINT,
+                "--no-reboot",
+                "--force",
+                "--verbose",
+            ],
+            deploy(&["-rf", "-Fpkg.kw.tar", "-S25", "-w12", "--verbose"])
+        );
+        // Mixed cluster containing a reserved flag is dropped whole so
+        // `-ukernel` cannot be rewritten into leftover `-kernel`.
+        assert_eq!(
+            vec![
+                "deploy",
+                "--remote",
+                ENDPOINT,
+                "--no-reboot",
+                "--force",
+                "--verbose",
+            ],
+            deploy(&["-mr", "-ukernel", "--verbose"])
+        );
+    }
+
+    #[test]
+    fn deploy_strips_unique_gnu_getopt_long_abbreviations() {
+        assert_eq!(
+            vec![
+                "deploy",
+                "--remote",
+                ENDPOINT,
+                "--no-reboot",
+                "--force",
+                "--verbose",
+            ],
+            deploy(&[
+                "--rem",
+                "evil:1",
+                "--rem=other:1",
+                "--reb",
+                "--no-r",
+                "--boot",
+                "--verbose",
+            ])
+        );
+    }
+
+    #[test]
+    fn deploy_keeps_modules_abbrev_and_ambiguous_long_prefixes() {
+        // `--m` uniquely matches `--modules` on deploy; `--menu` is
+        // build-only and must not steal it. `--re` is ambiguous between
+        // `--remote` and `--reboot`, so it is left for getopt to reject
+        // rather than eating the next token.
+        assert_eq!(
+            vec![
+                "deploy",
+                "--remote",
+                ENDPOINT,
+                "--no-reboot",
+                "--force",
+                "--m",
+                "--re",
+                "--verbose",
+            ],
+            deploy(&["--m", "--re", "--verbose"])
+        );
+    }
+
+    #[test]
+    fn build_strips_unique_long_abbreviations_of_reserved_flags() {
+        assert_eq!(
+            vec!["build", "--verbose"],
+            build_argv(&extras(&["--men", "--from", "abc123", "--verbose"]))
+        );
+    }
+
+    #[test]
+    fn help_is_stripped_from_build_and_deploy_extras() {
+        // `kw build --help` exits 0 without compiling, so a D job would
+        // otherwise chain into `kw deploy --help` (exit 22).
+        assert_eq!(
+            vec!["build", "--verbose"],
+            build_argv(&extras(&["--help", "-h", "--verbose"]))
+        );
+        assert_eq!(
+            vec![
+                "deploy",
+                "--remote",
+                ENDPOINT,
+                "--no-reboot",
+                "--force",
+                "--verbose",
+            ],
+            deploy(&["--help", "-h", "--verbose"])
+        );
+    }
+
+    #[test]
+    fn warnings_optional_value_does_not_eat_the_next_token() {
+        assert_eq!(
+            vec![
+                "deploy",
+                "--remote",
+                ENDPOINT,
+                "--no-reboot",
+                "--force",
+                "--verbose",
+            ],
+            deploy(&["--warnings", "--verbose"])
         );
     }
 }

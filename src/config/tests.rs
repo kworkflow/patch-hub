@@ -144,6 +144,8 @@ fn bootstrap_with_default_values() {
     assert_eq!("", config.git_am_options().as_str());
     assert_eq!("patchset-", config.git_am_branch_prefix().as_str());
     assert!(config.stay_on_applied_branch());
+    assert!(!config.kw_reboot_after_deploy());
+    assert!(config.kw_deploy_force());
 }
 
 #[test]
@@ -230,6 +232,9 @@ fn bootstrap_with_config_file() {
         config.git_am_branch_prefix().as_str()
     );
     assert!(!config.stay_on_applied_branch());
+    // The fixture predates these knobs: missing keys keep the compiled-in defaults.
+    assert!(!config.kw_reboot_after_deploy());
+    assert!(config.kw_deploy_force());
 }
 
 #[test]
@@ -375,6 +380,8 @@ fn deserialize_config_state_with_missing_field() {
     // Missing fields fall back to the compiled-in defaults; in particular the
     // kw-integration apply toggle defaults to staying on the applied branch.
     assert!(state.stay_on_applied_branch());
+    assert!(!state.kw_reboot_after_deploy());
+    assert!(state.kw_deploy_force());
 }
 
 #[test]
@@ -573,6 +580,60 @@ fn apply_update_toggles_stay_on_applied_branch() {
     // A draft that omits the field leaves the current value untouched.
     state.apply_update(&ValidatedConfigUpdate::default());
     assert!(!state.stay_on_applied_branch());
+}
+
+#[test]
+fn validate_update_rejects_invalid_kw_deploy_bools() {
+    for (reboot, force, expect_reboot_err) in [
+        (Some("not-a-bool"), None, true),
+        (Some(""), None, true),
+        (None, Some("not-a-bool"), false),
+        (None, Some(""), false),
+    ] {
+        let err = validate_update(
+            ConfigUpdateDraft {
+                kw_reboot_after_deploy: reboot.map(str::to_string),
+                kw_deploy_force: force.map(str::to_string),
+                ..Default::default()
+            },
+            &os_fs(),
+        )
+        .unwrap_err();
+        if expect_reboot_err {
+            let raw = reboot.unwrap();
+            assert!(
+                matches!(err, ConfigError::InvalidKwRebootAfterDeploy(ref s) if s == raw),
+                "unexpected error for reboot={reboot:?}: {err:?}"
+            );
+        } else {
+            let raw = force.unwrap();
+            assert!(
+                matches!(err, ConfigError::InvalidKwDeployForce(ref s) if s == raw),
+                "unexpected error for force={force:?}: {err:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn apply_update_toggles_kw_deploy_knobs() {
+    let (env, _home) = default_env();
+    let mut state = ConfigState::new_with_defaults(&env);
+    assert!(!state.kw_reboot_after_deploy());
+    assert!(state.kw_deploy_force());
+
+    state.apply_update(&ValidatedConfigUpdate {
+        kw_reboot_after_deploy: Some(true),
+        kw_deploy_force: Some(false),
+        ..Default::default()
+    });
+    assert!(state.kw_reboot_after_deploy());
+    assert!(!state.kw_deploy_force());
+
+    // A draft that omits the fields leaves the current values untouched.
+    state.apply_update(&ValidatedConfigUpdate::default());
+    assert!(state.kw_reboot_after_deploy());
+    assert!(!state.kw_deploy_force());
 }
 
 #[test]

@@ -141,7 +141,7 @@ async fn quit_while_job_running_opens_confirm_and_wait_keeps_app_alive() {
 
     event_tx.send(InputEvent::Quit).await.unwrap();
     wait_for_latest_popup(&scenes, |popup| {
-        popup.is_some_and(|popup| popup.title == "Cancel build and quit?")
+        popup.is_some_and(|popup| popup.title == "Cancel job and quit?")
     })
     .await;
     let latest = scenes.lock().unwrap().last().cloned().unwrap();
@@ -367,6 +367,7 @@ fn start_request() -> StartRequest {
         .expect("kernel tree should deserialize"),
         branch: BUILD_BRANCH.to_string(),
         extra_args: Vec::new(),
+        deploy: None,
     }
 }
 

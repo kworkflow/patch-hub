@@ -13,6 +13,17 @@ use crate::{
     },
 };
 
+/// Deploy knobs the actor injects onto `kw deploy`. Build-only starts
+/// leave [`StartRequest::deploy`] unset.
+#[derive(Debug, Clone)]
+pub struct DeployOptions {
+    pub reboot: bool,
+    pub force: bool,
+    /// True after the user confirmed boot-into-new-kernel-once. The actor
+    /// still refuses when the option is on or unknown and this is false.
+    pub boot_once_acknowledged: bool,
+}
+
 /// Everything the actor needs to start a job. The tree context is resolved
 /// by the caller from its config snapshot, keeping KwActor decoupled from
 /// ConfigActor.
@@ -27,6 +38,10 @@ pub struct StartRequest {
     /// Reserved options (`--alert`, `--save-log-to`) are stripped —
     /// patch-hub's own argv wins.
     pub extra_args: Vec<String>,
+    /// Required for deploy kinds so the actor can inject reboot/force and
+    /// honor the boot-once confirm gate. Build-only starts leave this
+    /// `None`.
+    pub deploy: Option<DeployOptions>,
 }
 
 pub enum KwMessage {
@@ -39,12 +54,10 @@ pub enum KwMessage {
         reply: oneshot::Sender<Result<(), KwStartError>>,
     },
     StartDeploy {
-        #[allow(dead_code)]
         request: StartRequest,
         reply: oneshot::Sender<Result<(), KwStartError>>,
     },
     StartBuildThenDeploy {
-        #[allow(dead_code)]
         request: StartRequest,
         reply: oneshot::Sender<Result<(), KwStartError>>,
     },
@@ -64,6 +77,9 @@ pub enum KwMessage {
     GetReadiness {
         kernel_tree_id: String,
         tree: KernelTree,
+        /// When set, deploy-alone is judged against this branch instead of
+        /// HEAD. `KwReadiness::current_branch` still reports the real HEAD.
+        for_branch: Option<String>,
         reply: oneshot::Sender<Result<KwReadiness, KwError>>,
     },
     RestorePreviousBranch {

@@ -21,8 +21,9 @@ use crate::{
             details_actions::handle_patchset_details,
             edit_config::handle_edit_config,
             kw_ops::{
-                apply_kw_snapshot, fallback_kw_status, handle_kw_ops, poll_kw_status,
-                refresh_kw_ops_log_tail,
+                apply_kw_snapshot, apply_kw_snapshot_refreshing_readiness, clear_pending_deploy,
+                fallback_kw_status, handle_kw_ops, poll_kw_status, refresh_kw_ops_log_tail,
+                resume_pending_deploy,
             },
             latest::handle_latest_patchsets,
             mail_list::handle_mailing_list_selection,
@@ -144,7 +145,7 @@ impl AppActor {
                 watch_event = kw_status_changed(&mut kw_status_rx) => {
                     match watch_event {
                         KwWatchEvent::Updated(snapshot) => {
-                            apply_kw_snapshot(&mut self.app, snapshot);
+                            apply_kw_snapshot_refreshing_readiness(&mut self.app, snapshot).await;
                             if self.app.state.navigation.current_screen == CurrentScreen::KwOps
                             {
                                 refresh_kw_ops_log_tail(&mut self.app).await;
@@ -242,22 +243,26 @@ async fn on_input(
     terminal_handle: &TerminalHandle,
     loading: &mut TerminalLoadingIndicator,
 ) -> Result<ControlFlow<()>> {
-    if let Some(popup) = app.state.popup.as_mut() {
+    if app.state.popup.is_some() {
         match input {
             InputEvent::ClosePopup => {
-                app.state.popup = None;
+                dismiss_open_popup(app);
             }
-            InputEvent::ConfirmPopup => match popup.selected_confirm_action() {
-                Some(ConfirmAction::CancelKwAndQuit) => {
-                    app.state.popup = None;
-                    return Ok(cancel_kw_and_quit(app).await);
+            InputEvent::ConfirmPopup => {
+                if let Some(action) = app
+                    .state
+                    .popup
+                    .as_ref()
+                    .and_then(AppPopup::selected_confirm_action)
+                {
+                    return apply_confirm_action(app, action).await;
                 }
-                Some(ConfirmAction::Wait) => {
-                    app.state.popup = None;
+            }
+            _ => {
+                if let Some(popup) = app.state.popup.as_mut() {
+                    popup.handle_input(input);
                 }
-                None => {}
-            },
-            _ => popup.handle_input(input),
+            }
         }
     } else if input == InputEvent::Quit && kw_job_is_running(app) {
         app.state.popup = Some(AppPopup::quit_while_job_running());
@@ -288,6 +293,36 @@ async fn on_input(
         }
     }
     Ok(ControlFlow::Continue(()))
+}
+
+fn is_boot_once_confirm(popup: &AppPopup) -> bool {
+    matches!(
+        popup.selected_confirm_action(),
+        Some(ConfirmAction::ProceedWithBootOnce | ConfirmAction::BackOut)
+    )
+}
+
+fn dismiss_open_popup(app: &mut App) {
+    if app.state.popup.as_ref().is_some_and(is_boot_once_confirm) {
+        clear_pending_deploy(app);
+    }
+    app.state.popup = None;
+}
+
+async fn apply_confirm_action(app: &mut App, action: ConfirmAction) -> Result<ControlFlow<()>> {
+    app.state.popup = None;
+    match action {
+        ConfirmAction::CancelKwAndQuit => Ok(cancel_kw_and_quit(app).await),
+        ConfirmAction::Wait => Ok(ControlFlow::Continue(())),
+        ConfirmAction::ProceedWithBootOnce => {
+            resume_pending_deploy(app).await?;
+            Ok(ControlFlow::Continue(()))
+        }
+        ConfirmAction::BackOut => {
+            clear_pending_deploy(app);
+            Ok(ControlFlow::Continue(()))
+        }
+    }
 }
 
 fn kw_job_is_running(app: &App) -> bool {
@@ -519,5 +554,109 @@ mod tests {
         // Explicit shutdown in documented order: LoreAPI then Render.
         lore_api.shutdown().await;
         render.shutdown().await;
+    }
+
+    fn sample_kw_ops() -> crate::app::screens::kw_ops::KwOpsState {
+        crate::app::screens::kw_ops::KwOpsState::new(
+            "title".to_string(),
+            "mid".to_string(),
+            "linux".to_string(),
+            serde_json::from_value(serde_json::json!({
+                "path": "/kernel",
+                "branch": "main"
+            }))
+            .unwrap(),
+            crate::kw::readiness::KwReadiness {
+                kw_binary: crate::kw::readiness::KwBinaryProbe {
+                    available: true,
+                    version_line: Some("kw, version 0.10.0".to_string()),
+                    check: crate::kw::readiness::KwVersionCheck::Meets,
+                },
+                tree: crate::kw::readiness::TreeReadiness::Ready {
+                    arch: Some("x86_64".to_string()),
+                },
+                output_dir: None,
+                kernel_image: None,
+                build_record: None,
+                latest_build: None,
+                deploy_alone: Err(crate::kw::readiness::DeployAloneRefusal::NoBuildRecord),
+                current_branch: Some("main".to_string()),
+                deploy_remote: Err(crate::kw::remote::RemoteRefusal::NoRemotesConfigured),
+                boot_once: crate::kw::readiness::BootOnceState::Unknown,
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn proceed_with_boot_once_acks_and_clears_pending() {
+        let mut app = minimal_app();
+        let mut ops = sample_kw_ops();
+        ops.pending_deploy = Some(crate::app::screens::kw_ops::DeployStartKind::Deploy);
+        app.state.kw.ops = Some(ops);
+        app.state.popup = Some(AppPopup::boot_once_warning());
+
+        let flow = apply_confirm_action(&mut app, ConfirmAction::ProceedWithBootOnce)
+            .await
+            .unwrap();
+        assert_eq!(ControlFlow::Continue(()), flow);
+        let ops = app.state.kw.ops.as_ref().unwrap();
+        assert!(ops.boot_once_acknowledged);
+        assert_eq!(None, ops.pending_deploy);
+        let Some(AppPopup::Info { title, body, .. }) = &app.state.popup else {
+            panic!("resume without a kw actor should explain that deploy cannot start");
+        };
+        assert_eq!("Cannot start deploy", title);
+        assert!(
+            body.contains("no build recorded"),
+            "resume with a stale deploy-alone snapshot should refuse before the missing-actor path, got {body:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn back_out_clears_pending_without_acknowledging() {
+        let mut app = minimal_app();
+        let mut ops = sample_kw_ops();
+        ops.pending_deploy = Some(crate::app::screens::kw_ops::DeployStartKind::BuildThenDeploy);
+        app.state.kw.ops = Some(ops);
+        app.state.popup = Some(AppPopup::boot_once_warning());
+
+        let flow = apply_confirm_action(&mut app, ConfirmAction::BackOut)
+            .await
+            .unwrap();
+        assert_eq!(ControlFlow::Continue(()), flow);
+        assert!(app.state.popup.is_none());
+        let ops = app.state.kw.ops.as_ref().unwrap();
+        assert!(!ops.boot_once_acknowledged);
+        assert_eq!(None, ops.pending_deploy);
+    }
+
+    #[test]
+    fn closing_the_boot_once_popup_clears_pending() {
+        let mut app = minimal_app();
+        let mut ops = sample_kw_ops();
+        ops.pending_deploy = Some(crate::app::screens::kw_ops::DeployStartKind::Deploy);
+        app.state.kw.ops = Some(ops);
+        app.state.popup = Some(AppPopup::boot_once_warning());
+
+        dismiss_open_popup(&mut app);
+        assert!(app.state.popup.is_none());
+        assert_eq!(None, app.state.kw.ops.as_ref().unwrap().pending_deploy);
+        assert!(!app.state.kw.ops.as_ref().unwrap().boot_once_acknowledged);
+    }
+
+    #[test]
+    fn closing_the_quit_popup_does_not_touch_pending_deploy() {
+        let mut app = minimal_app();
+        let mut ops = sample_kw_ops();
+        ops.pending_deploy = Some(crate::app::screens::kw_ops::DeployStartKind::Deploy);
+        app.state.kw.ops = Some(ops);
+        app.state.popup = Some(AppPopup::quit_while_job_running());
+
+        dismiss_open_popup(&mut app);
+        assert!(app.state.popup.is_none());
+        assert_eq!(
+            Some(crate::app::screens::kw_ops::DeployStartKind::Deploy),
+            app.state.kw.ops.as_ref().unwrap().pending_deploy
+        );
     }
 }

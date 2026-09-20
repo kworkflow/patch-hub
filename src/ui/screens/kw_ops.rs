@@ -27,7 +27,11 @@ pub fn build_scene(vm: &KwOpsViewModel) -> KwOpsScene {
         start_label: vm.start_label.clone(),
         cancel_label: vm.cancel_label.clone(),
         restore_label: vm.restore_label.clone(),
-        deploy_placeholder: vm.deploy_placeholder.clone(),
+        remote: vm.remote.clone(),
+        boot_once: vm.boot_once.clone(),
+        deploy_command: vm.deploy_command.clone(),
+        deploy_label: vm.deploy_label.clone(),
+        build_deploy_label: vm.build_deploy_label.clone(),
         branch_guidance: vm.branch_guidance.clone(),
         log_tail: vm.log_tail.clone(),
     }
@@ -66,16 +70,19 @@ fn paint_form(f: &mut Frame, scene: &KwOpsScene, chunk: Rect) {
         )));
     }
     lines.extend([
-        Line::from(""),
         labeled("kw", &scene.kw_binary),
         labeled("Tree status", &scene.tree_readiness),
         labeled("Output dir", &scene.output_dir),
+        labeled("Remote", &scene.remote),
+        labeled("Boot once", &scene.boot_once),
         labeled("Job", &scene.job_status),
         labeled("Command", &scene.command),
+        labeled("Deploy command", &scene.deploy_command),
         labeled("Start", &scene.start_label),
+        labeled("Deploy", &scene.deploy_label),
+        labeled("Build+deploy", &scene.build_deploy_label),
         labeled("Cancel", &scene.cancel_label),
         labeled("Restore", &scene.restore_label),
-        labeled("Deploy", &scene.deploy_placeholder),
     ]);
 
     let paragraph = Paragraph::new(lines)
@@ -93,7 +100,7 @@ fn paint_log(f: &mut Frame, scene: &KwOpsScene, chunk: Rect) {
     let inner_height = chunk.height.saturating_sub(2);
     let offset = log_scroll_offset(&scene.log_tail, inner_width, inner_height);
     let paragraph = Paragraph::new(scene.log_tail.clone())
-        .block(Block::default().borders(Borders::ALL).title(" Build log "))
+        .block(Block::default().borders(Borders::ALL).title(" Job log "))
         .wrap(Wrap { trim: false })
         .scroll((offset, 0));
     f.render_widget(paragraph, chunk);
@@ -158,7 +165,7 @@ pub fn keys_hint_span(editing: bool) -> Span<'static> {
         )
     } else {
         Span::styled(
-            "(ESC / q) back | (e) edit | (b) build | (c) cancel | (r) restore | (?) help",
+            "(ESC / q) back | (e) edit | (b) build | (d) deploy | (D) build+deploy | (c) cancel | (r) restore | (?) help",
             Style::default().fg(Color::Red),
         )
     }
@@ -205,5 +212,12 @@ mod tests {
     fn zero_inner_area_does_not_scroll() {
         assert_eq!(0, log_scroll_offset("line\nline\n", 0, 10));
         assert_eq!(0, log_scroll_offset("line\nline\n", 10, 0));
+    }
+
+    #[test]
+    fn keys_hint_lists_deploy_bindings() {
+        let hint = keys_hint_span(false);
+        assert!(hint.content.contains("(d) deploy"));
+        assert!(hint.content.contains("(D) build+deploy"));
     }
 }

@@ -38,8 +38,9 @@ use crate::{
         errors::{KwError, KwStartError, TreeGitError},
         handle::KwHandle,
         history::{KwBuildRecord, KwHistoryStore},
-        messages::{KwMessage, StartRequest},
-        readiness::{self, KwReadiness, KwVersionCheck, TreeReadiness},
+        messages::{DeployOptions, KwMessage, StartRequest},
+        readiness::{self, BootOnceState, KwReadiness, KwVersionCheck, TreeReadiness},
+        remote::{self, KwRemote},
         status::{KwJobKind, KwJobStatus, KwPhase, KwStatusSnapshot},
     },
 };
@@ -91,9 +92,23 @@ struct JobState {
     output_dir: Option<PathBuf>,
     arch: Option<String>,
     log_path: PathBuf,
+    /// Present for deploy kinds so a BuildThenDeploy job can spawn the
+    /// deploy process at the build/deploy boundary without the original
+    /// StartRequest.
+    deploy: Option<JobDeploy>,
     /// `None` once a cancel has been requested; a second `Cancel` is an
     /// idempotent ack.
     cancel_tx: Option<oneshot::Sender<()>>,
+}
+
+/// Deploy argv inputs snapshotted at accept. The remote and options are
+/// resolved before the job starts so a chain cannot silently retarget
+/// mid-build.
+#[derive(Clone)]
+struct JobDeploy {
+    remote: KwRemote,
+    options: DeployOptions,
+    extra_args: Vec<String>,
 }
 
 pub struct KwActor {
@@ -159,8 +174,12 @@ impl KwActor {
         tracing::info!("kw actor started");
         // The job-event sender is held by the actor itself, so that arm of
         // the select never closes while the actor is alive.
+        // Prefer control messages over job events so a Cancel that races a
+        // successful build exit is observed before BuildThenDeploy would
+        // chain into deploy.
         loop {
             tokio::select! {
+                biased;
                 message = self.rx.recv() => {
                     let Some(message) = message else { break };
                     if let ControlFlow::Break(()) = self.handle_message(message).await {
@@ -196,10 +215,20 @@ impl KwActor {
                 );
                 ControlFlow::Continue(())
             }
-            // Not implemented: reply immediately with NotImplemented.
-            KwMessage::StartDeploy { reply, .. }
-            | KwMessage::StartBuildThenDeploy { reply, .. } => {
-                send_start_reply(message_name, reply, Err(KwStartError::NotImplemented));
+            KwMessage::StartDeploy { request, reply } => {
+                send_start_reply(
+                    message_name,
+                    reply,
+                    self.start_job(KwJobKind::Deploy, request).await,
+                );
+                ControlFlow::Continue(())
+            }
+            KwMessage::StartBuildThenDeploy { request, reply } => {
+                send_start_reply(
+                    message_name,
+                    reply,
+                    self.start_job(KwJobKind::BuildThenDeploy, request).await,
+                );
                 ControlFlow::Continue(())
             }
             KwMessage::Cancel { reply } => {
@@ -217,12 +246,14 @@ impl KwActor {
             KwMessage::GetReadiness {
                 kernel_tree_id,
                 tree,
+                for_branch,
                 reply,
             } => {
                 send_kw_reply(
                     message_name,
                     reply,
-                    self.evaluate_readiness(&kernel_tree_id, &tree).await,
+                    self.evaluate_readiness(&kernel_tree_id, &tree, for_branch)
+                        .await,
                 );
                 ControlFlow::Continue(())
             }
@@ -258,16 +289,10 @@ impl KwActor {
         }
     }
 
-    /// Accepts and starts a build job, or refuses. The reply is sent by the
-    /// caller right after this returns: the job itself keeps running in a
-    /// detached task and is observed via the status snapshot.
-    ///
-    /// Refusals, in order: a job already running, no kw binary on PATH,
-    /// unresolvable kw-env state, a tree that fails the readiness probes,
-    /// a dirty worktree, or a failed branch switch. Reserved flags on
-    /// patch-hub's own argv win over the request's extra args. A start
-    /// refused after the branch switch rolls the switch back: a refused
-    /// start never leaves the tree on a branch the user did not check out.
+    /// Accepts and starts a job, or refuses. The reply is sent by the
+    /// caller right after this returns; the job keeps running in a
+    /// detached task. A start refused after the branch switch rolls
+    /// the switch back.
     async fn start_job(
         &mut self,
         kind: KwJobKind,
@@ -277,13 +302,29 @@ impl KwActor {
             return Err(KwStartError::JobAlreadyRunning);
         }
 
+        let tree_path = PathBuf::from(request.tree.path());
         // Hard fail on invoke: with no kw binary on PATH no job can run.
         // The version check is advisory only — kw's shipped VERSION file
         // is stale, so Below/Unknown are logged, never gated.
-        let kw_binary = readiness::probe_kw_binary(&*self.env, &*self.shell);
-        if !kw_binary.available {
-            return Err(KwStartError::KwBinaryMissing);
-        }
+        // Probes run on the blocking pool so a slow tree or cold
+        // `kw --version` cannot stall the Tokio worker (or delay Cancel
+        // past this Start's await).
+        let fs = Arc::clone(&self.fs);
+        let env = Arc::clone(&self.env);
+        let shell = Arc::clone(&self.shell);
+        let tree_path_for_probe = tree_path.clone();
+        let (kw_binary, output_dir, tree_readiness) = tokio::task::spawn_blocking(move || {
+            let kw_binary = readiness::probe_kw_binary(&*env, &*shell);
+            if !kw_binary.available {
+                return Err(KwStartError::KwBinaryMissing);
+            }
+            let output_dir = readiness::resolve_output_dir(&*fs, &*env, &tree_path_for_probe)?;
+            let tree_readiness =
+                readiness::probe_tree(&*fs, &tree_path_for_probe, output_dir.as_deref());
+            Ok((kw_binary, output_dir, tree_readiness))
+        })
+        .await
+        .map_err(|error| KwStartError::GitStateProbe(error.to_string()))??;
         if let KwVersionCheck::Below(version_line) = &kw_binary.check {
             tracing::warn!(
                 version = %version_line,
@@ -292,21 +333,49 @@ impl KwActor {
             );
         }
 
-        let tree_path = PathBuf::from(request.tree.path());
         // Unresolvable env state refuses the start: the build record this
         // job writes at completion must know whether it ran under an O=.
         // Both values are then snapshotted onto the job — the build runs
         // under them, so the completion record describes them, not the
         // tree's configuration at whatever time the job ends.
-        let output_dir = readiness::resolve_output_dir(&*self.fs, &*self.env, &tree_path)?;
-        let tree_readiness = readiness::probe_tree(&*self.fs, &tree_path, output_dir.as_deref());
         let TreeReadiness::Ready { arch } = tree_readiness else {
             return Err(KwStartError::TreeNotReady(tree_readiness));
         };
 
         let pre_job_branch = self.checkout_build_branch(&request).await?;
 
-        let (process, log_path) = match self.spawn_build_process(&request) {
+        let deploy = if matches!(kind, KwJobKind::Deploy | KwJobKind::BuildThenDeploy) {
+            match self
+                .prepare_deploy(
+                    kind,
+                    &request,
+                    &tree_path,
+                    output_dir.as_deref(),
+                    arch.as_deref(),
+                )
+                .await
+            {
+                Ok(deploy) => Some(deploy),
+                Err(error) => {
+                    self.rollback_switch(request.tree.path(), pre_job_branch.as_deref())
+                        .await;
+                    return Err(error);
+                }
+            }
+        } else {
+            None
+        };
+
+        let spawned = match kind {
+            KwJobKind::Deploy => self.spawn_deploy_process(
+                request.tree.path(),
+                deploy
+                    .as_ref()
+                    .expect("prepare_deploy returns context for Deploy"),
+            ),
+            KwJobKind::Build | KwJobKind::BuildThenDeploy => self.spawn_build_process(&request),
+        };
+        let (process, log_path) = match spawned {
             Ok(spawned) => spawned,
             Err(error) => {
                 self.rollback_switch(request.tree.path(), pre_job_branch.as_deref())
@@ -318,13 +387,24 @@ impl KwActor {
         let (cancel_tx, cancel_rx) = oneshot::channel();
         spawn(run_job(process, cancel_rx, self.job_event_tx.clone()));
 
-        let phase = KwPhase::Building;
-        tracing::info!(
-            kernel_tree_id = request.kernel_tree_id,
-            branch = request.branch,
-            log_path = %log_path.display(),
-            "kw build job started"
-        );
+        let phase = match kind {
+            KwJobKind::Deploy => KwPhase::Deploying,
+            KwJobKind::Build | KwJobKind::BuildThenDeploy => KwPhase::Building,
+        };
+        match kind {
+            KwJobKind::Deploy => tracing::info!(
+                kernel_tree_id = request.kernel_tree_id,
+                branch = request.branch,
+                log_path = %log_path.display(),
+                "kw deploy job started"
+            ),
+            KwJobKind::Build | KwJobKind::BuildThenDeploy => tracing::info!(
+                kernel_tree_id = request.kernel_tree_id,
+                branch = request.branch,
+                log_path = %log_path.display(),
+                "kw build job started"
+            ),
+        }
         // Recorded only on accept. Refused starts never reach here, and —
         // with their switch rolled back — can neither clobber a previous
         // job's restore target nor strand the tree on a branch the user
@@ -343,6 +423,7 @@ impl KwActor {
             output_dir,
             arch,
             log_path: log_path.clone(),
+            deploy,
             cancel_tx: Some(cancel_tx),
         });
         self.set_status(KwJobStatus::Running {
@@ -353,6 +434,44 @@ impl KwActor {
             log_path,
         });
         Ok(())
+    }
+
+    /// Deploy-kind gates after the branch switch: resolved remote for
+    /// every deploy kind; the deploy-alone record match only for
+    /// StartDeploy, against the requested (now checked-out) branch;
+    /// boot-once confirm last so a missing record refuses before the
+    /// confirm popup. Any refusal is rolled back by the caller.
+    /// BuildThenDeploy skips the record gate because the build has not
+    /// run yet. Probes run on the blocking pool.
+    async fn prepare_deploy(
+        &self,
+        kind: KwJobKind,
+        request: &StartRequest,
+        tree_path: &Path,
+        output_dir: Option<&Path>,
+        arch: Option<&str>,
+    ) -> Result<JobDeploy, KwStartError> {
+        let fs = Arc::clone(&self.fs);
+        let env = Arc::clone(&self.env);
+        let history = Arc::clone(&self.history);
+        let request = request.clone();
+        let tree_path = tree_path.to_path_buf();
+        let output_dir = output_dir.map(Path::to_path_buf);
+        let arch = arch.map(str::to_string);
+        tokio::task::spawn_blocking(move || {
+            prepare_deploy_blocking(
+                kind,
+                &request,
+                &*fs,
+                &*env,
+                &*history,
+                &tree_path,
+                output_dir.as_deref(),
+                arch.as_deref(),
+            )
+        })
+        .await
+        .map_err(|error| KwStartError::GitStateProbe(error.to_string()))?
     }
 
     /// Refuse a dirty worktree, record HEAD, then `git switch` to the
@@ -443,6 +562,29 @@ impl KwActor {
         Ok((process, log_path))
     }
 
+    /// Creates the job's log dir and spawns `kw deploy`. Split from
+    /// `start_job` so a failure here can roll the branch switch back.
+    fn spawn_deploy_process(
+        &self,
+        tree_path: &str,
+        deploy: &JobDeploy,
+    ) -> Result<(Box<dyn RunningProcess>, PathBuf), KwStartError> {
+        self.fs.create_dir_all(&self.kw_log_dir)?;
+        let log_path = self.kw_log_dir.join(format!(
+            "deploy-{}.log",
+            chrono::Utc::now().format("%Y%m%d-%H%M%S-%3f")
+        ));
+        let cmd = ShellCommand::new("kw").args(argv::deploy_argv(
+            &deploy.remote.endpoint(),
+            deploy.options.reboot,
+            deploy.options.force,
+            &deploy.extra_args,
+        ));
+        let cwd = PathBuf::from(tree_path);
+        let process = self.process.spawn(&cmd, &cwd, &log_path)?;
+        Ok((process, log_path))
+    }
+
     fn request_cancel(&mut self) -> Result<(), KwError> {
         match self.job.as_mut() {
             Some(job) => {
@@ -461,6 +603,11 @@ impl KwActor {
                 let Some(job) = self.job.take() else {
                     tracing::warn!("kw job finished with no job state recorded");
                     return;
+                };
+                let outcome = outcome_after_building_cancel(&job, outcome);
+                let job = match self.advance_build_then_deploy(job, &outcome) {
+                    ControlFlow::Break(()) => return,
+                    ControlFlow::Continue(job) => job,
                 };
                 // The record is written before the status flips: watchers
                 // that react to the terminal status find the history
@@ -517,10 +664,90 @@ impl KwActor {
         }
     }
 
+    /// After a successful BuildThenDeploy build, write the build record
+    /// and spawn the deploy process. `Break` means this Finished was
+    /// consumed (job still running, or failed at the deploy spawn
+    /// boundary). `Continue` hands the job back for a normal terminal.
+    fn advance_build_then_deploy(
+        &mut self,
+        job: JobState,
+        outcome: &JobOutcome,
+    ) -> ControlFlow<(), JobState> {
+        let JobOutcome::Exited(exit) = outcome else {
+            return ControlFlow::Continue(job);
+        };
+        if job.kind != KwJobKind::BuildThenDeploy
+            || job.phase != KwPhase::Building
+            || !exit.success()
+            // A cancel during Building must not deploy, even if the build
+            // process exited 0 (wait racing the cancel arm, or a trapped
+            // SIGTERM). `cancel_tx` is taken when Cancel is requested.
+            || job.cancel_tx.is_none()
+        {
+            return ControlFlow::Continue(job);
+        }
+        // Durable before the phase flips: a deploy spawn failure must not
+        // lose the successful build, and KwOps watching Deploying must
+        // already see the record.
+        self.record_build_outcome(&job, outcome);
+        let Some(deploy) = job.deploy.clone() else {
+            tracing::error!("BuildThenDeploy missing deploy context after a successful build");
+            self.set_status(KwJobStatus::Failed {
+                kind: job.kind,
+                phase: KwPhase::Deploying,
+                exit_code: None,
+                log_path: job.log_path,
+            });
+            return ControlFlow::Break(());
+        };
+        match self.spawn_deploy_process(&job.tree_path, &deploy) {
+            Ok((process, log_path)) => {
+                let (cancel_tx, cancel_rx) = oneshot::channel();
+                spawn(run_job(process, cancel_rx, self.job_event_tx.clone()));
+                tracing::info!(
+                    kernel_tree_id = job.kernel_tree_id,
+                    branch = job.branch,
+                    log_path = %log_path.display(),
+                    "kw deploy phase started"
+                );
+                self.set_status(KwJobStatus::Running {
+                    kind: job.kind,
+                    phase: KwPhase::Deploying,
+                    kernel_tree_id: job.kernel_tree_id.clone(),
+                    branch: job.branch.clone(),
+                    log_path: log_path.clone(),
+                });
+                let mut job = job;
+                job.phase = KwPhase::Deploying;
+                job.log_path = log_path;
+                job.cancel_tx = Some(cancel_tx);
+                self.job = Some(job);
+                ControlFlow::Break(())
+            }
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    branch = job.branch,
+                    "failed to spawn kw deploy after a successful build"
+                );
+                self.set_status(KwJobStatus::Failed {
+                    kind: job.kind,
+                    phase: KwPhase::Deploying,
+                    exit_code: None,
+                    log_path: job.log_path,
+                });
+                ControlFlow::Break(())
+            }
+        }
+    }
+
     /// Persist a finished build (success or failure). Cancel writes
     /// nothing. History and patchset-link errors are logged, not folded
     /// into job status — the build's real outcome already reached the user.
     fn record_build_outcome(&self, job: &JobState, outcome: &JobOutcome) {
+        if job.kind == KwJobKind::Deploy || job.phase == KwPhase::Deploying {
+            return;
+        }
         let success = match outcome {
             JobOutcome::Exited(exit) => exit.success(),
             // The exit status is lost: record an honest failure rather
@@ -613,6 +840,7 @@ impl KwActor {
         &self,
         kernel_tree_id: &str,
         tree: &KernelTree,
+        for_branch: Option<String>,
     ) -> Result<KwReadiness, KwError> {
         let fs = Arc::clone(&self.fs);
         let env = Arc::clone(&self.env);
@@ -630,6 +858,7 @@ impl KwActor {
                 &kernel_tree_id,
                 &tree,
                 &head,
+                for_branch.as_deref(),
             )
             .map_err(KwError::from)
         })
@@ -677,6 +906,52 @@ impl KwActor {
             }
         }
     }
+}
+
+/// Deploy gates that must not run on the actor task: remote.config,
+/// history JSON, image globs, and boot-once files. Record match runs
+/// before the boot-once confirm so a missing build refuses cheaper.
+fn prepare_deploy_blocking(
+    kind: KwJobKind,
+    request: &StartRequest,
+    fs: &dyn FileSystemTrait,
+    env: &dyn EnvTrait,
+    history: &dyn KwHistoryStore,
+    tree_path: &Path,
+    output_dir: Option<&Path>,
+    arch: Option<&str>,
+) -> Result<JobDeploy, KwStartError> {
+    let options = request.deploy.clone().unwrap_or(DeployOptions {
+        reboot: false,
+        force: true,
+        boot_once_acknowledged: false,
+    });
+    let remote = remote::resolve_deploy_remote(fs, env, tree_path)
+        .map_err(KwStartError::RemoteUnresolved)?;
+    if kind == KwJobKind::Deploy {
+        let (record, latest) = history.build_records(&request.kernel_tree_id, &request.branch)?;
+        let image = readiness::find_newest_kernel_image(fs, output_dir.unwrap_or(tree_path), arch);
+        readiness::check_deploy_alone(
+            record.as_ref(),
+            latest.as_ref(),
+            &request.tree,
+            &request.branch,
+            output_dir,
+            image.as_deref(),
+        )
+        .map_err(KwStartError::DeployAloneRefused)?;
+    }
+    let boot_once = readiness::probe_boot_once(fs, env, tree_path);
+    if matches!(boot_once, BootOnceState::On | BootOnceState::Unknown)
+        && !options.boot_once_acknowledged
+    {
+        return Err(KwStartError::BootOnceNotAcknowledged);
+    }
+    Ok(JobDeploy {
+        remote,
+        options,
+        extra_args: request.extra_args.clone(),
+    })
 }
 
 /// Fails unless the tree's git state verifies clean. Untracked files
@@ -800,6 +1075,22 @@ async fn cancel_job(process: &mut dyn RunningProcess) -> JobOutcome {
     }
 }
 
+/// A cancel during Building of a BuildThenDeploy job must not chain into
+/// deploy, even when the build process reports exit 0. Rewriting the
+/// outcome to [`JobOutcome::Cancelled`] also skips the build record, matching
+/// the "cancel in Building writes nothing" rule.
+fn outcome_after_building_cancel(job: &JobState, outcome: JobOutcome) -> JobOutcome {
+    if job.cancel_tx.is_none()
+        && job.kind == KwJobKind::BuildThenDeploy
+        && job.phase == KwPhase::Building
+        && matches!(&outcome, JobOutcome::Exited(exit) if exit.success())
+    {
+        JobOutcome::Cancelled
+    } else {
+        outcome
+    }
+}
+
 /// Maps a reap result observed after a cancel request. A signal-terminated
 /// process means our SIGTERM/SIGKILL landed — the job was really cancelled.
 /// A plain exit means the process finished on its own before the signal:
@@ -807,11 +1098,13 @@ async fn cancel_job(process: &mut dyn RunningProcess) -> JobOutcome {
 /// build history (and deploy-alone readiness) needs to see.
 ///
 /// Known, accepted edges: a process that *traps* our SIGTERM and exits 0
-/// counts as success (kw is bash, so this is possible in principle), and an
-/// external signal racing a cancel (e.g. the OOM killer) reads as
-/// Cancelled. Both are indistinguishable from the honest cases without
-/// comparing who signaled first, and both favor showing the user real
-/// output over inventing failures.
+/// counts as success for a standalone build (kw is bash, so this is
+/// possible in principle). BuildThenDeploy does not chain that exit into
+/// deploy — see [`outcome_after_building_cancel`]. An external signal
+/// racing a cancel (e.g. the OOM killer) reads as Cancelled. Those cases
+/// are indistinguishable from the honest ones without comparing who
+/// signaled first, and both favor showing the user real output over
+/// inventing failures.
 fn outcome_after_cancel(result: Result<ExitStatus, ProcessError>) -> JobOutcome {
     use std::os::unix::process::ExitStatusExt;
 
@@ -905,8 +1198,9 @@ mod tests {
         kw::{
             errors::KwStartError,
             history::{KwApplyRecord, KwBuildRecord, MockKwHistoryStore},
-            messages::StartRequest,
-            readiness::{DeployAloneRefusal, TreeReadiness},
+            messages::{DeployOptions, StartRequest},
+            readiness::{BootOnceState, DeployAloneRefusal, TreeReadiness},
+            remote::RemoteRefusal,
             status::{KwJobKind, KwJobStatus, KwPhase},
         },
     };
@@ -942,6 +1236,7 @@ mod tests {
             tree: kernel_tree(Path::new("/home/user/linux")),
             branch: "patchset-2026-08-01-17-30-00".to_string(),
             extra_args: Vec::new(),
+            deploy: None,
         }
     }
 
@@ -1165,6 +1460,118 @@ mod tests {
         fs
     }
 
+    const DEPLOY_REMOTE_CONFIG: &str =
+        "#kw-default=dut\nHost dut\n  Hostname box\n  Port 22\n  User root\n";
+    const DEPLOY_BOOT_ONCE_OFF: &str = "boot_into_new_kernel_once=no\n";
+    const DEPLOY_BOOT_ONCE_ON: &str = "boot_into_new_kernel_once=yes\n";
+
+    fn deploy_ready_fs() -> MockFileSystemTrait {
+        deploy_fs(DEPLOY_REMOTE_CONFIG, DEPLOY_BOOT_ONCE_OFF, true)
+    }
+
+    fn deploy_fs(
+        remote_config: &'static str,
+        deploy_config: &'static str,
+        has_image: bool,
+    ) -> MockFileSystemTrait {
+        let mut fs = MockFileSystemTrait::new();
+        fs.expect_is_dir().returning(|_| true);
+        fs.expect_is_file()
+            .returning(|path| !path.ends_with(".kw/env.current"));
+        fs.expect_exists().returning(|_| true);
+        fs.expect_read_to_string().returning(move |path| {
+            if path.ends_with("build.config") {
+                Ok("arch=x86\n".to_string())
+            } else if path.ends_with("kernel.release") {
+                Ok("6.17.0\n".to_string())
+            } else if path.ends_with("remote.config") {
+                Ok(remote_config.to_string())
+            } else if path.ends_with("deploy.config") {
+                Ok(deploy_config.to_string())
+            } else {
+                Err(FileSystemError::IoError(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "missing",
+                )))
+            }
+        });
+        fs.expect_read_dir().returning(move |path| {
+            if has_image && path.ends_with("arch/x86/boot") {
+                Ok(vec![PathBuf::from(
+                    "/home/user/linux/arch/x86/boot/bzImage",
+                )])
+            } else {
+                Err(FileSystemError::IoError(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "missing",
+                )))
+            }
+        });
+        fs.expect_metadata()
+            .returning(|_| Err(FileSystemError::IoError(io::Error::other("no metadata"))));
+        fs.expect_create_dir_all().returning(|_| Ok(()));
+        fs
+    }
+
+    fn matching_build_record() -> KwBuildRecord {
+        KwBuildRecord {
+            kernel_tree_id: "mainline".to_string(),
+            tree_path: "/home/user/linux".to_string(),
+            message_id: None,
+            branch: "patchset-2026-08-01-17-30-00".to_string(),
+            arch: Some("x86".to_string()),
+            image_path: Some("/home/user/linux/arch/x86/boot/bzImage".to_string()),
+            output_dir: None,
+            kernelrelease: Some("6.17.0".to_string()),
+            log_path: String::new(),
+            built_at: "2026-08-01T18:10:00Z".to_string(),
+            success: true,
+        }
+    }
+
+    fn deploy_options(acknowledged: bool) -> DeployOptions {
+        DeployOptions {
+            reboot: false,
+            force: true,
+            boot_once_acknowledged: acknowledged,
+        }
+    }
+
+    fn deploy_request() -> StartRequest {
+        let mut request = start_request();
+        request.deploy = Some(deploy_options(false));
+        request
+    }
+
+    /// History for a deploy-alone start: answers the record lookup for the
+    /// requested branch and panics if a deploy writes a build record.
+    fn deploy_history(record: Option<KwBuildRecord>) -> MockKwHistoryStore {
+        let mut history = MockKwHistoryStore::new();
+        history
+            .expect_build_records()
+            .withf(|kernel_tree_id, branch| {
+                kernel_tree_id == "mainline" && branch == "patchset-2026-08-01-17-30-00"
+            })
+            .returning(move |_, _| Ok((record.clone(), record.clone())));
+        history.expect_record_build().times(0);
+        history
+    }
+
+    fn env_with_kw() -> MockEnvTrait {
+        let mut env = MockEnvTrait::new();
+        env.expect_which().returning(|_| true);
+        env
+    }
+
+    fn spawn_deploy_actor(
+        test_name: &str,
+        history: MockKwHistoryStore,
+        fs: MockFileSystemTrait,
+    ) -> (KwHandle, Arc<FakeProcess>, PathBuf) {
+        let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
+        spawn_full_actor(test_name, history, shell, fs, env_with_kw())
+    }
+
     /// History answers for an actor whose jobs complete: no patchset
     /// link, build-record writes accepted and dropped.
     fn quiet_history() -> MockKwHistoryStore {
@@ -1329,6 +1736,8 @@ mod tests {
         env.expect_which()
             .withf(|name| name == "kw")
             .returning(|_| false);
+        env.expect_var()
+            .returning(|_| Err(std::env::VarError::NotPresent.into()));
         let mut fs = MockFileSystemTrait::new();
         fs.expect_is_file().returning(|_| false);
         fs.expect_is_dir().returning(|_| false);
@@ -1361,7 +1770,7 @@ mod tests {
             });
         let handle = spawn_test_actor("readiness", history, shell, fs, env);
 
-        let readiness = handle.get_readiness("mainline", &tree).await.unwrap();
+        let readiness = handle.get_readiness("mainline", &tree, None).await.unwrap();
 
         assert!(!readiness.kw_binary.available);
         assert_eq!(TreeReadiness::Missing, readiness.tree);
@@ -1369,6 +1778,64 @@ mod tests {
             Err(DeployAloneRefusal::TreeNotReady(TreeReadiness::Missing)),
             readiness.deploy_alone
         );
+        assert_eq!(Some("for-next".to_string()), readiness.current_branch);
+        assert_eq!(
+            Err(RemoteRefusal::NoRemotesConfigured),
+            readiness.deploy_remote
+        );
+        assert_eq!(BootOnceState::Unknown, readiness.boot_once);
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn get_readiness_for_branch_looks_up_that_branch_not_head() {
+        let tree = kernel_tree(Path::new("/home/user/linux"));
+
+        let mut env = MockEnvTrait::new();
+        env.expect_which()
+            .withf(|name| name == "kw")
+            .returning(|_| false);
+        env.expect_var()
+            .returning(|_| Err(std::env::VarError::NotPresent.into()));
+        let mut fs = MockFileSystemTrait::new();
+        fs.expect_is_file().returning(|_| false);
+        fs.expect_is_dir().returning(|_| false);
+        fs.expect_read_dir().returning(|_| {
+            Err(FileSystemError::IoError(io::Error::new(
+                io::ErrorKind::NotFound,
+                "missing",
+            )))
+        });
+        let mut history = MockKwHistoryStore::new();
+        history
+            .expect_build_records()
+            .withf(|kernel_tree_id, branch| kernel_tree_id == "mainline" && branch == "patchset-x")
+            .times(1)
+            .returning(|_, _| Ok((None, None)));
+        let mut shell = MockShellTrait::new();
+        shell
+            .expect_execute()
+            .withf(|cmd| {
+                cmd.program == "git"
+                    && cmd.args == ["-C", "/home/user/linux", "branch", "--show-current"]
+            })
+            .times(1)
+            .returning(|_| {
+                Ok(ShellOutput {
+                    stdout: b"master\n".to_vec(),
+                    stderr: Vec::new(),
+                    success: true,
+                })
+            });
+        let handle = spawn_test_actor("readiness-for-branch", history, shell, fs, env);
+
+        let readiness = handle
+            .get_readiness("mainline", &tree, Some("patchset-x"))
+            .await
+            .unwrap();
+
+        assert_eq!(Some("master".to_string()), readiness.current_branch);
+        assert_eq!(None, readiness.build_record);
         handle.shutdown().await;
     }
 
@@ -1391,6 +1858,26 @@ mod tests {
         })
         .await
         .expect("status must reach a terminal state")
+    }
+
+    async fn wait_for_running_phase(
+        watch: &mut watch::Receiver<KwStatusSnapshot>,
+        phase: KwPhase,
+    ) -> KwJobStatus {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let status = watch.borrow().job.clone();
+                if matches!(
+                    status,
+                    KwJobStatus::Running { phase: running, .. } if running == phase
+                ) {
+                    return status;
+                }
+                watch.changed().await.unwrap();
+            }
+        })
+        .await
+        .expect("status must reach the expected running phase")
     }
 
     #[tokio::test]
@@ -1797,22 +2284,617 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn start_deploy_still_refused_until_the_deploy_step() {
-        let handle = spawn_test_actor(
-            "deploy-refused",
-            MockKwHistoryStore::new(),
-            MockShellTrait::new(),
-            MockFileSystemTrait::new(),
-            MockEnvTrait::new(),
+    async fn start_deploy_replies_immediately_and_runs_in_background() {
+        let (handle, process, log_dir) = spawn_deploy_actor(
+            "deploy-immediate",
+            deploy_history(Some(matching_build_record())),
+            deploy_ready_fs(),
         );
 
-        let result =
-            tokio::time::timeout(Duration::from_secs(1), handle.start_deploy(start_request()))
-                .await
-                .expect("start_deploy must reply immediately");
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            handle.start_deploy(deploy_request()),
+        )
+        .await
+        .expect("start_deploy must reply immediately");
+        result.unwrap();
 
-        assert!(matches!(result, Err(KwStartError::NotImplemented)));
+        let spawned = process.spawned();
+        assert_eq!(1, spawned.len());
+        assert_eq!("kw", spawned[0].program);
+        assert_eq!(
+            [
+                "deploy",
+                "--remote",
+                "root@box:22",
+                "--no-reboot",
+                "--force"
+            ]
+            .as_slice(),
+            spawned[0].args.as_slice()
+        );
+        assert_eq!(Path::new("/home/user/linux"), spawned[0].cwd);
+        assert!(spawned[0].log_path.starts_with(&log_dir));
+        assert!(spawned[0]
+            .log_path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("deploy-"));
+
+        let snapshot = handle.get_status().await.unwrap();
+        assert!(
+            matches!(
+                snapshot.job,
+                KwJobStatus::Running {
+                    kind: KwJobKind::Deploy,
+                    phase: KwPhase::Deploying,
+                    ..
+                }
+            ),
+            "unexpected status: {:?}",
+            snapshot.job
+        );
+
+        process.last_child().finish(0);
+        let mut watch = handle.watch_status().await.unwrap();
+        let status = wait_for_terminal_status(&mut watch).await;
+        assert!(
+            matches!(
+                status,
+                KwJobStatus::Succeeded {
+                    kind: KwJobKind::Deploy,
+                    ..
+                }
+            ),
+            "unexpected status: {status:?}"
+        );
+
         handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_deploy_merges_extras_and_follows_reboot_force_options() {
+        let (handle, process, log_dir) = spawn_deploy_actor(
+            "deploy-argv",
+            deploy_history(Some(matching_build_record())),
+            deploy_ready_fs(),
+        );
+
+        let mut request = deploy_request();
+        request.deploy = Some(DeployOptions {
+            reboot: true,
+            force: false,
+            boot_once_acknowledged: false,
+        });
+        request.extra_args = [
+            "--verbose",
+            "--local",
+            "--alert=n",
+            "--force",
+            "--remote",
+            "other:22",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+        handle.start_deploy(request).await.unwrap();
+
+        let spawned = process.spawned();
+        assert_eq!(
+            ["deploy", "--remote", "root@box:22", "--reboot", "--verbose"].as_slice(),
+            spawned[0].args.as_slice()
+        );
+
+        process.last_child().finish(0);
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_deploy_refused_without_a_build_record() {
+        let (handle, process, log_dir) =
+            spawn_deploy_actor("deploy-no-record", deploy_history(None), deploy_ready_fs());
+
+        let err = handle.start_deploy(deploy_request()).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            KwStartError::DeployAloneRefused(DeployAloneRefusal::NoBuildRecord)
+        ));
+        assert_eq!(KwJobStatus::Idle, handle.get_status().await.unwrap().job);
+        assert!(process.spawned().is_empty());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_deploy_refused_when_last_build_failed() {
+        let mut record = matching_build_record();
+        record.success = false;
+        let (handle, process, log_dir) = spawn_deploy_actor(
+            "deploy-failed-build",
+            deploy_history(Some(record)),
+            deploy_ready_fs(),
+        );
+
+        let err = handle.start_deploy(deploy_request()).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            KwStartError::DeployAloneRefused(DeployAloneRefusal::LastBuildFailed)
+        ));
+        assert!(process.spawned().is_empty());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_deploy_refused_on_tree_path_drift() {
+        let mut record = matching_build_record();
+        record.tree_path = "/other/linux".to_string();
+        let (handle, process, log_dir) = spawn_deploy_actor(
+            "deploy-drift",
+            deploy_history(Some(record)),
+            deploy_ready_fs(),
+        );
+
+        let err = handle.start_deploy(deploy_request()).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            KwStartError::DeployAloneRefused(DeployAloneRefusal::TreePathDrift { .. })
+        ));
+        assert!(process.spawned().is_empty());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_deploy_refused_on_output_dir_mismatch() {
+        let mut record = matching_build_record();
+        record.output_dir = Some("/cache/kw/envs/testenv".to_string());
+        let (handle, process, log_dir) = spawn_deploy_actor(
+            "deploy-env",
+            deploy_history(Some(record)),
+            deploy_ready_fs(),
+        );
+
+        let err = handle.start_deploy(deploy_request()).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            KwStartError::DeployAloneRefused(DeployAloneRefusal::OutputDirMismatch)
+        ));
+        assert!(process.spawned().is_empty());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_deploy_refused_when_image_is_missing() {
+        let (handle, process, log_dir) = spawn_deploy_actor(
+            "deploy-no-image",
+            deploy_history(Some(matching_build_record())),
+            deploy_fs(DEPLOY_REMOTE_CONFIG, DEPLOY_BOOT_ONCE_OFF, false),
+        );
+
+        let err = handle.start_deploy(deploy_request()).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            KwStartError::DeployAloneRefused(DeployAloneRefusal::ImageMissing)
+        ));
+        assert!(process.spawned().is_empty());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_deploy_refused_when_remote_is_unresolved() {
+        let (handle, process, log_dir) = spawn_deploy_actor(
+            "deploy-no-remote",
+            MockKwHistoryStore::new(),
+            deploy_fs("", DEPLOY_BOOT_ONCE_OFF, true),
+        );
+
+        let err = handle.start_deploy(deploy_request()).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            KwStartError::RemoteUnresolved(RemoteRefusal::NoRemotesConfigured)
+        ));
+        assert!(process.spawned().is_empty());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_deploy_refused_when_boot_once_is_on_and_unacked() {
+        let (handle, process, log_dir) = spawn_deploy_actor(
+            "deploy-boot-once",
+            deploy_history(Some(matching_build_record())),
+            deploy_fs(DEPLOY_REMOTE_CONFIG, DEPLOY_BOOT_ONCE_ON, true),
+        );
+
+        let err = handle.start_deploy(deploy_request()).await.unwrap_err();
+
+        assert!(matches!(err, KwStartError::BootOnceNotAcknowledged));
+        assert!(process.spawned().is_empty());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_deploy_refused_when_latest_build_is_on_another_branch() {
+        let mut latest = matching_build_record();
+        latest.branch = "other".to_string();
+        let mut history = MockKwHistoryStore::new();
+        history
+            .expect_build_records()
+            .returning(move |_, _| Ok((None, Some(latest.clone()))));
+        history.expect_record_build().times(0);
+        let (handle, process, log_dir) =
+            spawn_deploy_actor("deploy-head-mismatch", history, deploy_ready_fs());
+
+        let err = handle.start_deploy(deploy_request()).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            KwStartError::DeployAloneRefused(DeployAloneRefusal::HeadMismatch { .. })
+        ));
+        assert!(process.spawned().is_empty());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_deploy_proceeds_when_boot_once_is_on_and_acked() {
+        let (handle, process, log_dir) = spawn_deploy_actor(
+            "deploy-boot-once-acked",
+            deploy_history(Some(matching_build_record())),
+            deploy_fs(DEPLOY_REMOTE_CONFIG, DEPLOY_BOOT_ONCE_ON, true),
+        );
+
+        let mut request = deploy_request();
+        request.deploy = Some(deploy_options(true));
+        handle.start_deploy(request).await.unwrap();
+        assert_eq!(1, process.spawned().len());
+
+        process.last_child().finish(0);
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_deploy_post_switch_refusal_rolls_the_switch_back() {
+        let git = GitStub::on_branch("master");
+        let (handle, process, log_dir) = spawn_full_actor(
+            "deploy-rollback",
+            deploy_history(None),
+            git.shell(),
+            deploy_ready_fs(),
+            env_with_kw(),
+        );
+
+        let err = handle.start_deploy(deploy_request()).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            KwStartError::DeployAloneRefused(DeployAloneRefusal::NoBuildRecord)
+        ));
+        assert!(process.spawned().is_empty());
+        assert_eq!(git.head(), "master");
+        assert!(matches!(
+            handle.restore_previous_branch().await,
+            Err(KwError::NoRecordedBranch)
+        ));
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_build_then_deploy_chains_deploy_after_a_successful_build() {
+        let (history, builds) = recording_history(None);
+        let (handle, process, log_dir) =
+            spawn_deploy_actor("chain-success", history, deploy_ready_fs());
+        let mut watch = handle.watch_status().await.unwrap();
+
+        let mut request = deploy_request();
+        request.extra_args = ["--verbose", "--ccache", "--alert=n"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            handle.start_build_then_deploy(request),
+        )
+        .await
+        .expect("start_build_then_deploy must reply immediately")
+        .unwrap();
+
+        assert_eq!(1, process.spawned().len());
+        assert_eq!(
+            ["build", "--verbose", "--ccache"].as_slice(),
+            process.spawned()[0].args.as_slice()
+        );
+        assert!(
+            matches!(
+                handle.get_status().await.unwrap().job,
+                KwJobStatus::Running {
+                    kind: KwJobKind::BuildThenDeploy,
+                    phase: KwPhase::Building,
+                    ..
+                }
+            ),
+            "unexpected status: {:?}",
+            handle.get_status().await.unwrap().job
+        );
+
+        let build = process.last_child();
+        build.finish(0);
+        let deploying = wait_for_running_phase(&mut watch, KwPhase::Deploying).await;
+        match deploying {
+            KwJobStatus::Running {
+                kind,
+                phase,
+                log_path,
+                ..
+            } => {
+                assert_eq!(KwJobKind::BuildThenDeploy, kind);
+                assert_eq!(KwPhase::Deploying, phase);
+                assert!(log_path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("deploy-"));
+            }
+            other => panic!("expected Running Deploying, got {other:?}"),
+        }
+
+        let spawned = process.spawned();
+        assert_eq!(2, spawned.len());
+        assert_eq!(
+            [
+                "deploy",
+                "--remote",
+                "root@box:22",
+                "--no-reboot",
+                "--force",
+                "--verbose",
+            ]
+            .as_slice(),
+            spawned[1].args.as_slice()
+        );
+        assert_eq!(Path::new("/home/user/linux"), spawned[1].cwd);
+        {
+            let builds = builds.lock().unwrap();
+            assert_eq!(1, builds.len());
+            assert!(builds[0].success);
+        }
+
+        process.last_child().finish(0);
+        let status = wait_for_terminal_status(&mut watch).await;
+        assert!(
+            matches!(
+                status,
+                KwJobStatus::Succeeded {
+                    kind: KwJobKind::BuildThenDeploy,
+                    ..
+                }
+            ),
+            "unexpected status: {status:?}"
+        );
+        assert_eq!(1, builds.lock().unwrap().len());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_build_then_deploy_skips_deploy_when_the_build_fails() {
+        let (history, builds) = recording_history(None);
+        let (handle, process, log_dir) =
+            spawn_deploy_actor("chain-build-fail", history, deploy_ready_fs());
+        let mut watch = handle.watch_status().await.unwrap();
+
+        handle
+            .start_build_then_deploy(deploy_request())
+            .await
+            .unwrap();
+        process.last_child().finish(2);
+
+        let status = wait_for_terminal_status(&mut watch).await;
+        match status {
+            KwJobStatus::Failed {
+                kind,
+                phase,
+                exit_code,
+                ..
+            } => {
+                assert_eq!(KwJobKind::BuildThenDeploy, kind);
+                assert_eq!(KwPhase::Building, phase);
+                assert_eq!(Some(2), exit_code);
+            }
+            other => panic!("expected Failed Building, got {other:?}"),
+        }
+        assert_eq!(1, process.spawned().len());
+        {
+            let builds = builds.lock().unwrap();
+            assert_eq!(1, builds.len());
+            assert!(!builds[0].success);
+        }
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_build_then_deploy_cancel_in_building_skips_deploy_and_record() {
+        let (history, builds) = recording_history(None);
+        let (handle, process, log_dir) =
+            spawn_deploy_actor("chain-cancel-build", history, deploy_ready_fs());
+        let mut watch = handle.watch_status().await.unwrap();
+
+        handle
+            .start_build_then_deploy(deploy_request())
+            .await
+            .unwrap();
+        handle.cancel().await.unwrap();
+
+        let status = wait_for_terminal_status(&mut watch).await;
+        match status {
+            KwJobStatus::Cancelled { kind, phase, .. } => {
+                assert_eq!(KwJobKind::BuildThenDeploy, kind);
+                assert_eq!(KwPhase::Building, phase);
+            }
+            other => panic!("expected Cancelled Building, got {other:?}"),
+        }
+        assert_eq!(1, process.spawned().len());
+        assert!(process.last_child().was_killed());
+        assert!(builds.lock().unwrap().is_empty());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_build_then_deploy_cancel_then_exit_zero_skips_deploy() {
+        let (history, builds) = recording_history(None);
+        let (handle, process, log_dir) =
+            spawn_deploy_actor("chain-cancel-exit-zero", history, deploy_ready_fs());
+        let mut watch = handle.watch_status().await.unwrap();
+
+        process.ignore_sigterm(true);
+        handle
+            .start_build_then_deploy(deploy_request())
+            .await
+            .unwrap();
+        handle.cancel().await.unwrap();
+        process.last_child().finish(0);
+
+        let status = wait_for_terminal_status(&mut watch).await;
+        match status {
+            KwJobStatus::Cancelled { kind, phase, .. } => {
+                assert_eq!(KwJobKind::BuildThenDeploy, kind);
+                assert_eq!(KwPhase::Building, phase);
+            }
+            other => panic!("expected Cancelled Building, got {other:?}"),
+        }
+        assert_eq!(1, process.spawned().len());
+        assert!(builds.lock().unwrap().is_empty());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_build_then_deploy_cancel_in_deploying_keeps_the_build_record() {
+        let (history, builds) = recording_history(None);
+        let (handle, process, log_dir) =
+            spawn_deploy_actor("chain-cancel-deploy", history, deploy_ready_fs());
+        let mut watch = handle.watch_status().await.unwrap();
+
+        handle
+            .start_build_then_deploy(deploy_request())
+            .await
+            .unwrap();
+        process.last_child().finish(0);
+        let _ = wait_for_running_phase(&mut watch, KwPhase::Deploying).await;
+        assert_eq!(1, builds.lock().unwrap().len());
+
+        handle.cancel().await.unwrap();
+        let status = wait_for_terminal_status(&mut watch).await;
+        match status {
+            KwJobStatus::Cancelled { kind, phase, .. } => {
+                assert_eq!(KwJobKind::BuildThenDeploy, kind);
+                assert_eq!(KwPhase::Deploying, phase);
+            }
+            other => panic!("expected Cancelled Deploying, got {other:?}"),
+        }
+        assert_eq!(2, process.spawned().len());
+        assert!(process.last_child().was_killed());
+        {
+            let builds = builds.lock().unwrap();
+            assert_eq!(1, builds.len());
+            assert!(builds[0].success);
+        }
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_build_then_deploy_spawn_failure_at_boundary_keeps_the_build_record() {
+        let (history, builds) = recording_history(None);
+        let (handle, process, log_dir) =
+            spawn_deploy_actor("chain-spawn-fail", history, deploy_ready_fs());
+        let mut watch = handle.watch_status().await.unwrap();
+
+        handle
+            .start_build_then_deploy(deploy_request())
+            .await
+            .unwrap();
+        let build = process.last_child();
+        process.refuse_spawns(true);
+        build.finish(0);
+
+        let status = wait_for_terminal_status(&mut watch).await;
+        match status {
+            KwJobStatus::Failed {
+                kind,
+                phase,
+                exit_code,
+                ..
+            } => {
+                assert_eq!(KwJobKind::BuildThenDeploy, kind);
+                assert_eq!(KwPhase::Deploying, phase);
+                assert_eq!(None, exit_code);
+            }
+            other => panic!("expected Failed Deploying with no exit, got {other:?}"),
+        }
+        assert_eq!(1, process.spawned().len());
+        {
+            let builds = builds.lock().unwrap();
+            assert_eq!(1, builds.len());
+            assert!(builds[0].success);
+        }
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_build_then_deploy_refused_when_remote_is_unresolved() {
+        let (handle, process, log_dir) = spawn_deploy_actor(
+            "chain-no-remote",
+            MockKwHistoryStore::new(),
+            deploy_fs("", DEPLOY_BOOT_ONCE_OFF, true),
+        );
+
+        let err = handle
+            .start_build_then_deploy(deploy_request())
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            KwStartError::RemoteUnresolved(RemoteRefusal::NoRemotesConfigured)
+        ));
+        assert!(process.spawned().is_empty());
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
     }
 
     #[tokio::test]

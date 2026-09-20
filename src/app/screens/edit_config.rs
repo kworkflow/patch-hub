@@ -45,6 +45,14 @@ impl EditConfigState {
             EditableConfig::StayOnAppliedBranch,
             config.stay_on_applied_branch().to_string(),
         );
+        config_buffer.insert(
+            EditableConfig::KwRebootAfterDeploy,
+            config.kw_reboot_after_deploy().to_string(),
+        );
+        config_buffer.insert(
+            EditableConfig::KwDeployForce,
+            config.kw_deploy_force().to_string(),
+        );
 
         EditConfigState {
             config_buffer,
@@ -145,6 +153,14 @@ impl EditConfigState {
                 .config_buffer
                 .get(&EditableConfig::StayOnAppliedBranch)
                 .cloned(),
+            kw_reboot_after_deploy: self
+                .config_buffer
+                .get(&EditableConfig::KwRebootAfterDeploy)
+                .cloned(),
+            kw_deploy_force: self
+                .config_buffer
+                .get(&EditableConfig::KwDeployForce)
+                .cloned(),
         }
     }
 }
@@ -160,6 +176,8 @@ enum EditableConfig {
     CoverRenderer,
     MaxLogAge,
     StayOnAppliedBranch,
+    KwRebootAfterDeploy,
+    KwDeployForce,
 }
 
 impl TryFrom<usize> for EditableConfig {
@@ -176,6 +194,8 @@ impl TryFrom<usize> for EditableConfig {
             6 => Ok(EditableConfig::CoverRenderer),
             7 => Ok(EditableConfig::MaxLogAge),
             8 => Ok(EditableConfig::StayOnAppliedBranch),
+            9 => Ok(EditableConfig::KwRebootAfterDeploy),
+            10 => Ok(EditableConfig::KwDeployForce),
             _ => bail!("Invalid index {} for EditableConfig", value), // Handle out of bounds
         }
     }
@@ -199,6 +219,43 @@ impl Display for EditableConfig {
             EditableConfig::StayOnAppliedBranch => {
                 write!(f, "Stay On Applied Branch (true/false)")
             }
+            EditableConfig::KwRebootAfterDeploy => {
+                write!(f, "Reboot After kw Deploy (true/false)")
+            }
+            EditableConfig::KwDeployForce => {
+                write!(f, "Force kw Deploy (true/false)")
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ConfigState;
+
+    #[test]
+    fn draft_includes_deploy_knobs_with_compiled_in_defaults() {
+        let snapshot = ConfigState::default().to_snapshot();
+        let edit = EditConfigState::new(&snapshot);
+        let draft = edit.to_update_draft();
+
+        assert_eq!(Some("false".to_string()), draft.kw_reboot_after_deploy);
+        assert_eq!(Some("true".to_string()), draft.kw_deploy_force);
+        assert_eq!(11, edit.config_count());
+        assert_eq!(
+            Some((
+                "Reboot After kw Deploy (true/false)".to_string(),
+                "false".to_string()
+            )),
+            edit.config(9)
+        );
+        assert_eq!(
+            Some((
+                "Force kw Deploy (true/false)".to_string(),
+                "true".to_string()
+            )),
+            edit.config(10)
+        );
     }
 }
