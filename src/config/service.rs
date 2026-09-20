@@ -67,6 +67,7 @@ pub(crate) fn ensure_directories(
 pub(crate) fn validate_update(
     draft: ConfigUpdateDraft,
     fs: &dyn FileSystemTrait,
+    current: &ConfigState,
 ) -> Result<ValidatedConfigUpdate, ConfigError> {
     let page_size = match &draft.page_size {
         None => None,
@@ -169,6 +170,19 @@ pub(crate) fn validate_update(
         ),
     };
 
+    let target_kernel_tree = match &draft.target_kernel_tree {
+        None => None,
+        Some(s) if s.trim().is_empty() => Some(None),
+        Some(s) => {
+            let key = s.trim();
+            if current.kernel_trees.contains_key(key) {
+                Some(Some(key.to_string()))
+            } else {
+                return Err(ConfigError::InvalidTargetKernelTree(s.clone()));
+            }
+        }
+    };
+
     Ok(ValidatedConfigUpdate {
         page_size,
         cache_dir,
@@ -181,6 +195,7 @@ pub(crate) fn validate_update(
         stay_on_applied_branch,
         kw_reboot_after_deploy,
         kw_deploy_force,
+        target_kernel_tree,
     })
 }
 

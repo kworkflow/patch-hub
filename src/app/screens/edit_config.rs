@@ -161,6 +161,7 @@ impl EditConfigState {
                 .config_buffer
                 .get(&EditableConfig::KwDeployForce)
                 .cloned(),
+            target_kernel_tree: None,
         }
     }
 }

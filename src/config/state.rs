@@ -144,6 +144,10 @@ impl ConfigState {
         self.kw_deploy_force = kw_deploy_force;
     }
 
+    fn set_target_kernel_tree(&mut self, target_kernel_tree: Option<String>) {
+        self.target_kernel_tree = target_kernel_tree;
+    }
+
     /// Merges validated field updates from the edit-config flow.
     pub fn apply_update(&mut self, u: &ValidatedConfigUpdate) {
         if let Some(page_size) = u.page_size {
@@ -178,6 +182,9 @@ impl ConfigState {
         }
         if let Some(kw_deploy_force) = u.kw_deploy_force {
             self.set_kw_deploy_force(kw_deploy_force);
+        }
+        if let Some(ref target_kernel_tree) = u.target_kernel_tree {
+            self.set_target_kernel_tree(target_kernel_tree.clone());
         }
     }
 

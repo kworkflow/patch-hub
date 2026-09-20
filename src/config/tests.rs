@@ -12,7 +12,7 @@ use crate::config::repository::{ConfigRepository, JsonConfigRepository};
 use crate::config::service::{bootstrap_parts, validate_update};
 use crate::config::state::{normalize_derived_paths, ConfigState};
 use crate::config::{
-    ConfigError, ConfigSnapshot, ConfigUpdateDraft, ValidatedConfigUpdate,
+    ConfigError, ConfigSnapshot, ConfigUpdateDraft, KernelTree, ValidatedConfigUpdate,
     DEFAULT_CONFIG_PATH_SUFFIX,
 };
 use crate::infrastructure::{
@@ -24,6 +24,27 @@ static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
 
 fn os_fs() -> OsFileSystem {
     OsFileSystem
+}
+
+fn sample_kernel_tree(path: &str, branch: &str) -> KernelTree {
+    serde_json::from_value(json!({
+        "path": path,
+        "branch": branch
+    }))
+    .unwrap()
+}
+
+fn state_with_trees(env: &dyn EnvTrait) -> ConfigState {
+    let mut state = ConfigState::new_with_defaults(env);
+    state.kernel_trees.insert(
+        "linux".into(),
+        sample_kernel_tree("/home/user/linux", "master"),
+    );
+    state.kernel_trees.insert(
+        "amd-gfx".into(),
+        sample_kernel_tree("/home/user/amd-gfx", "amd-staging-drm-next"),
+    );
+    state
 }
 
 fn unique_test_dir(prefix: &str) -> PathBuf {
@@ -494,6 +515,7 @@ fn validate_update_rejects_invalid_page_size() {
             ..Default::default()
         },
         &os_fs(),
+        &ConfigState::default(),
     )
     .unwrap_err();
     assert!(matches!(err, ConfigError::InvalidPageSize(ref s) if s == "xyz"));
@@ -507,6 +529,7 @@ fn validate_update_rejects_invalid_patch_renderer() {
             ..Default::default()
         },
         &os_fs(),
+        &ConfigState::default(),
     )
     .unwrap_err();
     assert!(matches!(
@@ -523,6 +546,7 @@ fn validate_update_rejects_invalid_cover_renderer() {
             ..Default::default()
         },
         &os_fs(),
+        &ConfigState::default(),
     )
     .unwrap_err();
     assert!(matches!(
@@ -539,6 +563,7 @@ fn validate_update_rejects_invalid_max_log_age() {
             ..Default::default()
         },
         &os_fs(),
+        &ConfigState::default(),
     )
     .unwrap_err();
     assert!(matches!(
@@ -556,6 +581,7 @@ fn validate_update_rejects_invalid_stay_on_applied_branch() {
                 ..Default::default()
             },
             &os_fs(),
+            &ConfigState::default(),
         )
         .unwrap_err();
         assert!(matches!(
@@ -597,6 +623,7 @@ fn validate_update_rejects_invalid_kw_deploy_bools() {
                 ..Default::default()
             },
             &os_fs(),
+            &ConfigState::default(),
         )
         .unwrap_err();
         if expect_reboot_err {
@@ -637,6 +664,80 @@ fn apply_update_toggles_kw_deploy_knobs() {
 }
 
 #[test]
+fn validate_update_accepts_existing_target_kernel_tree() {
+    let (env, _home) = default_env();
+    let state = state_with_trees(&env);
+    let update = validate_update(
+        ConfigUpdateDraft {
+            target_kernel_tree: Some("linux".into()),
+            ..Default::default()
+        },
+        &os_fs(),
+        &state,
+    )
+    .unwrap();
+    assert_eq!(Some(Some("linux".to_string())), update.target_kernel_tree);
+}
+
+#[test]
+fn validate_update_unsets_target_kernel_tree_on_empty_string() {
+    let (env, _home) = default_env();
+    let state = state_with_trees(&env);
+    let update = validate_update(
+        ConfigUpdateDraft {
+            target_kernel_tree: Some("".into()),
+            ..Default::default()
+        },
+        &os_fs(),
+        &state,
+    )
+    .unwrap();
+    assert_eq!(Some(None), update.target_kernel_tree);
+}
+
+#[test]
+fn validate_update_rejects_unknown_target_kernel_tree() {
+    let (env, _home) = default_env();
+    let state = state_with_trees(&env);
+    let err = validate_update(
+        ConfigUpdateDraft {
+            target_kernel_tree: Some("missing".into()),
+            ..Default::default()
+        },
+        &os_fs(),
+        &state,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        err,
+        ConfigError::InvalidTargetKernelTree(ref s) if s == "missing"
+    ));
+}
+
+#[test]
+fn apply_update_sets_and_unsets_target_kernel_tree() {
+    let (env, _home) = default_env();
+    let mut state = state_with_trees(&env);
+    assert!(state.target_kernel_tree().is_none());
+
+    state.apply_update(&ValidatedConfigUpdate {
+        target_kernel_tree: Some(Some("linux".into())),
+        ..Default::default()
+    });
+    assert_eq!(Some("linux"), state.target_kernel_tree().as_deref());
+
+    state.apply_update(&ValidatedConfigUpdate {
+        target_kernel_tree: Some(None),
+        ..Default::default()
+    });
+    assert!(state.target_kernel_tree().is_none());
+
+    // A draft that omits the field leaves the current value untouched.
+    state.apply_update(&ValidatedConfigUpdate::default());
+    assert!(state.target_kernel_tree().is_none());
+}
+
+#[test]
 fn validate_update_rejects_cache_dir_that_is_existing_file() {
     let root = unique_test_dir("not-a-dir");
     let blocking = root.join("blocking-file");
@@ -647,6 +748,7 @@ fn validate_update_rejects_cache_dir_that_is_existing_file() {
             ..Default::default()
         },
         &os_fs(),
+        &ConfigState::default(),
     )
     .unwrap_err();
     assert!(matches!(err, ConfigError::InvalidDirectory(_)));
@@ -703,5 +805,76 @@ async fn validate_and_apply_persists_to_config_file() {
     let raw = fs::read_to_string(&cfg_path).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
     assert_eq!(parsed["page_size"], 77);
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn validate_and_apply_persists_target_kernel_tree() {
+    let (env, home) = default_env();
+    let (mut state, repo) = bootstrap_parts(&env, os_fs()).unwrap();
+    state.kernel_trees.insert(
+        "linux".into(),
+        sample_kernel_tree("/home/user/linux", "master"),
+    );
+    let handle = ConfigActor::spawn(state, repo);
+    let cfg_path = home.join(DEFAULT_CONFIG_PATH_SUFFIX);
+
+    let snapshot = handle
+        .validate_and_apply(ConfigUpdateDraft {
+            target_kernel_tree: Some("linux".into()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(Some("linux"), snapshot.target_kernel_tree().as_deref());
+
+    let raw = fs::read_to_string(&cfg_path).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(parsed["target_kernel_tree"], "linux");
+
+    handle
+        .validate_and_apply(ConfigUpdateDraft {
+            target_kernel_tree: Some("".into()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    let raw = fs::read_to_string(&cfg_path).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    assert!(parsed["target_kernel_tree"].is_null());
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn invalid_target_kernel_tree_keeps_existing_state() {
+    let (env, _home) = default_env();
+    let (mut state, repo) = bootstrap_parts(&env, os_fs()).unwrap();
+    state.kernel_trees.insert(
+        "linux".into(),
+        sample_kernel_tree("/home/user/linux", "master"),
+    );
+    state.target_kernel_tree = Some("linux".into());
+    let handle = ConfigActor::spawn(state, repo);
+
+    let err = handle
+        .validate_and_apply(ConfigUpdateDraft {
+            target_kernel_tree: Some("missing".into()),
+            ..Default::default()
+        })
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        ConfigError::InvalidTargetKernelTree(ref s) if s == "missing"
+    ));
+    assert_eq!(
+        Some("linux"),
+        handle
+            .get_snapshot()
+            .await
+            .unwrap()
+            .target_kernel_tree()
+            .as_deref()
+    );
     handle.shutdown().await;
 }

@@ -84,7 +84,7 @@ where
     }
 
     fn apply(&mut self, draft: ConfigUpdateDraft) -> ConfigResult<ConfigSnapshot> {
-        let update = validate_update(draft, self.repo.fs())?;
+        let update = validate_update(draft, self.repo.fs(), &self.state)?;
         self.state.apply_update(&update);
         normalize_derived_paths(&mut self.state);
         ensure_directories(&self.state, self.repo.fs())?;
