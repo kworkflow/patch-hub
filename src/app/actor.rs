@@ -234,6 +234,7 @@ mod tests {
                 fs: Box::new(MockFileSystemTrait::new()),
                 config: dummy_config_handle(),
                 kw_history: Arc::new(MockKwHistoryStore::new()),
+                kw: None,
             },
         }
     }
@@ -336,6 +337,7 @@ mod tests {
             lore_api.clone(),
             render.clone(),
             Arc::new(MockKwHistoryStore::new()),
+            None,
         )
         .expect("App::new must succeed");
 

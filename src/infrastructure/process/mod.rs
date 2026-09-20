@@ -33,7 +33,6 @@ use tokio::process::{Child, Command};
 
 use crate::infrastructure::shell::ShellCommand;
 
-#[allow(dead_code)]
 pub struct OsProcess;
 
 impl ProcessTrait for OsProcess {
@@ -88,7 +87,19 @@ impl RunningProcess for OsRunningProcess {
     }
 
     fn kill(&mut self) -> Result<(), ProcessError> {
-        match killpg(self.pgid, Signal::SIGTERM) {
+        self.signal_group(Signal::SIGTERM)
+    }
+
+    fn force_kill(&mut self) -> Result<(), ProcessError> {
+        self.signal_group(Signal::SIGKILL)
+    }
+}
+
+impl OsRunningProcess {
+    /// ESRCH tolerance: signaling an already-gone group is a successful
+    /// no-op, not an error.
+    fn signal_group(&self, signal: Signal) -> Result<(), ProcessError> {
+        match killpg(self.pgid, signal) {
             Ok(()) | Err(Errno::ESRCH) => Ok(()),
             Err(errno) => Err(ProcessError::IoError(io::Error::from(errno))),
         }

@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 
@@ -16,10 +17,12 @@ use crate::{
     },
     config::{ConfigSnapshot, ConfigState},
     infrastructure::{
+        env::MockEnvTrait,
         file_system::{FileSystemError, MockFileSystemTrait},
+        process::FakeProcess,
         shell::{MockShellTrait, ShellCommand, ShellOutput},
     },
-    kw::history::MockKwHistoryStore,
+    kw::{actor::KwActor, history::MockKwHistoryStore},
     lore::application::{
         cache::BootstrapLoreData, handle::LoreApiHandle, messages::LoreApiMessage,
     },
@@ -64,6 +67,7 @@ async fn apply_success_sets_success_popup_and_resets_apply_action() {
             "Current branch: 'patchset-",
         ],
     );
+    shutdown_kw(&app).await;
 }
 
 #[tokio::test]
@@ -94,11 +98,14 @@ async fn apply_success_switches_back_when_stay_disabled() {
         "Patchset Apply Success",
         &["Current branch: 'feature'"],
     );
-    let calls = calls.lock().unwrap();
-    assert_eq!(
-        command(&["git", "-C", KERNEL_TREE_PATH, "switch", "feature"]),
-        calls[6]
-    );
+    {
+        let calls = calls.lock().unwrap();
+        assert_eq!(
+            command(&["git", "-C", KERNEL_TREE_PATH, "switch", "feature"]),
+            calls[6]
+        );
+    }
+    shutdown_kw(&app).await;
 }
 
 #[tokio::test]
@@ -123,11 +130,14 @@ async fn apply_failure_sets_failure_popup_and_resets_apply_action() {
         "Patchset Apply Fail",
         &["`git am` failed", "feature", "apply failed"],
     );
-    let calls = calls.lock().unwrap();
-    assert_eq!(
-        command(&["git", "-C", KERNEL_TREE_PATH, "am", "--abort"]),
-        calls[6]
-    );
+    {
+        let calls = calls.lock().unwrap();
+        assert_eq!(
+            command(&["git", "-C", KERNEL_TREE_PATH, "am", "--abort"]),
+            calls[6]
+        );
+    }
+    shutdown_kw(&app).await;
 }
 
 #[tokio::test]
@@ -169,6 +179,7 @@ async fn apply_success_records_apply_history() {
         "Patchset Apply Success",
         &["applied successfully"],
     );
+    shutdown_kw(&app).await;
 }
 
 #[tokio::test]
@@ -208,6 +219,7 @@ async fn apply_success_with_history_write_failure_keeps_success_popup() {
             "inspect or delete that file",
         ],
     );
+    shutdown_kw(&app).await;
 }
 
 #[tokio::test]
@@ -236,6 +248,7 @@ async fn apply_failure_does_not_record_history() {
     app.consolidate_patchset_actions().await.unwrap();
 
     assert_info_popup_contains(app.state.popup.as_ref(), "Patchset Apply Fail", &[]);
+    shutdown_kw(&app).await;
 }
 
 #[tokio::test]
@@ -268,6 +281,7 @@ async fn reviewed_reply_success_records_persists_and_resets_reply_action() {
         .clone()
         .expect("reviewed state should be persisted");
     assert_eq!(HashSet::from([0]), saved[&message_id]);
+    shutdown_kw(&app).await;
 }
 
 #[tokio::test]
@@ -297,6 +311,7 @@ async fn reviewed_reply_failure_does_not_record_failed_index() {
         .clone()
         .expect("reviewed state should be persisted");
     assert!(saved[&message_id].is_empty());
+    shutdown_kw(&app).await;
 }
 
 fn app_with_apply_details(fs: MockFileSystemTrait, shell: MockShellTrait) -> App {
@@ -308,6 +323,14 @@ fn app_with_apply_details(fs: MockFileSystemTrait, shell: MockShellTrait) -> App
         apply_config(),
         history_store_allowing_writes(),
     )
+}
+
+/// Shuts down the KwActor the app was wired with, instead of relying on
+/// the test runtime aborting it at drop.
+async fn shutdown_kw(app: &App) {
+    if let Some(kw) = &app.services.kw {
+        kw.shutdown().await;
+    }
 }
 
 fn app_with_reviewed_reply_details(shell: MockShellTrait, lore_api: LoreApiHandle) -> App {
@@ -329,6 +352,16 @@ fn app_with_details(
     config: ConfigSnapshot,
     kw_history: MockKwHistoryStore,
 ) -> App {
+    // Apply history is recorded through the real actor wrapping the mock
+    // store, mirroring production wiring.
+    let kw = KwActor::spawn(
+        Arc::new(kw_history),
+        Arc::new(FakeProcess::new()),
+        Arc::new(MockShellTrait::new()),
+        Arc::new(MockFileSystemTrait::new()),
+        Arc::new(MockEnvTrait::new()),
+        PathBuf::from("/tmp/patch-hub-test-kw-logs"),
+    );
     let mut app = App::new(
         config,
         dummy_config_handle(),
@@ -341,7 +374,8 @@ fn app_with_details(
         Box::new(shell),
         lore_api,
         dummy_render_handle(),
-        Arc::new(kw_history),
+        Arc::new(MockKwHistoryStore::new()),
+        Some(kw),
     )
     .expect("app should build");
 
