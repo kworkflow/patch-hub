@@ -3,6 +3,7 @@
 
 #[cfg(unix)]
 pub mod actor;
+pub mod argv;
 pub mod errors;
 pub mod handle;
 pub mod history;

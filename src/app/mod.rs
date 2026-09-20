@@ -50,6 +50,7 @@ use crate::{
     kw::{
         handle::KwHandle,
         history::{KwApplyRecord, KwHistoryStore},
+        status::KwJobStatus,
     },
     lore::{
         application::{
@@ -427,56 +428,12 @@ impl App {
 
         if patchset_action_selected(details, &PatchsetAction::Apply) {
             debug!("applying patchset via git-am");
-            let request = apply_patchset_request(details);
-            let action_service = PatchsetActionService::new(
-                &*self.services.fs,
-                &*self.services.shell,
-                &self.services.lore_api,
-            );
-            let popup = match action_service.apply_patchset(&request, &self.state.config) {
-                Ok(applied) => {
-                    let popup_body = match kw_apply_record(details, &self.state.config, &applied) {
-                        // Defensive: the apply itself resolved this tree from
-                        // the same snapshot, so this is unreachable unless the
-                        // config changed mid-apply.
-                        None => {
-                            warn!("kw apply history skipped: target kernel tree is no longer configured");
-                            format!(
-                                "{}\n\nWarning: the apply was not recorded in the kw history: target kernel tree is no longer configured",
-                                applied.message
-                            )
-                        }
-                        Some(record) => {
-                            // History writes go through KwActor so apply
-                            // recording serializes with job state; without an
-                            // actor (non-unix), write the store directly.
-                            let recorded = match &self.services.kw {
-                                Some(kw) => {
-                                    kw.record_apply(record).await.map_err(|e| e.to_string())
-                                }
-                                None => self
-                                    .services
-                                    .kw_history
-                                    .record_apply(record)
-                                    .map_err(|e| e.to_string()),
-                            };
-                            // The git apply itself succeeded; a history-write
-                            // failure must not turn it into a reported failure.
-                            match recorded {
-                                Ok(()) => applied.message,
-                                Err(e) => {
-                                    warn!(error = %e, "failed to record kw apply history");
-                                    format!(
-                                        "{}\n\nWarning: the apply was not recorded in the kw history: {e}\nIf this warning keeps appearing, inspect or delete that file.",
-                                        applied.message
-                                    )
-                                }
-                            }
-                        }
-                    };
-                    popup::AppPopup::info("Patchset Apply Success", popup_body)
-                }
-                Err(msg) => popup::AppPopup::info("Patchset Apply Fail", msg),
+            // A running kw job owns the tree; applying would rewrite the
+            // branch it is building. AppActor serializes this with Start,
+            // so the two cannot race.
+            let popup = match self.kw_job_running_popup().await {
+                Some(popup) => popup,
+                None => self.apply_patchset_popup(details).await,
             };
 
             self.state.popup = Some(popup);
@@ -487,6 +444,78 @@ impl App {
                 .as_mut()
                 .expect("invariant: details must be loaded before toggling apply action")
                 .toggle_apply_action();
+        }
+    }
+
+    /// The popup blocking an apply while a kw job runs, if a job is in
+    /// fact running. An unreachable actor cannot be running a job, so a
+    /// status-query failure lets the apply proceed.
+    async fn kw_job_running_popup(&self) -> Option<popup::AppPopup> {
+        let kw = self.services.kw.as_ref()?;
+        match kw.get_status().await {
+            Ok(snapshot) if matches!(snapshot.job, KwJobStatus::Running { .. }) => {
+                Some(popup::AppPopup::info(
+                    "Patchset Apply Blocked",
+                    " A kw job is running on the kernel tree.\n\nApplying a patchset now would rewrite the branch the job is building under it.\n\nWait for the job to finish, then apply again.",
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    /// Runs the git-am apply and maps the outcome to the result popup,
+    /// recording the apply in the kw history on success.
+    async fn apply_patchset_popup(&self, details: &PatchsetDetailsState) -> popup::AppPopup {
+        let request = apply_patchset_request(details);
+        let action_service = PatchsetActionService::new(
+            &*self.services.fs,
+            &*self.services.shell,
+            &self.services.lore_api,
+        );
+        match action_service.apply_patchset(&request, &self.state.config) {
+            Ok(applied) => {
+                let popup_body = match kw_apply_record(details, &self.state.config, &applied) {
+                    // Defensive: the apply itself resolved this tree from
+                    // the same snapshot, so this is unreachable unless the
+                    // config changed mid-apply.
+                    None => {
+                        warn!(
+                            "kw apply history skipped: target kernel tree is no longer configured"
+                        );
+                        format!(
+                            "{}\n\nWarning: the apply was not recorded in the kw history: target kernel tree is no longer configured",
+                            applied.message
+                        )
+                    }
+                    Some(record) => {
+                        // History writes go through KwActor so apply
+                        // recording serializes with job state; without an
+                        // actor (non-unix), write the store directly.
+                        let recorded = match &self.services.kw {
+                            Some(kw) => kw.record_apply(record).await.map_err(|e| e.to_string()),
+                            None => self
+                                .services
+                                .kw_history
+                                .record_apply(record)
+                                .map_err(|e| e.to_string()),
+                        };
+                        // The git apply itself succeeded; a history-write
+                        // failure must not turn it into a reported failure.
+                        match recorded {
+                            Ok(()) => applied.message,
+                            Err(e) => {
+                                warn!(error = %e, "failed to record kw apply history");
+                                format!(
+                                    "{}\n\nWarning: the apply was not recorded in the kw history: {e}\nIf this warning keeps appearing, inspect or delete that file.",
+                                    applied.message
+                                )
+                            }
+                        }
+                    }
+                };
+                popup::AppPopup::info("Patchset Apply Success", popup_body)
+            }
+            Err(msg) => popup::AppPopup::info("Patchset Apply Fail", msg),
         }
     }
 
