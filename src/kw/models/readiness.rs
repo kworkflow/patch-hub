@@ -25,7 +25,7 @@ pub enum TreeReadiness {
     /// `arch=` value from `.kw/build.config`; `None` means the key is unset
     /// and image discovery will glob `arch/*/boot/` instead — a deliberate
     /// divergence from kw, whose own fallback is the merged kw-config
-    /// `arch` (see [`find_newest_kernel_image`]).
+    /// `arch` (see [`crate::kw::readiness::ReadinessService::find_newest_kernel_image`]).
     Ready { arch: Option<String> },
     /// The configured path is not a directory.
     Missing,

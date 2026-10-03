@@ -4,7 +4,7 @@ use crate::{
     app::errors::AppError,
     config::ConfigSnapshot,
     infrastructure::{env::EnvTrait, shell::ShellTrait},
-    kw::readiness::{probe_kw_binary, KwVersionCheck},
+    kw::readiness::{KwVersionCheck, ReadinessService},
     render_prefs::PatchRenderer,
 };
 
@@ -62,7 +62,7 @@ pub(crate) fn check_external_deps(
         _ => {}
     }
 
-    let kw = probe_kw_binary(env, shell);
+    let kw = ReadinessService::probe_kw_binary(env, shell);
     if !kw.available {
         event!(
             Level::WARN,

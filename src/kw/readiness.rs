@@ -7,7 +7,7 @@
 //! do, instead of being a parallel interpretation that can silently drift
 //! from it. The deliberate divergences — the `arch`-unset glob fallback
 //! and the non-recursive boot-dir scan — are documented on
-//! [`find_newest_kernel_image`]. The probes are pure functions over
+//! [`ReadinessService::find_newest_kernel_image`]. The probes are pure functions over
 //! injected infrastructure traits; KwActor composes them into the
 //! `GetReadiness` snapshot.
 
@@ -40,506 +40,515 @@ pub use crate::kw::models::readiness::{
     KwVersionCheck, TreeReadiness,
 };
 
-/// Parses kw's `key=value` config format (`.kw/build.config`,
-/// `.kw/deploy.config`, ...), mirroring kw's own `parse_configuration`:
-/// blank lines and lines starting with `#` are skipped, everything from the
-/// last `#` on is stripped as a trailing comment, the key has all
-/// whitespace removed, and the value is trimmed. Lines without `=` are
-/// ignored, and a final line without a trailing newline still counts.
-#[cfg(unix)]
-pub fn parse_kw_config(content: &str) -> HashMap<String, String> {
-    let mut entries = HashMap::new();
-    for line in content.lines() {
-        if line.starts_with('#') || line.is_empty() {
-            continue;
-        }
-        let uncommented = match line.rfind('#') {
-            Some(index) => &line[..index],
-            None => line,
-        };
-        let Some((key, value)) = uncommented.split_once('=') else {
-            continue;
-        };
-        let key: String = key.chars().filter(|c| !c.is_whitespace()).collect();
-        entries.insert(key, value.trim().to_string());
-    }
-    entries
-}
-
-/// Mirrors kw's `is_kernel_root`: the same files and directories kw checks
-/// (also the set `get_maintainer.pl` relies on). `MAINTAINERS` is checked
-/// with `exists` because kw uses `-e` on it and `-f` on the other files.
-#[cfg(unix)]
-pub fn is_kernel_root(fs: &dyn FileSystemTrait, path: &Path) -> bool {
-    const FILES: [&str; 5] = ["COPYING", "CREDITS", "Kbuild", "Makefile", "README"];
-    const DIRS: [&str; 10] = [
-        "Documentation",
-        "arch",
-        "include",
-        "drivers",
-        "fs",
-        "init",
-        "ipc",
-        "kernel",
-        "lib",
-        "scripts",
-    ];
-
-    FILES.iter().all(|file| fs.is_file(&path.join(file)))
-        && fs.exists(&path.join("MAINTAINERS"))
-        && DIRS.iter().all(|dir| fs.is_dir(&path.join(dir)))
-}
-
-/// Probes whether `tree_path` is a kernel tree ready for kw operations.
-/// `output_dir` is the resolved kw-env `O=` path when an env is active: kw
-/// refuses to activate an env while an in-tree `.config` exists
-/// (`kw_env.sh::validate_env_before_switch`), so with an env active the
-/// `.config` lives only at the env's `O=` dir.
-#[cfg(unix)]
-pub fn probe_tree(
-    fs: &dyn FileSystemTrait,
-    tree_path: &Path,
-    output_dir: Option<&Path>,
-) -> TreeReadiness {
-    if !fs.is_dir(tree_path) {
-        return TreeReadiness::Missing;
-    }
-    if !is_kernel_root(fs, tree_path) {
-        return TreeReadiness::NotAKernelRoot;
-    }
-    if !fs.is_dir(&tree_path.join(".kw")) {
-        return TreeReadiness::MissingKwDir;
-    }
-    if output_dir.is_some()
-        && (fs.is_file(&tree_path.join(".config"))
-            || fs.is_dir(&tree_path.join("include").join("config")))
-    {
-        return TreeReadiness::InTreeBuildArtifacts;
-    }
-    let build_root = output_dir.unwrap_or(tree_path);
-    if !fs.is_file(&build_root.join(".config")) {
-        return TreeReadiness::MissingKernelConfig;
-    }
-    TreeReadiness::Ready {
-        arch: read_build_arch(fs, tree_path),
-    }
-}
-
-/// Reads the literal `arch=` value from `<tree>/.kw/build.config`, the same
-/// value kw's image discovery globs under `arch/<arch>/boot/`. Returns
-/// `None` when the file or the key is absent or empty — kw's
-/// `${build_config[arch]:-...}` expansion treats empty as unset — meaning
-/// the caller falls back to globbing `arch/*/boot/`, a deliberate
-/// divergence from kw's merged-config fallback (see
-/// [`find_newest_kernel_image`]).
-#[cfg(unix)]
-pub fn read_build_arch(fs: &dyn FileSystemTrait, tree_path: &Path) -> Option<String> {
-    let content = fs
-        .read_to_string(&tree_path.join(".kw").join("build.config"))
-        .ok()?;
-    let arch = parse_kw_config(&content).remove("arch")?;
-    if arch.is_empty() {
-        None
-    } else {
-        Some(arch)
-    }
-}
-
-/// Resolves kw's active build output dir (`O=`) for `tree_path`, mirroring
-/// kw's env handling: the env name is the content of
-/// `<tree>/.kw/env.current` (trailing newlines stripped, like bash's
-/// `$(< ...)`), and the output dir is
-/// `{XDG_CACHE_HOME | ~/.cache}/kw/envs/<base64(tree path)>/<env name>`.
-/// The tree path is encoded like kw 0.10's `get_encoded_pwd` — standard
-/// base64 with padding, no wrapping — after trimming trailing slashes,
-/// since kw encodes `$PWD` after changing into the tree. The encoded path
-/// may contain `/` (standard alphabet), producing nested directories; kw
-/// has the same behavior.
-///
-/// kw's launcher recomputes the cache dir unconditionally, so a
-/// user-exported `KW_CACHE_DIR` is intentionally ignored here too. The
-/// `KWORKFLOW` rename knob is not honored: it exists for kw development.
-///
-/// Returns `Ok(None)` when no env is active. The resolved dir is not
-/// required to exist: kw/make create it on first build. An unreadable
-/// `env.current` or an unresolvable cache base (neither `XDG_CACHE_HOME`
-/// nor `HOME` set) is an error, since the env state is then unknown —
-/// kw's "active but unresolvable" case.
-#[cfg(unix)]
-pub fn resolve_output_dir(
-    fs: &dyn FileSystemTrait,
-    env: &dyn EnvTrait,
-    tree_path: &Path,
-) -> Result<Option<PathBuf>, KwReadinessError> {
-    let env_file = tree_path.join(".kw").join("env.current");
-    if !fs.is_file(&env_file) {
-        return Ok(None);
-    }
-    let env_name = fs
-        .read_to_string(&env_file)?
-        .trim_end_matches('\n')
-        .to_string();
-    // An empty env.current names no env; kw's $(<) read yields the same
-    // empty string and kw then behaves as if no env were active.
-    if env_name.is_empty() {
-        return Ok(None);
-    }
-
-    let cache_base = match env.var("XDG_CACHE_HOME") {
-        // bash's `:-` (and the XDG spec) treat a set-but-empty value as
-        // unset; env::var would happily return it as Ok("").
-        Ok(xdg) if !xdg.is_empty() => xdg,
-        _ => format!("{}/.cache", env.var("HOME")?),
-    };
-    let trimmed = tree_path.to_string_lossy();
-    let normalized = match trimmed.trim_end_matches('/') {
-        "" => "/",
-        path => path,
-    };
-    let encoded = BASE64.encode(normalized);
-    Ok(Some(
-        Path::new(&cache_base)
-            .join("kw")
-            .join("envs")
-            .join(encoded)
-            .join(env_name),
-    ))
-}
-
-/// Finds the newest kernel image under `<build_root>/arch/`. Candidate
-/// basenames must end with `Image` (the `-name '*Image'` in kw's
-/// `get_kernel_binary_name` is case-sensitive, so `Image.gz` and `image`
-/// are excluded) and the most recently modified one wins, with ties broken
-/// by descending path (kw's `sort -r | head -1`).
-///
-/// With `arch`, only `arch/<arch>/boot/` is probed — exactly kw's behavior.
-/// Without `arch` this is a **deliberate divergence**, not a mirror: kw
-/// falls back to the merged kw-config `arch` (packaged default `x86_64`, a
-/// directory that does not exist in kernel trees, so `kw deploy` then fails
-/// with exit 125), and patch-hub does not read kw's global config layers.
-/// Globbing every `arch/*/boot/` gives a more useful readiness signal than
-/// probing a directory that is never there — at the cost of possibly
-/// reporting an image kw would not find. A green image probe with `arch=`
-/// unset is therefore not a guarantee kw deploy will locate one; setting
-/// `arch=` in `.kw/build.config` makes the two agree.
-///
-/// Second deliberate deviation: kw's `find` recurses into boot/
-/// subdirectories, while this scans only the top level. Kernel images for
-/// every arch kw supports are produced directly in boot/ (subdirs like
-/// compressed/ or dts/ never hold `*Image` files), and find does not
-/// descend into symlinked dirs either, so the behaviors agree on real
-/// trees.
-#[cfg(unix)]
-pub fn find_newest_kernel_image(
-    fs: &dyn FileSystemTrait,
-    build_root: &Path,
-    arch: Option<&str>,
-) -> Option<PathBuf> {
-    match arch {
-        Some(arch) => newest_image_in(fs, &build_root.join("arch").join(arch).join("boot")),
-        None => fs
-            .read_dir(&build_root.join("arch"))
-            .ok()?
-            .into_iter()
-            .filter(|entry| fs.is_dir(entry))
-            .filter_map(|arch_dir| {
-                newest_image_in(fs, &arch_dir.join("boot"))
-                    .map(|image| (image_mtime(fs, &image), image))
-            })
-            .max_by_key(|(mtime, _)| *mtime)
-            .map(|(_, image)| image),
-    }
-}
-
-/// Newest `*Image` file directly inside `boot_dir`, if any.
-#[cfg(unix)]
-fn newest_image_in(fs: &dyn FileSystemTrait, boot_dir: &Path) -> Option<PathBuf> {
-    fs.read_dir(boot_dir)
-        .ok()?
-        .into_iter()
-        .filter(|entry| {
-            entry
-                .file_name()
-                .is_some_and(|name| name.to_string_lossy().ends_with("Image"))
-                && fs.is_file(entry)
-        })
-        .map(|entry| (image_mtime(fs, &entry), entry))
-        .max_by_key(|(mtime, _)| *mtime)
-        .map(|(_, entry)| entry)
-}
-
-#[cfg(unix)]
-fn image_mtime(fs: &dyn FileSystemTrait, path: &Path) -> SystemTime {
-    fs.metadata(path)
-        .and_then(|meta| meta.modified().map_err(FileSystemError::from))
-        .unwrap_or(SystemTime::UNIX_EPOCH)
-}
-
-/// Reads the built kernel's release string from
-/// `<build_root>/include/config/kernel.release`, the file a kernel build
-/// generates — cheaper than re-running `make kernelrelease`, and `None`
-/// when the build never produced one (or produced an empty one).
-#[cfg(unix)]
-pub fn read_kernelrelease(fs: &dyn FileSystemTrait, build_root: &Path) -> Option<String> {
-    let release = fs
-        .read_to_string(
-            &build_root
-                .join("include")
-                .join("config")
-                .join("kernel.release"),
-        )
-        .ok()?;
-    let release = release.trim();
-    if release.is_empty() {
-        None
-    } else {
-        Some(release.to_string())
-    }
-}
+pub struct ReadinessService;
 
 /// Minimum kw version this integration is verified against.
 pub const KW_MIN_VERSION: (u32, u32) = (0, 10);
 
-/// Probes for the kw binary (`which kw`) and, when present, its version
-/// (`kw --version`, whose first line is the version string; repo-mode and
-/// installed kw both print `Branch:`/`Commit:` lines after it).
-pub fn probe_kw_binary(env: &dyn EnvTrait, shell: &dyn ShellTrait) -> KwBinaryProbe {
-    if !env.which("kw") {
-        return KwBinaryProbe {
-            available: false,
-            version_line: None,
-            check: KwVersionCheck::Unknown,
+impl ReadinessService {
+    /// Parses kw's `key=value` config format (`.kw/build.config`,
+    /// `.kw/deploy.config`, ...), mirroring kw's own `parse_configuration`:
+    /// blank lines and lines starting with `#` are skipped, everything from the
+    /// last `#` on is stripped as a trailing comment, the key has all
+    /// whitespace removed, and the value is trimmed. Lines without `=` are
+    /// ignored, and a final line without a trailing newline still counts.
+    #[cfg(unix)]
+    pub fn parse_kw_config(content: &str) -> HashMap<String, String> {
+        let mut entries = HashMap::new();
+        for line in content.lines() {
+            if line.starts_with('#') || line.is_empty() {
+                continue;
+            }
+            let uncommented = match line.rfind('#') {
+                Some(index) => &line[..index],
+                None => line,
+            };
+            let Some((key, value)) = uncommented.split_once('=') else {
+                continue;
+            };
+            let key: String = key.chars().filter(|c| !c.is_whitespace()).collect();
+            entries.insert(key, value.trim().to_string());
+        }
+        entries
+    }
+
+    /// Mirrors kw's `is_kernel_root`: the same files and directories kw checks
+    /// (also the set `get_maintainer.pl` relies on). `MAINTAINERS` is checked
+    /// with `exists` because kw uses `-e` on it and `-f` on the other files.
+    #[cfg(unix)]
+    pub fn is_kernel_root(fs: &dyn FileSystemTrait, path: &Path) -> bool {
+        const FILES: [&str; 5] = ["COPYING", "CREDITS", "Kbuild", "Makefile", "README"];
+        const DIRS: [&str; 10] = [
+            "Documentation",
+            "arch",
+            "include",
+            "drivers",
+            "fs",
+            "init",
+            "ipc",
+            "kernel",
+            "lib",
+            "scripts",
+        ];
+
+        FILES.iter().all(|file| fs.is_file(&path.join(file)))
+            && fs.exists(&path.join("MAINTAINERS"))
+            && DIRS.iter().all(|dir| fs.is_dir(&path.join(dir)))
+    }
+
+    /// Probes whether `tree_path` is a kernel tree ready for kw operations.
+    /// `output_dir` is the resolved kw-env `O=` path when an env is active: kw
+    /// refuses to activate an env while an in-tree `.config` exists
+    /// (`kw_env.sh::validate_env_before_switch`), so with an env active the
+    /// `.config` lives only at the env's `O=` dir.
+    #[cfg(unix)]
+    pub fn probe_tree(
+        fs: &dyn FileSystemTrait,
+        tree_path: &Path,
+        output_dir: Option<&Path>,
+    ) -> TreeReadiness {
+        if !fs.is_dir(tree_path) {
+            return TreeReadiness::Missing;
+        }
+        if !Self::is_kernel_root(fs, tree_path) {
+            return TreeReadiness::NotAKernelRoot;
+        }
+        if !fs.is_dir(&tree_path.join(".kw")) {
+            return TreeReadiness::MissingKwDir;
+        }
+        if output_dir.is_some()
+            && (fs.is_file(&tree_path.join(".config"))
+                || fs.is_dir(&tree_path.join("include").join("config")))
+        {
+            return TreeReadiness::InTreeBuildArtifacts;
+        }
+        let build_root = output_dir.unwrap_or(tree_path);
+        if !fs.is_file(&build_root.join(".config")) {
+            return TreeReadiness::MissingKernelConfig;
+        }
+        TreeReadiness::Ready {
+            arch: Self::read_build_arch(fs, tree_path),
+        }
+    }
+
+    /// Reads the literal `arch=` value from `<tree>/.kw/build.config`, the same
+    /// value kw's image discovery globs under `arch/<arch>/boot/`. Returns
+    /// `None` when the file or the key is absent or empty — kw's
+    /// `${build_config[arch]:-...}` expansion treats empty as unset — meaning
+    /// the caller falls back to globbing `arch/*/boot/`, a deliberate
+    /// divergence from kw's merged-config fallback (see
+    /// [`ReadinessService::find_newest_kernel_image`]).
+    #[cfg(unix)]
+    pub fn read_build_arch(fs: &dyn FileSystemTrait, tree_path: &Path) -> Option<String> {
+        let content = fs
+            .read_to_string(&tree_path.join(".kw").join("build.config"))
+            .ok()?;
+        let arch = Self::parse_kw_config(&content).remove("arch")?;
+        if arch.is_empty() {
+            None
+        } else {
+            Some(arch)
+        }
+    }
+
+    /// Resolves kw's active build output dir (`O=`) for `tree_path`, mirroring
+    /// kw's env handling: the env name is the content of
+    /// `<tree>/.kw/env.current` (trailing newlines stripped, like bash's
+    /// `$(< ...)`), and the output dir is
+    /// `{XDG_CACHE_HOME | ~/.cache}/kw/envs/<base64(tree path)>/<env name>`.
+    /// The tree path is encoded like kw 0.10's `get_encoded_pwd` — standard
+    /// base64 with padding, no wrapping — after trimming trailing slashes,
+    /// since kw encodes `$PWD` after changing into the tree. The encoded path
+    /// may contain `/` (standard alphabet), producing nested directories; kw
+    /// has the same behavior.
+    ///
+    /// kw's launcher recomputes the cache dir unconditionally, so a
+    /// user-exported `KW_CACHE_DIR` is intentionally ignored here too. The
+    /// `KWORKFLOW` rename knob is not honored: it exists for kw development.
+    ///
+    /// Returns `Ok(None)` when no env is active. The resolved dir is not
+    /// required to exist: kw/make create it on first build. An unreadable
+    /// `env.current` or an unresolvable cache base (neither `XDG_CACHE_HOME`
+    /// nor `HOME` set) is an error, since the env state is then unknown —
+    /// kw's "active but unresolvable" case.
+    #[cfg(unix)]
+    pub fn resolve_output_dir(
+        fs: &dyn FileSystemTrait,
+        env: &dyn EnvTrait,
+        tree_path: &Path,
+    ) -> Result<Option<PathBuf>, KwReadinessError> {
+        let env_file = tree_path.join(".kw").join("env.current");
+        if !fs.is_file(&env_file) {
+            return Ok(None);
+        }
+        let env_name = fs
+            .read_to_string(&env_file)?
+            .trim_end_matches('\n')
+            .to_string();
+        // An empty env.current names no env; kw's $(<) read yields the same
+        // empty string and kw then behaves as if no env were active.
+        if env_name.is_empty() {
+            return Ok(None);
+        }
+
+        let cache_base = match env.var("XDG_CACHE_HOME") {
+            // bash's `:-` (and the XDG spec) treat a set-but-empty value as
+            // unset; env::var would happily return it as Ok("").
+            Ok(xdg) if !xdg.is_empty() => xdg,
+            _ => format!("{}/.cache", env.var("HOME")?),
         };
+        let trimmed = tree_path.to_string_lossy();
+        let normalized = match trimmed.trim_end_matches('/') {
+            "" => "/",
+            path => path,
+        };
+        let encoded = BASE64.encode(normalized);
+        Ok(Some(
+            Path::new(&cache_base)
+                .join("kw")
+                .join("envs")
+                .join(encoded)
+                .join(env_name),
+        ))
     }
-    let version_line = shell
-        .execute(&ShellCommand::new("kw").arg("--version"))
-        .ok()
-        .filter(|out| out.success)
-        .and_then(|out| String::from_utf8(out.stdout).ok())
-        .and_then(|stdout| stdout.lines().next().map(str::to_string))
-        .filter(|line| !line.is_empty());
-    let check = match &version_line {
-        Some(line) => check_kw_version(line),
-        None => KwVersionCheck::Unknown,
-    };
-    KwBinaryProbe {
-        available: true,
-        version_line,
-        check,
-    }
-}
 
-fn check_kw_version(version_line: &str) -> KwVersionCheck {
-    match parse_kw_version(version_line) {
-        Some(version) if version >= KW_MIN_VERSION => KwVersionCheck::Meets,
-        Some(_) => KwVersionCheck::Below(version_line.to_string()),
-        None => KwVersionCheck::Unknown,
-    }
-}
-
-/// Extracts the first `X.Y[.Z]` pair from a version line: `0.10.0` and the
-/// stale `beta-0.9` kw currently ships both parse.
-fn parse_kw_version(line: &str) -> Option<(u32, u32)> {
-    let start = line.find(|c: char| c.is_ascii_digit())?;
-    let mut parts = line[start..].splitn(3, '.');
-    let major = parts.next()?.parse().ok()?;
-    let minor: String = parts
-        .next()?
-        .chars()
-        .take_while(|c| c.is_ascii_digit())
-        .collect();
-    Some((major, minor.parse().ok()?))
-}
-
-/// Reads `boot_into_new_kernel_once` from `<tree>/.kw/deploy.config`, then
-/// `${XDG_CONFIG_HOME:-$HOME/.config}/kw/deploy.config`. A present but
-/// unreadable tree file is [`BootOnceState::Unknown`] rather than a guess
-/// at the home copy. A readable tree file that simply omits the key still
-/// falls through, matching kw's merged-config lookup.
-#[cfg(unix)]
-pub fn probe_boot_once(
-    fs: &dyn FileSystemTrait,
-    env: &dyn EnvTrait,
-    tree_path: &Path,
-) -> BootOnceState {
-    let local = tree_path.join(".kw").join("deploy.config");
-    if fs.is_file(&local) {
-        match boot_once_from_file(fs, &local) {
-            Err(()) => return BootOnceState::Unknown,
-            Ok(Some(state)) => return state,
-            Ok(None) => {}
+    /// Finds the newest kernel image under `<build_root>/arch/`. Candidate
+    /// basenames must end with `Image` (the `-name '*Image'` in kw's
+    /// `get_kernel_binary_name` is case-sensitive, so `Image.gz` and `image`
+    /// are excluded) and the most recently modified one wins, with ties broken
+    /// by descending path (kw's `sort -r | head -1`).
+    ///
+    /// With `arch`, only `arch/<arch>/boot/` is probed — exactly kw's behavior.
+    /// Without `arch` this is a **deliberate divergence**, not a mirror: kw
+    /// falls back to the merged kw-config `arch` (packaged default `x86_64`, a
+    /// directory that does not exist in kernel trees, so `kw deploy` then fails
+    /// with exit 125), and patch-hub does not read kw's global config layers.
+    /// Globbing every `arch/*/boot/` gives a more useful readiness signal than
+    /// probing a directory that is never there — at the cost of possibly
+    /// reporting an image kw would not find. A green image probe with `arch=`
+    /// unset is therefore not a guarantee kw deploy will locate one; setting
+    /// `arch=` in `.kw/build.config` makes the two agree.
+    ///
+    /// Second deliberate deviation: kw's `find` recurses into boot/
+    /// subdirectories, while this scans only the top level. Kernel images for
+    /// every arch kw supports are produced directly in boot/ (subdirs like
+    /// compressed/ or dts/ never hold `*Image` files), and find does not
+    /// descend into symlinked dirs either, so the behaviors agree on real
+    /// trees.
+    #[cfg(unix)]
+    pub fn find_newest_kernel_image(
+        fs: &dyn FileSystemTrait,
+        build_root: &Path,
+        arch: Option<&str>,
+    ) -> Option<PathBuf> {
+        match arch {
+            Some(arch) => {
+                Self::find_newest_image_in(fs, &build_root.join("arch").join(arch).join("boot"))
+            }
+            None => fs
+                .read_dir(&build_root.join("arch"))
+                .ok()?
+                .into_iter()
+                .filter(|entry| fs.is_dir(entry))
+                .filter_map(|arch_dir| {
+                    Self::find_newest_image_in(fs, &arch_dir.join("boot"))
+                        .map(|image| (Self::read_image_mtime(fs, &image), image))
+                })
+                .max_by_key(|(mtime, _)| *mtime)
+                .map(|(_, image)| image),
         }
     }
-    let Some(global) = xdg_kw_config_file(env, "deploy.config") else {
-        return BootOnceState::Unknown;
-    };
-    if !fs.is_file(&global) {
-        return BootOnceState::Unknown;
+
+    /// Newest `*Image` file directly inside `boot_dir`, if any.
+    #[cfg(unix)]
+    fn find_newest_image_in(fs: &dyn FileSystemTrait, boot_dir: &Path) -> Option<PathBuf> {
+        fs.read_dir(boot_dir)
+            .ok()?
+            .into_iter()
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().ends_with("Image"))
+                    && fs.is_file(entry)
+            })
+            .map(|entry| (Self::read_image_mtime(fs, &entry), entry))
+            .max_by_key(|(mtime, _)| *mtime)
+            .map(|(_, entry)| entry)
     }
-    match boot_once_from_file(fs, &global) {
-        Ok(Some(state)) => state,
-        Ok(None) | Err(()) => BootOnceState::Unknown,
+
+    #[cfg(unix)]
+    fn read_image_mtime(fs: &dyn FileSystemTrait, path: &Path) -> SystemTime {
+        fs.metadata(path)
+            .and_then(|meta| meta.modified().map_err(FileSystemError::from))
+            .unwrap_or(SystemTime::UNIX_EPOCH)
     }
-}
 
-#[cfg(unix)]
-fn boot_once_from_file(fs: &dyn FileSystemTrait, path: &Path) -> Result<Option<BootOnceState>, ()> {
-    let content = fs.read_to_string(path).map_err(|_| ())?;
-    Ok(parse_kw_config(&content)
-        .remove("boot_into_new_kernel_once")
-        .map(|value| match value.as_str() {
-            "no" => BootOnceState::Off,
-            "yes" => BootOnceState::On,
-            _ => BootOnceState::Unknown,
-        }))
-}
+    /// Reads the built kernel's release string from
+    /// `<build_root>/include/config/kernel.release`, the file a kernel build
+    /// generates — cheaper than re-running `make kernelrelease`, and `None`
+    /// when the build never produced one (or produced an empty one).
+    #[cfg(unix)]
+    pub fn read_kernelrelease(fs: &dyn FileSystemTrait, build_root: &Path) -> Option<String> {
+        let release = fs
+            .read_to_string(
+                &build_root
+                    .join("include")
+                    .join("config")
+                    .join("kernel.release"),
+            )
+            .ok()?;
+        let release = release.trim();
+        if release.is_empty() {
+            None
+        } else {
+            Some(release.to_string())
+        }
+    }
 
-/// `${XDG_CONFIG_HOME:-$HOME/.config}/kw/<filename>`. A set-but-empty
-/// `XDG_CONFIG_HOME` is treated as unset, matching bash `:-` and the XDG
-/// spec.
-#[cfg(unix)]
-fn xdg_kw_config_file(env: &dyn EnvTrait, filename: &str) -> Option<PathBuf> {
-    let config_home = match env.var("XDG_CONFIG_HOME") {
-        Ok(xdg) if !xdg.is_empty() => xdg,
-        _ => format!("{}/.config", env.var("HOME").ok()?),
-    };
-    Some(Path::new(&config_home).join("kw").join(filename))
-}
+    /// Probes for the kw binary (`which kw`) and, when present, its version
+    /// (`kw --version`, whose first line is the version string; repo-mode and
+    /// installed kw both print `Branch:`/`Commit:` lines after it).
+    pub fn probe_kw_binary(env: &dyn EnvTrait, shell: &dyn ShellTrait) -> KwBinaryProbe {
+        if !env.which("kw") {
+            return KwBinaryProbe {
+                available: false,
+                version_line: None,
+                check: KwVersionCheck::Unknown,
+            };
+        }
+        let version_line = shell
+            .execute(&ShellCommand::new("kw").arg("--version"))
+            .ok()
+            .filter(|out| out.success)
+            .and_then(|out| String::from_utf8(out.stdout).ok())
+            .and_then(|stdout| stdout.lines().next().map(str::to_string))
+            .filter(|line| !line.is_empty());
+        let check = match &version_line {
+            Some(line) => Self::check_kw_version(line),
+            None => KwVersionCheck::Unknown,
+        };
+        KwBinaryProbe {
+            available: true,
+            version_line,
+            check,
+        }
+    }
 
-/// Deploy-alone readiness gate: a deploy without a preceding build is only
-/// allowed when a successful build record exists for the tree and the
-/// lookup branch, written against the same tree path and kw env, and a
-/// kernel image is still discoverable.
-///
-/// `record` is the lookup keyed by the deploy target branch. `latest` is
-/// the newest record for the tree across branches. When the target has
-/// no keyed record but another branch does, that is
-/// [`DeployAloneRefusal::HeadMismatch`], not "no build recorded".
-///
-/// This is only the record-matching half of the gate — it says nothing
-/// about the tree's *current* state. [`evaluate_readiness`] conjoins
-/// [`TreeReadiness`] into its `deploy_alone` verdict; prefer it over
-/// calling this directly.
-#[cfg(unix)]
-pub fn check_deploy_alone(
-    record: Option<&KwBuildRecord>,
-    latest: Option<&KwBuildRecord>,
-    tree: &KernelTree,
-    head_branch: &str,
-    output_dir: Option<&Path>,
-    image: Option<&Path>,
-) -> Result<(), DeployAloneRefusal> {
-    let record = match record {
-        Some(record) => record,
-        None => {
-            if let Some(latest) = latest {
-                if latest.branch != head_branch {
-                    return Err(DeployAloneRefusal::HeadMismatch {
-                        recorded: latest.branch.clone(),
-                        current: head_branch.to_string(),
-                    });
+    fn check_kw_version(version_line: &str) -> KwVersionCheck {
+        match Self::parse_kw_version(version_line) {
+            Some(version) if version >= KW_MIN_VERSION => KwVersionCheck::Meets,
+            Some(_) => KwVersionCheck::Below(version_line.to_string()),
+            None => KwVersionCheck::Unknown,
+        }
+    }
+
+    /// Extracts the first `X.Y[.Z]` pair from a version line: `0.10.0` and the
+    /// stale `beta-0.9` kw currently ships both parse.
+    fn parse_kw_version(line: &str) -> Option<(u32, u32)> {
+        let start = line.find(|c: char| c.is_ascii_digit())?;
+        let mut parts = line[start..].splitn(3, '.');
+        let major = parts.next()?.parse().ok()?;
+        let minor: String = parts
+            .next()?
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect();
+        Some((major, minor.parse().ok()?))
+    }
+
+    /// Reads `boot_into_new_kernel_once` from `<tree>/.kw/deploy.config`, then
+    /// `${XDG_CONFIG_HOME:-$HOME/.config}/kw/deploy.config`. A present but
+    /// unreadable tree file is [`BootOnceState::Unknown`] rather than a guess
+    /// at the home copy. A readable tree file that simply omits the key still
+    /// falls through, matching kw's merged-config lookup.
+    #[cfg(unix)]
+    pub fn probe_boot_once(
+        fs: &dyn FileSystemTrait,
+        env: &dyn EnvTrait,
+        tree_path: &Path,
+    ) -> BootOnceState {
+        let local = tree_path.join(".kw").join("deploy.config");
+        if fs.is_file(&local) {
+            match Self::read_boot_once_from_file(fs, &local) {
+                Err(()) => return BootOnceState::Unknown,
+                Ok(Some(state)) => return state,
+                Ok(None) => {}
+            }
+        }
+        let Some(global) = Self::resolve_xdg_kw_config_file(env, "deploy.config") else {
+            return BootOnceState::Unknown;
+        };
+        if !fs.is_file(&global) {
+            return BootOnceState::Unknown;
+        }
+        match Self::read_boot_once_from_file(fs, &global) {
+            Ok(Some(state)) => state,
+            Ok(None) | Err(()) => BootOnceState::Unknown,
+        }
+    }
+
+    #[cfg(unix)]
+    fn read_boot_once_from_file(
+        fs: &dyn FileSystemTrait,
+        path: &Path,
+    ) -> Result<Option<BootOnceState>, ()> {
+        let content = fs.read_to_string(path).map_err(|_| ())?;
+        Ok(Self::parse_kw_config(&content)
+            .remove("boot_into_new_kernel_once")
+            .map(|value| match value.as_str() {
+                "no" => BootOnceState::Off,
+                "yes" => BootOnceState::On,
+                _ => BootOnceState::Unknown,
+            }))
+    }
+
+    /// `${XDG_CONFIG_HOME:-$HOME/.config}/kw/<filename>`. A set-but-empty
+    /// `XDG_CONFIG_HOME` is treated as unset, matching bash `:-` and the XDG
+    /// spec.
+    #[cfg(unix)]
+    fn resolve_xdg_kw_config_file(env: &dyn EnvTrait, filename: &str) -> Option<PathBuf> {
+        let config_home = match env.var("XDG_CONFIG_HOME") {
+            Ok(xdg) if !xdg.is_empty() => xdg,
+            _ => format!("{}/.config", env.var("HOME").ok()?),
+        };
+        Some(Path::new(&config_home).join("kw").join(filename))
+    }
+
+    /// Deploy-alone readiness gate: a deploy without a preceding build is only
+    /// allowed when a successful build record exists for the tree and the
+    /// lookup branch, written against the same tree path and kw env, and a
+    /// kernel image is still discoverable.
+    ///
+    /// `record` is the lookup keyed by the deploy target branch. `latest` is
+    /// the newest record for the tree across branches. When the target has
+    /// no keyed record but another branch does, that is
+    /// [`DeployAloneRefusal::HeadMismatch`], not "no build recorded".
+    ///
+    /// This is only the record-matching half of the gate — it says nothing
+    /// about the tree's *current* state. [`ReadinessService::evaluate_readiness`] conjoins
+    /// [`TreeReadiness`] into its `deploy_alone` verdict; prefer it over
+    /// calling this directly.
+    #[cfg(unix)]
+    pub fn check_deploy_alone(
+        record: Option<&KwBuildRecord>,
+        latest: Option<&KwBuildRecord>,
+        tree: &KernelTree,
+        head_branch: &str,
+        output_dir: Option<&Path>,
+        image: Option<&Path>,
+    ) -> Result<(), DeployAloneRefusal> {
+        let record = match record {
+            Some(record) => record,
+            None => {
+                if let Some(latest) = latest {
+                    if latest.branch != head_branch {
+                        return Err(DeployAloneRefusal::HeadMismatch {
+                            recorded: latest.branch.clone(),
+                            current: head_branch.to_string(),
+                        });
+                    }
                 }
+                return Err(DeployAloneRefusal::NoBuildRecord);
             }
-            return Err(DeployAloneRefusal::NoBuildRecord);
+        };
+        if !record.success {
+            return Err(DeployAloneRefusal::LastBuildFailed);
         }
-    };
-    if !record.success {
-        return Err(DeployAloneRefusal::LastBuildFailed);
+        if record.branch != head_branch {
+            return Err(DeployAloneRefusal::HeadMismatch {
+                recorded: record.branch.clone(),
+                current: head_branch.to_string(),
+            });
+        }
+        // Trailing slashes are normalized away: a config edit that only adds
+        // or drops one does not move the tree.
+        if record.tree_path.trim_end_matches('/') != tree.path().trim_end_matches('/') {
+            return Err(DeployAloneRefusal::TreePathDrift {
+                recorded: record.tree_path.clone(),
+                current: tree.path().to_string(),
+            });
+        }
+        let current_output_dir = output_dir.map(|p| p.to_string_lossy().into_owned());
+        if record.output_dir != current_output_dir {
+            return Err(DeployAloneRefusal::OutputDirMismatch);
+        }
+        if image.is_none() {
+            return Err(DeployAloneRefusal::ImageMissing);
+        }
+        Ok(())
     }
-    if record.branch != head_branch {
-        return Err(DeployAloneRefusal::HeadMismatch {
-            recorded: record.branch.clone(),
-            current: head_branch.to_string(),
-        });
-    }
-    // Trailing slashes are normalized away: a config edit that only adds
-    // or drops one does not move the tree.
-    if record.tree_path.trim_end_matches('/') != tree.path().trim_end_matches('/') {
-        return Err(DeployAloneRefusal::TreePathDrift {
-            recorded: record.tree_path.clone(),
-            current: tree.path().to_string(),
-        });
-    }
-    let current_output_dir = output_dir.map(|p| p.to_string_lossy().into_owned());
-    if record.output_dir != current_output_dir {
-        return Err(DeployAloneRefusal::OutputDirMismatch);
-    }
-    if image.is_none() {
-        return Err(DeployAloneRefusal::ImageMissing);
-    }
-    Ok(())
-}
 
-/// Runs all readiness probes for `tree` and composes them into a
-/// [`KwReadiness`] snapshot. `head_branch` is the tree's current branch —
-/// resolving it (via git) is the caller's job, keeping these probes pure.
-///
-/// `for_branch`, when set, is the branch deploy-alone should be judged
-/// against (the branch typed on KwOps). `current_branch` still reports
-/// the real HEAD so the UI can show both.
-#[cfg(unix)]
-#[expect(clippy::too_many_arguments)]
-pub fn evaluate_readiness(
-    fs: &dyn FileSystemTrait,
-    env: &dyn EnvTrait,
-    shell: &dyn ShellTrait,
-    history: &dyn KwHistoryStore,
-    kernel_tree_id: &str,
-    tree: &KernelTree,
-    head_branch: &str,
-    for_branch: Option<&str>,
-) -> Result<KwReadiness, KwReadinessError> {
-    let tree_path = Path::new(tree.path());
-    let kw_binary = probe_kw_binary(env, shell);
-    let output_dir = resolve_output_dir(fs, env, tree_path)?;
-    let tree_status = probe_tree(fs, tree_path, output_dir.as_deref());
-    let arch = match &tree_status {
-        TreeReadiness::Ready { arch } => arch.clone(),
-        _ => None,
-    };
-    let kernel_image = find_newest_kernel_image(
-        fs,
-        output_dir.as_deref().unwrap_or(tree_path),
-        arch.as_deref(),
-    );
-    let lookup_branch = match for_branch
-        .map(str::trim)
-        .filter(|branch| !branch.is_empty())
-    {
-        Some(branch) => branch,
-        None => head_branch,
-    };
-    let (build_record, latest_build) = history.build_records(kernel_tree_id, lookup_branch)?;
-    // The tree's current state is part of the verdict: a stale image and a
-    // matching record must not green-light a deploy on a tree that has
-    // since lost its .config, .kw/, or kernel-root files.
-    let deploy_alone = match &tree_status {
-        TreeReadiness::Ready { .. } => check_deploy_alone(
-            build_record.as_ref(),
-            latest_build.as_ref(),
-            tree,
-            lookup_branch,
-            output_dir.as_deref(),
-            kernel_image.as_deref(),
-        ),
-        other => Err(DeployAloneRefusal::TreeNotReady(other.clone())),
-    };
-    Ok(KwReadiness {
-        kw_binary,
-        tree: tree_status,
-        output_dir,
-        deploy_alone,
-        current_branch: {
-            let trimmed = head_branch.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        },
-        deploy_remote: remote::resolve_deploy_remote(fs, env, tree_path),
-        boot_once: probe_boot_once(fs, env, tree_path),
-    })
+    /// Runs all readiness probes for `tree` and composes them into a
+    /// [`KwReadiness`] snapshot. `head_branch` is the tree's current branch —
+    /// resolving it (via git) is the caller's job, keeping these probes pure.
+    ///
+    /// `for_branch`, when set, is the branch deploy-alone should be judged
+    /// against (the branch typed on KwOps). `current_branch` still reports
+    /// the real HEAD so the UI can show both.
+    #[cfg(unix)]
+    #[expect(clippy::too_many_arguments)]
+    pub fn evaluate_readiness(
+        fs: &dyn FileSystemTrait,
+        env: &dyn EnvTrait,
+        shell: &dyn ShellTrait,
+        history: &dyn KwHistoryStore,
+        kernel_tree_id: &str,
+        tree: &KernelTree,
+        head_branch: &str,
+        for_branch: Option<&str>,
+    ) -> Result<KwReadiness, KwReadinessError> {
+        let tree_path = Path::new(tree.path());
+        let kw_binary = Self::probe_kw_binary(env, shell);
+        let output_dir = Self::resolve_output_dir(fs, env, tree_path)?;
+        let tree_status = Self::probe_tree(fs, tree_path, output_dir.as_deref());
+        let arch = match &tree_status {
+            TreeReadiness::Ready { arch } => arch.clone(),
+            _ => None,
+        };
+        let kernel_image = Self::find_newest_kernel_image(
+            fs,
+            output_dir.as_deref().unwrap_or(tree_path),
+            arch.as_deref(),
+        );
+        let lookup_branch = match for_branch
+            .map(str::trim)
+            .filter(|branch| !branch.is_empty())
+        {
+            Some(branch) => branch,
+            None => head_branch,
+        };
+        let (build_record, latest_build) = history.build_records(kernel_tree_id, lookup_branch)?;
+        // The tree's current state is part of the verdict: a stale image and a
+        // matching record must not green-light a deploy on a tree that has
+        // since lost its .config, .kw/, or kernel-root files.
+        let deploy_alone = match &tree_status {
+            TreeReadiness::Ready { .. } => Self::check_deploy_alone(
+                build_record.as_ref(),
+                latest_build.as_ref(),
+                tree,
+                lookup_branch,
+                output_dir.as_deref(),
+                kernel_image.as_deref(),
+            ),
+            other => Err(DeployAloneRefusal::TreeNotReady(other.clone())),
+        };
+        Ok(KwReadiness {
+            kw_binary,
+            tree: tree_status,
+            output_dir,
+            deploy_alone,
+            current_branch: {
+                let trimmed = head_branch.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            },
+            deploy_remote: remote::resolve_deploy_remote(fs, env, tree_path),
+            boot_once: Self::probe_boot_once(fs, env, tree_path),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -648,7 +657,7 @@ dtb_copy_pattern={broadcom,rockchip}#kept
 no_equals_line
 cross_compile=
 last_line_without_newline=yes";
-        let parsed = parse_kw_config(content);
+        let parsed = ReadinessService::parse_kw_config(content);
 
         assert_eq!(parsed.get("arch"), Some(&"x86_64".to_string()));
         assert_eq!(parsed.get("cpu_scaling_factor"), Some(&"100".to_string()));
@@ -672,7 +681,7 @@ last_line_without_newline=yes";
         let dir = TempDir::new("kernel-root-complete");
         make_kernel_root(dir.path());
 
-        assert!(is_kernel_root(&OsFileSystem, dir.path()));
+        assert!(ReadinessService::is_kernel_root(&OsFileSystem, dir.path()));
     }
 
     #[test]
@@ -685,7 +694,7 @@ last_line_without_newline=yes";
                 .unwrap();
 
             assert!(
-                !is_kernel_root(&OsFileSystem, dir.path()),
+                !ReadinessService::is_kernel_root(&OsFileSystem, dir.path()),
                 "missing {member} should fail the check"
             );
         }
@@ -697,7 +706,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             TreeReadiness::Missing,
-            probe_tree(&OsFileSystem, &dir.path().join("nope"), None)
+            ReadinessService::probe_tree(&OsFileSystem, &dir.path().join("nope"), None)
         );
     }
 
@@ -707,7 +716,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             TreeReadiness::NotAKernelRoot,
-            probe_tree(&OsFileSystem, dir.path(), None)
+            ReadinessService::probe_tree(&OsFileSystem, dir.path(), None)
         );
     }
 
@@ -718,7 +727,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             TreeReadiness::MissingKwDir,
-            probe_tree(&OsFileSystem, dir.path(), None)
+            ReadinessService::probe_tree(&OsFileSystem, dir.path(), None)
         );
     }
 
@@ -730,7 +739,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             TreeReadiness::MissingKernelConfig,
-            probe_tree(&OsFileSystem, dir.path(), None)
+            ReadinessService::probe_tree(&OsFileSystem, dir.path(), None)
         );
     }
 
@@ -740,7 +749,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             TreeReadiness::Ready { arch: None },
-            probe_tree(&OsFileSystem, dir.path(), None)
+            ReadinessService::probe_tree(&OsFileSystem, dir.path(), None)
         );
     }
 
@@ -753,7 +762,7 @@ last_line_without_newline=yes";
             TreeReadiness::Ready {
                 arch: Some("arm64".to_string())
             },
-            probe_tree(&OsFileSystem, dir.path(), None)
+            ReadinessService::probe_tree(&OsFileSystem, dir.path(), None)
         );
     }
 
@@ -766,12 +775,12 @@ last_line_without_newline=yes";
 
         assert_eq!(
             TreeReadiness::MissingKernelConfig,
-            probe_tree(&OsFileSystem, dir.path(), Some(out.path()))
+            ReadinessService::probe_tree(&OsFileSystem, dir.path(), Some(out.path()))
         );
 
         fs::write(out.path().join(".config"), "").unwrap();
         assert!(matches!(
-            probe_tree(&OsFileSystem, dir.path(), Some(out.path())),
+            ReadinessService::probe_tree(&OsFileSystem, dir.path(), Some(out.path())),
             TreeReadiness::Ready { .. }
         ));
     }
@@ -784,7 +793,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             TreeReadiness::InTreeBuildArtifacts,
-            probe_tree(&OsFileSystem, dir.path(), Some(out.path()))
+            ReadinessService::probe_tree(&OsFileSystem, dir.path(), Some(out.path()))
         );
     }
 
@@ -798,7 +807,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             TreeReadiness::InTreeBuildArtifacts,
-            probe_tree(&OsFileSystem, dir.path(), Some(out.path()))
+            ReadinessService::probe_tree(&OsFileSystem, dir.path(), Some(out.path()))
         );
     }
 
@@ -809,7 +818,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             TreeReadiness::Ready { arch: None },
-            probe_tree(&OsFileSystem, dir.path(), None)
+            ReadinessService::probe_tree(&OsFileSystem, dir.path(), None)
         );
     }
 
@@ -820,7 +829,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             Some("x86".to_string()),
-            read_build_arch(&OsFileSystem, dir.path())
+            ReadinessService::read_build_arch(&OsFileSystem, dir.path())
         );
     }
 
@@ -829,7 +838,10 @@ last_line_without_newline=yes";
         // Missing file, missing key, commented key, and empty value all map
         // to kw's "unset" semantics.
         let no_file = make_ready_tree("arch-no-file");
-        assert_eq!(None, read_build_arch(&OsFileSystem, no_file.path()));
+        assert_eq!(
+            None,
+            ReadinessService::read_build_arch(&OsFileSystem, no_file.path())
+        );
 
         let no_key = make_ready_tree("arch-no-key");
         fs::write(
@@ -837,15 +849,24 @@ last_line_without_newline=yes";
             "cpu_scaling_factor=100\n",
         )
         .unwrap();
-        assert_eq!(None, read_build_arch(&OsFileSystem, no_key.path()));
+        assert_eq!(
+            None,
+            ReadinessService::read_build_arch(&OsFileSystem, no_key.path())
+        );
 
         let commented = make_ready_tree("arch-commented");
         fs::write(commented.path().join(".kw/build.config"), "#arch=riscv\n").unwrap();
-        assert_eq!(None, read_build_arch(&OsFileSystem, commented.path()));
+        assert_eq!(
+            None,
+            ReadinessService::read_build_arch(&OsFileSystem, commented.path())
+        );
 
         let empty = make_ready_tree("arch-empty");
         fs::write(empty.path().join(".kw/build.config"), "arch=\n").unwrap();
-        assert_eq!(None, read_build_arch(&OsFileSystem, empty.path()));
+        assert_eq!(
+            None,
+            ReadinessService::read_build_arch(&OsFileSystem, empty.path())
+        );
     }
 
     /// Creates a file whose mtime is `mtime_secs` seconds after the epoch,
@@ -866,7 +887,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             None,
-            resolve_output_dir(&OsFileSystem, &env, dir.path()).unwrap()
+            ReadinessService::resolve_output_dir(&OsFileSystem, &env, dir.path()).unwrap()
         );
     }
 
@@ -883,7 +904,8 @@ last_line_without_newline=yes";
             .withf(|key| key == "XDG_CACHE_HOME")
             .returning(|_| Ok("/xdg".to_string()));
 
-        let resolved = resolve_output_dir(&fs, &env, Path::new("/home/user/linux")).unwrap();
+        let resolved =
+            ReadinessService::resolve_output_dir(&fs, &env, Path::new("/home/user/linux")).unwrap();
 
         assert_eq!(
             Some(PathBuf::from("/xdg/kw/envs/L2hvbWUvdXNlci9saW51eA==/minix")),
@@ -905,7 +927,8 @@ last_line_without_newline=yes";
             .withf(|key| key == "HOME")
             .returning(|_| Ok("/home/user".to_string()));
 
-        let resolved = resolve_output_dir(&fs, &env, Path::new("/kernel")).unwrap();
+        let resolved =
+            ReadinessService::resolve_output_dir(&fs, &env, Path::new("/kernel")).unwrap();
 
         assert_eq!(
             Some(
@@ -933,7 +956,8 @@ last_line_without_newline=yes";
             .withf(|key| key == "HOME")
             .returning(|_| Ok("/home/user".to_string()));
 
-        let resolved = resolve_output_dir(&fs, &env, Path::new("/kernel")).unwrap();
+        let resolved =
+            ReadinessService::resolve_output_dir(&fs, &env, Path::new("/kernel")).unwrap();
 
         assert_eq!(
             Some(
@@ -958,7 +982,9 @@ last_line_without_newline=yes";
             .withf(|key| key == "XDG_CACHE_HOME")
             .returning(|_| Ok("/xdg".to_string()));
 
-        let resolved = resolve_output_dir(&fs, &env, Path::new("/home/user/linux/")).unwrap();
+        let resolved =
+            ReadinessService::resolve_output_dir(&fs, &env, Path::new("/home/user/linux/"))
+                .unwrap();
 
         assert_eq!(
             Some(PathBuf::from("/xdg/kw/envs/L2hvbWUvdXNlci9saW51eA==/minix")),
@@ -976,7 +1002,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             None,
-            resolve_output_dir(&fs, &env, Path::new("/kernel")).unwrap()
+            ReadinessService::resolve_output_dir(&fs, &env, Path::new("/kernel")).unwrap()
         );
     }
 
@@ -989,7 +1015,7 @@ last_line_without_newline=yes";
         });
         let env = MockEnvTrait::new();
 
-        assert!(resolve_output_dir(&fs, &env, Path::new("/kernel")).is_err());
+        assert!(ReadinessService::resolve_output_dir(&fs, &env, Path::new("/kernel")).is_err());
     }
 
     #[test]
@@ -1002,7 +1028,7 @@ last_line_without_newline=yes";
         env.expect_var()
             .returning(|_| Err(std::env::VarError::NotPresent.into()));
 
-        assert!(resolve_output_dir(&fs, &env, Path::new("/kernel")).is_err());
+        assert!(ReadinessService::resolve_output_dir(&fs, &env, Path::new("/kernel")).is_err());
     }
 
     #[test]
@@ -1018,7 +1044,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             Some(boot.join("Image")),
-            find_newest_kernel_image(&OsFileSystem, dir.path(), Some("x86"))
+            ReadinessService::find_newest_kernel_image(&OsFileSystem, dir.path(), Some("x86"))
         );
     }
 
@@ -1036,7 +1062,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             Some(arm64_boot.join("Image")),
-            find_newest_kernel_image(&OsFileSystem, dir.path(), None)
+            ReadinessService::find_newest_kernel_image(&OsFileSystem, dir.path(), None)
         );
     }
 
@@ -1052,7 +1078,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             Some(boot.join("zImage")),
-            find_newest_kernel_image(&OsFileSystem, dir.path(), Some("x86"))
+            ReadinessService::find_newest_kernel_image(&OsFileSystem, dir.path(), Some("x86"))
         );
     }
 
@@ -1062,11 +1088,11 @@ last_line_without_newline=yes";
         // No image anywhere yet: the fixture has an empty arch/ dir.
         assert_eq!(
             None,
-            find_newest_kernel_image(&OsFileSystem, dir.path(), None)
+            ReadinessService::find_newest_kernel_image(&OsFileSystem, dir.path(), None)
         );
         assert_eq!(
             None,
-            find_newest_kernel_image(&OsFileSystem, dir.path(), Some("x86"))
+            ReadinessService::find_newest_kernel_image(&OsFileSystem, dir.path(), Some("x86"))
         );
 
         let boot = dir.path().join("arch/x86/boot");
@@ -1076,11 +1102,11 @@ last_line_without_newline=yes";
 
         assert_eq!(
             None,
-            find_newest_kernel_image(&OsFileSystem, dir.path(), None)
+            ReadinessService::find_newest_kernel_image(&OsFileSystem, dir.path(), None)
         );
         assert_eq!(
             None,
-            find_newest_kernel_image(&OsFileSystem, dir.path(), Some("x86"))
+            ReadinessService::find_newest_kernel_image(&OsFileSystem, dir.path(), Some("x86"))
         );
     }
 
@@ -1093,7 +1119,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             Some("6.17.0-rc1".to_string()),
-            read_kernelrelease(&OsFileSystem, dir.path())
+            ReadinessService::read_kernelrelease(&OsFileSystem, dir.path())
         );
     }
 
@@ -1101,12 +1127,18 @@ last_line_without_newline=yes";
     fn kernelrelease_is_none_without_a_release_file() {
         let dir = make_ready_tree("kernelrelease-missing");
 
-        assert_eq!(None, read_kernelrelease(&OsFileSystem, dir.path()));
+        assert_eq!(
+            None,
+            ReadinessService::read_kernelrelease(&OsFileSystem, dir.path())
+        );
 
         let config_dir = dir.path().join("include").join("config");
         fs::create_dir_all(&config_dir).unwrap();
         fs::write(config_dir.join("kernel.release"), "\n").unwrap();
-        assert_eq!(None, read_kernelrelease(&OsFileSystem, dir.path()));
+        assert_eq!(
+            None,
+            ReadinessService::read_kernelrelease(&OsFileSystem, dir.path())
+        );
     }
 
     fn shell_output(stdout: &str, success: bool) -> ShellOutput {
@@ -1150,7 +1182,7 @@ last_line_without_newline=yes";
         let mut shell = MockShellTrait::new();
         shell.expect_execute().times(0);
 
-        let probe = probe_kw_binary(&env, &shell);
+        let probe = ReadinessService::probe_kw_binary(&env, &shell);
 
         assert!(!probe.available);
         assert_eq!(None, probe.version_line);
@@ -1180,7 +1212,7 @@ last_line_without_newline=yes";
                 .withf(|cmd| cmd.program == "kw" && cmd.args == ["--version"])
                 .returning(move |_| Ok(shell_output(str::from_utf8(&stdout_bytes).unwrap(), true)));
 
-            let probe = probe_kw_binary(&env, &shell);
+            let probe = ReadinessService::probe_kw_binary(&env, &shell);
 
             assert!(probe.available, "for version output {stdout:?}");
             assert_eq!(expected, probe.check, "for version output {stdout:?}");
@@ -1199,7 +1231,7 @@ last_line_without_newline=yes";
             ))
         });
 
-        let probe = probe_kw_binary(&env, &shell);
+        let probe = ReadinessService::probe_kw_binary(&env, &shell);
 
         assert_eq!(Some("beta-0.9".to_string()), probe.version_line);
     }
@@ -1226,7 +1258,7 @@ last_line_without_newline=yes";
             let mut env = MockEnvTrait::new();
             env.expect_which().returning(|_| true);
 
-            let probe = probe_kw_binary(&env, &shell);
+            let probe = ReadinessService::probe_kw_binary(&env, &shell);
 
             assert!(probe.available);
             assert_eq!(None, probe.version_line);
@@ -1242,14 +1274,28 @@ last_line_without_newline=yes";
 
         assert_eq!(
             Err(DeployAloneRefusal::NoBuildRecord),
-            check_deploy_alone(None, None, &tree, "patchset-x", None, Some(&image))
+            ReadinessService::check_deploy_alone(
+                None,
+                None,
+                &tree,
+                "patchset-x",
+                None,
+                Some(&image)
+            )
         );
 
         let mut failed = built_record(dir.path(), "patchset-x");
         failed.success = false;
         assert_eq!(
             Err(DeployAloneRefusal::LastBuildFailed),
-            check_deploy_alone(Some(&failed), None, &tree, "patchset-x", None, Some(&image))
+            ReadinessService::check_deploy_alone(
+                Some(&failed),
+                None,
+                &tree,
+                "patchset-x",
+                None,
+                Some(&image)
+            )
         );
     }
 
@@ -1267,7 +1313,14 @@ last_line_without_newline=yes";
                 recorded: "patchset-x".to_string(),
                 current: "master".to_string(),
             }),
-            check_deploy_alone(Some(&record), None, &tree, "master", None, Some(&image))
+            ReadinessService::check_deploy_alone(
+                Some(&record),
+                None,
+                &tree,
+                "master",
+                None,
+                Some(&image)
+            )
         );
 
         // No keyed row for the target, but the tree has a latest build
@@ -1277,7 +1330,14 @@ last_line_without_newline=yes";
                 recorded: "patchset-x".to_string(),
                 current: "master".to_string(),
             }),
-            check_deploy_alone(None, Some(&record), &tree, "master", None, Some(&image))
+            ReadinessService::check_deploy_alone(
+                None,
+                Some(&record),
+                &tree,
+                "master",
+                None,
+                Some(&image)
+            )
         );
 
         // The config repointed the same tree id at another path.
@@ -1287,7 +1347,7 @@ last_line_without_newline=yes";
                 recorded: dir.path().to_str().unwrap().to_string(),
                 current: "/elsewhere/linux".to_string(),
             }),
-            check_deploy_alone(
+            ReadinessService::check_deploy_alone(
                 Some(&record),
                 None,
                 &moved_tree,
@@ -1300,7 +1360,7 @@ last_line_without_newline=yes";
         // The active kw env changed since the build.
         assert_eq!(
             Err(DeployAloneRefusal::OutputDirMismatch),
-            check_deploy_alone(
+            ReadinessService::check_deploy_alone(
                 Some(&record),
                 None,
                 &tree,
@@ -1313,12 +1373,26 @@ last_line_without_newline=yes";
         // The image the build produced is gone.
         assert_eq!(
             Err(DeployAloneRefusal::ImageMissing),
-            check_deploy_alone(Some(&record), None, &tree, "patchset-x", None, None)
+            ReadinessService::check_deploy_alone(
+                Some(&record),
+                None,
+                &tree,
+                "patchset-x",
+                None,
+                None
+            )
         );
 
         assert_eq!(
             Ok(()),
-            check_deploy_alone(Some(&record), None, &tree, "patchset-x", None, Some(&image))
+            ReadinessService::check_deploy_alone(
+                Some(&record),
+                None,
+                &tree,
+                "patchset-x",
+                None,
+                Some(&image)
+            )
         );
 
         // A trailing-slash-only difference is the same tree, not drift.
@@ -1326,7 +1400,7 @@ last_line_without_newline=yes";
         slashed.tree_path = format!("{}/", dir.path().to_str().unwrap());
         assert_eq!(
             Ok(()),
-            check_deploy_alone(
+            ReadinessService::check_deploy_alone(
                 Some(&slashed),
                 None,
                 &tree,
@@ -1346,7 +1420,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             Err(DeployAloneRefusal::LastBuildFailed),
-            check_deploy_alone(Some(&failed), None, &tree, "master", None, None)
+            ReadinessService::check_deploy_alone(Some(&failed), None, &tree, "master", None, None)
         );
     }
 
@@ -1385,7 +1459,7 @@ last_line_without_newline=yes";
             .returning(|_| Ok(shell_output("0.10.0\n", true)));
 
         let tree = kernel_tree(dir.path());
-        let readiness = evaluate_readiness(
+        let readiness = ReadinessService::evaluate_readiness(
             &OsFileSystem,
             &env,
             &shell,
@@ -1432,7 +1506,7 @@ last_line_without_newline=yes";
         shell.expect_execute().times(0);
 
         let tree = kernel_tree(&missing);
-        let readiness = evaluate_readiness(
+        let readiness = ReadinessService::evaluate_readiness(
             &OsFileSystem,
             &env,
             &shell,
@@ -1475,7 +1549,7 @@ last_line_without_newline=yes";
         shell.expect_execute().times(0);
 
         let tree = kernel_tree(dir.path());
-        let readiness = evaluate_readiness(
+        let readiness = ReadinessService::evaluate_readiness(
             &OsFileSystem,
             &env,
             &shell,
@@ -1513,7 +1587,7 @@ last_line_without_newline=yes";
         let mut shell = MockShellTrait::new();
         shell.expect_execute().times(0);
         let tree = kernel_tree(dir.path());
-        let readiness = evaluate_readiness(
+        let readiness = ReadinessService::evaluate_readiness(
             &OsFileSystem,
             &env,
             &shell,
@@ -1551,7 +1625,7 @@ last_line_without_newline=yes";
         shell.expect_execute().times(0);
         let tree = kernel_tree(dir.path());
 
-        let on_head = evaluate_readiness(
+        let on_head = ReadinessService::evaluate_readiness(
             &OsFileSystem,
             &env,
             &shell,
@@ -1571,7 +1645,7 @@ last_line_without_newline=yes";
             on_head.deploy_alone
         );
 
-        let for_typed = evaluate_readiness(
+        let for_typed = ReadinessService::evaluate_readiness(
             &OsFileSystem,
             &env,
             &shell,
@@ -1598,7 +1672,7 @@ last_line_without_newline=yes";
         let env = MockEnvTrait::new();
         assert_eq!(
             BootOnceState::Off,
-            probe_boot_once(&OsFileSystem, &env, off.path())
+            ReadinessService::probe_boot_once(&OsFileSystem, &env, off.path())
         );
 
         let on = make_ready_tree("boot-once-on");
@@ -1609,7 +1683,7 @@ last_line_without_newline=yes";
         .unwrap();
         assert_eq!(
             BootOnceState::On,
-            probe_boot_once(&OsFileSystem, &env, on.path())
+            ReadinessService::probe_boot_once(&OsFileSystem, &env, on.path())
         );
     }
 
@@ -1621,7 +1695,7 @@ last_line_without_newline=yes";
             .returning(|_| Err(std::env::VarError::NotPresent.into()));
         assert_eq!(
             BootOnceState::Unknown,
-            probe_boot_once(&OsFileSystem, &env, empty.path())
+            ReadinessService::probe_boot_once(&OsFileSystem, &env, empty.path())
         );
 
         let weird = make_ready_tree("boot-once-weird");
@@ -1632,7 +1706,7 @@ last_line_without_newline=yes";
         .unwrap();
         assert_eq!(
             BootOnceState::Unknown,
-            probe_boot_once(&OsFileSystem, &MockEnvTrait::new(), weird.path())
+            ReadinessService::probe_boot_once(&OsFileSystem, &MockEnvTrait::new(), weird.path())
         );
     }
 
@@ -1656,7 +1730,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             BootOnceState::Off,
-            probe_boot_once(&fs, &env, Path::new("/kernel"))
+            ReadinessService::probe_boot_once(&fs, &env, Path::new("/kernel"))
         );
     }
 
@@ -1675,7 +1749,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             BootOnceState::Unknown,
-            probe_boot_once(&fs, &env, Path::new("/kernel"))
+            ReadinessService::probe_boot_once(&fs, &env, Path::new("/kernel"))
         );
     }
 
@@ -1696,7 +1770,7 @@ last_line_without_newline=yes";
 
         assert_eq!(
             BootOnceState::Off,
-            probe_boot_once(&fs, &env, Path::new("/kernel"))
+            ReadinessService::probe_boot_once(&fs, &env, Path::new("/kernel"))
         );
     }
 }

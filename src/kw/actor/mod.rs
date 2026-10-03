@@ -260,13 +260,17 @@ impl KwActor {
         let shell = Arc::clone(&self.shell);
         let tree_path_for_probe = tree_path.clone();
         let (kw_binary, output_dir, tree_readiness) = tokio::task::spawn_blocking(move || {
-            let kw_binary = readiness::probe_kw_binary(&*env, &*shell);
+            let kw_binary = readiness::ReadinessService::probe_kw_binary(&*env, &*shell);
             if !kw_binary.available {
                 return Err(KwStartError::KwBinaryMissing);
             }
-            let output_dir = readiness::resolve_output_dir(&*fs, &*env, &tree_path_for_probe)?;
-            let tree_readiness =
-                readiness::probe_tree(&*fs, &tree_path_for_probe, output_dir.as_deref());
+            let output_dir =
+                readiness::ReadinessService::resolve_output_dir(&*fs, &*env, &tree_path_for_probe)?;
+            let tree_readiness = readiness::ReadinessService::probe_tree(
+                &*fs,
+                &tree_path_for_probe,
+                output_dir.as_deref(),
+            );
             Ok((kw_binary, output_dir, tree_readiness))
         })
         .await
@@ -742,8 +746,12 @@ impl KwActor {
         // produced.
         let (image_path, kernelrelease) = if success {
             (
-                readiness::find_newest_kernel_image(&*self.fs, build_root, job.arch.as_deref()),
-                readiness::read_kernelrelease(&*self.fs, build_root),
+                readiness::ReadinessService::find_newest_kernel_image(
+                    &*self.fs,
+                    build_root,
+                    job.arch.as_deref(),
+                ),
+                readiness::ReadinessService::read_kernelrelease(&*self.fs, build_root),
             )
         } else {
             (None, None)
@@ -836,7 +844,7 @@ impl KwActor {
         let tree = tree.clone();
         tokio::task::spawn_blocking(move || {
             let head = head_branch(&*shell, tree.path());
-            readiness::evaluate_readiness(
+            readiness::ReadinessService::evaluate_readiness(
                 &*fs,
                 &*env,
                 &*shell,
@@ -918,8 +926,12 @@ fn prepare_deploy_blocking(
     let mut kernelrelease = None;
     if kind == KwJobKind::Deploy {
         let (record, latest) = history.build_records(&request.kernel_tree_id, &request.branch)?;
-        let image = readiness::find_newest_kernel_image(fs, output_dir.unwrap_or(tree_path), arch);
-        readiness::check_deploy_alone(
+        let image = readiness::ReadinessService::find_newest_kernel_image(
+            fs,
+            output_dir.unwrap_or(tree_path),
+            arch,
+        );
+        readiness::ReadinessService::check_deploy_alone(
             record.as_ref(),
             latest.as_ref(),
             &request.tree,
@@ -930,7 +942,7 @@ fn prepare_deploy_blocking(
         .map_err(KwStartError::DeployAloneRefused)?;
         kernelrelease = record.and_then(|record| record.kernelrelease);
     }
-    let boot_once = readiness::probe_boot_once(fs, env, tree_path);
+    let boot_once = readiness::ReadinessService::probe_boot_once(fs, env, tree_path);
     if matches!(boot_once, BootOnceState::On | BootOnceState::Unknown)
         && !options.boot_once_acknowledged
     {
