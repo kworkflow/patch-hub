@@ -156,11 +156,17 @@ mod tests {
     use super::*;
 
     fn mailing_list_context() -> InputContext {
-        InputContext::new(CurrentScreen::MailingListSelection)
+        InputContext {
+            current_screen: CurrentScreen::MailingListSelection,
+            ..Default::default()
+        }
     }
 
     fn details_context() -> InputContext {
-        InputContext::new(CurrentScreen::PatchsetDetails)
+        InputContext {
+            current_screen: CurrentScreen::PatchsetDetails,
+            ..Default::default()
+        }
     }
 
     fn spawn_test_actor(
@@ -176,10 +182,12 @@ mod tests {
     async fn key_event_in_mailing_list_context_delivers_navigate_down() {
         let mut session = MockTerminalSessionApi::new();
         // First poll returns the key; subsequent polls time-out (return None).
-        session
-            .expect_poll_event()
-            .times(1)
-            .returning(|_| Ok(Some(TerminalEvent::Key(KeyInput::press(KeyCode::Down)))));
+        session.expect_poll_event().times(1).returning(|_| {
+            Ok(Some(TerminalEvent::Key(KeyInput {
+                code: KeyCode::Down,
+                ..Default::default()
+            })))
+        });
         session.expect_poll_event().returning(|_| Ok(None));
 
         let (input_handle, _terminal_handle) = spawn_test_actor(session, mailing_list_context());
@@ -198,10 +206,12 @@ mod tests {
         // before the key arrives.  Second call returns the Esc key.
         // Remaining calls time-out.
         session.expect_poll_event().times(1).returning(|_| Ok(None));
-        session
-            .expect_poll_event()
-            .times(1)
-            .returning(|_| Ok(Some(TerminalEvent::Key(KeyInput::press(KeyCode::Esc)))));
+        session.expect_poll_event().times(1).returning(|_| {
+            Ok(Some(TerminalEvent::Key(KeyInput {
+                code: KeyCode::Esc,
+                ..Default::default()
+            })))
+        });
         session.expect_poll_event().returning(|_| Ok(None));
 
         let (input_handle, _terminal_handle) = spawn_test_actor(session, mailing_list_context());
@@ -223,16 +233,20 @@ mod tests {
     async fn unmapped_terminal_event_is_discarded_without_error() {
         let mut session = MockTerminalSessionApi::new();
         // F6 has no mapping in any screen — it should be silently dropped.
-        session
-            .expect_poll_event()
-            .times(1)
-            .returning(|_| Ok(Some(TerminalEvent::Key(KeyInput::press(KeyCode::F(6))))));
+        session.expect_poll_event().times(1).returning(|_| {
+            Ok(Some(TerminalEvent::Key(KeyInput {
+                code: KeyCode::F(6),
+                ..Default::default()
+            })))
+        });
         // Second event — Down — is delivered so we can wait for it to confirm
         // the actor kept running after discarding the unmapped event.
-        session
-            .expect_poll_event()
-            .times(1)
-            .returning(|_| Ok(Some(TerminalEvent::Key(KeyInput::press(KeyCode::Down)))));
+        session.expect_poll_event().times(1).returning(|_| {
+            Ok(Some(TerminalEvent::Key(KeyInput {
+                code: KeyCode::Down,
+                ..Default::default()
+            })))
+        });
         session.expect_poll_event().returning(|_| Ok(None));
 
         let (input_handle, _terminal_handle) = spawn_test_actor(session, mailing_list_context());
@@ -285,13 +299,18 @@ mod tests {
     #[tokio::test]
     async fn popup_open_context_maps_escape_to_close_popup() {
         let mut session = MockTerminalSessionApi::new();
-        session
-            .expect_poll_event()
-            .times(1)
-            .returning(|_| Ok(Some(TerminalEvent::Key(KeyInput::press(KeyCode::Esc)))));
+        session.expect_poll_event().times(1).returning(|_| {
+            Ok(Some(TerminalEvent::Key(KeyInput {
+                code: KeyCode::Esc,
+                ..Default::default()
+            })))
+        });
         session.expect_poll_event().returning(|_| Ok(None));
 
-        let context = details_context().with_popup_open(true);
+        let context = InputContext {
+            popup_open: true,
+            ..details_context()
+        };
         let (input_handle, _terminal_handle) = spawn_test_actor(session, context);
         let (sub_tx, mut sub_rx) = mpsc::channel::<InputEvent>(8);
         input_handle.subscribe_app(sub_tx).await.unwrap();

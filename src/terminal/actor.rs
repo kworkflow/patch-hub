@@ -196,7 +196,10 @@ mod tests {
 
     #[tokio::test]
     async fn read_event_returns_terminal_event_from_actor() {
-        let expected = TerminalEvent::Key(KeyInput::press(KeyCode::Char('j')));
+        let expected = TerminalEvent::Key(KeyInput {
+            code: KeyCode::Char('j'),
+            ..Default::default()
+        });
         let mut session = MockTerminalSessionApi::new();
         session
             .expect_read_event()
@@ -208,7 +211,10 @@ mod tests {
 
         assert_eq!(
             result,
-            Some(TerminalEvent::Key(KeyInput::press(KeyCode::Char('j'))))
+            Some(TerminalEvent::Key(KeyInput {
+                code: KeyCode::Char('j'),
+                ..Default::default()
+            }))
         );
     }
 
