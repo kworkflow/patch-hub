@@ -14,8 +14,7 @@ use crate::{
     config::{
         handle::ConfigHandle,
         messages::{ConfigMessage, ConfigResult},
-        normalize_derived_paths,
-        service::{ensure_directories, validate_update},
+        service::ConfigService,
         ConfigRepository, ConfigSnapshot, ConfigState, ConfigUpdateDraft, JsonConfigRepository,
     },
     infrastructure::file_system::FileSystemTrait,
@@ -83,10 +82,10 @@ where
     }
 
     fn apply(&mut self, draft: ConfigUpdateDraft) -> ConfigResult<ConfigSnapshot> {
-        let update = validate_update(draft, self.repo.fs(), &self.state)?;
+        let update = ConfigService::validate_update(draft, self.repo.fs(), &self.state)?;
         self.state.apply_update(&update);
-        normalize_derived_paths(&mut self.state);
-        ensure_directories(&self.state, self.repo.fs())?;
+        self.state.normalize_derived_paths();
+        ConfigService::ensure_directories(&self.state, self.repo.fs())?;
         self.repo.save(&self.state)?;
         Ok(self.state.to_snapshot())
     }
@@ -137,7 +136,7 @@ mod tests {
 
     use crate::{
         config::{
-            service::bootstrap_parts, ConfigError, ConfigUpdateDraft, DEFAULT_CONFIG_PATH_SUFFIX,
+            service::ConfigService, ConfigError, ConfigUpdateDraft, DEFAULT_CONFIG_PATH_SUFFIX,
         },
         infrastructure::{env::MockEnvTrait, file_system::OsFileSystem},
     };
@@ -180,7 +179,7 @@ mod tests {
 
     fn spawn_test_actor() -> (ConfigHandle, PathBuf) {
         let (env, home) = default_env();
-        let (state, repo) = bootstrap_parts(&env, OsFileSystem).unwrap();
+        let (state, repo) = ConfigService::bootstrap_parts(&env, OsFileSystem).unwrap();
         (ConfigActor::spawn(state, repo), home)
     }
 

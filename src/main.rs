@@ -15,7 +15,7 @@ use app::{actor::AppActor, dependencies::check_external_deps, App};
 use clap::Parser;
 use cli::Cli;
 use color_eyre::{eyre::eyre, Result};
-use config::{bootstrap_parts, ConfigActor};
+use config::{ConfigActor, ConfigService};
 #[cfg(unix)]
 use infrastructure::process::OsProcess;
 use infrastructure::{
@@ -63,7 +63,8 @@ async fn main() -> Result<()> {
     infrastructure::errors::install_hooks()?;
 
     let env = OsEnv;
-    let (config_state, config_repo) = bootstrap_parts(&env, OsFileSystem).map_err(|e| eyre!(e))?;
+    let (config_state, config_repo) =
+        ConfigService::bootstrap_parts(&env, OsFileSystem).map_err(|e| eyre!(e))?;
     let config = config_state.to_snapshot();
 
     // with the config we can update log directory

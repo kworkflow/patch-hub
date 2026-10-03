@@ -9,8 +9,8 @@ use std::{
 
 use crate::config::actor::ConfigActor;
 use crate::config::repository::{ConfigRepository, JsonConfigRepository};
-use crate::config::service::{bootstrap_parts, validate_update};
-use crate::config::state::{normalize_derived_paths, ConfigState};
+use crate::config::service::ConfigService;
+use crate::config::state::ConfigState;
 use crate::config::{
     ConfigError, ConfigSnapshot, ConfigUpdateDraft, KernelTree, ValidatedConfigUpdate,
     DEFAULT_CONFIG_PATH_SUFFIX,
@@ -55,7 +55,10 @@ fn unique_test_dir(prefix: &str) -> PathBuf {
 }
 
 fn bootstrap_snapshot(env: &dyn EnvTrait) -> ConfigSnapshot {
-    bootstrap_parts(env, os_fs()).unwrap().0.to_snapshot()
+    ConfigService::bootstrap_parts(env, os_fs())
+        .unwrap()
+        .0
+        .to_snapshot()
 }
 
 /// Writable `HOME` and mock env: no `PATCH_HUB_CONFIG_PATH` (uses `HOME/.config/...`).
@@ -432,7 +435,7 @@ fn bootstrap_rejects_invalid_patch_hub_page_size_env() {
         })
         .returning(|_| Err(VarError::NotPresent.into()));
 
-    match bootstrap_parts(&mock, os_fs()) {
+    match ConfigService::bootstrap_parts(&mock, os_fs()) {
         Ok(_) => panic!("expected bootstrap to fail"),
         Err(err) => {
             assert!(matches!(err, ConfigError::InvalidPageSize(ref s) if s == "not-a-number"))
@@ -468,7 +471,7 @@ fn bootstrap_rejects_invalid_patch_hub_patch_renderer_env() {
         .withf(|key| key == "PATCH_HUB_PATCH_RENDERER")
         .returning(|_| Ok("not-a-real-renderer".into()));
 
-    match bootstrap_parts(&mock, os_fs()) {
+    match ConfigService::bootstrap_parts(&mock, os_fs()) {
         Ok(_) => panic!("expected bootstrap to fail"),
         Err(err) => assert!(matches!(
             err,
@@ -489,7 +492,7 @@ fn normalize_derived_paths_recomputes_cache_and_data_subpaths() {
     state.reviewed_patchsets_path = "stale-r".into();
     state.logs_path = "stale-logs".into();
 
-    normalize_derived_paths(&mut state);
+    state.normalize_derived_paths();
 
     assert_eq!(state.patchsets_cache_dir, "/tmp/custom-cache/patchsets");
     assert_eq!(
@@ -509,7 +512,7 @@ fn normalize_derived_paths_recomputes_cache_and_data_subpaths() {
 
 #[test]
 fn validate_update_rejects_invalid_page_size() {
-    let err = validate_update(
+    let err = ConfigService::validate_update(
         ConfigUpdateDraft {
             page_size: Some("xyz".into()),
             ..Default::default()
@@ -523,7 +526,7 @@ fn validate_update_rejects_invalid_page_size() {
 
 #[test]
 fn validate_update_rejects_invalid_patch_renderer() {
-    let err = validate_update(
+    let err = ConfigService::validate_update(
         ConfigUpdateDraft {
             patch_renderer: Some("nope".into()),
             ..Default::default()
@@ -540,7 +543,7 @@ fn validate_update_rejects_invalid_patch_renderer() {
 
 #[test]
 fn validate_update_rejects_invalid_cover_renderer() {
-    let err = validate_update(
+    let err = ConfigService::validate_update(
         ConfigUpdateDraft {
             cover_renderer: Some("delta".into()),
             ..Default::default()
@@ -557,7 +560,7 @@ fn validate_update_rejects_invalid_cover_renderer() {
 
 #[test]
 fn validate_update_rejects_invalid_max_log_age() {
-    let err = validate_update(
+    let err = ConfigService::validate_update(
         ConfigUpdateDraft {
             max_log_age: Some("not-a-number".into()),
             ..Default::default()
@@ -575,7 +578,7 @@ fn validate_update_rejects_invalid_max_log_age() {
 #[test]
 fn validate_update_rejects_invalid_stay_on_applied_branch() {
     for raw in ["not-a-bool", ""] {
-        let err = validate_update(
+        let err = ConfigService::validate_update(
             ConfigUpdateDraft {
                 stay_on_applied_branch: Some(raw.into()),
                 ..Default::default()
@@ -616,7 +619,7 @@ fn validate_update_rejects_invalid_kw_deploy_bools() {
         (None, Some("not-a-bool"), false),
         (None, Some(""), false),
     ] {
-        let err = validate_update(
+        let err = ConfigService::validate_update(
             ConfigUpdateDraft {
                 kw_reboot_after_deploy: reboot.map(str::to_string),
                 kw_deploy_force: force.map(str::to_string),
@@ -667,7 +670,7 @@ fn apply_update_toggles_kw_deploy_knobs() {
 fn validate_update_accepts_existing_target_kernel_tree() {
     let (env, _home) = default_env();
     let state = state_with_trees(&env);
-    let update = validate_update(
+    let update = ConfigService::validate_update(
         ConfigUpdateDraft {
             target_kernel_tree: Some("linux".into()),
             ..Default::default()
@@ -683,7 +686,7 @@ fn validate_update_accepts_existing_target_kernel_tree() {
 fn validate_update_unsets_target_kernel_tree_on_empty_string() {
     let (env, _home) = default_env();
     let state = state_with_trees(&env);
-    let update = validate_update(
+    let update = ConfigService::validate_update(
         ConfigUpdateDraft {
             target_kernel_tree: Some("".into()),
             ..Default::default()
@@ -699,7 +702,7 @@ fn validate_update_unsets_target_kernel_tree_on_empty_string() {
 fn validate_update_rejects_unknown_target_kernel_tree() {
     let (env, _home) = default_env();
     let state = state_with_trees(&env);
-    let err = validate_update(
+    let err = ConfigService::validate_update(
         ConfigUpdateDraft {
             target_kernel_tree: Some("missing".into()),
             ..Default::default()
@@ -745,7 +748,7 @@ fn validate_update_rejects_cache_dir_that_is_existing_file() {
     let root = unique_test_dir("not-a-dir");
     let blocking = root.join("blocking-file");
     fs::write(&blocking, b"x").unwrap();
-    let err = validate_update(
+    let err = ConfigService::validate_update(
         ConfigUpdateDraft {
             cache_dir: Some(blocking.to_string_lossy().into_owned()),
             ..Default::default()
@@ -792,7 +795,7 @@ fn json_config_repository_save_creates_parent_and_leaves_no_tmp_stale() {
 #[tokio::test]
 async fn validate_and_apply_persists_to_config_file() {
     let (env, home) = default_env();
-    let (state, repo) = bootstrap_parts(&env, os_fs()).unwrap();
+    let (state, repo) = ConfigService::bootstrap_parts(&env, os_fs()).unwrap();
     let handle = ConfigActor::spawn(state, repo);
     let cfg_path = home.join(DEFAULT_CONFIG_PATH_SUFFIX);
 
@@ -814,7 +817,7 @@ async fn validate_and_apply_persists_to_config_file() {
 #[tokio::test]
 async fn validate_and_apply_persists_target_kernel_tree() {
     let (env, home) = default_env();
-    let (mut state, repo) = bootstrap_parts(&env, os_fs()).unwrap();
+    let (mut state, repo) = ConfigService::bootstrap_parts(&env, os_fs()).unwrap();
     state.kernel_trees.insert(
         "linux".into(),
         sample_kernel_tree("/home/user/linux", "master"),
@@ -851,7 +854,7 @@ async fn validate_and_apply_persists_target_kernel_tree() {
 #[tokio::test]
 async fn invalid_target_kernel_tree_keeps_existing_state() {
     let (env, _home) = default_env();
-    let (mut state, repo) = bootstrap_parts(&env, os_fs()).unwrap();
+    let (mut state, repo) = ConfigService::bootstrap_parts(&env, os_fs()).unwrap();
     state.kernel_trees.insert(
         "linux".into(),
         sample_kernel_tree("/home/user/linux", "master"),

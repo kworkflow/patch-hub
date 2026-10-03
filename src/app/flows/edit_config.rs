@@ -117,7 +117,7 @@ mod tests {
             state::{AppState, ConfigUiState, LoreUiState, NavigationState, UserLoreState},
             App, AppServices,
         },
-        config::{bootstrap_parts, ConfigActor, ConfigHandle, DEFAULT_CONFIG_PATH_SUFFIX},
+        config::{ConfigActor, ConfigHandle, ConfigService, DEFAULT_CONFIG_PATH_SUFFIX},
         infrastructure::{
             env::MockEnvTrait, file_system::MockFileSystemTrait, file_system::OsFileSystem,
             shell::MockShellTrait,
@@ -168,7 +168,7 @@ mod tests {
 
     fn app_with_kernel_trees(keys: &[&str], target: Option<&str>) -> (App, ConfigHandle, PathBuf) {
         let (env, home) = default_env();
-        let (mut state, repo) = bootstrap_parts(&env, OsFileSystem).unwrap();
+        let (mut state, repo) = ConfigService::bootstrap_parts(&env, OsFileSystem).unwrap();
         for key in keys {
             state.kernel_trees.insert(
                 (*key).to_string(),

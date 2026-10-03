@@ -186,17 +186,17 @@ impl ConfigState {
     pub fn to_snapshot(&self) -> ConfigSnapshot {
         ConfigSnapshot::from_state(self)
     }
-}
 
-/// Recomputes derived path fields from `cache_dir` and `data_dir`.
-pub fn normalize_derived_paths(state: &mut ConfigState) {
-    let cache_dir = state.cache_dir.clone();
-    state.patchsets_cache_dir = format!("{cache_dir}/patchsets");
-    let data_dir = state.data_dir.clone();
-    state.bookmarked_patchsets_path = format!("{data_dir}/bookmarked_patchsets.json");
-    state.mailing_lists_path = format!("{data_dir}/mailing_lists.json");
-    state.reviewed_patchsets_path = format!("{data_dir}/reviewed_patchsets.json");
-    state.logs_path = format!("{data_dir}/logs");
+    /// Recomputes derived path fields from `cache_dir` and `data_dir`.
+    pub fn normalize_derived_paths(&mut self) {
+        let cache_dir = self.cache_dir.clone();
+        self.patchsets_cache_dir = format!("{cache_dir}/patchsets");
+        let data_dir = self.data_dir.clone();
+        self.bookmarked_patchsets_path = format!("{data_dir}/bookmarked_patchsets.json");
+        self.mailing_lists_path = format!("{data_dir}/mailing_lists.json");
+        self.reviewed_patchsets_path = format!("{data_dir}/reviewed_patchsets.json");
+        self.logs_path = format!("{data_dir}/logs");
+    }
 }
 
 /// Immutable view of configuration for the rest of the application (read-only).
