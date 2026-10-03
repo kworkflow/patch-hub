@@ -40,24 +40,30 @@ impl PatchsetParser for MboxPatchsetParser {
         }
 
         if self.fs.exists(cover_letter_path) && self.fs.is_file(cover_letter_path) {
-            extract_patches(&*self.fs, cover_letter_path, &mut patches);
+            extract_patches(&*self.fs, cover_letter_path, &mut patches)?;
         }
 
-        extract_patches(&*self.fs, patchset_path, &mut patches);
+        extract_patches(&*self.fs, patchset_path, &mut patches)?;
 
         Ok(patches)
     }
 }
 
-fn extract_patches(fs: &dyn FileSystemTrait, mbox_path: &Path, patches: &mut Vec<String>) {
+fn extract_patches(
+    fs: &dyn FileSystemTrait,
+    mbox_path: &Path,
+    patches: &mut Vec<String>,
+) -> Result<(), String> {
     let mut current_patch = String::new();
     let mut is_reading_patch = false;
     let mut is_last_line = false;
 
-    let mbox_reader = fs.open_bufreader(mbox_path).unwrap();
+    let mbox_reader = fs
+        .open_bufreader(mbox_path)
+        .map_err(|err| format!("{}: {err}", mbox_path.display()))?;
 
     for line in mbox_reader.lines() {
-        let line = line.unwrap();
+        let line = line.map_err(|err| format!("{}: {err}", mbox_path.display()))?;
 
         if line.starts_with("Subject: ") {
             is_reading_patch = true;
@@ -90,6 +96,8 @@ fn extract_patches(fs: &dyn FileSystemTrait, mbox_path: &Path, patches: &mut Vec
     if !current_patch.is_empty() {
         patches.push(current_patch);
     }
+
+    Ok(())
 }
 
 /// Splits a raw patch string into `(cover, diff)` at the first `\n---\n` separator.
