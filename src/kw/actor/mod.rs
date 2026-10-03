@@ -335,7 +335,7 @@ impl KwActor {
         };
 
         let (cancel_tx, cancel_rx) = oneshot::channel();
-        spawn(run_job(process, cancel_rx, self.job_event_tx.clone()));
+        spawn(Self::run_job(process, cancel_rx, self.job_event_tx.clone()));
 
         let phase = match kind {
             KwJobKind::Deploy => KwPhase::Deploying,
@@ -409,7 +409,7 @@ impl KwActor {
         let output_dir = output_dir.map(Path::to_path_buf);
         let arch = arch.map(str::to_string);
         tokio::task::spawn_blocking(move || {
-            prepare_deploy_blocking(
+            Self::prepare_deploy_blocking(
                 kind,
                 &request,
                 &*fs,
@@ -442,9 +442,9 @@ impl KwActor {
         let branch = request.branch.clone();
         let pre_job_branch =
             tokio::task::spawn_blocking(move || -> Result<String, TreeGitError> {
-                check_worktree_clean(&*shell, &tree_path)?;
-                let pre_job_branch = head_branch(&*shell, &tree_path);
-                switch_to_branch(&*shell, &tree_path, &branch)?;
+                KwGitService::check_worktree_clean(&*shell, &tree_path)?;
+                let pre_job_branch = KwGitService::probe_head_branch(&*shell, &tree_path);
+                KwGitService::switch_to_branch(&*shell, &tree_path, &branch)?;
                 Ok(pre_job_branch)
             })
             .await
@@ -475,7 +475,7 @@ impl KwActor {
         let branch = branch.to_string();
         let branch_for_task = branch.clone();
         match tokio::task::spawn_blocking(move || {
-            switch_to_branch(&*shell, &tree_path, &branch_for_task)
+            KwGitService::switch_to_branch(&*shell, &tree_path, &branch_for_task)
         })
         .await
         {
@@ -555,7 +555,7 @@ impl KwActor {
                     tracing::warn!("kw job finished with no job state recorded");
                     return;
                 };
-                let outcome = outcome_after_building_cancel(&job, outcome);
+                let outcome = Self::rewrite_outcome_after_building_cancel(&job, outcome);
                 let job = match self.advance_build_then_deploy(job, &outcome) {
                     ControlFlow::Break(()) => return,
                     ControlFlow::Continue(job) => job,
@@ -679,7 +679,7 @@ impl KwActor {
         match self.spawn_deploy_process(&job.tree_path, &deploy) {
             Ok((process, log_path)) => {
                 let (cancel_tx, cancel_rx) = oneshot::channel();
-                spawn(run_job(process, cancel_rx, self.job_event_tx.clone()));
+                spawn(Self::run_job(process, cancel_rx, self.job_event_tx.clone()));
                 tracing::info!(
                     kernel_tree_id = job.kernel_tree_id,
                     branch = job.branch,
@@ -846,7 +846,7 @@ impl KwActor {
         let kernel_tree_id = kernel_tree_id.to_string();
         let tree = tree.clone();
         tokio::task::spawn_blocking(move || {
-            let head = head_branch(&*shell, tree.path());
+            let head = KwGitService::probe_head_branch(&*shell, tree.path());
             readiness::ReadinessService::evaluate_readiness(
                 &*fs,
                 &*env,
@@ -881,8 +881,8 @@ impl KwActor {
         // Same spawn_blocking rationale as the start path's checkout: the
         // switch rewrites the worktree.
         let result = tokio::task::spawn_blocking(move || -> Result<(), TreeGitError> {
-            check_worktree_clean(&*shell, &tree_path)?;
-            switch_to_branch(&*shell, &tree_path, &branch)
+            KwGitService::check_worktree_clean(&*shell, &tree_path)?;
+            KwGitService::switch_to_branch(&*shell, &tree_path, &branch)
         })
         .await
         .map_err(|error| KwError::GitStateProbe(error.to_string()))
@@ -905,228 +905,237 @@ impl KwActor {
     }
 }
 
-/// Deploy gates that must not run on the actor task: remote.config,
-/// history JSON, image globs, and boot-once files. Record match runs
-/// before the boot-once confirm so a missing build refuses cheaper.
-#[expect(clippy::too_many_arguments)]
-fn prepare_deploy_blocking(
-    kind: KwJobKind,
-    request: &StartRequest,
-    fs: &dyn FileSystemTrait,
-    env: &dyn EnvTrait,
-    history: &dyn KwHistoryStore,
-    tree_path: &Path,
-    output_dir: Option<&Path>,
-    arch: Option<&str>,
-) -> Result<JobDeploy, KwStartError> {
-    let options = request.deploy.clone().unwrap_or(DeployOptions {
-        reboot: false,
-        force: true,
-        boot_once_acknowledged: false,
-    });
-    let remote = remote::RemoteConfigService::resolve_deploy_remote(fs, env, tree_path)
-        .map_err(KwStartError::RemoteUnresolved)?;
-    let mut kernelrelease = None;
-    if kind == KwJobKind::Deploy {
-        let (record, latest) = history.build_records(&request.kernel_tree_id, &request.branch)?;
-        let image = readiness::ReadinessService::find_newest_kernel_image(
-            fs,
-            output_dir.unwrap_or(tree_path),
-            arch,
-        );
-        readiness::ReadinessService::check_deploy_alone(
-            record.as_ref(),
-            latest.as_ref(),
-            &request.tree,
-            &request.branch,
-            output_dir,
-            image.as_deref(),
-        )
-        .map_err(KwStartError::DeployAloneRefused)?;
-        kernelrelease = record.and_then(|record| record.kernelrelease);
-    }
-    let boot_once = readiness::ReadinessService::probe_boot_once(fs, env, tree_path);
-    if matches!(boot_once, BootOnceState::On | BootOnceState::Unknown)
-        && !options.boot_once_acknowledged
-    {
-        return Err(KwStartError::BootOnceNotAcknowledged);
-    }
-    Ok(JobDeploy {
-        remote,
-        options,
-        extra_args: request.extra_args.clone(),
-        kernelrelease,
-    })
-}
-
-/// Fails unless the tree's git state verifies clean. Untracked files
-/// don't count: kernel trees accumulate local scratch files, and only
-/// tracked changes can corrupt the branch a job builds. A probe that
-/// itself fails — git missing, not a repository — fails too.
-fn check_worktree_clean(shell: &dyn ShellTrait, tree_path: &str) -> Result<(), TreeGitError> {
-    let cmd = ShellCommand::new("git").args([
-        "-C",
-        tree_path,
-        "status",
-        "--porcelain",
-        "--untracked-files=no",
-    ]);
-    let output = shell
-        .execute(&cmd)
-        .map_err(|error| TreeGitError::Probe(error.to_string()))?;
-    if !output.success {
-        return Err(TreeGitError::Probe(
-            String::from_utf8_lossy(&output.stderr).trim().to_string(),
-        ));
-    }
-    if !output.stdout.is_empty() {
-        return Err(TreeGitError::DirtyWorktree);
-    }
-    Ok(())
-}
-
-/// Switches the tree onto `branch`. A failure carries git's stderr, which
-/// names the usual causes (no such branch, a rebase or merge in
-/// progress). The `--` keeps a branch named like a flag from being parsed
-/// as one.
-fn switch_to_branch(
-    shell: &dyn ShellTrait,
-    tree_path: &str,
-    branch: &str,
-) -> Result<(), TreeGitError> {
-    let cmd = ShellCommand::new("git").args(["-C", tree_path, "switch", "--", branch]);
-    let output = shell
-        .execute(&cmd)
-        .map_err(|error| TreeGitError::Switch(error.to_string()))?;
-    if !output.success {
-        return Err(TreeGitError::Switch(
-            String::from_utf8_lossy(&output.stderr).trim().to_string(),
-        ));
-    }
-    Ok(())
-}
-
-/// The tree's current branch, probed via git. An unresolvable HEAD
-/// (not a git repo, or a detached HEAD, for which `branch
-/// --show-current` prints nothing) yields an empty string: no build
-/// record can match it, so deploy-alone readiness refuses — the safe
-/// direction for an unknown HEAD.
-fn head_branch(shell: &dyn ShellTrait, tree_path: &str) -> String {
-    let cmd = ShellCommand::new("git").args(["-C", tree_path, "branch", "--show-current"]);
-    match shell.execute(&cmd) {
-        Ok(output) if output.success => String::from_utf8_lossy(&output.stdout).trim().to_string(),
-        Ok(output) => {
-            tracing::warn!(
-                tree = tree_path,
-                stderr = %String::from_utf8_lossy(&output.stderr),
-                "failed to probe the kernel tree's HEAD branch"
+impl KwActor {
+    /// Deploy gates that must not run on the actor task: remote.config,
+    /// history JSON, image globs, and boot-once files. Record match runs
+    /// before the boot-once confirm so a missing build refuses cheaper.
+    #[expect(clippy::too_many_arguments)]
+    fn prepare_deploy_blocking(
+        kind: KwJobKind,
+        request: &StartRequest,
+        fs: &dyn FileSystemTrait,
+        env: &dyn EnvTrait,
+        history: &dyn KwHistoryStore,
+        tree_path: &Path,
+        output_dir: Option<&Path>,
+        arch: Option<&str>,
+    ) -> Result<JobDeploy, KwStartError> {
+        let options = request.deploy.clone().unwrap_or(DeployOptions {
+            reboot: false,
+            force: true,
+            boot_once_acknowledged: false,
+        });
+        let remote = remote::RemoteConfigService::resolve_deploy_remote(fs, env, tree_path)
+            .map_err(KwStartError::RemoteUnresolved)?;
+        let mut kernelrelease = None;
+        if kind == KwJobKind::Deploy {
+            let (record, latest) =
+                history.build_records(&request.kernel_tree_id, &request.branch)?;
+            let image = readiness::ReadinessService::find_newest_kernel_image(
+                fs,
+                output_dir.unwrap_or(tree_path),
+                arch,
             );
-            String::new()
+            readiness::ReadinessService::check_deploy_alone(
+                record.as_ref(),
+                latest.as_ref(),
+                &request.tree,
+                &request.branch,
+                output_dir,
+                image.as_deref(),
+            )
+            .map_err(KwStartError::DeployAloneRefused)?;
+            kernelrelease = record.and_then(|record| record.kernelrelease);
         }
-        Err(error) => {
-            tracing::warn!(tree = tree_path, %error, "failed to probe the kernel tree's HEAD branch");
-            String::new()
+        let boot_once = readiness::ReadinessService::probe_boot_once(fs, env, tree_path);
+        if matches!(boot_once, BootOnceState::On | BootOnceState::Unknown)
+            && !options.boot_once_acknowledged
+        {
+            return Err(KwStartError::BootOnceNotAcknowledged);
         }
+        Ok(JobDeploy {
+            remote,
+            options,
+            extra_args: request.extra_args.clone(),
+            kernelrelease,
+        })
     }
-}
 
-/// Owns the spawned process until it ends: waits on it, or — when the
-/// cancel signal fires — runs the kill escalation and reaps it. The
-/// `wait()` future is dropped before the cancel arm's body runs, releasing
-/// the mutable borrow so `kill()` can be called. Reports the outcome back
-/// to the actor over the internal event channel.
-async fn run_job(
-    mut process: Box<dyn RunningProcess>,
-    mut cancel_rx: oneshot::Receiver<()>,
-    events: mpsc::Sender<JobEvent>,
-) {
-    let outcome = tokio::select! {
-        status = process.wait() => match status {
-            Ok(status) => JobOutcome::Exited(status),
-            Err(error) => JobOutcome::WaitFailed(error),
-        },
-        // A dropped sender (actor shutting down) cancels the job too.
-        _ = &mut cancel_rx => cancel_job(&mut *process).await,
-    };
-    events.send(JobEvent::Finished(outcome)).await.ok();
-}
-
-/// Cancel escalation ladder: SIGTERM the group, wait a grace period,
-/// SIGKILL, wait again, then give up. Giving up still reports Cancelled and
-/// lets the actor clear its job state — a process group that ignores both
-/// signals must not wedge the actor into refusing every later Start with
-/// `JobAlreadyRunning` for the rest of the session.
-async fn cancel_job(process: &mut dyn RunningProcess) -> JobOutcome {
-    if let Err(error) = process.kill() {
-        tracing::warn!(%error, "failed to SIGTERM kw job process group");
+    /// Owns the spawned process until it ends: waits on it, or — when the
+    /// cancel signal fires — runs the kill escalation and reaps it. The
+    /// `wait()` future is dropped before the cancel arm's body runs, releasing
+    /// the mutable borrow so `kill()` can be called. Reports the outcome back
+    /// to the actor over the internal event channel.
+    async fn run_job(
+        mut process: Box<dyn RunningProcess>,
+        mut cancel_rx: oneshot::Receiver<()>,
+        events: mpsc::Sender<JobEvent>,
+    ) {
+        let outcome = tokio::select! {
+            status = process.wait() => match status {
+                Ok(status) => JobOutcome::Exited(status),
+                Err(error) => JobOutcome::WaitFailed(error),
+            },
+            // A dropped sender (actor shutting down) cancels the job too.
+            _ = &mut cancel_rx => Self::cancel_job(&mut *process).await,
+        };
+        events.send(JobEvent::Finished(outcome)).await.ok();
     }
-    match tokio::time::timeout(TERM_GRACE, process.wait()).await {
-        Ok(outcome) => outcome_after_cancel(outcome),
-        Err(_) => {
-            tracing::warn!("kw job ignored SIGTERM; escalating to SIGKILL");
-            if let Err(error) = process.force_kill() {
-                tracing::warn!(%error, "failed to SIGKILL kw job process group");
-            }
-            match tokio::time::timeout(KILL_GRACE, process.wait()).await {
-                Ok(outcome) => outcome_after_cancel(outcome),
-                Err(_) => {
-                    tracing::warn!(
-                        "kw job process group could not be reaped after SIGKILL; giving up"
-                    );
-                    JobOutcome::Cancelled
+
+    /// Cancel escalation ladder: SIGTERM the group, wait a grace period,
+    /// SIGKILL, wait again, then give up. Giving up still reports Cancelled and
+    /// lets the actor clear its job state — a process group that ignores both
+    /// signals must not wedge the actor into refusing every later Start with
+    /// `JobAlreadyRunning` for the rest of the session.
+    async fn cancel_job(process: &mut dyn RunningProcess) -> JobOutcome {
+        if let Err(error) = process.kill() {
+            tracing::warn!(%error, "failed to SIGTERM kw job process group");
+        }
+        match tokio::time::timeout(TERM_GRACE, process.wait()).await {
+            Ok(outcome) => Self::map_outcome_after_cancel(outcome),
+            Err(_) => {
+                tracing::warn!("kw job ignored SIGTERM; escalating to SIGKILL");
+                if let Err(error) = process.force_kill() {
+                    tracing::warn!(%error, "failed to SIGKILL kw job process group");
+                }
+                match tokio::time::timeout(KILL_GRACE, process.wait()).await {
+                    Ok(outcome) => Self::map_outcome_after_cancel(outcome),
+                    Err(_) => {
+                        tracing::warn!(
+                            "kw job process group could not be reaped after SIGKILL; giving up"
+                        );
+                        JobOutcome::Cancelled
+                    }
                 }
             }
         }
     }
-}
 
-/// A cancel during Building of a BuildThenDeploy job must not chain into
-/// deploy, even when the build process reports exit 0. Rewriting the
-/// outcome to [`JobOutcome::Cancelled`] also skips the build record, matching
-/// the "cancel in Building writes nothing" rule.
-fn outcome_after_building_cancel(job: &JobState, outcome: JobOutcome) -> JobOutcome {
-    if job.cancel_tx.is_none()
-        && job.kind == KwJobKind::BuildThenDeploy
-        && job.phase == KwPhase::Building
-        && matches!(&outcome, JobOutcome::Exited(exit) if exit.success())
-    {
-        JobOutcome::Cancelled
-    } else {
-        outcome
+    /// A cancel during Building of a BuildThenDeploy job must not chain into
+    /// deploy, even when the build process reports exit 0. Rewriting the
+    /// outcome to [`JobOutcome::Cancelled`] also skips the build record, matching
+    /// the "cancel in Building writes nothing" rule.
+    fn rewrite_outcome_after_building_cancel(job: &JobState, outcome: JobOutcome) -> JobOutcome {
+        if job.cancel_tx.is_none()
+            && job.kind == KwJobKind::BuildThenDeploy
+            && job.phase == KwPhase::Building
+            && matches!(&outcome, JobOutcome::Exited(exit) if exit.success())
+        {
+            JobOutcome::Cancelled
+        } else {
+            outcome
+        }
+    }
+
+    /// Maps a reap result observed after a cancel request. A signal-terminated
+    /// process means our SIGTERM/SIGKILL landed — the job was really cancelled.
+    /// A plain exit means the process finished on its own before the signal:
+    /// report the real outcome, because a cancel must not mask a failure the
+    /// build history (and deploy-alone readiness) needs to see.
+    ///
+    /// Known, accepted edges: a process that *traps* our SIGTERM and exits 0
+    /// counts as success for a standalone build (kw is bash, so this is
+    /// possible in principle). BuildThenDeploy does not chain that exit into
+    /// deploy — see [`Self::rewrite_outcome_after_building_cancel`]. An external signal
+    /// racing a cancel (e.g. the OOM killer) reads as Cancelled. Those cases
+    /// are indistinguishable from the honest ones without comparing who
+    /// signaled first, and both favor showing the user real output over
+    /// inventing failures.
+    fn map_outcome_after_cancel(result: Result<ExitStatus, ProcessError>) -> JobOutcome {
+        use std::os::unix::process::ExitStatusExt;
+
+        match result {
+            Ok(status) => {
+                if status.signal().is_some() {
+                    return JobOutcome::Cancelled;
+                }
+                // kw is a bash wrapper: a process-group SIGTERM/SIGKILL often
+                // surfaces as a plain exit of 128+signum (143 / 137) rather than
+                // WIFSIGNALED. After a cancel request those are still cancels.
+                match status.code() {
+                    Some(143 | 137) => JobOutcome::Cancelled,
+                    _ => JobOutcome::Exited(status),
+                }
+            }
+            Err(error) => JobOutcome::WaitFailed(error),
+        }
     }
 }
 
-/// Maps a reap result observed after a cancel request. A signal-terminated
-/// process means our SIGTERM/SIGKILL landed — the job was really cancelled.
-/// A plain exit means the process finished on its own before the signal:
-/// report the real outcome, because a cancel must not mask a failure the
-/// build history (and deploy-alone readiness) needs to see.
-///
-/// Known, accepted edges: a process that *traps* our SIGTERM and exits 0
-/// counts as success for a standalone build (kw is bash, so this is
-/// possible in principle). BuildThenDeploy does not chain that exit into
-/// deploy — see [`outcome_after_building_cancel`]. An external signal
-/// racing a cancel (e.g. the OOM killer) reads as Cancelled. Those cases
-/// are indistinguishable from the honest ones without comparing who
-/// signaled first, and both favor showing the user real output over
-/// inventing failures.
-fn outcome_after_cancel(result: Result<ExitStatus, ProcessError>) -> JobOutcome {
-    use std::os::unix::process::ExitStatusExt;
+struct KwGitService;
 
-    match result {
-        Ok(status) => {
-            if status.signal().is_some() {
-                return JobOutcome::Cancelled;
+impl KwGitService {
+    /// Fails unless the tree's git state verifies clean. Untracked files
+    /// don't count: kernel trees accumulate local scratch files, and only
+    /// tracked changes can corrupt the branch a job builds. A probe that
+    /// itself fails — git missing, not a repository — fails too.
+    fn check_worktree_clean(shell: &dyn ShellTrait, tree_path: &str) -> Result<(), TreeGitError> {
+        let cmd = ShellCommand::new("git").args([
+            "-C",
+            tree_path,
+            "status",
+            "--porcelain",
+            "--untracked-files=no",
+        ]);
+        let output = shell
+            .execute(&cmd)
+            .map_err(|error| TreeGitError::Probe(error.to_string()))?;
+        if !output.success {
+            return Err(TreeGitError::Probe(
+                String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            ));
+        }
+        if !output.stdout.is_empty() {
+            return Err(TreeGitError::DirtyWorktree);
+        }
+        Ok(())
+    }
+
+    /// Switches the tree onto `branch`. A failure carries git's stderr, which
+    /// names the usual causes (no such branch, a rebase or merge in
+    /// progress). The `--` keeps a branch named like a flag from being parsed
+    /// as one.
+    fn switch_to_branch(
+        shell: &dyn ShellTrait,
+        tree_path: &str,
+        branch: &str,
+    ) -> Result<(), TreeGitError> {
+        let cmd = ShellCommand::new("git").args(["-C", tree_path, "switch", "--", branch]);
+        let output = shell
+            .execute(&cmd)
+            .map_err(|error| TreeGitError::Switch(error.to_string()))?;
+        if !output.success {
+            return Err(TreeGitError::Switch(
+                String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// The tree's current branch, probed via git. An unresolvable HEAD
+    /// (not a git repo, or a detached HEAD, for which `branch
+    /// --show-current` prints nothing) yields an empty string: no build
+    /// record can match it, so deploy-alone readiness refuses — the safe
+    /// direction for an unknown HEAD.
+    fn probe_head_branch(shell: &dyn ShellTrait, tree_path: &str) -> String {
+        let cmd = ShellCommand::new("git").args(["-C", tree_path, "branch", "--show-current"]);
+        match shell.execute(&cmd) {
+            Ok(output) if output.success => {
+                String::from_utf8_lossy(&output.stdout).trim().to_string()
             }
-            // kw is a bash wrapper: a process-group SIGTERM/SIGKILL often
-            // surfaces as a plain exit of 128+signum (143 / 137) rather than
-            // WIFSIGNALED. After a cancel request those are still cancels.
-            match status.code() {
-                Some(143 | 137) => JobOutcome::Cancelled,
-                _ => JobOutcome::Exited(status),
+            Ok(output) => {
+                tracing::warn!(
+                    tree = tree_path,
+                    stderr = %String::from_utf8_lossy(&output.stderr),
+                    "failed to probe the kernel tree's HEAD branch"
+                );
+                String::new()
+            }
+            Err(error) => {
+                tracing::warn!(tree = tree_path, %error, "failed to probe the kernel tree's HEAD branch");
+                String::new()
             }
         }
-        Err(error) => JobOutcome::WaitFailed(error),
     }
 }
 
