@@ -1,14 +1,7 @@
 use std::ops::ControlFlow;
 
 use crate::{
-    app::{
-        flows::{
-            bookmarked::handle_bookmarked_patchsets, latest::handle_latest_patchsets,
-            mail_list::handle_mailing_list_selection,
-        },
-        popup::AppPopup,
-        screens::CurrentScreen,
-    },
+    app::{popup::AppPopup, screens::CurrentScreen},
     input::event::InputEvent,
 };
 
@@ -27,22 +20,18 @@ async fn latest_render_failure_shows_popup_and_stays_on_latest() {
     );
     let mut loading = FakeLoadingIndicator::default();
 
-    let result = handle_mailing_list_selection(
-        &mut harness.app,
-        InputEvent::OpenLatestPatchsets,
-        &mut loading,
-    )
-    .await
-    .unwrap();
+    let result = harness
+        .app
+        .handle_mailing_list_selection(InputEvent::OpenLatestPatchsets, &mut loading)
+        .await
+        .unwrap();
     assert_eq!(ControlFlow::Continue(()), result);
 
-    handle_latest_patchsets(
-        &mut harness.app,
-        InputEvent::OpenPatchsetDetails,
-        &mut loading,
-    )
-    .await
-    .unwrap();
+    harness
+        .app
+        .handle_latest_patchsets(InputEvent::OpenPatchsetDetails, &mut loading)
+        .await
+        .unwrap();
 
     assert_eq!(
         CurrentScreen::LatestPatchsets,
@@ -67,22 +56,18 @@ async fn bookmarked_lore_failure_shows_popup_and_stays_on_bookmarks() {
     );
     let mut loading = FakeLoadingIndicator::default();
 
-    let result = handle_mailing_list_selection(
-        &mut harness.app,
-        InputEvent::OpenBookmarkedPatchsets,
-        &mut loading,
-    )
-    .await
-    .unwrap();
+    let result = harness
+        .app
+        .handle_mailing_list_selection(InputEvent::OpenBookmarkedPatchsets, &mut loading)
+        .await
+        .unwrap();
     assert_eq!(ControlFlow::Continue(()), result);
 
-    handle_bookmarked_patchsets(
-        &mut harness.app,
-        InputEvent::OpenPatchsetDetails,
-        &mut loading,
-    )
-    .await
-    .unwrap();
+    harness
+        .app
+        .handle_bookmarked_patchsets(InputEvent::OpenPatchsetDetails, &mut loading)
+        .await
+        .unwrap();
 
     assert_eq!(
         CurrentScreen::BookmarkedPatchsets,

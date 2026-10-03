@@ -6,80 +6,81 @@ use crate::{
     input::event::InputEvent,
 };
 
-pub async fn handle_edit_config(app: &mut App, input: InputEvent) -> Result<()> {
-    let Some(is_editing) = app
-        .state
-        .config_state
-        .edit_config
-        .as_ref()
-        .map(|edit_config_state| edit_config_state.is_editing())
-    else {
-        return Ok(());
-    };
+impl App {
+    pub async fn handle_edit_config(&mut self, input: InputEvent) -> Result<()> {
+        let Some(is_editing) = self
+            .state
+            .config_state
+            .edit_config
+            .as_ref()
+            .map(|edit_config_state| edit_config_state.is_editing())
+        else {
+            return Ok(());
+        };
 
-    match is_editing {
-        true => {
-            if let Some(edit_config_state) = app.state.config_state.edit_config.as_mut() {
-                match input {
-                    InputEvent::CancelConfigEdit => {
-                        edit_config_state.clear_edit();
-                        edit_config_state.toggle_editing();
+        match is_editing {
+            true => {
+                if let Some(edit_config_state) = self.state.config_state.edit_config.as_mut() {
+                    match input {
+                        InputEvent::CancelConfigEdit => {
+                            edit_config_state.clear_edit();
+                            edit_config_state.toggle_editing();
+                        }
+                        InputEvent::Backspace => {
+                            edit_config_state.backspace_edit();
+                        }
+                        InputEvent::TextInput(ch) => {
+                            edit_config_state.append_edit(ch);
+                        }
+                        InputEvent::StageConfigEdit => {
+                            edit_config_state.stage_edit();
+                            edit_config_state.clear_edit();
+                            edit_config_state.toggle_editing();
+                        }
+                        InputEvent::NavigateLeft => {
+                            edit_config_state.cycle_edit(false);
+                        }
+                        InputEvent::NavigateRight => {
+                            edit_config_state.cycle_edit(true);
+                        }
+                        _ => {}
                     }
-                    InputEvent::Backspace => {
-                        edit_config_state.backspace_edit();
-                    }
-                    InputEvent::TextInput(ch) => {
-                        edit_config_state.append_edit(ch);
-                    }
-                    InputEvent::StageConfigEdit => {
-                        edit_config_state.stage_edit();
-                        edit_config_state.clear_edit();
-                        edit_config_state.toggle_editing();
-                    }
-                    InputEvent::NavigateLeft => {
-                        edit_config_state.cycle_edit(false);
-                    }
-                    InputEvent::NavigateRight => {
-                        edit_config_state.cycle_edit(true);
-                    }
-                    _ => {}
                 }
             }
+            false => match input {
+                InputEvent::OpenHelp => {
+                    let popup = Self::build_edit_config_help_popup();
+                    self.state.popup = Some(popup);
+                }
+                InputEvent::SaveConfig => {
+                    debug!("saving edited configuration");
+                    self.consolidate_edit_config().await?;
+                    self.reset_edit_config();
+                    self.set_current_screen(CurrentScreen::MailingListSelection);
+                }
+                InputEvent::EditConfigField => {
+                    if let Some(edit_config_state) = self.state.config_state.edit_config.as_mut() {
+                        edit_config_state.toggle_editing();
+                    }
+                }
+                InputEvent::NavigateDown => {
+                    if let Some(edit_config_state) = self.state.config_state.edit_config.as_mut() {
+                        edit_config_state.highlight_next();
+                    }
+                }
+                InputEvent::NavigateUp => {
+                    if let Some(edit_config_state) = self.state.config_state.edit_config.as_mut() {
+                        edit_config_state.highlight_prev();
+                    }
+                }
+                _ => {}
+            },
         }
-        false => match input {
-            InputEvent::OpenHelp => {
-                let popup = generate_help_popup();
-                app.state.popup = Some(popup);
-            }
-            InputEvent::SaveConfig => {
-                debug!("saving edited configuration");
-                app.consolidate_edit_config().await?;
-                app.reset_edit_config();
-                app.set_current_screen(CurrentScreen::MailingListSelection);
-            }
-            InputEvent::EditConfigField => {
-                if let Some(edit_config_state) = app.state.config_state.edit_config.as_mut() {
-                    edit_config_state.toggle_editing();
-                }
-            }
-            InputEvent::NavigateDown => {
-                if let Some(edit_config_state) = app.state.config_state.edit_config.as_mut() {
-                    edit_config_state.highlight_next();
-                }
-            }
-            InputEvent::NavigateUp => {
-                if let Some(edit_config_state) = app.state.config_state.edit_config.as_mut() {
-                    edit_config_state.highlight_prev();
-                }
-            }
-            _ => {}
-        },
+        Ok(())
     }
-    Ok(())
-}
 
-pub fn generate_help_popup() -> AppPopup {
-    AppPopup::help()
+    pub fn build_edit_config_help_popup() -> AppPopup {
+        AppPopup::help()
         .title("Edit Config")
         .description("This screen allows you to edit the configuration options for patch-hub.\nKernel trees are added by editing the config file; this screen selects among existing keys.")
         .keybind("ESC / q", "Save and exit")
@@ -89,6 +90,7 @@ pub fn generate_help_popup() -> AppPopup {
         .keybind("k/🡅", "Up")
         .keybind("←/→", "Cycle the target kernel tree while editing that row")
         .build()
+    }
 }
 
 #[cfg(test)]
@@ -230,7 +232,7 @@ mod tests {
             description,
             formatted_keybinds,
             ..
-        } = generate_help_popup()
+        } = App::build_edit_config_help_popup()
         else {
             panic!("expected help popup");
         };
@@ -249,20 +251,20 @@ mod tests {
         app.init_edit_config();
 
         for _ in 0..11 {
-            handle_edit_config(&mut app, InputEvent::NavigateDown)
+            app.handle_edit_config(InputEvent::NavigateDown)
                 .await
                 .unwrap();
         }
-        handle_edit_config(&mut app, InputEvent::EditConfigField)
+        app.handle_edit_config(InputEvent::EditConfigField)
             .await
             .unwrap();
-        handle_edit_config(&mut app, InputEvent::NavigateRight)
+        app.handle_edit_config(InputEvent::NavigateRight)
             .await
             .unwrap();
-        handle_edit_config(&mut app, InputEvent::StageConfigEdit)
+        app.handle_edit_config(InputEvent::StageConfigEdit)
             .await
             .unwrap();
-        handle_edit_config(&mut app, InputEvent::SaveConfig)
+        app.handle_edit_config(InputEvent::SaveConfig)
             .await
             .unwrap();
 
@@ -291,7 +293,7 @@ mod tests {
         );
         app.init_edit_config();
 
-        handle_edit_config(&mut app, InputEvent::SaveConfig)
+        app.handle_edit_config(InputEvent::SaveConfig)
             .await
             .unwrap();
 

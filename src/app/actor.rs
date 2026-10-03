@@ -16,18 +16,6 @@ use tokio::{spawn, sync::mpsc, sync::watch, time::MissedTickBehavior};
 
 use crate::{
     app::{
-        flows::{
-            bookmarked::handle_bookmarked_patchsets,
-            details_actions::handle_patchset_details,
-            edit_config::handle_edit_config,
-            kw_ops::{
-                apply_kw_snapshot, apply_kw_snapshot_refreshing_readiness, clear_pending_deploy,
-                fallback_kw_status, handle_kw_ops, poll_kw_status, refresh_kw_ops_log_tail,
-                resume_pending_deploy,
-            },
-            latest::handle_latest_patchsets,
-            mail_list::handle_mailing_list_selection,
-        },
         handle::AppHandle,
         loading::{terminal_error, TerminalLoadingIndicator},
         popup::{AppPopup, ConfirmAction},
@@ -145,10 +133,10 @@ impl AppActor {
                 watch_event = kw_status_changed(&mut kw_status_rx) => {
                     match watch_event {
                         KwWatchEvent::Updated(snapshot) => {
-                            apply_kw_snapshot_refreshing_readiness(&mut self.app, snapshot).await;
+                            self.app.apply_kw_snapshot_refreshing_readiness(snapshot).await;
                             if self.app.state.navigation.current_screen == CurrentScreen::KwOps
                             {
-                                refresh_kw_ops_log_tail(&mut self.app).await;
+                                self.app.refresh_kw_ops_log_tail().await;
                             }
                         }
                         KwWatchEvent::Closed => {
@@ -156,7 +144,7 @@ impl AppActor {
                                 "kw status watch closed; falling back to keyboard-only redraws"
                             );
                             kw_status_rx = None;
-                            fallback_kw_status(&mut self.app).await;
+                            self.app.fallback_kw_status().await;
                         }
                     }
                     redraw = true;
@@ -164,10 +152,10 @@ impl AppActor {
                 _ = log_interval.tick(), if tail_while_running || poll_status => {
                     let mut changed = false;
                     if poll_status {
-                        changed |= poll_kw_status(&mut self.app).await;
+                        changed |= self.app.poll_kw_status().await;
                     }
                     if tail_while_running {
-                        changed |= refresh_kw_ops_log_tail(&mut self.app).await;
+                        changed |= self.app.refresh_kw_ops_log_tail().await;
                     }
                     redraw = changed;
                 }
@@ -187,7 +175,7 @@ impl AppActor {
         let kw = self.app.services.kw.clone()?;
         match kw.watch_status().await {
             Ok(mut rx) => {
-                apply_kw_snapshot(&mut self.app, rx.borrow_and_update().clone());
+                self.app.apply_kw_snapshot(rx.borrow_and_update().clone());
                 Some(rx)
             }
             Err(error) => {
@@ -195,7 +183,7 @@ impl AppActor {
                     %error,
                     "failed to subscribe to kw status; keyboard-only redraws"
                 );
-                fallback_kw_status(&mut self.app).await;
+                self.app.fallback_kw_status().await;
                 None
             }
         }
@@ -270,25 +258,25 @@ async fn on_input(
         tracing::debug!(screen = ?app.state.navigation.current_screen, "dispatching input to screen handler");
         match app.state.navigation.current_screen {
             CurrentScreen::MailingListSelection => {
-                match handle_mailing_list_selection(app, input, loading).await? {
+                match app.handle_mailing_list_selection(input, loading).await? {
                     ControlFlow::Continue(()) => {}
                     ControlFlow::Break(()) => return Ok(ControlFlow::Break(())),
                 }
             }
             CurrentScreen::BookmarkedPatchsets => {
-                handle_bookmarked_patchsets(app, input, loading).await?;
+                app.handle_bookmarked_patchsets(input, loading).await?;
             }
             CurrentScreen::PatchsetDetails => {
-                handle_patchset_details(app, input, terminal_handle).await?;
+                app.handle_patchset_details(input, terminal_handle).await?;
             }
             CurrentScreen::EditConfig => {
-                handle_edit_config(app, input).await?;
+                app.handle_edit_config(input).await?;
             }
             CurrentScreen::LatestPatchsets => {
-                handle_latest_patchsets(app, input, loading).await?;
+                app.handle_latest_patchsets(input, loading).await?;
             }
             CurrentScreen::KwOps => {
-                handle_kw_ops(app, input).await?;
+                app.handle_kw_ops(input).await?;
             }
         }
     }
@@ -304,7 +292,7 @@ fn is_boot_once_confirm(popup: &AppPopup) -> bool {
 
 fn dismiss_open_popup(app: &mut App) {
     if app.state.popup.as_ref().is_some_and(is_boot_once_confirm) {
-        clear_pending_deploy(app);
+        app.clear_pending_deploy();
     }
     app.state.popup = None;
 }
@@ -315,11 +303,11 @@ async fn apply_confirm_action(app: &mut App, action: ConfirmAction) -> Result<Co
         ConfirmAction::CancelKwAndQuit => Ok(cancel_kw_and_quit(app).await),
         ConfirmAction::Wait => Ok(ControlFlow::Continue(())),
         ConfirmAction::ProceedWithBootOnce => {
-            resume_pending_deploy(app).await?;
+            app.resume_pending_deploy().await?;
             Ok(ControlFlow::Continue(()))
         }
         ConfirmAction::BackOut => {
-            clear_pending_deploy(app);
+            app.clear_pending_deploy();
             Ok(ControlFlow::Continue(()))
         }
     }

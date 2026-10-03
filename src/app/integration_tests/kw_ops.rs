@@ -1,6 +1,5 @@
 use crate::{
     app::{
-        flows::details_actions::handle_patchset_details,
         popup::AppPopup,
         screens::{details_actions::PatchsetDetailsState, CurrentScreen},
     },
@@ -19,13 +18,11 @@ async fn open_kw_ops_without_actor_stays_on_details() {
     harness.app.state.navigation.current_screen = CurrentScreen::PatchsetDetails;
     harness.app.state.lore.details = Some(details_state());
 
-    handle_patchset_details(
-        &mut harness.app,
-        InputEvent::OpenKwOps,
-        &dummy_terminal_handle(),
-    )
-    .await
-    .unwrap();
+    harness
+        .app
+        .handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
+        .await
+        .unwrap();
 
     assert_eq!(
         CurrentScreen::PatchsetDetails,
@@ -71,15 +68,7 @@ mod unix {
     };
 
     use crate::{
-        app::{
-            actor::AppActor,
-            flows::{
-                details_actions::handle_patchset_details,
-                kw_ops::{fallback_kw_status, handle_kw_ops, refresh_kw_ops_log_tail},
-            },
-            screens::CurrentScreen,
-            App,
-        },
+        app::{actor::AppActor, screens::CurrentScreen, App},
         config::{ConfigSnapshot, ConfigState},
         infrastructure::{
             env::MockEnvTrait,
@@ -121,7 +110,7 @@ mod unix {
         let log_dir = kw_log_dir("open-head");
         let mut app = app_with_details_and_kw(&log_dir, head_branch_shell("feature"));
 
-        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+        app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
             .unwrap();
 
@@ -139,7 +128,7 @@ mod unix {
     async fn start_rejects_empty_branch() {
         let log_dir = kw_log_dir("empty-branch");
         let mut app = app_with_details_and_kw(&log_dir, head_branch_shell(""));
-        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+        app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
             .unwrap();
         assert!(app
@@ -149,9 +138,7 @@ mod unix {
             .as_ref()
             .is_some_and(|ops| ops.branch.is_empty()));
 
-        handle_kw_ops(&mut app, InputEvent::StartKwBuild)
-            .await
-            .unwrap();
+        app.handle_kw_ops(InputEvent::StartKwBuild).await.unwrap();
         assert_info_popup(
             app.state.popup.as_ref(),
             "Cannot start build",
@@ -172,13 +159,11 @@ mod unix {
             process.clone(),
             Arc::new(MockFileSystemTrait::new()),
         );
-        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+        app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
             .unwrap();
 
-        handle_kw_ops(&mut app, InputEvent::StartKwBuild)
-            .await
-            .unwrap();
+        app.handle_kw_ops(InputEvent::StartKwBuild).await.unwrap();
         assert!(app.state.popup.is_none());
         let spawned = process.spawned();
         assert_eq!(1, spawned.len());
@@ -192,9 +177,7 @@ mod unix {
             Some(KwJobStatus::Running { .. })
         ));
 
-        handle_kw_ops(&mut app, InputEvent::CancelKwJob)
-            .await
-            .unwrap();
+        app.handle_kw_ops(InputEvent::CancelKwJob).await.unwrap();
         assert!(app
             .state
             .kw
@@ -217,13 +200,11 @@ mod unix {
             process.clone(),
             Arc::new(MockFileSystemTrait::new()),
         );
-        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+        app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
             .unwrap();
 
-        handle_kw_ops(&mut app, InputEvent::StartKwBuild)
-            .await
-            .unwrap();
+        app.handle_kw_ops(InputEvent::StartKwBuild).await.unwrap();
         assert!(app.state.popup.is_none());
         assert!(matches!(
             app.state.kw.status.as_ref().map(|s| &s.job),
@@ -236,9 +217,7 @@ mod unix {
             .as_ref()
             .is_some_and(|ops| ops.start_requested));
 
-        handle_kw_ops(&mut app, InputEvent::StartKwBuild)
-            .await
-            .unwrap();
+        app.handle_kw_ops(InputEvent::StartKwBuild).await.unwrap();
         assert!(app.state.popup.is_none());
         assert_eq!(1, process.spawned().len());
 
@@ -257,15 +236,13 @@ mod unix {
             process.clone(),
             Arc::new(MockFileSystemTrait::new()),
         );
-        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+        app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
             .unwrap();
-        handle_kw_ops(&mut app, InputEvent::StartKwBuild)
-            .await
-            .unwrap();
+        app.handle_kw_ops(InputEvent::StartKwBuild).await.unwrap();
         app.state.kw.status = None;
 
-        fallback_kw_status(&mut app).await;
+        app.fallback_kw_status().await;
         assert!(matches!(
             app.state.kw.status.as_ref().map(|s| &s.job),
             Some(KwJobStatus::Running { .. })
@@ -289,7 +266,7 @@ mod unix {
             Arc::new(FakeProcess::new()),
             Arc::new(fs),
         );
-        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+        app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
             .unwrap();
         app.state.kw.status = Some(KwStatusSnapshot {
@@ -303,7 +280,7 @@ mod unix {
             restore_branch: None,
         });
 
-        refresh_kw_ops_log_tail(&mut app).await;
+        app.refresh_kw_ops_log_tail().await;
         assert!(app
             .state
             .kw
@@ -319,13 +296,13 @@ mod unix {
     async fn reenter_keeps_typed_extras() {
         let log_dir = kw_log_dir("reenter-extras");
         let mut app = app_with_details_and_kw(&log_dir, head_branch_shell("feature"));
-        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+        app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
             .unwrap();
         app.state.kw.ops.as_mut().unwrap().extra_args = "--verbose".to_string();
 
-        handle_kw_ops(&mut app, InputEvent::Back).await.unwrap();
-        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+        app.handle_kw_ops(InputEvent::Back).await.unwrap();
+        app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
             .unwrap();
 
@@ -340,10 +317,10 @@ mod unix {
     async fn back_returns_to_details() {
         let log_dir = kw_log_dir("back");
         let mut app = app_with_details_and_kw(&log_dir, head_branch_shell("feature"));
-        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+        app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
             .unwrap();
-        handle_kw_ops(&mut app, InputEvent::Back).await.unwrap();
+        app.handle_kw_ops(InputEvent::Back).await.unwrap();
         assert_eq!(
             CurrentScreen::PatchsetDetails,
             app.state.navigation.current_screen
@@ -365,7 +342,7 @@ mod unix {
             deploy_kw_fs(true),
             default_kw_history(),
         );
-        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+        app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
             .unwrap();
 
@@ -392,13 +369,11 @@ mod unix {
             deploy_kw_fs(false),
             feature_build_history(Some(matching_feature_build_record())),
         );
-        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+        app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
             .unwrap();
 
-        handle_kw_ops(&mut app, InputEvent::StartKwDeploy)
-            .await
-            .unwrap();
+        app.handle_kw_ops(InputEvent::StartKwDeploy).await.unwrap();
 
         let Some(AppPopup::Confirm { title, .. }) = app.state.popup.as_ref() else {
             panic!("expected boot-once confirm popup");
@@ -426,13 +401,11 @@ mod unix {
             deploy_kw_fs(true),
             default_kw_history(),
         );
-        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+        app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
             .unwrap();
 
-        handle_kw_ops(&mut app, InputEvent::StartKwDeploy)
-            .await
-            .unwrap();
+        app.handle_kw_ops(InputEvent::StartKwDeploy).await.unwrap();
         assert_info_popup(
             app.state.popup.as_ref(),
             "Cannot start deploy",
@@ -456,13 +429,11 @@ mod unix {
             deploy_kw_fs(true),
             feature_build_history(Some(matching_feature_build_record())),
         );
-        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+        app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
             .unwrap();
 
-        handle_kw_ops(&mut app, InputEvent::StartKwDeploy)
-            .await
-            .unwrap();
+        app.handle_kw_ops(InputEvent::StartKwDeploy).await.unwrap();
         assert!(app.state.popup.is_none());
         let spawned = process.spawned();
         assert_eq!(1, spawned.len());
@@ -503,11 +474,11 @@ mod unix {
             deploy_kw_fs(true),
             default_kw_history(),
         );
-        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+        app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
             .unwrap();
 
-        handle_kw_ops(&mut app, InputEvent::StartKwBuildThenDeploy)
+        app.handle_kw_ops(InputEvent::StartKwBuildThenDeploy)
             .await
             .unwrap();
         assert!(app.state.popup.is_none());
@@ -560,7 +531,7 @@ mod unix {
             deploy_kw_fs(true),
             history,
         );
-        handle_patchset_details(&mut app, InputEvent::OpenKwOps, &dummy_terminal_handle())
+        app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
             .unwrap();
         assert!(matches!(
@@ -568,13 +539,9 @@ mod unix {
             Err(DeployAloneRefusal::NoBuildRecord)
         ));
 
-        handle_kw_ops(&mut app, InputEvent::EditKwOpsField)
-            .await
-            .unwrap();
+        app.handle_kw_ops(InputEvent::EditKwOpsField).await.unwrap();
         app.state.kw.ops.as_mut().unwrap().edit_buffer = "built".to_string();
-        handle_kw_ops(&mut app, InputEvent::StageKwOpsEdit)
-            .await
-            .unwrap();
+        app.handle_kw_ops(InputEvent::StageKwOpsEdit).await.unwrap();
 
         let ops = app.state.kw.ops.as_ref().unwrap();
         assert_eq!("built", ops.branch);
