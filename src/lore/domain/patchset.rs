@@ -40,11 +40,6 @@ impl PatchFeedIndex {
         &self.representative_patch_ids
     }
 
-    #[cfg(test)]
-    pub fn get_patch(&self, id: &str) -> Option<&Patch> {
-        self.patches_by_id.get(id)
-    }
-
     /// Process a page of [`PatchFeed`] entries, deduplicating and tracking
     /// which patches are "representative" (series cover or standalone patch).
     pub fn process_feed_page(&mut self, feed: PatchFeed) {
@@ -157,7 +152,7 @@ mod tests {
         assert_eq!(1, idx.representative_patch_ids().len());
         let id = &idx.representative_patch_ids()[0];
         assert!(id.contains("1234.567-1-john@johnson.com"));
-        let patch = idx.get_patch(id).unwrap();
+        let patch = idx.patches_by_id.get(id).unwrap();
         assert_eq!("some/subsystem: Do this and that", patch.title());
         assert_eq!(1, patch.version());
     }

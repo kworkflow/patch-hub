@@ -90,11 +90,6 @@ impl ConfigState {
         }
     }
 
-    #[cfg(test)]
-    pub fn page_size(&self) -> usize {
-        self.page_size
-    }
-
     fn set_page_size(&mut self, page_size: usize) {
         self.page_size = page_size;
     }

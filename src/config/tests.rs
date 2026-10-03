@@ -396,7 +396,7 @@ fn deserialize_config_state_with_missing_field() {
 
     let state: ConfigState = serde_json::from_value(json_data).unwrap();
 
-    assert_eq!(state.page_size(), 30);
+    assert_eq!(state.page_size, 30);
     assert_eq!(state.max_log_age(), 500);
     // Missing fields fall back to the compiled-in defaults; in particular the
     // kw-integration apply toggle defaults to staying on the applied branch.
