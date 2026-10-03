@@ -38,7 +38,7 @@ pub enum KwJobStatus {
         branch: String,
         log_path: PathBuf,
         /// Known deploy failures kw exited 0 through (see
-        /// [`crate::kw::log_scan::deploy_warnings`]). Always empty for a
+        /// [`crate::kw::log_scan::LogScanService::deploy_warnings`]). Always empty for a
         /// build-only job.
         warnings: Vec<String>,
     },

@@ -105,188 +105,195 @@ const DEPLOY_RESERVED: &[ReservedOption] = &[
     ReservedOption::new(&["--from-sha"], true),
 ];
 
-/// The argv for a build job: `kw build <extras>` (reserved extras stripped).
-pub fn build_argv(extra_args: &[String]) -> Vec<String> {
-    merge_extra_args(&["build"], BUILD_RESERVED, extra_args)
-}
+pub struct KwArgvService;
 
-/// The argv for a deploy job: `kw deploy --remote <endpoint>
-/// --no-reboot|--reboot [--force] <extras>`. Reserved extras are
-/// stripped so the injected remote, reboot, and force flags win, and
-/// so build-only extras (shared KwOps field) cannot fail kw deploy's
-/// getopt. `--force` is omitted entirely when `force` is false rather
-/// than passing a no-op, because kw has no `--no-force`.
-pub fn deploy_argv(
-    endpoint: &str,
-    reboot: bool,
-    force: bool,
-    extra_args: &[String],
-) -> Vec<String> {
-    let mut base = vec![
-        "deploy",
-        "--remote",
-        endpoint,
-        if reboot { "--reboot" } else { "--no-reboot" },
-    ];
-    if force {
-        base.push("--force");
+impl KwArgvService {
+    /// The argv for a build job: `kw build <extras>` (reserved extras stripped).
+    pub fn build_argv(extra_args: &[String]) -> Vec<String> {
+        Self::merge_extra_args(&["build"], BUILD_RESERVED, extra_args)
     }
-    merge_extra_args(&base, DEPLOY_RESERVED, extra_args)
-}
 
-/// Appends user-supplied extra args to `base`, stripping every token that
-/// would override a reserved option. GNU getopt forms are stripped too:
-/// `--name=value`, `--name value`, unique long abbreviations, bundled
-/// shorts (`-rf`), and attached short values (`-Fpkg.kw.tar`). A mixed
-/// short cluster that contains any reserved flag is dropped whole, so
-/// `-uVALUE` cannot be rewritten into a leftover `-VALUE`. All other
-/// extras pass through in order.
-pub fn merge_extra_args(
-    base: &[&str],
-    reserved: &[ReservedOption],
-    extra_args: &[String],
-) -> Vec<String> {
-    let mut argv: Vec<String> = base.iter().map(|arg| arg.to_string()).collect();
-    let mut extras = extra_args.iter();
-    while let Some(token) = extras.next() {
-        match reserved_option_for(reserved, token) {
-            Some(option) => {
-                if option.takes_value && !value_is_attached(token, option) {
-                    // `--name value` / `-F value`: the separate value token goes too.
-                    extras.next();
-                }
-            }
-            None => argv.push(token.clone()),
+    /// The argv for a deploy job: `kw deploy --remote <endpoint>
+    /// --no-reboot|--reboot [--force] <extras>`. Reserved extras are
+    /// stripped so the injected remote, reboot, and force flags win, and
+    /// so build-only extras (shared KwOps field) cannot fail kw deploy's
+    /// getopt. `--force` is omitted entirely when `force` is false rather
+    /// than passing a no-op, because kw has no `--no-force`.
+    pub fn deploy_argv(
+        endpoint: &str,
+        reboot: bool,
+        force: bool,
+        extra_args: &[String],
+    ) -> Vec<String> {
+        let mut base = vec![
+            "deploy",
+            "--remote",
+            endpoint,
+            if reboot { "--reboot" } else { "--no-reboot" },
+        ];
+        if force {
+            base.push("--force");
         }
+        Self::merge_extra_args(&base, DEPLOY_RESERVED, extra_args)
     }
-    argv
-}
 
-/// Finds the reserved option a token sets, if any: an exact spelling,
-/// `--name=value` for a long spelling, a unique GNU getopt abbreviation
-/// of a `match_abbrev` long, a bundled reserved short, or an attached
-/// short value. The `=` boundary keeps `--alertness` from matching
-/// `--alert`; an abbreviation must be a prefix of the reserved spelling,
-/// not the other way around.
-fn reserved_option_for<'a>(
-    reserved: &'a [ReservedOption],
-    token: &str,
-) -> Option<&'a ReservedOption> {
-    if token.starts_with("--") {
-        return reserved_long_option(reserved, token);
+    /// Appends user-supplied extra args to `base`, stripping every token that
+    /// would override a reserved option. GNU getopt forms are stripped too:
+    /// `--name=value`, `--name value`, unique long abbreviations, bundled
+    /// shorts (`-rf`), and attached short values (`-Fpkg.kw.tar`). A mixed
+    /// short cluster that contains any reserved flag is dropped whole, so
+    /// `-uVALUE` cannot be rewritten into a leftover `-VALUE`. All other
+    /// extras pass through in order.
+    pub fn merge_extra_args(
+        base: &[&str],
+        reserved: &[ReservedOption],
+        extra_args: &[String],
+    ) -> Vec<String> {
+        let mut argv: Vec<String> = base.iter().map(|arg| arg.to_string()).collect();
+        let mut extras = extra_args.iter();
+        while let Some(token) = extras.next() {
+            match Self::find_reserved_option(reserved, token) {
+                Some(option) => {
+                    if option.takes_value && !Self::is_value_attached(token, option) {
+                        // `--name value` / `-F value`: the separate value token goes too.
+                        extras.next();
+                    }
+                }
+                None => argv.push(token.clone()),
+            }
+        }
+        argv
     }
-    reserved_short_cluster(reserved, token)
-}
 
-fn reserved_long_option<'a>(
-    reserved: &'a [ReservedOption],
-    token: &str,
-) -> Option<&'a ReservedOption> {
-    let name = token.split_once('=').map_or(token, |(name, _)| name);
-    reserved
-        .iter()
-        .find(|option| {
-            option
+    /// Finds the reserved option a token sets, if any: an exact spelling,
+    /// `--name=value` for a long spelling, a unique GNU getopt abbreviation
+    /// of a `match_abbrev` long, a bundled reserved short, or an attached
+    /// short value. The `=` boundary keeps `--alertness` from matching
+    /// `--alert`; an abbreviation must be a prefix of the reserved spelling,
+    /// not the other way around.
+    fn find_reserved_option<'a>(
+        reserved: &'a [ReservedOption],
+        token: &str,
+    ) -> Option<&'a ReservedOption> {
+        if token.starts_with("--") {
+            return Self::find_reserved_long_option(reserved, token);
+        }
+        Self::find_reserved_short_cluster(reserved, token)
+    }
+
+    fn find_reserved_long_option<'a>(
+        reserved: &'a [ReservedOption],
+        token: &str,
+    ) -> Option<&'a ReservedOption> {
+        let name = token.split_once('=').map_or(token, |(name, _)| name);
+        reserved
+            .iter()
+            .find(|option| {
+                option
+                    .spellings
+                    .iter()
+                    .any(|spelling| spelling.starts_with("--") && name == *spelling)
+            })
+            .or_else(|| Self::find_unique_long_abbrev(reserved, name))
+    }
+
+    /// GNU getopt unique-prefix match among options that opted into
+    /// `match_abbrev`. Uniqueness is against this reserved table, not kw's
+    /// full option list — a prefix kw would reject as ambiguous can still
+    /// strip here when only one reserved long matches. Ambiguous prefixes
+    /// among reserved longs are left alone so a following value token is
+    /// not eaten.
+    fn find_unique_long_abbrev<'a>(
+        reserved: &'a [ReservedOption],
+        name: &str,
+    ) -> Option<&'a ReservedOption> {
+        if name.len() < 3 || !name.starts_with("--") {
+            return None;
+        }
+        let mut found: Option<&ReservedOption> = None;
+        for option in reserved {
+            if !option.match_abbrev {
+                continue;
+            }
+            let matches = option
                 .spellings
                 .iter()
-                .any(|spelling| spelling.starts_with("--") && name == *spelling)
-        })
-        .or_else(|| unique_long_abbrev(reserved, name))
-}
-
-/// GNU getopt unique-prefix match among options that opted into
-/// `match_abbrev`. Uniqueness is against this reserved table, not kw's
-/// full option list — a prefix kw would reject as ambiguous can still
-/// strip here when only one reserved long matches. Ambiguous prefixes
-/// among reserved longs are left alone so a following value token is
-/// not eaten.
-fn unique_long_abbrev<'a>(
-    reserved: &'a [ReservedOption],
-    name: &str,
-) -> Option<&'a ReservedOption> {
-    if name.len() < 3 || !name.starts_with("--") {
-        return None;
-    }
-    let mut found: Option<&ReservedOption> = None;
-    for option in reserved {
-        if !option.match_abbrev {
-            continue;
-        }
-        let matches = option
-            .spellings
-            .iter()
-            .any(|spelling| spelling.starts_with("--") && spelling.starts_with(name));
-        if !matches {
-            continue;
-        }
-        match found {
-            None => found = Some(option),
-            Some(previous) if std::ptr::eq(previous, option) => {}
-            Some(_) => return None,
-        }
-    }
-    found
-}
-
-/// A short token that contains any reserved flag: `-f`, `-rf`, `-Fpkg`.
-/// Walking leftover letters would turn `-ukernel` into `-kernel`, so a
-/// hit drops the whole token.
-fn reserved_short_cluster<'a>(
-    reserved: &'a [ReservedOption],
-    token: &str,
-) -> Option<&'a ReservedOption> {
-    let body = token.strip_prefix('-')?;
-    if body.is_empty() || body.starts_with('-') {
-        return None;
-    }
-    let chars: Vec<char> = body.chars().collect();
-    let mut i = 0;
-    let mut hit = None;
-    while i < chars.len() {
-        let spelling = format!("-{}", chars[i]);
-        match exact_short(reserved, &spelling) {
-            Some(option) => {
-                hit = Some(option);
-                if option.takes_value {
-                    // Remainder is the attached value; stop so
-                    // `value_is_attached` can see those extra chars.
-                    break;
-                }
-                i += 1;
+                .any(|spelling| spelling.starts_with("--") && spelling.starts_with(name));
+            if !matches {
+                continue;
             }
-            None => i += 1,
+            match found {
+                None => found = Some(option),
+                Some(previous) if std::ptr::eq(previous, option) => {}
+                Some(_) => return None,
+            }
         }
+        found
     }
-    hit
-}
 
-fn exact_short<'a>(reserved: &'a [ReservedOption], spelling: &str) -> Option<&'a ReservedOption> {
-    reserved
-        .iter()
-        .find(|option| option.spellings.contains(&spelling))
-}
-
-fn value_is_attached(token: &str, option: &ReservedOption) -> bool {
-    if token.contains('=') {
-        return true;
-    }
-    if !option.takes_value {
-        return false;
-    }
-    let Some(body) = token
-        .strip_prefix('-')
-        .filter(|body| !body.starts_with('-'))
-    else {
-        return false;
-    };
-    let mut chars = body.chars();
-    while let Some(ch) = chars.next() {
-        let spelling = format!("-{ch}");
-        if option.spellings.iter().any(|s| *s == spelling) {
-            return chars.next().is_some();
+    /// A short token that contains any reserved flag: `-f`, `-rf`, `-Fpkg`.
+    /// Walking leftover letters would turn `-ukernel` into `-kernel`, so a
+    /// hit drops the whole token.
+    fn find_reserved_short_cluster<'a>(
+        reserved: &'a [ReservedOption],
+        token: &str,
+    ) -> Option<&'a ReservedOption> {
+        let body = token.strip_prefix('-')?;
+        if body.is_empty() || body.starts_with('-') {
+            return None;
         }
+        let chars: Vec<char> = body.chars().collect();
+        let mut i = 0;
+        let mut hit = None;
+        while i < chars.len() {
+            let spelling = format!("-{}", chars[i]);
+            match Self::find_exact_short(reserved, &spelling) {
+                Some(option) => {
+                    hit = Some(option);
+                    if option.takes_value {
+                        // Remainder is the attached value; stop so
+                        // `is_value_attached` can see those extra chars.
+                        break;
+                    }
+                    i += 1;
+                }
+                None => i += 1,
+            }
+        }
+        hit
     }
-    false
+
+    fn find_exact_short<'a>(
+        reserved: &'a [ReservedOption],
+        spelling: &str,
+    ) -> Option<&'a ReservedOption> {
+        reserved
+            .iter()
+            .find(|option| option.spellings.contains(&spelling))
+    }
+
+    fn is_value_attached(token: &str, option: &ReservedOption) -> bool {
+        if token.contains('=') {
+            return true;
+        }
+        if !option.takes_value {
+            return false;
+        }
+        let Some(body) = token
+            .strip_prefix('-')
+            .filter(|body| !body.starts_with('-'))
+        else {
+            return false;
+        };
+        let mut chars = body.chars();
+        while let Some(ch) = chars.next() {
+            let spelling = format!("-{ch}");
+            if option.spellings.iter().any(|s| *s == spelling) {
+                return chars.next().is_some();
+            }
+        }
+        false
+    }
 }
 
 #[cfg(test)]
@@ -299,14 +306,14 @@ mod tests {
 
     #[test]
     fn build_argv_without_extras_is_the_base_command() {
-        assert_eq!(vec!["build"], build_argv(&[]));
+        assert_eq!(vec!["build"], KwArgvService::build_argv(&[]));
     }
 
     #[test]
     fn extras_are_appended_in_order() {
         assert_eq!(
             vec!["build", "--verbose", "--ccache", "-j8"],
-            build_argv(&extras(&["--verbose", "--ccache", "-j8"]))
+            KwArgvService::build_argv(&extras(&["--verbose", "--ccache", "-j8"]))
         );
     }
 
@@ -314,12 +321,12 @@ mod tests {
     fn reserved_alert_is_stripped_from_extras() {
         assert_eq!(
             vec!["build", "--verbose"],
-            build_argv(&extras(&["--alert=vv", "--verbose"]))
+            KwArgvService::build_argv(&extras(&["--alert=vv", "--verbose"]))
         );
         // Separate-token value form: the value token is consumed too.
         assert_eq!(
             vec!["build", "--verbose"],
-            build_argv(&extras(&["--alert", "v", "--verbose"]))
+            KwArgvService::build_argv(&extras(&["--alert", "v", "--verbose"]))
         );
     }
 
@@ -327,11 +334,11 @@ mod tests {
     fn save_log_to_is_reserved_in_both_value_forms() {
         assert_eq!(
             vec!["build"],
-            build_argv(&extras(&["--save-log-to=/tmp/x.log"]))
+            KwArgvService::build_argv(&extras(&["--save-log-to=/tmp/x.log"]))
         );
         assert_eq!(
             vec!["build"],
-            build_argv(&extras(&["--save-log-to", "/tmp/x.log"]))
+            KwArgvService::build_argv(&extras(&["--save-log-to", "/tmp/x.log"]))
         );
     }
 
@@ -340,13 +347,16 @@ mod tests {
         // `--alertness` only shares a prefix with `--alert`.
         assert_eq!(
             vec!["build", "--alertness"],
-            build_argv(&extras(&["--alertness"]))
+            KwArgvService::build_argv(&extras(&["--alertness"]))
         );
     }
 
     #[test]
     fn trailing_reserved_option_without_value_is_stripped() {
-        assert_eq!(vec!["build"], build_argv(&extras(&["--alert"])));
+        assert_eq!(
+            vec!["build"],
+            KwArgvService::build_argv(&extras(&["--alert"]))
+        );
     }
 
     #[test]
@@ -355,7 +365,7 @@ mod tests {
         // redirected to a log file — a hang, not a build.
         assert_eq!(
             vec!["build", "--verbose"],
-            build_argv(&extras(&["--menu", "--verbose"]))
+            KwArgvService::build_argv(&extras(&["--menu", "--verbose"]))
         );
     }
 
@@ -363,7 +373,7 @@ mod tests {
     fn tree_mutating_and_hanging_build_flags_are_stripped() {
         assert_eq!(
             vec!["build", "--verbose"],
-            build_argv(&extras(&[
+            KwArgvService::build_argv(&extras(&[
                 "--clean",
                 "--full-cleanup",
                 "--doc",
@@ -373,7 +383,10 @@ mod tests {
                 "--verbose",
             ]))
         );
-        assert_eq!(vec!["build"], build_argv(&extras(&["--from-sha=abc123"])));
+        assert_eq!(
+            vec!["build"],
+            KwArgvService::build_argv(&extras(&["--from-sha=abc123"]))
+        );
     }
 
     #[test]
@@ -382,11 +395,11 @@ mod tests {
         let reserved = [ReservedOption::new(&["--force", "-f"], false)];
         assert_eq!(
             vec!["deploy", "extra"],
-            merge_extra_args(&["deploy"], &reserved, &extras(&["--force", "extra"]))
+            KwArgvService::merge_extra_args(&["deploy"], &reserved, &extras(&["--force", "extra"]))
         );
         assert_eq!(
             vec!["deploy", "extra"],
-            merge_extra_args(&["deploy"], &reserved, &extras(&["-f", "extra"]))
+            KwArgvService::merge_extra_args(&["deploy"], &reserved, &extras(&["-f", "extra"]))
         );
     }
 
@@ -395,7 +408,7 @@ mod tests {
         let reserved = [ReservedOption::new(&["--remote"], true)];
         assert_eq!(
             vec!["deploy", "--no-reboot"],
-            merge_extra_args(
+            KwArgvService::merge_extra_args(
                 &["deploy"],
                 &reserved,
                 &extras(&["--remote", "host:22", "--no-reboot"])
@@ -406,14 +419,14 @@ mod tests {
     const ENDPOINT: &str = "root@lima-ph-dut.internal:22";
 
     fn deploy(extra: &[&str]) -> Vec<String> {
-        deploy_argv(ENDPOINT, false, true, &extras(extra))
+        KwArgvService::deploy_argv(ENDPOINT, false, true, &extras(extra))
     }
 
     #[test]
     fn deploy_argv_without_extras_is_remote_no_reboot_force() {
         assert_eq!(
             vec!["deploy", "--remote", ENDPOINT, "--no-reboot", "--force",],
-            deploy_argv(ENDPOINT, false, true, &[])
+            KwArgvService::deploy_argv(ENDPOINT, false, true, &[])
         );
     }
 
@@ -421,7 +434,7 @@ mod tests {
     fn deploy_argv_reboot_and_unforced_swap_the_injected_flags() {
         assert_eq!(
             vec!["deploy", "--remote", ENDPOINT, "--reboot"],
-            deploy_argv(ENDPOINT, true, false, &[])
+            KwArgvService::deploy_argv(ENDPOINT, true, false, &[])
         );
     }
 
@@ -671,7 +684,7 @@ mod tests {
     fn build_strips_unique_long_abbreviations_of_reserved_flags() {
         assert_eq!(
             vec!["build", "--verbose"],
-            build_argv(&extras(&["--men", "--from", "abc123", "--verbose"]))
+            KwArgvService::build_argv(&extras(&["--men", "--from", "abc123", "--verbose"]))
         );
     }
 
@@ -681,7 +694,7 @@ mod tests {
         // otherwise chain into `kw deploy --help` (exit 22).
         assert_eq!(
             vec!["build", "--verbose"],
-            build_argv(&extras(&["--help", "-h", "--verbose"]))
+            KwArgvService::build_argv(&extras(&["--help", "-h", "--verbose"]))
         );
         assert_eq!(
             vec![

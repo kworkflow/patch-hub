@@ -377,7 +377,7 @@ fn project_kw_ops(state: &AppState) -> KwOpsViewModel {
         },
         command: format!(
             "kw {}",
-            argv::build_argv(&ops.extra_arg_tokens_for_preview()).join(" ")
+            argv::KwArgvService::build_argv(&ops.extra_arg_tokens_for_preview()).join(" ")
         ),
         start_label,
         cancel_label,
@@ -454,7 +454,8 @@ fn format_deploy_command(
     match remote {
         Ok(remote) => format!(
             "kw {}",
-            argv::deploy_argv(&remote.endpoint(), reboot, force, extra_args).join(" ")
+            argv::KwArgvService::deploy_argv(&remote.endpoint(), reboot, force, extra_args)
+                .join(" ")
         ),
         Err(_) => "(no remote)".to_string(),
     }

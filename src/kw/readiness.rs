@@ -545,7 +545,7 @@ impl ReadinessService {
                     Some(trimmed.to_string())
                 }
             },
-            deploy_remote: remote::resolve_deploy_remote(fs, env, tree_path),
+            deploy_remote: remote::RemoteConfigService::resolve_deploy_remote(fs, env, tree_path),
             boot_once: Self::probe_boot_once(fs, env, tree_path),
         })
     }

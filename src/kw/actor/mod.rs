@@ -506,7 +506,8 @@ impl KwActor {
             "build-{}.log",
             chrono::Utc::now().format("%Y%m%d-%H%M%S-%3f")
         ));
-        let cmd = ShellCommand::new("kw").args(argv::build_argv(&request.extra_args));
+        let cmd =
+            ShellCommand::new("kw").args(argv::KwArgvService::build_argv(&request.extra_args));
         let cwd = PathBuf::from(request.tree.path());
         let process = self.process.spawn(&cmd, &cwd, &log_path)?;
         Ok((process, log_path))
@@ -524,7 +525,7 @@ impl KwActor {
             "deploy-{}.log",
             chrono::Utc::now().format("%Y%m%d-%H%M%S-%3f")
         ));
-        let cmd = ShellCommand::new("kw").args(argv::deploy_argv(
+        let cmd = ShellCommand::new("kw").args(argv::KwArgvService::deploy_argv(
             &deploy.remote.endpoint(),
             deploy.options.reboot,
             deploy.options.force,
@@ -573,7 +574,9 @@ impl KwActor {
                                 .as_ref()
                                 .and_then(|deploy| deploy.kernelrelease.as_deref());
                             self.read_job_log(&job.log_path)
-                                .map(|log| log_scan::deploy_warnings(&log, kernelrelease))
+                                .map(|log| {
+                                    log_scan::LogScanService::deploy_warnings(&log, kernelrelease)
+                                })
                                 .unwrap_or_default()
                         } else {
                             Vec::new()
@@ -605,7 +608,7 @@ impl KwActor {
                             exit_code: exit.code(),
                             first_error: self
                                 .read_job_log(&job.log_path)
-                                .and_then(|log| log_scan::first_error(&log)),
+                                .and_then(|log| log_scan::LogScanService::find_first_error(&log)),
                             log_path: job.log_path,
                         }
                     }
@@ -617,7 +620,7 @@ impl KwActor {
                             exit_code: None,
                             first_error: self
                                 .read_job_log(&job.log_path)
-                                .and_then(|log| log_scan::first_error(&log)),
+                                .and_then(|log| log_scan::LogScanService::find_first_error(&log)),
                             log_path: job.log_path,
                         }
                     }
@@ -921,7 +924,7 @@ fn prepare_deploy_blocking(
         force: true,
         boot_once_acknowledged: false,
     });
-    let remote = remote::resolve_deploy_remote(fs, env, tree_path)
+    let remote = remote::RemoteConfigService::resolve_deploy_remote(fs, env, tree_path)
         .map_err(KwStartError::RemoteUnresolved)?;
     let mut kernelrelease = None;
     if kind == KwJobKind::Deploy {
