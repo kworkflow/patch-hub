@@ -225,7 +225,11 @@ impl LoreService {
             match gateway.fetch_patch_feed_page(target_list, offset) {
                 Ok(body) => {
                     let feed = parsers::parse_patch_feed(&body).map_err(LoreError::Parse)?;
-                    let entry = self.cache.feeds.get_mut(target_list).unwrap();
+                    let Some(entry) = self.cache.feeds.get_mut(target_list) else {
+                        return Err(LoreError::Parse(format!(
+                            "feed cache entry missing for {target_list}"
+                        )));
+                    };
                     entry.index.process_feed_page(feed);
                     entry.index.advance_offset();
                 }

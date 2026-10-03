@@ -99,7 +99,9 @@ impl PatchFeedIndex {
 
     fn update_representative_ids(&mut self, new_ids: Vec<String>) {
         for id in new_ids {
-            let patch = self.patches_by_id.get(&id).unwrap();
+            let Some(patch) = self.patches_by_id.get(&id) else {
+                continue;
+            };
             let number_in_series = patch.number_in_series();
 
             if number_in_series > 1 {

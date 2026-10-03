@@ -24,22 +24,24 @@ pub fn parse_available_lists(html: &str) -> Vec<MailingList> {
 
     let pre_blocks: Vec<&str> = RE_PRE_BLOCK
         .captures_iter(html)
-        .map(|cap| cap.get(1).unwrap().as_str())
+        .filter_map(|cap| cap.get(1).map(|m| m.as_str()))
         .collect();
 
     if pre_blocks.len() < 3 {
         return available_lists;
     }
 
-    for capture in RE_LIST_NAME.captures_iter(pre_blocks[2]) {
-        let name = capture.get(1).unwrap().as_str().trim();
-        list_names.push(name);
-    }
+    list_names.extend(
+        RE_LIST_NAME
+            .captures_iter(pre_blocks[2])
+            .filter_map(|capture| capture.get(1).map(|m| m.as_str().trim())),
+    );
 
-    for capture in RE_LIST_DESCRIPTION.captures_iter(pre_blocks[2]) {
-        let description = capture.get(1).unwrap().as_str().trim();
-        list_descriptions.push(description);
-    }
+    list_descriptions.extend(
+        RE_LIST_DESCRIPTION
+            .captures_iter(pre_blocks[2])
+            .filter_map(|capture| capture.get(1).map(|m| m.as_str().trim())),
+    );
 
     for (name, description) in list_names.into_iter().zip(list_descriptions) {
         if name == "all" {
