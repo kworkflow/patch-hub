@@ -8,68 +8,76 @@ use ratatui::{
 
 use crate::{app::view_model::LatestPatchsetsViewModel, ui::scene::LatestScene};
 
-pub fn build_scene(vm: &LatestPatchsetsViewModel) -> LatestScene {
-    LatestScene {
-        rows: vm.rows.clone(),
-        selected_index: vm.selected_index,
-    }
-}
+pub struct LatestPainter;
 
-pub fn paint(f: &mut Frame, scene: &LatestScene, chunk: Rect) {
-    let mut list_items = Vec::<ListItem>::new();
-
-    for row in &scene.rows {
-        let patch_title = format!("{:width$}", row.title, width = 70);
-        let patch_title = format!("{:.width$}", patch_title, width = 70);
-        let patch_author = format!("{:width$}", row.author_name, width = 30);
-        let patch_author = format!("{:.width$}", patch_author, width = 30);
-        list_items.push(ListItem::new(
-            Line::from(Span::styled(
-                format!(
-                    "{:03}. V{:02} | #{:02} | {} | {}",
-                    row.absolute_index, row.version, row.total_in_series, patch_title, patch_author
-                ),
-                Style::default().fg(Color::Yellow),
-            ))
-            .centered(),
-        ));
+impl LatestPainter {
+    pub fn build_scene(vm: &LatestPatchsetsViewModel) -> LatestScene {
+        LatestScene {
+            rows: vm.rows.clone(),
+            selected_index: vm.selected_index,
+        }
     }
 
-    let list_block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Double)
-        .style(Style::default());
+    pub fn paint(f: &mut Frame, scene: &LatestScene, chunk: Rect) {
+        let mut list_items = Vec::<ListItem>::new();
 
-    let list = List::new(list_items)
-        .block(list_block)
-        .highlight_style(
-            Style::default()
-                .add_modifier(Modifier::BOLD)
-                .add_modifier(Modifier::REVERSED)
-                .fg(Color::Cyan),
-        )
-        .highlight_symbol(">")
-        .highlight_spacing(HighlightSpacing::Always);
+        for row in &scene.rows {
+            let patch_title = format!("{:width$}", row.title, width = 70);
+            let patch_title = format!("{:.width$}", patch_title, width = 70);
+            let patch_author = format!("{:width$}", row.author_name, width = 30);
+            let patch_author = format!("{:.width$}", patch_author, width = 30);
+            list_items.push(ListItem::new(
+                Line::from(Span::styled(
+                    format!(
+                        "{:03}. V{:02} | #{:02} | {} | {}",
+                        row.absolute_index,
+                        row.version,
+                        row.total_in_series,
+                        patch_title,
+                        patch_author
+                    ),
+                    Style::default().fg(Color::Yellow),
+                ))
+                .centered(),
+            ));
+        }
 
-    let mut list_state = ListState::default();
-    list_state.select(Some(scene.selected_index));
+        let list_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Double)
+            .style(Style::default());
 
-    f.render_stateful_widget(list, chunk, &mut list_state);
-}
+        let list = List::new(list_items)
+            .block(list_block)
+            .highlight_style(
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .add_modifier(Modifier::REVERSED)
+                    .fg(Color::Cyan),
+            )
+            .highlight_symbol(">")
+            .highlight_spacing(HighlightSpacing::Always);
 
-pub fn mode_spans(vm: &LatestPatchsetsViewModel) -> Vec<Span<'static>> {
-    vec![Span::styled(
-        format!(
-            "Latest Patchsets from {} (page {})",
-            vm.target_list, vm.page_number
-        ),
-        Style::default().fg(Color::Green),
-    )]
-}
+        let mut list_state = ListState::default();
+        list_state.select(Some(scene.selected_index));
 
-pub fn keys_hint_span() -> Span<'static> {
-    Span::styled(
+        f.render_stateful_widget(list, chunk, &mut list_state);
+    }
+
+    pub fn build_mode_spans(vm: &LatestPatchsetsViewModel) -> Vec<Span<'static>> {
+        vec![Span::styled(
+            format!(
+                "Latest Patchsets from {} (page {})",
+                vm.target_list, vm.page_number
+            ),
+            Style::default().fg(Color::Green),
+        )]
+    }
+
+    pub fn build_keys_hint_span() -> Span<'static> {
+        Span::styled(
         "(ESC / q) to return | (ENTER) to select | ( h / 🡄 ) previous page | ( l / 🡆 ) next page | (?) help",
         Style::default().fg(Color::Red),
     )
+    }
 }

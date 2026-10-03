@@ -25,26 +25,31 @@ impl UiCore {
     /// Transform `vm` into a fully projected [`UiScene`] ready for painting.
     pub fn build_scene(&self, vm: &AppViewModel) -> Result<UiScene, UiError> {
         let body = match &vm.screen {
-            ScreenViewModel::MailingListSelection(mls_vm) => {
-                UiBody::MailingListSelection(screens::mailing_list::build_scene(mls_vm))
-            }
+            ScreenViewModel::MailingListSelection(mls_vm) => UiBody::MailingListSelection(
+                screens::mailing_list::MailingListPainter::build_scene(mls_vm),
+            ),
             ScreenViewModel::Bookmarked(b_vm) => {
-                UiBody::Bookmarked(screens::bookmarked::build_scene(b_vm))
+                UiBody::Bookmarked(screens::bookmarked::BookmarkedPainter::build_scene(b_vm))
             }
-            ScreenViewModel::Latest(l_vm) => UiBody::Latest(screens::latest::build_scene(l_vm)),
+            ScreenViewModel::Latest(l_vm) => {
+                UiBody::Latest(screens::latest::LatestPainter::build_scene(l_vm))
+            }
             ScreenViewModel::PatchsetDetails(pd_vm) => {
-                UiBody::PatchsetDetails(screens::details::build_scene(pd_vm))
+                UiBody::PatchsetDetails(screens::details::DetailsPainter::build_scene(pd_vm))
             }
             ScreenViewModel::EditConfig(ec_vm) => {
-                UiBody::EditConfig(screens::edit_config::build_scene(ec_vm))
+                UiBody::EditConfig(screens::edit_config::EditConfigPainter::build_scene(ec_vm))
             }
             ScreenViewModel::KwOps(kw_vm) => {
-                UiBody::KwOps(Box::new(screens::kw_ops::build_scene(kw_vm)))
+                UiBody::KwOps(Box::new(screens::kw_ops::KwOpsPainter::build_scene(kw_vm)))
             }
         };
 
         let navigation = self.build_navigation(&vm.screen, vm.kw_running.as_deref());
-        let popup = vm.popup.as_ref().map(screens::popup::build_scene);
+        let popup = vm
+            .popup
+            .as_ref()
+            .map(screens::popup::PopupPainter::build_scene);
 
         Ok(UiScene {
             body,
@@ -60,28 +65,28 @@ impl UiCore {
     ) -> NavigationBarScene {
         let (mut mode_spans, keys_hint) = match screen {
             ScreenViewModel::MailingListSelection(vm) => (
-                screens::mailing_list::mode_spans(vm),
-                screens::mailing_list::keys_hint_span(),
+                screens::mailing_list::MailingListPainter::build_mode_spans(vm),
+                screens::mailing_list::MailingListPainter::build_keys_hint_span(),
             ),
             ScreenViewModel::Bookmarked(_) => (
-                screens::bookmarked::mode_spans(),
-                screens::bookmarked::keys_hint_span(),
+                screens::bookmarked::BookmarkedPainter::build_mode_spans(),
+                screens::bookmarked::BookmarkedPainter::build_keys_hint_span(),
             ),
             ScreenViewModel::Latest(vm) => (
-                screens::latest::mode_spans(vm),
-                screens::latest::keys_hint_span(),
+                screens::latest::LatestPainter::build_mode_spans(vm),
+                screens::latest::LatestPainter::build_keys_hint_span(),
             ),
             ScreenViewModel::PatchsetDetails(_) => (
-                screens::details::mode_spans(),
-                screens::details::keys_hint_span(),
+                screens::details::DetailsPainter::build_mode_spans(),
+                screens::details::DetailsPainter::build_keys_hint_span(),
             ),
             ScreenViewModel::EditConfig(vm) => (
-                screens::edit_config::mode_spans(vm),
-                screens::edit_config::keys_hint_span(vm),
+                screens::edit_config::EditConfigPainter::build_mode_spans(vm),
+                screens::edit_config::EditConfigPainter::build_keys_hint_span(vm),
             ),
             ScreenViewModel::KwOps(vm) => (
-                screens::kw_ops::mode_spans(),
-                screens::kw_ops::keys_hint_span(vm.editing),
+                screens::kw_ops::KwOpsPainter::build_mode_spans(),
+                screens::kw_ops::KwOpsPainter::build_keys_hint_span(vm.editing),
             ),
         };
         if let Some(indicator) = kw_running {
