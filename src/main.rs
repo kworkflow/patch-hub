@@ -11,7 +11,7 @@ mod render_prefs;
 mod terminal;
 mod ui;
 
-use app::{actor::AppActor, dependencies::check_external_deps, App};
+use app::{actor::AppActor, dependencies::DependencyService, App};
 use clap::Parser;
 use cli::Cli;
 use color_eyre::{eyre::eyre, Result};
@@ -79,7 +79,7 @@ async fn main() -> Result<()> {
         ControlFlow::Continue(()) => {}
     }
 
-    check_external_deps(&env, &OsShell, &config)?;
+    DependencyService::check_external_deps(&env, &OsShell, &config)?;
 
     let config_handle = ConfigActor::spawn(config_state, config_repo);
     let terminal_handle = TerminalActor::spawn(Box::new(CrosstermTerminalSession::new(init()?)));

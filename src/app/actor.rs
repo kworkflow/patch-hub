@@ -11,13 +11,13 @@
 //! actor is spawned.
 use std::{ops::ControlFlow, time::Duration};
 
-use color_eyre::{eyre::eyre, Result};
+use color_eyre::{eyre::eyre, Report, Result};
 use tokio::{spawn, sync::mpsc, sync::watch, time::MissedTickBehavior};
 
 use crate::{
     app::{
         handle::AppHandle,
-        loading::{terminal_error, TerminalLoadingIndicator},
+        loading::TerminalLoadingIndicator,
         popup::{AppPopup, ConfirmAction},
         screens::CurrentScreen,
         App,
@@ -27,7 +27,7 @@ use crate::{
         errors::KwError,
         status::{KwJobStatus, KwStatusSnapshot},
     },
-    terminal::{handle::TerminalHandle, messages::TerminalFrame},
+    terminal::{handle::TerminalHandle, messages::TerminalFrame, TerminalError},
     ui::handle::UiHandle,
 };
 
@@ -102,7 +102,7 @@ impl AppActor {
                 self.terminal_handle
                     .draw(TerminalFrame::Main(Box::new(scene)))
                     .await
-                    .map_err(terminal_error)?;
+                    .map_err(Self::convert_terminal_error)?;
             }
 
             let tail_while_running = Self::should_tail_kw_ops(&self.app);
@@ -192,6 +192,10 @@ impl AppActor {
                 None
             }
         }
+    }
+
+    fn convert_terminal_error(error: TerminalError) -> Report {
+        eyre!("{error}")
     }
 }
 

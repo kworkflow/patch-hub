@@ -119,7 +119,7 @@ impl KwArgvService {
     /// so build-only extras (shared KwOps field) cannot fail kw deploy's
     /// getopt. `--force` is omitted entirely when `force` is false rather
     /// than passing a no-op, because kw has no `--no-force`.
-    pub fn deploy_argv(
+    pub fn build_deploy_argv(
         endpoint: &str,
         reboot: bool,
         force: bool,
@@ -419,14 +419,14 @@ mod tests {
     const ENDPOINT: &str = "root@lima-ph-dut.internal:22";
 
     fn deploy(extra: &[&str]) -> Vec<String> {
-        KwArgvService::deploy_argv(ENDPOINT, false, true, &extras(extra))
+        KwArgvService::build_deploy_argv(ENDPOINT, false, true, &extras(extra))
     }
 
     #[test]
     fn deploy_argv_without_extras_is_remote_no_reboot_force() {
         assert_eq!(
             vec!["deploy", "--remote", ENDPOINT, "--no-reboot", "--force",],
-            KwArgvService::deploy_argv(ENDPOINT, false, true, &[])
+            KwArgvService::build_deploy_argv(ENDPOINT, false, true, &[])
         );
     }
 
@@ -434,7 +434,7 @@ mod tests {
     fn deploy_argv_reboot_and_unforced_swap_the_injected_flags() {
         assert_eq!(
             vec!["deploy", "--remote", ENDPOINT, "--reboot"],
-            KwArgvService::deploy_argv(ENDPOINT, true, false, &[])
+            KwArgvService::build_deploy_argv(ENDPOINT, true, false, &[])
         );
     }
 

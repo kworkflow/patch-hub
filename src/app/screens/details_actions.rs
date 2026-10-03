@@ -44,10 +44,6 @@ pub struct PatchsetDetailsState {
 
 const LAST_LINE_PADDING: usize = 10;
 
-fn rendered_preview_height(preview: &str) -> usize {
-    preview.into_text().unwrap_or_default().height()
-}
-
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub enum PatchsetAction {
     Bookmark,
@@ -56,6 +52,10 @@ pub enum PatchsetAction {
 }
 
 impl PatchsetDetailsState {
+    fn measure_rendered_preview_height(preview: &str) -> usize {
+        preview.into_text().unwrap_or_default().height()
+    }
+
     pub fn from_rendered_preview(
         representative_patch: Patch,
         details: PatchsetDetails,
@@ -123,7 +123,8 @@ impl PatchsetDetailsState {
 
     /// Scroll `n` lines down
     pub fn preview_scroll_down(&mut self, n: usize) {
-        let number_of_lines = rendered_preview_height(&self.patches_preview[self.preview_index]);
+        let number_of_lines =
+            Self::measure_rendered_preview_height(&self.patches_preview[self.preview_index]);
         if (self.preview_scroll_offset + n) <= number_of_lines {
             self.preview_scroll_offset += n;
         }
@@ -136,7 +137,8 @@ impl PatchsetDetailsState {
 
     /// Scroll to the last line
     pub fn go_to_last_line(&mut self) {
-        let number_of_lines = rendered_preview_height(&self.patches_preview[self.preview_index]);
+        let number_of_lines =
+            Self::measure_rendered_preview_height(&self.patches_preview[self.preview_index]);
         self.preview_scroll_offset = number_of_lines.saturating_sub(LAST_LINE_PADDING);
     }
 
@@ -274,7 +276,10 @@ mod tests {
     fn rendered_height_accounts_for_rendered_text_projection() {
         let preview = "\u{1b}[32mrendered line\u{1b}[0m\nsecond line";
 
-        assert_eq!(2, rendered_preview_height(preview));
+        assert_eq!(
+            2,
+            PatchsetDetailsState::measure_rendered_preview_height(preview)
+        );
     }
 
     #[test]

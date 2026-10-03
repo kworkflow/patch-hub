@@ -51,6 +51,28 @@ impl CrosstermTerminalSession {
             _ => None,
         }
     }
+
+    fn wait_for_key_press_from_session(
+        session: &mut dyn TerminalSessionApi,
+        key: KeyCode,
+        timeout: Duration,
+    ) -> TerminalResult<bool> {
+        let started_at = Instant::now();
+
+        while started_at.elapsed() < timeout {
+            let elapsed = started_at.elapsed();
+            let remaining = timeout.saturating_sub(elapsed);
+            let poll_timeout = remaining.min(Duration::from_millis(16));
+
+            if let Some(TerminalEvent::Key(input)) = session.poll_event(poll_timeout)? {
+                if input.code == key {
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
+    }
 }
 
 impl TerminalSessionApi for CrosstermTerminalSession {
@@ -93,7 +115,7 @@ impl TerminalSessionApi for CrosstermTerminalSession {
     }
 
     fn wait_for_key_press(&mut self, key: KeyCode, timeout: Duration) -> TerminalResult<bool> {
-        wait_for_key_press_from_session(self, key, timeout)
+        Self::wait_for_key_press_from_session(self, key, timeout)
     }
 
     fn size(&self) -> TerminalResult<(u16, u16)> {
@@ -110,28 +132,6 @@ impl TerminalSessionApi for CrosstermTerminalSession {
         self.shutdown = true;
         Ok(())
     }
-}
-
-fn wait_for_key_press_from_session(
-    session: &mut dyn TerminalSessionApi,
-    key: KeyCode,
-    timeout: Duration,
-) -> TerminalResult<bool> {
-    let started_at = Instant::now();
-
-    while started_at.elapsed() < timeout {
-        let elapsed = started_at.elapsed();
-        let remaining = timeout.saturating_sub(elapsed);
-        let poll_timeout = remaining.min(Duration::from_millis(16));
-
-        if let Some(TerminalEvent::Key(input)) = session.poll_event(poll_timeout)? {
-            if input.code == key {
-                return Ok(true);
-            }
-        }
-    }
-
-    Ok(false)
 }
 
 #[cfg(test)]

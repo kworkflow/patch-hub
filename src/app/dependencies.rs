@@ -8,76 +8,80 @@ use crate::{
     render_prefs::PatchRenderer,
 };
 
-/// Verifies required and optional external binaries before the terminal starts.
-///
-/// A missing `b4` is a hard failure; all other missing binaries only emit
-/// warnings — including `kw`, and including an unverifiable kw version,
-/// since kw's own VERSION file is stale upstream (it reports `beta-0.9`
-/// even at the 0.10 tag). This keeps fatal startup failures out of
-/// terminal raw mode.
-pub(crate) fn check_external_deps(
-    env: &dyn EnvTrait,
-    shell: &dyn ShellTrait,
-    config: &ConfigSnapshot,
-) -> Result<(), AppError> {
-    if !env.which("b4") {
-        event!(
-            Level::ERROR,
-            "b4 is not installed, patchsets cannot be downloaded"
-        );
-        return Err(AppError::Dependencies(
-            "b4 is not installed; patchsets cannot be downloaded".to_string(),
-        ));
-    }
+pub(crate) struct DependencyService;
 
-    if !env.which("git") {
-        event!(Level::WARN, "git is not installed, send-email won't work");
-    }
+impl DependencyService {
+    /// Verifies required and optional external binaries before the terminal starts.
+    ///
+    /// A missing `b4` is a hard failure; all other missing binaries only emit
+    /// warnings — including `kw`, and including an unverifiable kw version,
+    /// since kw's own VERSION file is stale upstream (it reports `beta-0.9`
+    /// even at the 0.10 tag). This keeps fatal startup failures out of
+    /// terminal raw mode.
+    pub(crate) fn check_external_deps(
+        env: &dyn EnvTrait,
+        shell: &dyn ShellTrait,
+        config: &ConfigSnapshot,
+    ) -> Result<(), AppError> {
+        if !env.which("b4") {
+            event!(
+                Level::ERROR,
+                "b4 is not installed, patchsets cannot be downloaded"
+            );
+            return Err(AppError::Dependencies(
+                "b4 is not installed; patchsets cannot be downloaded".to_string(),
+            ));
+        }
 
-    match config.patch_renderer() {
-        PatchRenderer::Bat => {
-            if !env.which("bat") {
-                event!(
-                    Level::WARN,
-                    "bat is not installed, patch rendering will fallback to default"
-                );
-            }
+        if !env.which("git") {
+            event!(Level::WARN, "git is not installed, send-email won't work");
         }
-        PatchRenderer::Delta => {
-            if !env.which("delta") {
-                event!(
-                    Level::WARN,
-                    "delta is not installed, patch rendering will fallback to default",
-                );
-            }
-        }
-        PatchRenderer::DiffSoFancy => {
-            if !env.which("diff-so-fancy") {
-                event!(
-                    Level::WARN,
-                    "diff-so-fancy is not installed, patch rendering will fallback to default",
-                );
-            }
-        }
-        _ => {}
-    }
 
-    let kw = ReadinessService::probe_kw_binary(env, shell);
-    if !kw.available {
-        event!(
-            Level::WARN,
-            "kw is not installed, kernel build/deploy won't work"
-        );
-    } else if !matches!(kw.check, KwVersionCheck::Meets) {
-        event!(
-            Level::WARN,
-            version = kw.version_line.as_deref().unwrap_or("unknown"),
-            "could not confirm kw >= 0.10; the build/deploy integration is \
+        match config.patch_renderer() {
+            PatchRenderer::Bat => {
+                if !env.which("bat") {
+                    event!(
+                        Level::WARN,
+                        "bat is not installed, patch rendering will fallback to default"
+                    );
+                }
+            }
+            PatchRenderer::Delta => {
+                if !env.which("delta") {
+                    event!(
+                        Level::WARN,
+                        "delta is not installed, patch rendering will fallback to default",
+                    );
+                }
+            }
+            PatchRenderer::DiffSoFancy => {
+                if !env.which("diff-so-fancy") {
+                    event!(
+                        Level::WARN,
+                        "diff-so-fancy is not installed, patch rendering will fallback to default",
+                    );
+                }
+            }
+            _ => {}
+        }
+
+        let kw = ReadinessService::probe_kw_binary(env, shell);
+        if !kw.available {
+            event!(
+                Level::WARN,
+                "kw is not installed, kernel build/deploy won't work"
+            );
+        } else if !matches!(kw.check, KwVersionCheck::Meets) {
+            event!(
+                Level::WARN,
+                version = kw.version_line.as_deref().unwrap_or("unknown"),
+                "could not confirm kw >= 0.10; the build/deploy integration is \
              verified against kw 0.10 (kw's own VERSION file may be stale)"
-        );
-    }
+            );
+        }
 
-    Ok(())
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -118,8 +122,12 @@ mod tests {
         let mut shell = MockShellTrait::new();
         shell.expect_execute().times(0);
 
-        let err =
-            check_external_deps(&env, &shell, &ConfigState::default().to_snapshot()).unwrap_err();
+        let err = DependencyService::check_external_deps(
+            &env,
+            &shell,
+            &ConfigState::default().to_snapshot(),
+        )
+        .unwrap_err();
 
         assert!(matches!(err, AppError::Dependencies(_)));
     }
@@ -131,7 +139,11 @@ mod tests {
             .withf(|name| name == "git")
             .returning(|_| false);
 
-        let result = check_external_deps(&env, &shell, &ConfigState::default().to_snapshot());
+        let result = DependencyService::check_external_deps(
+            &env,
+            &shell,
+            &ConfigState::default().to_snapshot(),
+        );
 
         assert!(result.is_ok());
     }
@@ -149,7 +161,7 @@ mod tests {
             .withf(|name| name == "bat")
             .returning(|_| false);
 
-        let result = check_external_deps(&env, &shell, &state.to_snapshot());
+        let result = DependencyService::check_external_deps(&env, &shell, &state.to_snapshot());
 
         assert!(result.is_ok());
     }
@@ -163,7 +175,11 @@ mod tests {
         // No kw on PATH: the version probe must not spawn anything.
         shell.expect_execute().times(0);
 
-        let result = check_external_deps(&env, &shell, &ConfigState::default().to_snapshot());
+        let result = DependencyService::check_external_deps(
+            &env,
+            &shell,
+            &ConfigState::default().to_snapshot(),
+        );
 
         assert!(result.is_ok());
     }
@@ -181,7 +197,11 @@ mod tests {
             })
         });
 
-        let result = check_external_deps(&env, &shell, &ConfigState::default().to_snapshot());
+        let result = DependencyService::check_external_deps(
+            &env,
+            &shell,
+            &ConfigState::default().to_snapshot(),
+        );
 
         assert!(result.is_ok());
     }

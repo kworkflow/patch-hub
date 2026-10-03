@@ -38,7 +38,7 @@ pub enum KwJobStatus {
         branch: String,
         log_path: PathBuf,
         /// Known deploy failures kw exited 0 through (see
-        /// [`crate::kw::log_scan::LogScanService::deploy_warnings`]). Always empty for a
+        /// [`crate::kw::log_scan::LogScanService::collect_deploy_warnings`]). Always empty for a
         /// build-only job.
         warnings: Vec<String>,
     },
@@ -102,23 +102,23 @@ impl KwJobStatus {
             | Self::Cancelled { log_path, .. } => Some(log_path),
         }
     }
-}
 
-/// Human-readable hint for a known `kw deploy` exit code.
-/// Unknown codes return `None` so the UI can still show the raw number.
-/// 68 can still surface with `--force`: force skips the prompt, not the
-/// initramfs errors.
-pub fn deploy_exit_hint(code: i32) -> Option<&'static str> {
-    Some(match code {
-        2 => "kernel image not found",
-        22 => "invalid option or kernel name",
-        68 => "initramfs generation reported errors",
-        95 => "unsupported bootloader",
-        101 => "SSH unreachable after setup",
-        103 => "passwordless root SSH setup failed",
-        124 | 125 => "deploy cancelled, no valid kernel image, or not a kernel root",
-        _ => return None,
-    })
+    /// Human-readable hint for a known `kw deploy` exit code.
+    /// Unknown codes return `None` so the UI can still show the raw number.
+    /// 68 can still surface with `--force`: force skips the prompt, not the
+    /// initramfs errors.
+    pub fn find_deploy_exit_hint(code: i32) -> Option<&'static str> {
+        Some(match code {
+            2 => "kernel image not found",
+            22 => "invalid option or kernel name",
+            68 => "initramfs generation reported errors",
+            95 => "unsupported bootloader",
+            101 => "SSH unreachable after setup",
+            103 => "passwordless root SSH setup failed",
+            124 | 125 => "deploy cancelled, no valid kernel image, or not a kernel root",
+            _ => return None,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -207,15 +207,19 @@ mod tests {
             ),
         ];
         for (code, hint) in cases {
-            assert_eq!(Some(hint), deploy_exit_hint(code), "code {code}");
+            assert_eq!(
+                Some(hint),
+                KwJobStatus::find_deploy_exit_hint(code),
+                "code {code}"
+            );
         }
     }
 
     #[test]
     fn deploy_exit_hint_leaves_unknown_codes_unnamed() {
         // Unknown codes have no hint.
-        assert_eq!(None, deploy_exit_hint(30));
-        assert_eq!(None, deploy_exit_hint(1));
-        assert_eq!(None, deploy_exit_hint(0));
+        assert_eq!(None, KwJobStatus::find_deploy_exit_hint(30));
+        assert_eq!(None, KwJobStatus::find_deploy_exit_hint(1));
+        assert_eq!(None, KwJobStatus::find_deploy_exit_hint(0));
     }
 }

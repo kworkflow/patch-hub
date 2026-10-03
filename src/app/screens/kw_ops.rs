@@ -48,7 +48,7 @@ impl KwOpsState {
     }
 
     pub fn extra_arg_tokens(&self) -> Vec<String> {
-        split_extra_args(&self.extra_args)
+        Self::split_extra_args(&self.extra_args)
     }
 
     /// Extra args shown in the command preview, including in-progress
@@ -59,7 +59,7 @@ impl KwOpsState {
         } else {
             self.extra_args.as_str()
         };
-        split_extra_args(raw)
+        Self::split_extra_args(raw)
     }
 
     pub fn highlight_prev(&mut self) {
@@ -99,10 +99,10 @@ impl KwOpsState {
     pub fn append_edit(&mut self, ch: char) {
         self.edit_buffer.push(ch);
     }
-}
 
-fn split_extra_args(raw: &str) -> Vec<String> {
-    raw.split_whitespace().map(str::to_string).collect()
+    fn split_extra_args(raw: &str) -> Vec<String> {
+        raw.split_whitespace().map(str::to_string).collect()
+    }
 }
 
 #[cfg(test)]

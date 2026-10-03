@@ -45,7 +45,7 @@ impl LogScanService {
     /// did not list that kernel is reported too: kw installs arm64 kernels as
     /// `Image-<release>`, which Debian's `10_linux` does not pick up, so the
     /// deployed kernel is never bootable from the menu.
-    pub fn deploy_warnings(log: &str, kernelrelease: Option<&str>) -> Vec<String> {
+    pub fn collect_deploy_warnings(log: &str, kernelrelease: Option<&str>) -> Vec<String> {
         let mut warnings: Vec<String> = Vec::new();
         for line in log.lines().map(str::trim) {
             if DEPLOY_WARNING_MARKERS
@@ -266,7 +266,7 @@ make: *** [Makefile:248: __sub-make] Error 2
                 "update-initramfs: failed for /boot/initrd.img-7.2.0-rc6+ with 1.".to_string(),
                 "GRUB did not list kernel 7.2.0-rc6+".to_string(),
             ],
-            LogScanService::deploy_warnings(TINYCONFIG_DEPLOY_LOG, Some("7.2.0-rc6+"))
+            LogScanService::collect_deploy_warnings(TINYCONFIG_DEPLOY_LOG, Some("7.2.0-rc6+"))
         );
     }
 
@@ -274,13 +274,13 @@ make: *** [Makefile:248: __sub-make] Error 2
     fn deploy_warnings_skip_the_grub_check_without_a_release() {
         assert_eq!(
             vec!["update-initramfs: failed for /boot/initrd.img-7.2.0-rc6+ with 1.".to_string()],
-            LogScanService::deploy_warnings(TINYCONFIG_DEPLOY_LOG, None)
+            LogScanService::collect_deploy_warnings(TINYCONFIG_DEPLOY_LOG, None)
         );
     }
 
     #[test]
     fn clean_deploy_has_no_warnings() {
-        assert!(LogScanService::deploy_warnings(
+        assert!(LogScanService::collect_deploy_warnings(
             CLEAN_DEPLOY_LOG,
             Some("7.2.0-rc6-phboot-g2a475abe5df2")
         )
@@ -297,17 +297,18 @@ done
 ";
         assert_eq!(
             vec!["GRUB did not list kernel 7.2.0-rc6".to_string()],
-            LogScanService::deploy_warnings(log, Some("7.2.0-rc6"))
+            LogScanService::collect_deploy_warnings(log, Some("7.2.0-rc6"))
         );
     }
 
     #[test]
     fn grub_check_is_silent_when_grub_did_not_run() {
         // systemd-boot / non-GRUB DUTs never print the GRUB banner.
-        assert!(
-            LogScanService::deploy_warnings("==> Starting build: '7.2.0'\n", Some("7.2.0"))
-                .is_empty()
-        );
+        assert!(LogScanService::collect_deploy_warnings(
+            "==> Starting build: '7.2.0'\n",
+            Some("7.2.0")
+        )
+        .is_empty());
     }
 
     #[test]
@@ -322,14 +323,14 @@ done
 ==> ERROR: module not found: 'f'
 kw was unable to set up the first boot
 ";
-        let warnings = LogScanService::deploy_warnings(log, None);
+        let warnings = LogScanService::collect_deploy_warnings(log, None);
         assert_eq!(MAX_DEPLOY_WARNINGS, warnings.len());
         assert_eq!("==> ERROR: module not found: 'a'", warnings[0]);
         assert_eq!("==> ERROR: module not found: 'e'", warnings[4]);
 
         // The unlisted-kernel warning survives the cap.
         let log = format!("{log}Generating grub configuration file ...\n");
-        let warnings = LogScanService::deploy_warnings(&log, Some("7.2.0"));
+        let warnings = LogScanService::collect_deploy_warnings(&log, Some("7.2.0"));
         assert_eq!(MAX_DEPLOY_WARNINGS, warnings.len());
         assert_eq!("GRUB did not list kernel 7.2.0", warnings[4]);
     }

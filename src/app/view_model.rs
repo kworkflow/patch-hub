@@ -18,7 +18,7 @@ use crate::kw::{
     argv,
     readiness::{BootOnceState, DeployAloneRefusal, TreeReadiness},
     remote::{KwRemote, RemoteRefusal},
-    status::{deploy_exit_hint, KwJobStatus, KwPhase, KwStatusSnapshot},
+    status::{KwJobStatus, KwPhase, KwStatusSnapshot},
 };
 
 pub use crate::app::models::view_model::{
@@ -454,7 +454,7 @@ fn format_deploy_command(
     match remote {
         Ok(remote) => format!(
             "kw {}",
-            argv::KwArgvService::deploy_argv(&remote.endpoint(), reboot, force, extra_args)
+            argv::KwArgvService::build_deploy_argv(&remote.endpoint(), reboot, force, extra_args)
                 .join(" ")
         ),
         Err(_) => "(no remote)".to_string(),
@@ -525,7 +525,7 @@ fn format_job_status(job: Option<&KwJobStatus>, cancel_requested: bool) -> Strin
             exit_code,
             ..
         }) => match exit_code {
-            Some(code) => match deploy_exit_hint(*code) {
+            Some(code) => match KwJobStatus::find_deploy_exit_hint(*code) {
                 Some(hint) => format!("failed during deploy (exit {code}: {hint})"),
                 None => format!("failed during deploy (exit {code})"),
             },

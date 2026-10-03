@@ -558,7 +558,7 @@ impl KwActor {
             "deploy-{}.log",
             chrono::Utc::now().format("%Y%m%d-%H%M%S-%3f")
         ));
-        let cmd = ShellCommand::new("kw").args(argv::KwArgvService::deploy_argv(
+        let cmd = ShellCommand::new("kw").args(argv::KwArgvService::build_deploy_argv(
             &deploy.remote.endpoint(),
             deploy.options.reboot,
             deploy.options.force,
@@ -608,7 +608,10 @@ impl KwActor {
                                 .and_then(|deploy| deploy.kernelrelease.as_deref());
                             self.read_job_log(&job.log_path)
                                 .map(|log| {
-                                    log_scan::LogScanService::deploy_warnings(&log, kernelrelease)
+                                    log_scan::LogScanService::collect_deploy_warnings(
+                                        &log,
+                                        kernelrelease,
+                                    )
                                 })
                                 .unwrap_or_default()
                         } else {
