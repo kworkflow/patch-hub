@@ -4,9 +4,6 @@
 //!
 //! Pure functions over the log text; the actor reads the file.
 
-// The only production caller is the unix-only actor.
-#![cfg_attr(not(unix), allow(dead_code))]
-
 /// Longer lines (deep include paths, long make targets) are cut so one
 /// finding stays a single KwOps row.
 const MAX_LINE_CHARS: usize = 200;

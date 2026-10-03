@@ -11,26 +11,32 @@
 //! injected infrastructure traits; KwActor composes them into the
 //! `GetReadiness` snapshot.
 
+#[cfg(unix)]
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use thiserror::Error;
 
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-    time::SystemTime,
-};
+#[cfg(unix)]
+use std::collections::HashMap;
+#[cfg(unix)]
+use std::path::Path;
+use std::path::PathBuf;
+#[cfg(unix)]
+use std::time::SystemTime;
 
+#[cfg(unix)]
+use crate::infrastructure::file_system::FileSystemTrait;
 use crate::infrastructure::{
     env::{EnvError, EnvTrait},
-    file_system::{FileSystemError, FileSystemTrait},
+    file_system::FileSystemError,
     shell::{ShellCommand, ShellTrait},
 };
+#[cfg(unix)]
+use crate::kw::remote;
+use crate::kw::remote::{KwRemote, RemoteRefusal};
+#[cfg(unix)]
 use crate::{
     config::KernelTree,
-    kw::{
-        history::{KwBuildRecord, KwHistoryStore},
-        remote::{self, KwRemote, RemoteRefusal},
-    },
+    kw::history::{KwBuildRecord, KwHistoryStore},
 };
 
 /// Errors from readiness probes for states where "absent" is not a normal
@@ -44,6 +50,7 @@ pub enum KwReadinessError {
 }
 
 /// Readiness of a configured kernel tree for kw operations.
+#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TreeReadiness {
     /// Kernel root, kw-initialized, with a `.config`. `arch` is the literal
@@ -74,6 +81,7 @@ pub enum TreeReadiness {
 /// last `#` on is stripped as a trailing comment, the key has all
 /// whitespace removed, and the value is trimmed. Lines without `=` are
 /// ignored, and a final line without a trailing newline still counts.
+#[cfg(unix)]
 pub fn parse_kw_config(content: &str) -> HashMap<String, String> {
     let mut entries = HashMap::new();
     for line in content.lines() {
@@ -96,6 +104,7 @@ pub fn parse_kw_config(content: &str) -> HashMap<String, String> {
 /// Mirrors kw's `is_kernel_root`: the same files and directories kw checks
 /// (also the set `get_maintainer.pl` relies on). `MAINTAINERS` is checked
 /// with `exists` because kw uses `-e` on it and `-f` on the other files.
+#[cfg(unix)]
 pub fn is_kernel_root(fs: &dyn FileSystemTrait, path: &Path) -> bool {
     const FILES: [&str; 5] = ["COPYING", "CREDITS", "Kbuild", "Makefile", "README"];
     const DIRS: [&str; 10] = [
@@ -121,6 +130,7 @@ pub fn is_kernel_root(fs: &dyn FileSystemTrait, path: &Path) -> bool {
 /// refuses to activate an env while an in-tree `.config` exists
 /// (`kw_env.sh::validate_env_before_switch`), so with an env active the
 /// `.config` lives only at the env's `O=` dir.
+#[cfg(unix)]
 pub fn probe_tree(
     fs: &dyn FileSystemTrait,
     tree_path: &Path,
@@ -157,6 +167,7 @@ pub fn probe_tree(
 /// the caller falls back to globbing `arch/*/boot/`, a deliberate
 /// divergence from kw's merged-config fallback (see
 /// [`find_newest_kernel_image`]).
+#[cfg(unix)]
 pub fn read_build_arch(fs: &dyn FileSystemTrait, tree_path: &Path) -> Option<String> {
     let content = fs
         .read_to_string(&tree_path.join(".kw").join("build.config"))
@@ -189,6 +200,7 @@ pub fn read_build_arch(fs: &dyn FileSystemTrait, tree_path: &Path) -> Option<Str
 /// `env.current` or an unresolvable cache base (neither `XDG_CACHE_HOME`
 /// nor `HOME` set) is an error, since the env state is then unknown —
 /// kw's "active but unresolvable" case.
+#[cfg(unix)]
 pub fn resolve_output_dir(
     fs: &dyn FileSystemTrait,
     env: &dyn EnvTrait,
@@ -252,6 +264,7 @@ pub fn resolve_output_dir(
 /// compressed/ or dts/ never hold `*Image` files), and find does not
 /// descend into symlinked dirs either, so the behaviors agree on real
 /// trees.
+#[cfg(unix)]
 pub fn find_newest_kernel_image(
     fs: &dyn FileSystemTrait,
     build_root: &Path,
@@ -274,6 +287,7 @@ pub fn find_newest_kernel_image(
 }
 
 /// Newest `*Image` file directly inside `boot_dir`, if any.
+#[cfg(unix)]
 fn newest_image_in(fs: &dyn FileSystemTrait, boot_dir: &Path) -> Option<PathBuf> {
     fs.read_dir(boot_dir)
         .ok()?
@@ -289,6 +303,7 @@ fn newest_image_in(fs: &dyn FileSystemTrait, boot_dir: &Path) -> Option<PathBuf>
         .map(|(_, entry)| entry)
 }
 
+#[cfg(unix)]
 fn image_mtime(fs: &dyn FileSystemTrait, path: &Path) -> SystemTime {
     fs.metadata(path)
         .and_then(|meta| meta.modified().map_err(FileSystemError::from))
@@ -299,9 +314,7 @@ fn image_mtime(fs: &dyn FileSystemTrait, path: &Path) -> SystemTime {
 /// `<build_root>/include/config/kernel.release`, the file a kernel build
 /// generates — cheaper than re-running `make kernelrelease`, and `None`
 /// when the build never produced one (or produced an empty one).
-// The only production caller is the unix-only actor's build-record
-// writer.
-#[cfg_attr(not(unix), allow(dead_code))]
+#[cfg(unix)]
 pub fn read_kernelrelease(fs: &dyn FileSystemTrait, build_root: &Path) -> Option<String> {
     let release = fs
         .read_to_string(
@@ -426,6 +439,7 @@ impl std::fmt::Display for TreeReadiness {
 
 /// Why a deploy-without-build was refused. Each variant's message is the
 /// actionable explanation.
+#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum DeployAloneRefusal {
     #[error("the kernel tree is not ready: {0}")]
@@ -464,6 +478,7 @@ pub enum DeployAloneRefusal {
 /// value, including a missing key, leaves the option on. [`Unknown`] is
 /// therefore a confirm-to-proceed gate, same as [`On`]: patch-hub cannot
 /// pass a CLI off-switch.
+#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BootOnceState {
     Off,
@@ -476,6 +491,7 @@ pub enum BootOnceState {
 /// unreadable tree file is [`BootOnceState::Unknown`] rather than a guess
 /// at the home copy. A readable tree file that simply omits the key still
 /// falls through, matching kw's merged-config lookup.
+#[cfg(unix)]
 pub fn probe_boot_once(
     fs: &dyn FileSystemTrait,
     env: &dyn EnvTrait,
@@ -501,6 +517,7 @@ pub fn probe_boot_once(
     }
 }
 
+#[cfg(unix)]
 fn boot_once_from_file(fs: &dyn FileSystemTrait, path: &Path) -> Result<Option<BootOnceState>, ()> {
     let content = fs.read_to_string(path).map_err(|_| ())?;
     Ok(parse_kw_config(&content)
@@ -515,6 +532,7 @@ fn boot_once_from_file(fs: &dyn FileSystemTrait, path: &Path) -> Result<Option<B
 /// `${XDG_CONFIG_HOME:-$HOME/.config}/kw/<filename>`. A set-but-empty
 /// `XDG_CONFIG_HOME` is treated as unset, matching bash `:-` and the XDG
 /// spec.
+#[cfg(unix)]
 fn xdg_kw_config_file(env: &dyn EnvTrait, filename: &str) -> Option<PathBuf> {
     let config_home = match env.var("XDG_CONFIG_HOME") {
         Ok(xdg) if !xdg.is_empty() => xdg,
@@ -537,6 +555,7 @@ fn xdg_kw_config_file(env: &dyn EnvTrait, filename: &str) -> Option<PathBuf> {
 /// about the tree's *current* state. [`evaluate_readiness`] conjoins
 /// [`TreeReadiness`] into its `deploy_alone` verdict; prefer it over
 /// calling this directly.
+#[cfg(unix)]
 pub fn check_deploy_alone(
     record: Option<&KwBuildRecord>,
     latest: Option<&KwBuildRecord>,
@@ -612,8 +631,7 @@ pub struct KwReadiness {
 /// `for_branch`, when set, is the branch deploy-alone should be judged
 /// against (the branch typed on KwOps). `current_branch` still reports
 /// the real HEAD so the UI can show both.
-// The only caller is the unix-only actor's GetReadiness.
-#[cfg_attr(not(unix), allow(dead_code))]
+#[cfg(unix)]
 pub fn evaluate_readiness(
     fs: &dyn FileSystemTrait,
     env: &dyn EnvTrait,

@@ -17,6 +17,7 @@ pub struct KwHandle {
 }
 
 impl KwHandle {
+    #[cfg(unix)]
     pub fn new(tx: mpsc::Sender<KwMessage>) -> Self {
         Self { tx }
     }

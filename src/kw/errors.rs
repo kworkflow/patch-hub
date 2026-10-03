@@ -1,6 +1,3 @@
-// The actor that constructs/reads these is unix-only.
-#![cfg_attr(not(unix), allow(dead_code))]
-
 use thiserror::Error;
 
 #[cfg(unix)]
@@ -13,6 +10,7 @@ use crate::{
     },
 };
 
+#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Error)]
 pub enum KwError {
     #[error("kw actor unavailable: {0}")]
@@ -40,6 +38,7 @@ pub enum KwError {
 /// Accept/refuse verdict for `Start*` messages. The reply is always
 /// immediate: an accepted job keeps running inside the actor after the
 /// caller has been answered.
+#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Error)]
 pub enum KwStartError {
     #[error("kw actor unavailable: {0}")]
@@ -76,6 +75,7 @@ pub enum KwStartError {
 
 /// Shared git-state refusal for the start and restore paths, converted
 /// into the public error each path reports.
+#[cfg(unix)]
 #[derive(Debug)]
 pub(crate) enum TreeGitError {
     DirtyWorktree,
@@ -83,6 +83,7 @@ pub(crate) enum TreeGitError {
     Switch(String),
 }
 
+#[cfg(unix)]
 impl From<TreeGitError> for KwStartError {
     fn from(error: TreeGitError) -> Self {
         match error {
@@ -93,6 +94,7 @@ impl From<TreeGitError> for KwStartError {
     }
 }
 
+#[cfg(unix)]
 impl From<TreeGitError> for KwError {
     fn from(error: TreeGitError) -> Self {
         match error {

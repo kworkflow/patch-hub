@@ -3,11 +3,9 @@
 //! `AppState` never owns job state; it polls (`GetStatus`) or watches
 //! (`WatchStatus`) these snapshots and projects them into the view model.
 
-// The actor that constructs/reads these is unix-only.
-#![cfg_attr(not(unix), allow(dead_code))]
-
 use std::path::PathBuf;
 
+#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KwJobKind {
     Build,
@@ -16,12 +14,14 @@ pub enum KwJobKind {
 }
 
 /// Running phase of a job. `BuildThenDeploy` jobs pass through both.
+#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KwPhase {
     Building,
     Deploying,
 }
 
+#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KwJobStatus {
     Idle,
@@ -67,6 +67,7 @@ pub struct KwStatusSnapshot {
 }
 
 impl KwStatusSnapshot {
+    #[cfg(unix)]
     pub fn idle() -> Self {
         Self {
             job: KwJobStatus::Idle,
@@ -107,7 +108,6 @@ impl KwJobStatus {
 /// Unknown codes return `None` so the UI can still show the raw number.
 /// 68 can still surface with `--force`: force skips the prompt, not the
 /// initramfs errors.
-#[cfg_attr(not(unix), allow(dead_code))]
 pub fn deploy_exit_hint(code: i32) -> Option<&'static str> {
     Some(match code {
         2 => "kernel image not found",

@@ -7,10 +7,12 @@ pub use r#trait::{FileSystemError, FileSystemTrait};
 #[cfg(test)]
 pub use r#trait::MockFileSystemTrait;
 
+#[cfg(unix)]
+use std::path::PathBuf;
 use std::{
     fs::{self, File},
     io::{self, BufReader, Read, Seek, SeekFrom},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 #[cfg(test)]
@@ -43,6 +45,7 @@ impl FileSystemTrait for OsFileSystem {
         path.is_dir()
     }
 
+    #[cfg(unix)]
     fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>, FileSystemError> {
         let mut entries = fs::read_dir(path)?
             .map(|entry| entry.map(|e| e.path()))

@@ -11,16 +11,13 @@
 //! file is authoritative even when empty or unreadable — falling through
 //! to the home copy would silently deploy to a different machine than the
 //! tree is configured for.
-//!
-//! Production callers are readiness probes and the unix-only deploy start
-//! path.
 
-#![cfg_attr(not(unix), allow(dead_code))]
-
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
+#[cfg(unix)]
 use crate::infrastructure::{env::EnvTrait, file_system::FileSystemTrait};
 
 /// A Host stanza from `remote.config` that has a usable Hostname.
@@ -45,6 +42,7 @@ impl KwRemote {
 
 /// Why a deploy remote could not be resolved. Each variant's message is
 /// the actionable explanation.
+#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum RemoteRefusal {
     #[error(
@@ -66,6 +64,7 @@ pub enum RemoteRefusal {
 
 /// Parsed contents of a `remote.config` file. Incomplete Host stanzas
 /// (no Hostname, or an unparseable Port) are dropped rather than guessed.
+#[cfg(unix)]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ParsedRemoteConfig {
     pub default: Option<String>,
@@ -78,6 +77,7 @@ pub struct ParsedRemoteConfig {
 /// `Port`, and `User` are read case-insensitively; `IdentityFile` and
 /// other keys are tolerated and ignored. Port defaults to 22 when unset.
 /// Duplicate Host names keep the last complete stanza.
+#[cfg(unix)]
 pub fn parse_remote_config(content: &str) -> ParsedRemoteConfig {
     let mut parsed = ParsedRemoteConfig::default();
     let mut current: Option<HostBuilder> = None;
@@ -135,6 +135,7 @@ pub fn parse_remote_config(content: &str) -> ParsedRemoteConfig {
 /// Picks the deploy remote from a parsed file: the `#kw-default=` Host
 /// when set, otherwise the only Host. Multiple hosts with no default, or
 /// a default that names no complete Host, are refusals.
+#[cfg(unix)]
 pub fn select_deploy_remote(parsed: &ParsedRemoteConfig) -> Result<KwRemote, RemoteRefusal> {
     if let Some(name) = parsed.default.as_deref() {
         return parsed
@@ -155,6 +156,7 @@ pub fn select_deploy_remote(parsed: &ParsedRemoteConfig) -> Result<KwRemote, Rem
 
 /// Resolves the remote kw deploy will be pointed at. See the module docs
 /// for the file lookup order.
+#[cfg(unix)]
 pub fn resolve_deploy_remote(
     fs: &dyn FileSystemTrait,
     env: &dyn EnvTrait,
@@ -173,6 +175,7 @@ pub fn resolve_deploy_remote(
     Err(RemoteRefusal::NoRemotesConfigured)
 }
 
+#[cfg(unix)]
 fn remote_from_file(fs: &dyn FileSystemTrait, path: &Path) -> Result<KwRemote, RemoteRefusal> {
     let content = fs
         .read_to_string(path)
@@ -183,6 +186,7 @@ fn remote_from_file(fs: &dyn FileSystemTrait, path: &Path) -> Result<KwRemote, R
 /// `${XDG_CONFIG_HOME:-$HOME/.config}/kw/remote.config`. A set-but-empty
 /// `XDG_CONFIG_HOME` is treated as unset, matching bash `:-` and the XDG
 /// spec — otherwise the path would be relative to cwd.
+#[cfg(unix)]
 fn xdg_kw_remote_config(env: &dyn EnvTrait) -> Option<PathBuf> {
     let config_home = match env.var("XDG_CONFIG_HOME") {
         Ok(xdg) if !xdg.is_empty() => xdg,
@@ -191,6 +195,7 @@ fn xdg_kw_remote_config(env: &dyn EnvTrait) -> Option<PathBuf> {
     Some(Path::new(&config_home).join("kw").join("remote.config"))
 }
 
+#[cfg(unix)]
 struct HostBuilder {
     name: String,
     hostname: Option<String>,
@@ -198,6 +203,7 @@ struct HostBuilder {
     user: Option<String>,
 }
 
+#[cfg(unix)]
 impl HostBuilder {
     fn new(name: &str) -> Self {
         Self {
@@ -224,6 +230,7 @@ impl HostBuilder {
     }
 }
 
+#[cfg(unix)]
 fn split_keyword(line: &str) -> Option<(&str, &str)> {
     let keyword_end = line.find(|c: char| c.is_whitespace()).unwrap_or(line.len());
     let keyword = &line[..keyword_end];
@@ -233,6 +240,7 @@ fn split_keyword(line: &str) -> Option<(&str, &str)> {
     Some((keyword, line[keyword_end..].trim()))
 }
 
+#[cfg(unix)]
 fn upsert_host(hosts: &mut Vec<KwRemote>, host: KwRemote) {
     if let Some(existing) = hosts.iter_mut().find(|entry| entry.name == host.name) {
         *existing = host;

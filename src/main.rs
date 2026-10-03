@@ -40,7 +40,9 @@ use lore::{
     },
 };
 use render::{actor::RenderActor, ShellRenderService};
-use std::{ops::ControlFlow, path::Path, sync::Arc};
+#[cfg(unix)]
+use std::path::Path;
+use std::{ops::ControlFlow, sync::Arc};
 use terminal::{actor::TerminalActor, session::CrosstermTerminalSession};
 use tokio::sync::mpsc;
 use tracing::{event, Level};

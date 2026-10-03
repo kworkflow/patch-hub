@@ -1,6 +1,3 @@
-// The actor that reads these fields is unix-only.
-#![cfg_attr(not(unix), allow(dead_code))]
-
 use tokio::sync::{oneshot, watch};
 
 use crate::{
@@ -15,6 +12,7 @@ use crate::{
 
 /// Deploy knobs the actor injects onto `kw deploy`. Build-only starts
 /// leave [`StartRequest::deploy`] unset.
+#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Clone)]
 pub struct DeployOptions {
     pub reboot: bool,
@@ -27,6 +25,7 @@ pub struct DeployOptions {
 /// Everything the actor needs to start a job. The tree context is resolved
 /// by the caller from its config snapshot, keeping KwActor decoupled from
 /// ConfigActor.
+#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Clone)]
 pub struct StartRequest {
     pub kernel_tree_id: String,
@@ -44,6 +43,7 @@ pub struct StartRequest {
     pub deploy: Option<DeployOptions>,
 }
 
+#[cfg_attr(not(unix), expect(dead_code))]
 pub enum KwMessage {
     RecordApply {
         record: KwApplyRecord,
@@ -93,6 +93,7 @@ pub enum KwMessage {
 }
 
 impl KwMessage {
+    #[cfg(unix)]
     pub fn name(&self) -> &'static str {
         match self {
             KwMessage::RecordApply { .. } => "RecordApply",

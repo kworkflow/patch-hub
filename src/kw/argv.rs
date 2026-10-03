@@ -1,9 +1,6 @@
 //! kw argv construction: patch-hub's base command lines plus the user
 //! extra-args merge in which reserved options always win.
 
-// Production caller is the unix-only actor.
-#![cfg_attr(not(unix), allow(dead_code))]
-
 /// A CLI option patch-hub controls: user-supplied extra args that set it
 /// are stripped, so the occurrence on patch-hub's own base argv wins.
 pub struct ReservedOption {
@@ -119,7 +116,6 @@ pub fn build_argv(extra_args: &[String]) -> Vec<String> {
 /// so build-only extras (shared KwOps field) cannot fail kw deploy's
 /// getopt. `--force` is omitted entirely when `force` is false rather
 /// than passing a no-op, because kw has no `--no-force`.
-#[cfg_attr(not(unix), allow(dead_code))]
 pub fn deploy_argv(
     endpoint: &str,
     reboot: bool,

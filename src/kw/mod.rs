@@ -7,6 +7,7 @@ pub mod argv;
 pub mod errors;
 pub mod handle;
 pub mod history;
+#[cfg(unix)]
 pub mod log_scan;
 pub mod messages;
 pub mod readiness;

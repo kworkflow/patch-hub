@@ -13,6 +13,7 @@ use std::{collections::HashMap, io, path::Path, sync::Arc};
 use crate::infrastructure::file_system::{FileSystemError, FileSystemTrait, JsonUtils};
 
 pub const APPLY_HISTORY_FILENAME: &str = "kw_apply_history.json";
+#[cfg(unix)]
 pub const BUILD_HISTORY_FILENAME: &str = "kw_build_history.json";
 
 /// One recorded `git am` application of a lore patchset to a kernel tree.
@@ -62,6 +63,7 @@ type ApplyRecords = HashMap<String, HashMap<String, KwApplyRecord>>;
 /// kernel tree id → branch → record: building several branches of the same
 /// tree keeps one record per branch, so a failed build on one branch does
 /// not clobber another branch's successful record.
+#[cfg(unix)]
 type BuildRecords = HashMap<String, HashMap<String, KwBuildRecord>>;
 
 #[automock]
@@ -75,9 +77,7 @@ pub trait KwHistoryStore: Send + Sync {
     /// it came from. A missing history file is a normal state, not an
     /// error. Records with unparseable `applied_at` values sort oldest,
     /// same convention as the build records.
-    // The only production caller is the unix-only actor's build-record
-    // writer.
-    #[cfg_attr(not(unix), allow(dead_code))]
+    #[cfg(unix)]
     fn apply_record_for_branch(
         &self,
         kernel_tree_id: &str,
@@ -86,14 +86,13 @@ pub trait KwHistoryStore: Send + Sync {
 
     /// Inserts or replaces the build record for the record's
     /// `(kernel_tree_id, branch)` pair.
-    // The only production caller is the unix-only actor's build-record
-    // writer.
-    #[cfg_attr(not(unix), allow(dead_code))]
+    #[cfg(unix)]
     fn record_build(&self, record: KwBuildRecord) -> Result<(), FileSystemError>;
 
     /// Returns the record for `(kernel_tree_id, branch)` and the newest
     /// record for the tree across branches from a single load of the
     /// history file — the pair a readiness snapshot is computed from.
+    #[cfg(unix)]
     fn build_records(
         &self,
         kernel_tree_id: &str,
@@ -104,16 +103,18 @@ pub trait KwHistoryStore: Send + Sync {
 pub struct FileKwHistoryStore {
     fs: Arc<dyn FileSystemTrait>,
     apply_history_path: String,
+    #[cfg(unix)]
     build_history_path: String,
 }
 
 impl FileKwHistoryStore {
-    /// Creates a store keeping both history files ([`APPLY_HISTORY_FILENAME`]
-    /// and [`BUILD_HISTORY_FILENAME`]) directly under `data_dir`.
+    /// Creates a store keeping `kw_apply_history.json` under `data_dir`.
+    /// On Unix it also keeps `kw_build_history.json` there.
     pub fn new(fs: Arc<dyn FileSystemTrait>, data_dir: String) -> Self {
         FileKwHistoryStore {
             fs,
             apply_history_path: format!("{data_dir}/{APPLY_HISTORY_FILENAME}"),
+            #[cfg(unix)]
             build_history_path: format!("{data_dir}/{BUILD_HISTORY_FILENAME}"),
         }
     }
@@ -144,6 +145,7 @@ impl FileKwHistoryStore {
         JsonUtils::atomic_write_json(&*self.fs, &records, &self.apply_history_path)
     }
 
+    #[cfg(unix)]
     fn store_build_record(&self, record: KwBuildRecord) -> Result<(), FileSystemError> {
         let mut records: BuildRecords = self.load_records(&self.build_history_path)?;
         records
@@ -166,6 +168,7 @@ impl KwHistoryStore for FileKwHistoryStore {
             .map_err(|e| self.error_with_path(&self.apply_history_path, e))
     }
 
+    #[cfg(unix)]
     fn apply_record_for_branch(
         &self,
         kernel_tree_id: &str,
@@ -185,11 +188,13 @@ impl KwHistoryStore for FileKwHistoryStore {
             .map_err(|e| self.error_with_path(&self.apply_history_path, e))
     }
 
+    #[cfg(unix)]
     fn record_build(&self, record: KwBuildRecord) -> Result<(), FileSystemError> {
         self.store_build_record(record)
             .map_err(|e| self.error_with_path(&self.build_history_path, e))
     }
 
+    #[cfg(unix)]
     fn build_records(
         &self,
         kernel_tree_id: &str,

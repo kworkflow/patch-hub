@@ -1,11 +1,9 @@
 use mockall::automock;
 use thiserror::Error;
 
-use std::{
-    fs::Metadata,
-    io,
-    path::{Path, PathBuf},
-};
+#[cfg(unix)]
+use std::path::PathBuf;
+use std::{fs::Metadata, io, path::Path};
 
 #[derive(Debug, Error)]
 pub enum FileSystemError {
@@ -24,6 +22,7 @@ pub trait FileSystemTrait: Send + Sync {
     /// Returns the immediate children of directory `path` as full paths,
     /// sorted for determinism. Entry kind and metadata are queried
     /// separately via `is_dir`/`is_file`/`metadata`.
+    #[cfg(unix)]
     fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>, FileSystemError>;
     fn rename(&self, from: &Path, to: &Path) -> Result<(), FileSystemError>;
     fn create_writer(&self, path: &Path) -> Result<Box<dyn io::Write + Send>, FileSystemError>;
