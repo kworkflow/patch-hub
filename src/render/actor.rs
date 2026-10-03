@@ -8,12 +8,9 @@
 //! and the UI thread.
 use std::ops::ControlFlow;
 
-use tokio::{
-    spawn,
-    sync::{mpsc, oneshot},
-    task,
-};
+use tokio::{spawn, sync::mpsc, task};
 
+use crate::infrastructure::actor_reply::ActorReplyService;
 use crate::render::{
     handle::RenderHandle,
     messages::{RenderMessage, RenderResult},
@@ -71,7 +68,13 @@ impl RenderActor {
                     .with_core(move |core| core.render_patchset_preview(request))
                     .await
                     .and_then(|result| result);
-                send_render_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "render request failed",
+                    "render reply receiver dropped before response",
+                    reply,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             RenderMessage::Shutdown => {
@@ -98,27 +101,6 @@ impl RenderActor {
         .map_err(|e| RenderError::ActorUnavailable(e.to_string()))?;
         self.core = Some(core);
         Ok(result)
-    }
-}
-
-fn send_render_reply<T>(
-    message_name: &'static str,
-    reply: oneshot::Sender<RenderResult<T>>,
-    result: RenderResult<T>,
-) {
-    if let Err(error) = &result {
-        tracing::warn!(
-            message = message_name,
-            error = %error,
-            "render request failed"
-        );
-    }
-
-    if reply.send(result).is_err() {
-        tracing::warn!(
-            message = message_name,
-            "render reply receiver dropped before response"
-        );
     }
 }
 

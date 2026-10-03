@@ -5,12 +5,9 @@
 //! implementation ([`TerminalSessionApi`](crate::terminal::session::TerminalSessionApi),
 //! e.g. crossterm) is moved into the actor at spawn time so no other component
 //! holds the terminal directly.
-use tokio::{
-    spawn,
-    sync::{mpsc, oneshot},
-    task,
-};
+use tokio::{spawn, sync::mpsc, task};
 
+use crate::infrastructure::actor_reply::ActorReplyService;
 use crate::terminal::{
     handle::TerminalHandle,
     messages::{TerminalMessage, TerminalResult},
@@ -61,28 +58,52 @@ impl TerminalActor {
                     .with_session(move |session| session.draw(frame))
                     .await
                     .and_then(|result| result);
-                send_terminal_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "terminal request failed",
+                    "terminal reply receiver dropped before response",
+                    reply,
+                    result,
+                );
             }
             TerminalMessage::PollEvent { timeout, reply } => {
                 let result = self
                     .with_session(move |session| session.poll_event(timeout))
                     .await
                     .and_then(|result| result);
-                send_terminal_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "terminal request failed",
+                    "terminal reply receiver dropped before response",
+                    reply,
+                    result,
+                );
             }
             TerminalMessage::SetupUserIo { reply } => {
                 let result = self
                     .with_session(|session| session.setup_user_io())
                     .await
                     .and_then(|result| result);
-                send_terminal_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "terminal request failed",
+                    "terminal reply receiver dropped before response",
+                    reply,
+                    result,
+                );
             }
             TerminalMessage::TeardownUserIo { reply } => {
                 let result = self
                     .with_session(|session| session.teardown_user_io())
                     .await
                     .and_then(|result| result);
-                send_terminal_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "terminal request failed",
+                    "terminal reply receiver dropped before response",
+                    reply,
+                    result,
+                );
             }
             TerminalMessage::WaitForKeyPress {
                 key,
@@ -93,21 +114,39 @@ impl TerminalActor {
                     .with_session(move |session| session.wait_for_key_press(key, timeout))
                     .await
                     .and_then(|result| result);
-                send_terminal_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "terminal request failed",
+                    "terminal reply receiver dropped before response",
+                    reply,
+                    result,
+                );
             }
             TerminalMessage::GetSize { reply } => {
                 let result = self
                     .with_session(|session| session.size())
                     .await
                     .and_then(|result| result);
-                send_terminal_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "terminal request failed",
+                    "terminal reply receiver dropped before response",
+                    reply,
+                    result,
+                );
             }
             TerminalMessage::Shutdown { reply } => {
                 let result = self
                     .with_session(|session| session.shutdown())
                     .await
                     .and_then(|result| result);
-                send_terminal_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "terminal request failed",
+                    "terminal reply receiver dropped before response",
+                    reply,
+                    result,
+                );
             }
         }
     }
@@ -129,27 +168,6 @@ impl TerminalActor {
         .map_err(|e| TerminalError::ActorUnavailable(e.to_string()))?;
         self.session = Some(session);
         Ok(result)
-    }
-}
-
-fn send_terminal_reply<T>(
-    message_name: &'static str,
-    reply: oneshot::Sender<TerminalResult<T>>,
-    result: TerminalResult<T>,
-) {
-    if let Err(error) = &result {
-        tracing::warn!(
-            message = message_name,
-            error = %error,
-            "terminal request failed"
-        );
-    }
-
-    if reply.send(result).is_err() {
-        tracing::warn!(
-            message = message_name,
-            "terminal reply receiver dropped before response"
-        );
     }
 }
 

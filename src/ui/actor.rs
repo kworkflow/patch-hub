@@ -10,16 +10,10 @@
 //! crossing this boundary.
 use std::{mem, ops::ControlFlow};
 
-use tokio::{
-    spawn,
-    sync::{mpsc, oneshot},
-};
+use tokio::{spawn, sync::mpsc};
 
-use crate::ui::{
-    core::UiCore,
-    handle::UiHandle,
-    messages::{UiMessage, UiResult},
-};
+use crate::infrastructure::actor_reply::ActorReplyService;
+use crate::ui::{core::UiCore, handle::UiHandle, messages::UiMessage};
 
 pub const DEFAULT_UI_CHANNEL_SIZE: usize = 32;
 
@@ -66,7 +60,13 @@ impl UiActor {
                 );
                 let result = self.core.build_scene(&app_view);
                 tracing::debug!(ok = result.is_ok(), "ui scene built");
-                send_ui_reply(message_name, reply_to, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "ui request failed",
+                    "ui reply receiver dropped before response",
+                    reply_to,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             UiMessage::Shutdown => {
@@ -74,27 +74,6 @@ impl UiActor {
                 ControlFlow::Break(())
             }
         }
-    }
-}
-
-fn send_ui_reply<T>(
-    message_name: &'static str,
-    reply: oneshot::Sender<UiResult<T>>,
-    result: UiResult<T>,
-) {
-    if let Err(error) = &result {
-        tracing::warn!(
-            message = message_name,
-            error = %error,
-            "ui request failed"
-        );
-    }
-
-    if reply.send(result).is_err() {
-        tracing::warn!(
-            message = message_name,
-            "ui reply receiver dropped before response"
-        );
     }
 }
 

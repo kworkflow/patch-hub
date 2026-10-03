@@ -7,12 +7,9 @@
 //! [`LoreApiActor::with_core`]; callers never touch [`LoreService`] directly.
 use std::ops::ControlFlow;
 
-use tokio::{
-    spawn,
-    sync::{mpsc, oneshot},
-    task,
-};
+use tokio::{spawn, sync::mpsc, task};
 
+use crate::infrastructure::actor_reply::ActorReplyService;
 use crate::lore::application::{
     errors::LoreError, handle::LoreApiHandle, messages::LoreApiMessage, service::LoreService,
 };
@@ -63,7 +60,13 @@ impl LoreApiActor {
                     .with_core(|core| core.warm_bootstrap_cache())
                     .await
                     .and_then(|result| result);
-                send_lore_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "lore api request failed",
+                    "lore api reply receiver dropped before response",
+                    reply,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             LoreApiMessage::FetchAvailableLists { cache_mode, reply } => {
@@ -72,7 +75,13 @@ impl LoreApiActor {
                     .with_core(move |core| core.fetch_available_lists(cache_mode))
                     .await
                     .and_then(|result| result);
-                send_lore_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "lore api request failed",
+                    "lore api reply receiver dropped before response",
+                    reply,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             LoreApiMessage::FetchFeedPage {
@@ -95,7 +104,13 @@ impl LoreApiActor {
                     })
                     .await
                     .and_then(|result| result);
-                send_lore_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "lore api request failed",
+                    "lore api reply receiver dropped before response",
+                    reply,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             LoreApiMessage::FetchPatchsetDetails {
@@ -114,7 +129,13 @@ impl LoreApiActor {
                     })
                     .await
                     .and_then(|result| result);
-                send_lore_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "lore api request failed",
+                    "lore api reply receiver dropped before response",
+                    reply,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             LoreApiMessage::SaveBookmarks { bookmarks, reply } => {
@@ -123,7 +144,13 @@ impl LoreApiActor {
                     .with_core(move |core| core.save_bookmarked_patchsets(&bookmarks))
                     .await
                     .and_then(|result| result);
-                send_lore_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "lore api request failed",
+                    "lore api reply receiver dropped before response",
+                    reply,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             LoreApiMessage::SaveReviewed { reviewed, reply } => {
@@ -132,7 +159,13 @@ impl LoreApiActor {
                     .with_core(move |core| core.save_reviewed_patchsets(&reviewed))
                     .await
                     .and_then(|result| result);
-                send_lore_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "lore api request failed",
+                    "lore api reply receiver dropped before response",
+                    reply,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             LoreApiMessage::GetGitSignature {
@@ -143,7 +176,13 @@ impl LoreApiActor {
                 let result = self
                     .with_core(move |core| core.get_git_signature(&git_repo_path))
                     .await;
-                send_lore_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "lore api request failed",
+                    "lore api reply receiver dropped before response",
+                    reply,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             LoreApiMessage::PrepareReplyCommands {
@@ -174,7 +213,13 @@ impl LoreApiActor {
                     })
                     .await
                     .and_then(|result| result);
-                send_lore_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "lore api request failed",
+                    "lore api reply receiver dropped before response",
+                    reply,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             LoreApiMessage::Shutdown => {
@@ -201,27 +246,6 @@ impl LoreApiActor {
         .map_err(|e| LoreError::ActorUnavailable(e.to_string()))?;
         self.core = Some(core);
         Ok(result)
-    }
-}
-
-fn send_lore_reply<T>(
-    message_name: &'static str,
-    reply: oneshot::Sender<Result<T, LoreError>>,
-    result: Result<T, LoreError>,
-) {
-    if let Err(error) = &result {
-        tracing::warn!(
-            message = message_name,
-            error = %error,
-            "lore api request failed"
-        );
-    }
-
-    if reply.send(result).is_err() {
-        tracing::warn!(
-            message = message_name,
-            "lore api reply receiver dropped before response"
-        );
     }
 }
 

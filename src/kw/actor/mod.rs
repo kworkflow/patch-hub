@@ -25,6 +25,7 @@ use tokio::{
     sync::{mpsc, oneshot, watch},
 };
 
+use crate::infrastructure::actor_reply::ActorReplyService;
 use crate::{
     config::KernelTree,
     infrastructure::{
@@ -146,47 +147,71 @@ impl KwActor {
 
         match message {
             KwMessage::RecordApply { record, reply } => {
-                send_kw_reply(
+                ActorReplyService::send_actor_reply(
                     message_name,
+                    "kw request failed",
+                    "kw reply receiver dropped before response",
                     reply,
                     self.history.record_apply(record).map_err(KwError::from),
                 );
                 ControlFlow::Continue(())
             }
             KwMessage::StartBuild { request, reply } => {
-                send_start_reply(
+                ActorReplyService::send_actor_reply(
                     message_name,
+                    "kw start request refused",
+                    "kw reply receiver dropped before response",
                     reply,
                     self.start_job(KwJobKind::Build, request).await,
                 );
                 ControlFlow::Continue(())
             }
             KwMessage::StartDeploy { request, reply } => {
-                send_start_reply(
+                ActorReplyService::send_actor_reply(
                     message_name,
+                    "kw start request refused",
+                    "kw reply receiver dropped before response",
                     reply,
                     self.start_job(KwJobKind::Deploy, request).await,
                 );
                 ControlFlow::Continue(())
             }
             KwMessage::StartBuildThenDeploy { request, reply } => {
-                send_start_reply(
+                ActorReplyService::send_actor_reply(
                     message_name,
+                    "kw start request refused",
+                    "kw reply receiver dropped before response",
                     reply,
                     self.start_job(KwJobKind::BuildThenDeploy, request).await,
                 );
                 ControlFlow::Continue(())
             }
             KwMessage::Cancel { reply } => {
-                send_kw_reply(message_name, reply, self.request_cancel());
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "kw request failed",
+                    "kw reply receiver dropped before response",
+                    reply,
+                    self.request_cancel(),
+                );
                 ControlFlow::Continue(())
             }
             KwMessage::GetStatus { reply } => {
-                send_value_reply(message_name, reply, self.status_tx.borrow().clone());
+                ActorReplyService::deliver_value(
+                    message_name,
+                    "kw reply receiver dropped before response",
+                    reply,
+                    self.status_tx.borrow().clone(),
+                );
                 ControlFlow::Continue(())
             }
             KwMessage::WatchStatus { reply } => {
-                send_value_reply(message_name, reply, self.status_tx.subscribe());
+                ActorReplyService::deliver_value(
+                    message_name,
+                    "kw reply receiver dropped before response",
+                    reply,
+                    self.status_tx.subscribe(),
+                );
                 ControlFlow::Continue(())
             }
             KwMessage::GetReadiness {
@@ -195,8 +220,10 @@ impl KwActor {
                 for_branch,
                 reply,
             } => {
-                send_kw_reply(
+                ActorReplyService::send_actor_reply(
                     message_name,
+                    "kw request failed",
+                    "kw reply receiver dropped before response",
                     reply,
                     self.evaluate_readiness(&kernel_tree_id, &tree, for_branch)
                         .await,
@@ -204,7 +231,13 @@ impl KwActor {
                 ControlFlow::Continue(())
             }
             KwMessage::RestorePreviousBranch { reply } => {
-                send_kw_reply(message_name, reply, self.restore_previous_branch().await);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "kw request failed",
+                    "kw reply receiver dropped before response",
+                    reply,
+                    self.restore_previous_branch().await,
+                );
                 ControlFlow::Continue(())
             }
             KwMessage::Shutdown { reply } => {
@@ -1136,57 +1169,6 @@ impl KwGitService {
                 String::new()
             }
         }
-    }
-}
-
-fn send_kw_reply<T>(
-    message_name: &'static str,
-    reply: oneshot::Sender<Result<T, KwError>>,
-    result: Result<T, KwError>,
-) {
-    if let Err(error) = &result {
-        tracing::warn!(
-            message = message_name,
-            error = %error,
-            "kw request failed"
-        );
-    }
-
-    if reply.send(result).is_err() {
-        tracing::warn!(
-            message = message_name,
-            "kw reply receiver dropped before response"
-        );
-    }
-}
-
-fn send_start_reply(
-    message_name: &'static str,
-    reply: oneshot::Sender<Result<(), KwStartError>>,
-    result: Result<(), KwStartError>,
-) {
-    if let Err(error) = &result {
-        tracing::warn!(
-            message = message_name,
-            error = %error,
-            "kw start request refused"
-        );
-    }
-
-    if reply.send(result).is_err() {
-        tracing::warn!(
-            message = message_name,
-            "kw reply receiver dropped before response"
-        );
-    }
-}
-
-fn send_value_reply<T>(message_name: &'static str, reply: oneshot::Sender<T>, value: T) {
-    if reply.send(value).is_err() {
-        tracing::warn!(
-            message = message_name,
-            "kw reply receiver dropped before response"
-        );
     }
 }
 

@@ -5,11 +5,9 @@
 //! and persists successful updates through [`JsonConfigRepository`](crate::config::JsonConfigRepository).
 use std::ops::ControlFlow;
 
-use tokio::{
-    spawn,
-    sync::{mpsc, oneshot},
-};
+use tokio::{spawn, sync::mpsc};
 
+use crate::infrastructure::actor_reply::ActorReplyService;
 use crate::{
     config::{
         handle::ConfigHandle,
@@ -66,12 +64,23 @@ where
 
         match message {
             ConfigMessage::GetSnapshot { reply } => {
-                send_config_snapshot_reply(message_name, reply, self.state.to_snapshot());
+                ActorReplyService::deliver_value(
+                    message_name,
+                    "config reply receiver dropped before response",
+                    reply,
+                    self.state.to_snapshot(),
+                );
                 ControlFlow::Continue(())
             }
             ConfigMessage::ValidateAndApply { draft, reply } => {
                 let result = self.apply(*draft);
-                send_config_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    "config request failed",
+                    "config reply receiver dropped before response",
+                    reply,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             ConfigMessage::Shutdown => {
@@ -88,40 +97,6 @@ where
         ConfigService::ensure_directories(&self.state, self.repo.fs())?;
         self.repo.save(&self.state)?;
         Ok(self.state.to_snapshot())
-    }
-}
-
-fn send_config_snapshot_reply(
-    message_name: &'static str,
-    reply: oneshot::Sender<ConfigSnapshot>,
-    snapshot: ConfigSnapshot,
-) {
-    if reply.send(snapshot).is_err() {
-        tracing::warn!(
-            message = message_name,
-            "config reply receiver dropped before response"
-        );
-    }
-}
-
-fn send_config_reply<T>(
-    message_name: &'static str,
-    reply: oneshot::Sender<ConfigResult<T>>,
-    result: ConfigResult<T>,
-) {
-    if let Err(error) = &result {
-        tracing::warn!(
-            message = message_name,
-            error = %error,
-            "config request failed"
-        );
-    }
-
-    if reply.send(result).is_err() {
-        tracing::warn!(
-            message = message_name,
-            "config reply receiver dropped before response"
-        );
     }
 }
 
