@@ -588,20 +588,12 @@ pub fn check_deploy_alone(
 
 /// Snapshot of tree, kw binary, and history probes used to decide whether
 /// a job can start, and why not.
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct KwReadiness {
     pub kw_binary: KwBinaryProbe,
     pub tree: TreeReadiness,
     /// Active kw env's `O=` dir, if any.
     pub output_dir: Option<PathBuf>,
-    /// Newest discoverable kernel image under the build root, if any.
-    pub kernel_image: Option<PathBuf>,
-    /// Build record for `(kernel_tree_id, lookup_branch)`, if any.
-    pub build_record: Option<KwBuildRecord>,
-    /// Newest build record for the tree across branches, even when HEAD
-    /// has none.
-    pub latest_build: Option<KwBuildRecord>,
     /// `Ok(())` is a self-sufficient verdict: tree readiness is already
     /// conjoined in, so a caller cannot forget to check `tree` as well.
     pub deploy_alone: Result<(), DeployAloneRefusal>,
@@ -671,9 +663,6 @@ pub fn evaluate_readiness(
         kw_binary,
         tree: tree_status,
         output_dir,
-        kernel_image,
-        build_record,
-        latest_build,
         deploy_alone,
         current_branch: {
             let trimmed = head_branch.trim();
@@ -1518,8 +1507,9 @@ last_line_without_newline=yes";
             Arc::new(OsFileSystem),
             data.path().to_str().unwrap().to_string(),
         );
-        let record = built_record(dir.path(), "patchset-x");
-        history.record_build(record.clone()).unwrap();
+        history
+            .record_build(built_record(dir.path(), "patchset-x"))
+            .unwrap();
 
         let mut env = MockEnvTrait::new();
         env.expect_which().returning(|_| true);
@@ -1547,9 +1537,8 @@ last_line_without_newline=yes";
             },
             readiness.tree
         );
-        assert_eq!(Some(boot.join("bzImage")), readiness.kernel_image);
-        assert_eq!(Some(record.clone()), readiness.build_record);
-        assert_eq!(Some(record), readiness.latest_build);
+        // A matching successful record plus the image under arch/x86/boot
+        // is what makes deploy-alone succeed.
         assert_eq!(Ok(()), readiness.deploy_alone);
         assert_eq!(None, readiness.output_dir);
         assert!(readiness.kw_binary.available);
@@ -1590,9 +1579,6 @@ last_line_without_newline=yes";
         .unwrap();
 
         assert_eq!(TreeReadiness::Missing, readiness.tree);
-        assert_eq!(None, readiness.kernel_image);
-        assert_eq!(None, readiness.build_record);
-        assert_eq!(None, readiness.latest_build);
         // Tree readiness is conjoined into the deploy-alone verdict, so
         // Ok(()) can never describe a tree that is not build-ready.
         assert_eq!(
@@ -1637,9 +1623,6 @@ last_line_without_newline=yes";
 
         // No build.config: arch stays None (glob fallback); no images exist.
         assert_eq!(TreeReadiness::Ready { arch: None }, readiness.tree);
-        assert_eq!(None, readiness.kernel_image);
-        assert_eq!(None, readiness.build_record);
-        assert_eq!(None, readiness.latest_build);
         assert_eq!(
             Err(DeployAloneRefusal::NoBuildRecord),
             readiness.deploy_alone
@@ -1686,8 +1669,9 @@ last_line_without_newline=yes";
             Arc::new(OsFileSystem),
             data.path().to_str().unwrap().to_string(),
         );
-        let record = built_record(dir.path(), "patchset-x");
-        history.record_build(record.clone()).unwrap();
+        history
+            .record_build(built_record(dir.path(), "patchset-x"))
+            .unwrap();
         let boot = dir.path().join("arch/x86/boot");
         fs::create_dir_all(&boot).unwrap();
         write_file_with_mtime(&boot.join("bzImage"), 100);
@@ -1713,7 +1697,6 @@ last_line_without_newline=yes";
         )
         .unwrap();
         assert_eq!(Some("master".to_string()), on_head.current_branch);
-        assert_eq!(None, on_head.build_record);
         assert_eq!(
             Err(DeployAloneRefusal::HeadMismatch {
                 recorded: "patchset-x".to_string(),
@@ -1735,7 +1718,6 @@ last_line_without_newline=yes";
         .unwrap();
         // HEAD is still master; deploy-alone is judged against the typed branch.
         assert_eq!(Some("master".to_string()), for_typed.current_branch);
-        assert_eq!(Some(record), for_typed.build_record);
         assert_eq!(Ok(()), for_typed.deploy_alone);
     }
 

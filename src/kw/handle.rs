@@ -16,7 +16,6 @@ pub struct KwHandle {
     tx: mpsc::Sender<KwMessage>,
 }
 
-#[allow(dead_code)]
 impl KwHandle {
     pub fn new(tx: mpsc::Sender<KwMessage>) -> Self {
         Self { tx }

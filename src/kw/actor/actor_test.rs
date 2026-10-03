@@ -666,7 +666,6 @@ async fn get_readiness_for_branch_looks_up_that_branch_not_head() {
         .unwrap();
 
     assert_eq!(Some("master".to_string()), readiness.current_branch);
-    assert_eq!(None, readiness.build_record);
     handle.shutdown().await;
 }
 
