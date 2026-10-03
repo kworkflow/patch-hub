@@ -140,7 +140,9 @@ impl KwActor {
         }
         tracing::info!("kw actor stopped");
     }
+}
 
+impl KwActor {
     async fn handle_message(&mut self, message: KwMessage) -> ControlFlow<()> {
         let message_name = message.name();
         tracing::debug!(message = message_name, "kw request received");

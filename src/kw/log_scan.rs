@@ -66,7 +66,9 @@ impl LogScanService {
         }
         warnings
     }
+}
 
+impl LogScanService {
     fn is_error_line(line: &str) -> bool {
         line.contains("fatal error:")
             || line.contains(" error:")

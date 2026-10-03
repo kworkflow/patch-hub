@@ -53,6 +53,49 @@ impl KwOpsPainter {
         Self::paint_log(f, scene, chunks[1]);
     }
 
+    /// Scroll so the newest wrapped rows sit at the bottom of the pane.
+    ///
+    /// Uses ratatui's wrap-aware [`Paragraph::line_count`] so the offset
+    /// matches what the painter actually renders (word wrap, tabs, wide
+    /// chars). Counted without a [`Block`] and with the inner width, so
+    /// border rows are not mixed into the text height.
+    pub(crate) fn compute_log_scroll_offset(
+        text: &str,
+        inner_width: u16,
+        inner_height: u16,
+    ) -> u16 {
+        if inner_height == 0 || inner_width == 0 {
+            return 0;
+        }
+        let rows = Paragraph::new(text)
+            .wrap(Wrap { trim: false })
+            .line_count(inner_width);
+        rows.saturating_sub(inner_height as usize) as u16
+    }
+
+    pub fn build_mode_spans() -> Vec<Span<'static>> {
+        vec![Span::styled(
+            "Kw operations",
+            Style::default().fg(Color::Green),
+        )]
+    }
+
+    pub fn build_keys_hint_span(editing: bool) -> Span<'static> {
+        if editing {
+            Span::styled(
+                "(ESC) cancel edit | (ENTER) confirm",
+                Style::default().fg(Color::Red),
+            )
+        } else {
+            Span::styled(
+            "(ESC / q) back | (e) edit | (b) build | (d) deploy | (D) build+deploy | (c) cancel | (r) restore | (?) help",
+            Style::default().fg(Color::Red),
+        )
+        }
+    }
+}
+
+impl KwOpsPainter {
     fn paint_form(f: &mut Frame, scene: &KwOpsScene, chunk: Rect) {
         let mut lines = vec![
             Self::build_labeled_line("Patchset", &scene.patchset_title),
@@ -131,26 +174,6 @@ impl KwOpsPainter {
         f.render_widget(paragraph, chunk);
     }
 
-    /// Scroll so the newest wrapped rows sit at the bottom of the pane.
-    ///
-    /// Uses ratatui's wrap-aware [`Paragraph::line_count`] so the offset
-    /// matches what the painter actually renders (word wrap, tabs, wide
-    /// chars). Counted without a [`Block`] and with the inner width, so
-    /// border rows are not mixed into the text height.
-    pub(crate) fn compute_log_scroll_offset(
-        text: &str,
-        inner_width: u16,
-        inner_height: u16,
-    ) -> u16 {
-        if inner_height == 0 || inner_width == 0 {
-            return 0;
-        }
-        let rows = Paragraph::new(text)
-            .wrap(Wrap { trim: false })
-            .line_count(inner_width);
-        rows.saturating_sub(inner_height as usize) as u16
-    }
-
     fn build_labeled_line(label: &str, value: &str) -> Line<'static> {
         Self::build_colored_label(label, value, Color::White)
     }
@@ -181,27 +204,6 @@ impl KwOpsPainter {
             spans.push(Span::styled(" ", Style::default().bg(Color::White)));
         }
         Line::from(spans)
-    }
-
-    pub fn build_mode_spans() -> Vec<Span<'static>> {
-        vec![Span::styled(
-            "Kw operations",
-            Style::default().fg(Color::Green),
-        )]
-    }
-
-    pub fn build_keys_hint_span(editing: bool) -> Span<'static> {
-        if editing {
-            Span::styled(
-                "(ESC) cancel edit | (ENTER) confirm",
-                Style::default().fg(Color::Red),
-            )
-        } else {
-            Span::styled(
-            "(ESC / q) back | (e) edit | (b) build | (d) deploy | (D) build+deploy | (c) cancel | (r) restore | (?) help",
-            Style::default().fg(Color::Red),
-        )
-        }
     }
 }
 

@@ -95,27 +95,6 @@ impl App {
         Self::assign_log_tail(ops, text)
     }
 
-    fn map_tail_read(result: Result<String, FileSystemError>) -> String {
-        match result {
-            Ok(text) => text,
-            Err(FileSystemError::IoError(error))
-                if error.kind() == std::io::ErrorKind::NotFound =>
-            {
-                String::new()
-            }
-            Err(error) => format!("(could not read log: {error})"),
-        }
-    }
-
-    fn assign_log_tail(ops: &mut KwOpsState, text: String) -> bool {
-        if ops.log_tail == text {
-            false
-        } else {
-            ops.log_tail = text;
-            true
-        }
-    }
-
     /// Projects a kw snapshot into App state and releases the optimistic
     /// start lock once the actor has left Idle.
     pub(crate) fn apply_kw_snapshot(&mut self, snapshot: KwStatusSnapshot) {
@@ -125,15 +104,6 @@ impl App {
             }
         }
         self.state.kw.status = Some(snapshot);
-    }
-
-    fn is_snapshot_job_terminal(job: &KwJobStatus) -> bool {
-        matches!(
-            job,
-            KwJobStatus::Succeeded { .. }
-                | KwJobStatus::Failed { .. }
-                | KwJobStatus::Cancelled { .. }
-        )
     }
 
     /// Re-probe deploy-alone after a job ends so the (d) label tracks the
@@ -309,6 +279,79 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    /// Records that the user confirmed boot-once and re-issues the pending
+    /// StartDeploy / StartBuildThenDeploy against that acknowledgement.
+    pub(crate) async fn resume_pending_deploy(&mut self) -> Result<()> {
+        let Some(ops) = self.state.kw.ops.as_mut() else {
+            return Ok(());
+        };
+        ops.boot_once_acknowledged = true;
+        let Some(kind) = ops.pending_deploy.take() else {
+            return Ok(());
+        };
+        match kind {
+            DeployStartKind::Deploy => self.start_job(KwStartKind::Deploy).await,
+            DeployStartKind::BuildThenDeploy => self.start_job(KwStartKind::BuildThenDeploy).await,
+        }
+    }
+
+    /// Drops a deploy start that was waiting on the boot-once confirm popup.
+    pub(crate) fn clear_pending_deploy(&mut self) {
+        if let Some(ops) = self.state.kw.ops.as_mut() {
+            ops.pending_deploy = None;
+        }
+    }
+
+    pub fn build_kw_ops_help_popup() -> AppPopup {
+        AppPopup::help()
+            .title("Kw operations")
+            .description(
+                "Start a kw build and/or remote deploy on the configured target kernel tree.",
+            )
+            .keybind("ESC / q", "Return to patchset details")
+            .keybind("j/k", "Move between branch and extra arguments")
+            .keybind("e / ENTER", "Edit the focused field")
+            .keybind("b", "Start build")
+            .keybind("d", "Start deploy")
+            .keybind("D", "Start build then deploy")
+            .keybind("c", "Cancel the running job")
+            .keybind("r", "Restore the previous branch")
+            .keybind("?", "Show this help screen")
+            .build()
+    }
+}
+
+impl App {
+    fn map_tail_read(result: Result<String, FileSystemError>) -> String {
+        match result {
+            Ok(text) => text,
+            Err(FileSystemError::IoError(error))
+                if error.kind() == std::io::ErrorKind::NotFound =>
+            {
+                String::new()
+            }
+            Err(error) => format!("(could not read log: {error})"),
+        }
+    }
+
+    fn assign_log_tail(ops: &mut KwOpsState, text: String) -> bool {
+        if ops.log_tail == text {
+            false
+        } else {
+            ops.log_tail = text;
+            true
+        }
+    }
+
+    fn is_snapshot_job_terminal(job: &KwJobStatus) -> bool {
+        matches!(
+            job,
+            KwJobStatus::Succeeded { .. }
+                | KwJobStatus::Failed { .. }
+                | KwJobStatus::Cancelled { .. }
+        )
     }
 
     async fn start_job(&mut self, kind: KwStartKind) -> Result<()> {
@@ -517,47 +560,6 @@ impl App {
                 .ops
                 .as_ref()
                 .is_some_and(|ops| ops.start_requested)
-    }
-
-    /// Records that the user confirmed boot-once and re-issues the pending
-    /// StartDeploy / StartBuildThenDeploy against that acknowledgement.
-    pub(crate) async fn resume_pending_deploy(&mut self) -> Result<()> {
-        let Some(ops) = self.state.kw.ops.as_mut() else {
-            return Ok(());
-        };
-        ops.boot_once_acknowledged = true;
-        let Some(kind) = ops.pending_deploy.take() else {
-            return Ok(());
-        };
-        match kind {
-            DeployStartKind::Deploy => self.start_job(KwStartKind::Deploy).await,
-            DeployStartKind::BuildThenDeploy => self.start_job(KwStartKind::BuildThenDeploy).await,
-        }
-    }
-
-    /// Drops a deploy start that was waiting on the boot-once confirm popup.
-    pub(crate) fn clear_pending_deploy(&mut self) {
-        if let Some(ops) = self.state.kw.ops.as_mut() {
-            ops.pending_deploy = None;
-        }
-    }
-
-    pub fn build_kw_ops_help_popup() -> AppPopup {
-        AppPopup::help()
-            .title("Kw operations")
-            .description(
-                "Start a kw build and/or remote deploy on the configured target kernel tree.",
-            )
-            .keybind("ESC / q", "Return to patchset details")
-            .keybind("j/k", "Move between branch and extra arguments")
-            .keybind("e / ENTER", "Edit the focused field")
-            .keybind("b", "Start build")
-            .keybind("d", "Start deploy")
-            .keybind("D", "Start build then deploy")
-            .keybind("c", "Cancel the running job")
-            .keybind("r", "Restore the previous branch")
-            .keybind("?", "Show this help screen")
-            .build()
     }
 }
 

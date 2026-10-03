@@ -71,7 +71,9 @@ impl ApplyPatchsetService {
             }
         }
     }
+}
 
+impl ApplyPatchsetService {
     fn validate_kernel_tree<'a>(
         fs: &dyn FileSystemTrait,
         config: &'a ConfigSnapshot,

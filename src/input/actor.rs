@@ -128,7 +128,9 @@ impl InputActor {
 
         tracing::info!("input actor stopped");
     }
+}
 
+impl InputActor {
     async fn deliver(&mut self, event: InputEvent) {
         let Some(tx) = &self.subscriber else {
             return;

@@ -47,7 +47,9 @@ impl TerminalActor {
         }
         tracing::info!("terminal actor stopped");
     }
+}
 
+impl TerminalActor {
     async fn handle_message(&mut self, message: TerminalMessage) {
         let message_name = message.name();
         tracing::debug!(message = message_name, "terminal request received");

@@ -59,6 +59,22 @@ impl DetailsPainter {
         }
     }
 
+    pub fn build_mode_spans() -> Vec<Span<'static>> {
+        vec![Span::styled(
+            "Patchset Details and Actions",
+            Style::default().fg(Color::Green),
+        )]
+    }
+
+    pub fn build_keys_hint_span() -> Span<'static> {
+        Span::styled(
+            "(ESC / q) to return | (ENTER) run actions | (w) kw | (?) help",
+            Style::default().fg(Color::Red),
+        )
+    }
+}
+
+impl DetailsPainter {
     fn build_review_trailers_line(counts: &TagTrailerCounts) -> Line<'static> {
         let resolve_color = |n: usize| -> Style {
             if n == 0 {
@@ -240,19 +256,5 @@ impl DetailsPainter {
             .scroll((scene.preview_scroll_offset as u16, scene.preview_pan as u16));
 
         f.render_widget(patch_preview, chunk);
-    }
-
-    pub fn build_mode_spans() -> Vec<Span<'static>> {
-        vec![Span::styled(
-            "Patchset Details and Actions",
-            Style::default().fg(Color::Green),
-        )]
-    }
-
-    pub fn build_keys_hint_span() -> Span<'static> {
-        Span::styled(
-            "(ESC / q) to return | (ENTER) run actions | (w) kw | (?) help",
-            Style::default().fg(Color::Red),
-        )
     }
 }

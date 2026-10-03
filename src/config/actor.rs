@@ -57,7 +57,12 @@ where
         }
         tracing::info!("config actor stopped");
     }
+}
 
+impl<FS> ConfigActor<FS>
+where
+    FS: FileSystemTrait + Send + Sync + 'static,
+{
     fn handle_message(&mut self, message: ConfigMessage) -> ControlFlow<()> {
         let message_name = message.name();
         tracing::debug!(message = message_name, "config request received");

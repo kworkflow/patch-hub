@@ -29,26 +29,6 @@ impl ConfigService {
         Ok((state, repo))
     }
 
-    fn load_initial_state<FS: FileSystemTrait>(
-        env: &dyn EnvTrait,
-        repo: &JsonConfigRepository<FS>,
-    ) -> ConfigState {
-        let path = repo.config_path();
-        let fs = repo.fs();
-        if fs.is_file(Path::new(path)) {
-            match fs.read_to_string(Path::new(path)) {
-                Ok(file_contents) => match from_str(&file_contents) {
-                    Ok(config) => return config,
-                    Err(e) => eprintln!("Failed to parse config file {path}: {e}"),
-                },
-                Err(e) => {
-                    eprintln!("Failed to read config file {path}: {e}");
-                }
-            }
-        }
-        ConfigState::new_with_defaults(env)
-    }
-
     pub(crate) fn ensure_directories(
         state: &ConfigState,
         fs: &dyn FileSystemTrait,
@@ -200,6 +180,28 @@ impl ConfigService {
             kw_deploy_force,
             target_kernel_tree,
         })
+    }
+}
+
+impl ConfigService {
+    fn load_initial_state<FS: FileSystemTrait>(
+        env: &dyn EnvTrait,
+        repo: &JsonConfigRepository<FS>,
+    ) -> ConfigState {
+        let path = repo.config_path();
+        let fs = repo.fs();
+        if fs.is_file(Path::new(path)) {
+            match fs.read_to_string(Path::new(path)) {
+                Ok(file_contents) => match from_str(&file_contents) {
+                    Ok(config) => return config,
+                    Err(e) => eprintln!("Failed to parse config file {path}: {e}"),
+                },
+                Err(e) => {
+                    eprintln!("Failed to read config file {path}: {e}");
+                }
+            }
+        }
+        ConfigState::new_with_defaults(env)
     }
 
     fn reject_unknown_kernel_tree(raw: &str, current: &ConfigState) -> ConfigError {

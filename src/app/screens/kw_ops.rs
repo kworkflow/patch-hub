@@ -99,7 +99,9 @@ impl KwOpsState {
     pub fn append_edit(&mut self, ch: char) {
         self.edit_buffer.push(ch);
     }
+}
 
+impl KwOpsState {
     fn split_extra_args(raw: &str) -> Vec<String> {
         raw.split_whitespace().map(str::to_string).collect()
     }

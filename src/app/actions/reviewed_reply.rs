@@ -86,7 +86,9 @@ impl ReviewedReplyService {
 
         Ok(ReviewedReplyResult::Completed { successful_indexes })
     }
+}
 
+impl ReviewedReplyService {
     fn record_successful_reply_indexes(
         shell: &dyn ShellTrait,
         successful_indexes: &mut HashSet<usize>,

@@ -328,6 +328,46 @@ impl App {
         Ok(())
     }
 
+    /// Opens the edit-config screen from the current configuration snapshot.
+    pub fn init_edit_config(&mut self) {
+        self.state.config_state.edit_config = Some(EditConfigState::new(&self.state.config));
+    }
+
+    pub fn reset_edit_config(&mut self) {
+        self.state.config_state.edit_config = None;
+    }
+
+    /// Applies edited values from [`ConfigUiState::edit_config`] into [`AppState::config`].
+    pub async fn consolidate_edit_config(&mut self) -> Result<()> {
+        if let Some(edit_config) = &self.state.config_state.edit_config {
+            debug!("validating and applying config update");
+            let draft = edit_config.to_update_draft();
+            let snapshot = self
+                .services
+                .config
+                .validate_and_apply(draft)
+                .await
+                .map_err(|e| eyre!("{e:#?}"))?;
+            self.state.config = snapshot;
+            info!("configuration updated and persisted");
+        }
+        Ok(())
+    }
+
+    pub fn set_current_screen(&mut self, new_current_screen: CurrentScreen) {
+        self.state.navigation.current_screen = new_current_screen;
+    }
+
+    /// Projects the current [`AppState`] into an owned [`AppViewModel`].
+    ///
+    /// This is the primary way for the orchestration layer to hand off
+    /// presentation data to the UI actor without exposing raw `AppState`.
+    pub fn present(&self) -> AppViewModel {
+        view_model::project_state(&self.state)
+    }
+}
+
+impl App {
     async fn sync_patchset_bookmark(&mut self) -> Result<()> {
         let details = self
             .state
@@ -526,43 +566,6 @@ impl App {
         }
     }
 
-    /// Opens the edit-config screen from the current configuration snapshot.
-    pub fn init_edit_config(&mut self) {
-        self.state.config_state.edit_config = Some(EditConfigState::new(&self.state.config));
-    }
-
-    pub fn reset_edit_config(&mut self) {
-        self.state.config_state.edit_config = None;
-    }
-
-    /// Applies edited values from [`ConfigUiState::edit_config`] into [`AppState::config`].
-    pub async fn consolidate_edit_config(&mut self) -> Result<()> {
-        if let Some(edit_config) = &self.state.config_state.edit_config {
-            debug!("validating and applying config update");
-            let draft = edit_config.to_update_draft();
-            let snapshot = self
-                .services
-                .config
-                .validate_and_apply(draft)
-                .await
-                .map_err(|e| eyre!("{e:#?}"))?;
-            self.state.config = snapshot;
-            info!("configuration updated and persisted");
-        }
-        Ok(())
-    }
-
-    pub fn set_current_screen(&mut self, new_current_screen: CurrentScreen) {
-        self.state.navigation.current_screen = new_current_screen;
-    }
-
-    /// Projects the current [`AppState`] into an owned [`AppViewModel`].
-    ///
-    /// This is the primary way for the orchestration layer to hand off
-    /// presentation data to the UI actor without exposing raw `AppState`.
-    pub fn present(&self) -> AppViewModel {
-        view_model::project_state(&self.state)
-    }
     fn is_patchset_action_selected(
         details: &PatchsetDetailsState,
         action: &PatchsetAction,

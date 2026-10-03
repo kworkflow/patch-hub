@@ -81,7 +81,9 @@ impl FileKwHistoryStore {
             build_history_path: format!("{data_dir}/{BUILD_HISTORY_FILENAME}"),
         }
     }
+}
 
+impl FileKwHistoryStore {
     /// Loads a history file, or its empty default when the file does not
     /// exist. A corrupt file is an error rather than an empty map: history
     /// must never be silently clobbered by the next write.

@@ -422,7 +422,9 @@ impl LoreService {
 
         (name, email)
     }
+}
 
+impl LoreService {
     fn extract_tag_summary(raw_patch: &str) -> PatchTagSummary {
         let (cover, _) = PatchsetParserService::split_cover(raw_patch);
 

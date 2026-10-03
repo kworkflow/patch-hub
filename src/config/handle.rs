@@ -39,7 +39,9 @@ impl ConfigHandle {
     pub async fn shutdown(&self) {
         self.tx.send(ConfigMessage::Shutdown).await.ok();
     }
+}
 
+impl ConfigHandle {
     async fn request_result<T>(
         &self,
         build_message: impl FnOnce(oneshot::Sender<ConfigResult<T>>) -> ConfigMessage,

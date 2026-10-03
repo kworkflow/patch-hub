@@ -111,18 +111,6 @@ impl App {
         Ok(())
     }
 
-    async fn count_preview_scroll_lines(
-        amount: ScrollAmount,
-        terminal_handle: &TerminalHandle,
-    ) -> Result<usize> {
-        let (_, height) = terminal_handle.size().await?;
-        Ok(match amount {
-            ScrollAmount::Line => 1,
-            ScrollAmount::HalfPage => height as usize / 2,
-            ScrollAmount::Page => height as usize,
-        })
-    }
-
     pub fn build_details_help_popup() -> AppPopup {
         AppPopup::help()
         .title("Patchset Details and Actions")
@@ -146,5 +134,19 @@ impl App {
         .keybind("Ctrl+t", "Show code-review trailers details")
         .keybind("w", "Kw operations")
         .build()
+    }
+}
+
+impl App {
+    async fn count_preview_scroll_lines(
+        amount: ScrollAmount,
+        terminal_handle: &TerminalHandle,
+    ) -> Result<usize> {
+        let (_, height) = terminal_handle.size().await?;
+        Ok(match amount {
+            ScrollAmount::Line => 1,
+            ScrollAmount::HalfPage => height as usize / 2,
+            ScrollAmount::Page => height as usize,
+        })
     }
 }

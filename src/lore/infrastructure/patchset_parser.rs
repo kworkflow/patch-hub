@@ -24,7 +24,9 @@ impl MboxPatchsetParser {
     pub fn new(fs: Arc<dyn FileSystemTrait>) -> Self {
         MboxPatchsetParser { fs }
     }
+}
 
+impl MboxPatchsetParser {
     fn extract_patches(
         fs: &dyn FileSystemTrait,
         mbox_path: &Path,

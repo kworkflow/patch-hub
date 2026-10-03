@@ -43,7 +43,9 @@ impl InputMapper {
             TerminalEvent::Resize { width, height } => Some(InputEvent::Resize { width, height }),
         }
     }
+}
 
+impl InputMapper {
     fn map_key_input(&mut self, key: KeyInput, context: &InputContext) -> Option<InputEvent> {
         if key.kind == KeyEventKind::Release {
             return None;

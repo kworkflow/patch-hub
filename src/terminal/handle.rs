@@ -63,7 +63,9 @@ impl TerminalHandle {
         self.request_result(|reply| TerminalMessage::Shutdown { reply })
             .await
     }
+}
 
+impl TerminalHandle {
     async fn request_result<T>(
         &self,
         build_message: impl FnOnce(oneshot::Sender<TerminalResult<T>>) -> TerminalMessage,

@@ -27,15 +27,6 @@ const LOADING_AREA_EXTRA_LINES: u16 = 2;
 pub(crate) struct LoadingPainter;
 
 impl LoadingPainter {
-    /// Gets the current spinner state and updates the tick.
-    fn advance_spinner() -> char {
-        let char_to_ret = SPINNER[unsafe { SPINNER_TICK }];
-        unsafe {
-            SPINNER_TICK = (SPINNER_TICK + 1) % 8;
-        }
-        char_to_ret
-    }
-
     /// The actual implementation of the loading screen rendering. Currently the
     /// loading notification is static.
     pub(crate) fn draw_loading_screen(f: &mut Frame, title: impl Display) {
@@ -59,6 +50,17 @@ impl LoadingPainter {
         .wrap(Wrap { trim: true });
 
         f.render_widget(loading_par, loading_area);
+    }
+}
+
+impl LoadingPainter {
+    /// Gets the current spinner state and updates the tick.
+    fn advance_spinner() -> char {
+        let char_to_ret = SPINNER[unsafe { SPINNER_TICK }];
+        unsafe {
+            SPINNER_TICK = (SPINNER_TICK + 1) % 8;
+        }
+        char_to_ret
     }
 
     /// # Tests

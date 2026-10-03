@@ -59,7 +59,9 @@ impl FileLorePersistence {
             reviewed_path,
         }
     }
+}
 
+impl FileLorePersistence {
     fn read_json<T: DeserializeOwned>(&self, path: &str) -> Result<T, FileSystemError> {
         let reader = self.fs.open_bufreader(Path::new(path))?;
         from_reader(reader)

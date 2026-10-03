@@ -70,7 +70,9 @@ impl PatchFeedIndex {
 
         Some(page)
     }
+}
 
+impl PatchFeedIndex {
     fn ingest_patches(&mut self, feed: PatchFeed) -> Vec<String> {
         let mut new_ids = Vec::new();
         for mut patch in feed.patches().clone() {

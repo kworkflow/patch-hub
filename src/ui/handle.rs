@@ -30,7 +30,9 @@ impl UiHandle {
     pub async fn shutdown(&self) {
         self.tx.send(UiMessage::Shutdown).await.ok();
     }
+}
 
+impl UiHandle {
     async fn request_result<T>(
         &self,
         build_message: impl FnOnce(oneshot::Sender<UiResult<T>>) -> UiMessage,

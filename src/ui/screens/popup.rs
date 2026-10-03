@@ -87,7 +87,9 @@ impl PopupPainter {
             } => Self::paint_confirm(f, &scene.title, body, options, *selected, chunk),
         }
     }
+}
 
+impl PopupPainter {
     fn paint_info(f: &mut Frame, title: &str, body: &str, scroll: (u16, u16), chunk: Rect) {
         let bold_blue = Style::default()
             .add_modifier(Modifier::BOLD)

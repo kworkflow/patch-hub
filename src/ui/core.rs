@@ -57,7 +57,9 @@ impl UiCore {
             popup,
         })
     }
+}
 
+impl UiCore {
     fn build_navigation(
         &self,
         screen: &ScreenViewModel,

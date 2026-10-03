@@ -94,7 +94,9 @@ impl MultiLogFileWriter {
 
         new_guards
     }
+}
 
+impl MultiLogFileWriter {
     fn copy_old_logs_to_new_path(old_log_file_path: String, new_log_file_path: String) {
         let Ok(mut old_log_file_content) = File::open(&old_log_file_path) else {
             event!(

@@ -51,7 +51,9 @@ impl RenderActor {
         }
         tracing::info!("render actor stopped");
     }
+}
 
+impl RenderActor {
     async fn handle_message(&mut self, message: RenderMessage) -> ControlFlow<()> {
         let message_name = message.name();
         tracing::debug!(message = message_name, "render request received");

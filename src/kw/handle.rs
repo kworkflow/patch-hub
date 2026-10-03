@@ -87,7 +87,9 @@ impl KwHandle {
             rx.await.ok();
         }
     }
+}
 
+impl KwHandle {
     async fn request_result<T>(
         &self,
         build_message: impl FnOnce(oneshot::Sender<Result<T, KwError>>) -> KwMessage,

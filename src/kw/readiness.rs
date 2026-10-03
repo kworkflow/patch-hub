@@ -259,30 +259,6 @@ impl ReadinessService {
         }
     }
 
-    /// Newest `*Image` file directly inside `boot_dir`, if any.
-    #[cfg(unix)]
-    fn find_newest_image_in(fs: &dyn FileSystemTrait, boot_dir: &Path) -> Option<PathBuf> {
-        fs.read_dir(boot_dir)
-            .ok()?
-            .into_iter()
-            .filter(|entry| {
-                entry
-                    .file_name()
-                    .is_some_and(|name| name.to_string_lossy().ends_with("Image"))
-                    && fs.is_file(entry)
-            })
-            .map(|entry| (Self::read_image_mtime(fs, &entry), entry))
-            .max_by_key(|(mtime, _)| *mtime)
-            .map(|(_, entry)| entry)
-    }
-
-    #[cfg(unix)]
-    fn read_image_mtime(fs: &dyn FileSystemTrait, path: &Path) -> SystemTime {
-        fs.metadata(path)
-            .and_then(|meta| meta.modified().map_err(FileSystemError::from))
-            .unwrap_or(SystemTime::UNIX_EPOCH)
-    }
-
     /// Reads the built kernel's release string from
     /// `<build_root>/include/config/kernel.release`, the file a kernel build
     /// generates — cheaper than re-running `make kernelrelease`, and `None`
@@ -334,28 +310,6 @@ impl ReadinessService {
         }
     }
 
-    fn check_kw_version(version_line: &str) -> KwVersionCheck {
-        match Self::parse_kw_version(version_line) {
-            Some(version) if version >= KW_MIN_VERSION => KwVersionCheck::Meets,
-            Some(_) => KwVersionCheck::Below(version_line.to_string()),
-            None => KwVersionCheck::Unknown,
-        }
-    }
-
-    /// Extracts the first `X.Y[.Z]` pair from a version line: `0.10.0` and the
-    /// stale `beta-0.9` kw currently ships both parse.
-    fn parse_kw_version(line: &str) -> Option<(u32, u32)> {
-        let start = line.find(|c: char| c.is_ascii_digit())?;
-        let mut parts = line[start..].splitn(3, '.');
-        let major = parts.next()?.parse().ok()?;
-        let minor: String = parts
-            .next()?
-            .chars()
-            .take_while(|c| c.is_ascii_digit())
-            .collect();
-        Some((major, minor.parse().ok()?))
-    }
-
     /// Reads `boot_into_new_kernel_once` from `<tree>/.kw/deploy.config`, then
     /// `${XDG_CONFIG_HOME:-$HOME/.config}/kw/deploy.config`. A present but
     /// unreadable tree file is [`BootOnceState::Unknown`] rather than a guess
@@ -385,33 +339,6 @@ impl ReadinessService {
             Ok(Some(state)) => state,
             Ok(None) | Err(()) => BootOnceState::Unknown,
         }
-    }
-
-    #[cfg(unix)]
-    fn read_boot_once_from_file(
-        fs: &dyn FileSystemTrait,
-        path: &Path,
-    ) -> Result<Option<BootOnceState>, ()> {
-        let content = fs.read_to_string(path).map_err(|_| ())?;
-        Ok(Self::parse_kw_config(&content)
-            .remove("boot_into_new_kernel_once")
-            .map(|value| match value.as_str() {
-                "no" => BootOnceState::Off,
-                "yes" => BootOnceState::On,
-                _ => BootOnceState::Unknown,
-            }))
-    }
-
-    /// `${XDG_CONFIG_HOME:-$HOME/.config}/kw/<filename>`. A set-but-empty
-    /// `XDG_CONFIG_HOME` is treated as unset, matching bash `:-` and the XDG
-    /// spec.
-    #[cfg(unix)]
-    fn resolve_xdg_kw_config_file(env: &dyn EnvTrait, filename: &str) -> Option<PathBuf> {
-        let config_home = match env.var("XDG_CONFIG_HOME") {
-            Ok(xdg) if !xdg.is_empty() => xdg,
-            _ => format!("{}/.config", env.var("HOME").ok()?),
-        };
-        Some(Path::new(&config_home).join("kw").join(filename))
     }
 
     /// Deploy-alone readiness gate: a deploy without a preceding build is only
@@ -548,6 +475,81 @@ impl ReadinessService {
             deploy_remote: remote::RemoteConfigService::resolve_deploy_remote(fs, env, tree_path),
             boot_once: Self::probe_boot_once(fs, env, tree_path),
         })
+    }
+}
+
+impl ReadinessService {
+    /// Newest `*Image` file directly inside `boot_dir`, if any.
+    #[cfg(unix)]
+    fn find_newest_image_in(fs: &dyn FileSystemTrait, boot_dir: &Path) -> Option<PathBuf> {
+        fs.read_dir(boot_dir)
+            .ok()?
+            .into_iter()
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().ends_with("Image"))
+                    && fs.is_file(entry)
+            })
+            .map(|entry| (Self::read_image_mtime(fs, &entry), entry))
+            .max_by_key(|(mtime, _)| *mtime)
+            .map(|(_, entry)| entry)
+    }
+
+    #[cfg(unix)]
+    fn read_image_mtime(fs: &dyn FileSystemTrait, path: &Path) -> SystemTime {
+        fs.metadata(path)
+            .and_then(|meta| meta.modified().map_err(FileSystemError::from))
+            .unwrap_or(SystemTime::UNIX_EPOCH)
+    }
+
+    fn check_kw_version(version_line: &str) -> KwVersionCheck {
+        match Self::parse_kw_version(version_line) {
+            Some(version) if version >= KW_MIN_VERSION => KwVersionCheck::Meets,
+            Some(_) => KwVersionCheck::Below(version_line.to_string()),
+            None => KwVersionCheck::Unknown,
+        }
+    }
+
+    /// Extracts the first `X.Y[.Z]` pair from a version line: `0.10.0` and the
+    /// stale `beta-0.9` kw currently ships both parse.
+    fn parse_kw_version(line: &str) -> Option<(u32, u32)> {
+        let start = line.find(|c: char| c.is_ascii_digit())?;
+        let mut parts = line[start..].splitn(3, '.');
+        let major = parts.next()?.parse().ok()?;
+        let minor: String = parts
+            .next()?
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect();
+        Some((major, minor.parse().ok()?))
+    }
+
+    #[cfg(unix)]
+    fn read_boot_once_from_file(
+        fs: &dyn FileSystemTrait,
+        path: &Path,
+    ) -> Result<Option<BootOnceState>, ()> {
+        let content = fs.read_to_string(path).map_err(|_| ())?;
+        Ok(Self::parse_kw_config(&content)
+            .remove("boot_into_new_kernel_once")
+            .map(|value| match value.as_str() {
+                "no" => BootOnceState::Off,
+                "yes" => BootOnceState::On,
+                _ => BootOnceState::Unknown,
+            }))
+    }
+
+    /// `${XDG_CONFIG_HOME:-$HOME/.config}/kw/<filename>`. A set-but-empty
+    /// `XDG_CONFIG_HOME` is treated as unset, matching bash `:-` and the XDG
+    /// spec.
+    #[cfg(unix)]
+    fn resolve_xdg_kw_config_file(env: &dyn EnvTrait, filename: &str) -> Option<PathBuf> {
+        let config_home = match env.var("XDG_CONFIG_HOME") {
+            Ok(xdg) if !xdg.is_empty() => xdg,
+            _ => format!("{}/.config", env.var("HOME").ok()?),
+        };
+        Some(Path::new(&config_home).join("kw").join(filename))
     }
 }
 

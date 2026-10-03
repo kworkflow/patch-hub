@@ -24,7 +24,9 @@ impl App {
             }
         }
     }
+}
 
+impl App {
     fn resolve_open_patchset_result(
         origin: CurrentScreen,
         result: Result<B4Result>,

@@ -164,7 +164,9 @@ impl KwArgvService {
         }
         argv
     }
+}
 
+impl KwArgvService {
     /// Finds the reserved option a token sets, if any: an exact spelling,
     /// `--name=value` for a long spelling, a unique GNU getopt abbreviation
     /// of a `match_abbrev` long, a bundled reserved short, or an attached

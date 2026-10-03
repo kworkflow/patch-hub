@@ -40,7 +40,9 @@ impl B4PatchsetFetcher {
             cache_dir,
         }
     }
+}
 
+impl B4PatchsetFetcher {
     fn extract_mbox_name_from_message_id(message_id: &str) -> String {
         let mut mbox_name = message_id
             .replace("http://lore.kernel.org/", "")

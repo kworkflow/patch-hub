@@ -9,19 +9,6 @@ use crate::{
 pub struct PatchRendererService;
 
 impl PatchRendererService {
-    /// Cleans patch contents before rendering for preview. Currently, it only trims
-    /// the trailing signature delimiter (the `--` at the end of the patch) if it
-    /// exists, as it is incorrectly rendered as a deletion by diff renderers.
-    fn clean_patch_for_preview(patch: &str) -> String {
-        let lines: Vec<&str> = patch.lines().collect();
-
-        if let Some(sig_pos) = lines.iter().position(|&line| line.trim() == "--") {
-            lines[..sig_pos].join("\n")
-        } else {
-            patch.to_string()
-        }
-    }
-
     pub fn render_patch_preview(
         shell: &dyn ShellTrait,
         raw: &str,
@@ -35,6 +22,21 @@ impl PatchRendererService {
         }?;
 
         Ok(text)
+    }
+}
+
+impl PatchRendererService {
+    /// Cleans patch contents before rendering for preview. Currently, it only trims
+    /// the trailing signature delimiter (the `--` at the end of the patch) if it
+    /// exists, as it is incorrectly rendered as a deletion by diff renderers.
+    fn clean_patch_for_preview(patch: &str) -> String {
+        let lines: Vec<&str> = patch.lines().collect();
+
+        if let Some(sig_pos) = lines.iter().position(|&line| line.trim() == "--") {
+            lines[..sig_pos].join("\n")
+        } else {
+            patch.to_string()
+        }
     }
 
     /// Renders a patch using the `bat` command line tool.

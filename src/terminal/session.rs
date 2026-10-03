@@ -51,7 +51,9 @@ impl CrosstermTerminalSession {
             _ => None,
         }
     }
+}
 
+impl CrosstermTerminalSession {
     fn wait_for_key_press_from_session(
         session: &mut dyn TerminalSessionApi,
         key: KeyCode,

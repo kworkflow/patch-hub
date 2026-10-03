@@ -22,7 +22,9 @@ impl CoverRendererService {
 
         Ok(text)
     }
+}
 
+impl CoverRendererService {
     /// Renders a .mbx cover using the `bat` command line tool.
     ///
     /// # Errors

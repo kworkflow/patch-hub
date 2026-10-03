@@ -52,10 +52,6 @@ pub enum PatchsetAction {
 }
 
 impl PatchsetDetailsState {
-    fn measure_rendered_preview_height(preview: &str) -> usize {
-        preview.into_text().unwrap_or_default().height()
-    }
-
     pub fn from_rendered_preview(
         representative_patch: Patch,
         details: PatchsetDetails,
@@ -218,6 +214,12 @@ impl PatchsetDetailsState {
 
     pub fn actions_require_user_io(&self) -> bool {
         self.patches_to_reply.contains(&true)
+    }
+}
+
+impl PatchsetDetailsState {
+    fn measure_rendered_preview_height(preview: &str) -> usize {
+        preview.into_text().unwrap_or_default().height()
     }
 }
 

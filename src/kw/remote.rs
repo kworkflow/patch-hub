@@ -173,7 +173,10 @@ impl RemoteConfigService {
         }
         Err(RemoteRefusal::NoRemotesConfigured)
     }
+}
 
+#[cfg(unix)]
+impl RemoteConfigService {
     fn read_remote_from_file(
         fs: &dyn FileSystemTrait,
         path: &Path,

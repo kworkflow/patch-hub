@@ -64,6 +64,63 @@ impl ConfigState {
         Self::defaults_from_home(&home)
     }
 
+    /// Merges validated field updates from the edit-config flow.
+    pub fn apply_update(&mut self, u: &ValidatedConfigUpdate) {
+        if let Some(page_size) = u.page_size {
+            self.set_page_size(page_size);
+        }
+        if let Some(ref cache_dir) = u.cache_dir {
+            self.set_cache_dir(cache_dir.clone());
+        }
+        if let Some(ref data_dir) = u.data_dir {
+            self.set_data_dir(data_dir.clone());
+        }
+        if let Some(ref git_send_email_options) = u.git_send_email_option {
+            self.set_git_send_email_option(git_send_email_options.clone());
+        }
+        if let Some(ref git_am_options) = u.git_am_option {
+            self.set_git_am_option(git_am_options.clone());
+        }
+        if let Some(patch_renderer) = u.patch_renderer {
+            self.set_patch_renderer(patch_renderer);
+        }
+        if let Some(cover_renderer) = u.cover_renderer {
+            self.set_cover_renderer(cover_renderer);
+        }
+        if let Some(max_log_age) = u.max_log_age {
+            self.set_max_log_age(max_log_age);
+        }
+        if let Some(stay_on_applied_branch) = u.stay_on_applied_branch {
+            self.set_stay_on_applied_branch(stay_on_applied_branch);
+        }
+        if let Some(kw_reboot_after_deploy) = u.kw_reboot_after_deploy {
+            self.set_kw_reboot_after_deploy(kw_reboot_after_deploy);
+        }
+        if let Some(kw_deploy_force) = u.kw_deploy_force {
+            self.set_kw_deploy_force(kw_deploy_force);
+        }
+        if let Some(ref target_kernel_tree) = u.target_kernel_tree {
+            self.set_target_kernel_tree(target_kernel_tree.clone());
+        }
+    }
+
+    pub fn to_snapshot(&self) -> ConfigSnapshot {
+        ConfigSnapshot::from_state(self)
+    }
+
+    /// Recomputes derived path fields from `cache_dir` and `data_dir`.
+    pub fn normalize_derived_paths(&mut self) {
+        let cache_dir = self.cache_dir.clone();
+        self.patchsets_cache_dir = format!("{cache_dir}/patchsets");
+        let data_dir = self.data_dir.clone();
+        self.bookmarked_patchsets_path = format!("{data_dir}/bookmarked_patchsets.json");
+        self.mailing_lists_path = format!("{data_dir}/mailing_lists.json");
+        self.reviewed_patchsets_path = format!("{data_dir}/reviewed_patchsets.json");
+        self.logs_path = format!("{data_dir}/logs");
+    }
+}
+
+impl ConfigState {
     fn defaults_from_home(home: &str) -> Self {
         let cache_dir = format!("{home}/.cache/patch_hub");
         let data_dir = format!("{home}/.local/share/patch_hub");
@@ -141,61 +198,6 @@ impl ConfigState {
 
     fn set_target_kernel_tree(&mut self, target_kernel_tree: Option<String>) {
         self.target_kernel_tree = target_kernel_tree;
-    }
-
-    /// Merges validated field updates from the edit-config flow.
-    pub fn apply_update(&mut self, u: &ValidatedConfigUpdate) {
-        if let Some(page_size) = u.page_size {
-            self.set_page_size(page_size);
-        }
-        if let Some(ref cache_dir) = u.cache_dir {
-            self.set_cache_dir(cache_dir.clone());
-        }
-        if let Some(ref data_dir) = u.data_dir {
-            self.set_data_dir(data_dir.clone());
-        }
-        if let Some(ref git_send_email_options) = u.git_send_email_option {
-            self.set_git_send_email_option(git_send_email_options.clone());
-        }
-        if let Some(ref git_am_options) = u.git_am_option {
-            self.set_git_am_option(git_am_options.clone());
-        }
-        if let Some(patch_renderer) = u.patch_renderer {
-            self.set_patch_renderer(patch_renderer);
-        }
-        if let Some(cover_renderer) = u.cover_renderer {
-            self.set_cover_renderer(cover_renderer);
-        }
-        if let Some(max_log_age) = u.max_log_age {
-            self.set_max_log_age(max_log_age);
-        }
-        if let Some(stay_on_applied_branch) = u.stay_on_applied_branch {
-            self.set_stay_on_applied_branch(stay_on_applied_branch);
-        }
-        if let Some(kw_reboot_after_deploy) = u.kw_reboot_after_deploy {
-            self.set_kw_reboot_after_deploy(kw_reboot_after_deploy);
-        }
-        if let Some(kw_deploy_force) = u.kw_deploy_force {
-            self.set_kw_deploy_force(kw_deploy_force);
-        }
-        if let Some(ref target_kernel_tree) = u.target_kernel_tree {
-            self.set_target_kernel_tree(target_kernel_tree.clone());
-        }
-    }
-
-    pub fn to_snapshot(&self) -> ConfigSnapshot {
-        ConfigSnapshot::from_state(self)
-    }
-
-    /// Recomputes derived path fields from `cache_dir` and `data_dir`.
-    pub fn normalize_derived_paths(&mut self) {
-        let cache_dir = self.cache_dir.clone();
-        self.patchsets_cache_dir = format!("{cache_dir}/patchsets");
-        let data_dir = self.data_dir.clone();
-        self.bookmarked_patchsets_path = format!("{data_dir}/bookmarked_patchsets.json");
-        self.mailing_lists_path = format!("{data_dir}/mailing_lists.json");
-        self.reviewed_patchsets_path = format!("{data_dir}/reviewed_patchsets.json");
-        self.logs_path = format!("{data_dir}/logs");
     }
 }
 

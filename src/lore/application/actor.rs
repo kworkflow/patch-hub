@@ -48,7 +48,9 @@ impl LoreApiActor {
         }
         tracing::info!("lore api actor stopped");
     }
+}
 
+impl LoreApiActor {
     async fn handle_message(&mut self, message: LoreApiMessage) -> ControlFlow<()> {
         let message_name = message.name();
         tracing::debug!(message = message_name, "lore api request received");

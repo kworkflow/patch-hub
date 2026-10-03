@@ -73,7 +73,9 @@ impl AppActor {
         };
         AppHandle::new(spawn(actor.run()))
     }
+}
 
+impl AppActor {
     async fn run(mut self) -> Result<()> {
         tracing::info!("app actor started");
         tracing::info!("app actor initialized");

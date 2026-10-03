@@ -46,7 +46,9 @@ impl UiActor {
         }
         tracing::info!("ui actor stopped");
     }
+}
 
+impl UiActor {
     fn handle_message(&self, message: UiMessage) -> ControlFlow<()> {
         let message_name = message.name();
         tracing::debug!(message = message_name, "ui request received");

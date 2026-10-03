@@ -46,16 +46,6 @@ impl Display for Author {
 }
 
 impl Patch {
-    fn default_version() -> usize {
-        1
-    }
-    fn default_number_in_series() -> usize {
-        1
-    }
-    fn default_total_in_series() -> usize {
-        1
-    }
-
     pub fn version(&self) -> usize {
         self.version
     }
@@ -78,6 +68,18 @@ impl Patch {
         self.set_version(&patch_tag, &patch_regex.re_patch_version);
         self.set_number_in_series(&patch_tag, &patch_regex.re_patch_series);
         self.set_total_in_series(&patch_tag, &patch_regex.re_patch_series);
+    }
+}
+
+impl Patch {
+    fn default_version() -> usize {
+        1
+    }
+    fn default_number_in_series() -> usize {
+        1
+    }
+    fn default_total_in_series() -> usize {
+        1
     }
 
     fn get_patch_tag(&self, re_patch_tag: &Regex) -> Option<&str> {
