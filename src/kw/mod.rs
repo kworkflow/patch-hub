@@ -10,6 +10,7 @@ pub mod history;
 #[cfg(unix)]
 pub mod log_scan;
 pub mod messages;
+pub mod models;
 pub mod readiness;
 pub mod remote;
 pub mod status;

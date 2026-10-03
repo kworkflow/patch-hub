@@ -15,19 +15,12 @@
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
 
-use thiserror::Error;
-
 #[cfg(unix)]
 use crate::infrastructure::{env::EnvTrait, file_system::FileSystemTrait};
 
-/// A Host stanza from `remote.config` that has a usable Hostname.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct KwRemote {
-    pub name: String,
-    pub hostname: String,
-    pub port: u16,
-    pub user: Option<String>,
-}
+#[cfg(unix)]
+pub use crate::kw::models::remote::ParsedRemoteConfig;
+pub use crate::kw::models::remote::{KwRemote, RemoteRefusal};
 
 impl KwRemote {
     /// The `--remote` token kw's deploy parser accepts:
@@ -38,37 +31,6 @@ impl KwRemote {
             None => format!("{}:{}", self.hostname, self.port),
         }
     }
-}
-
-/// Why a deploy remote could not be resolved. Each variant's message is
-/// the actionable explanation.
-#[cfg_attr(not(unix), expect(dead_code))]
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum RemoteRefusal {
-    #[error(
-        "no remotes configured; configure a remote with `kw remote --set-default` \
-         or edit `.kw/remote.config`"
-    )]
-    NoRemotesConfigured,
-    #[error(
-        "{count} remotes configured with no default; set one with \
-         `kw remote --set-default` or edit `.kw/remote.config`"
-    )]
-    NoDefault { count: usize },
-    #[error(
-        "default remote '{name}' is not a Host in remote.config; set a valid \
-         default with `kw remote --set-default`"
-    )]
-    DefaultNotFound { name: String },
-}
-
-/// Parsed contents of a `remote.config` file. Incomplete Host stanzas
-/// (no Hostname, or an unparseable Port) are dropped rather than guessed.
-#[cfg(unix)]
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct ParsedRemoteConfig {
-    pub default: Option<String>,
-    pub hosts: Vec<KwRemote>,
 }
 
 /// Parses kw's ssh-config-like `remote.config`. Blank lines and comments

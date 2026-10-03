@@ -40,8 +40,9 @@ use crate::{
         history::{KwBuildRecord, KwHistoryStore},
         log_scan,
         messages::{DeployOptions, KwMessage, StartRequest},
+        models::job::{JobDeploy, JobEvent, JobOutcome, JobState, RestoreContext},
         readiness::{self, BootOnceState, KwReadiness, KwVersionCheck, TreeReadiness},
-        remote::{self, KwRemote},
+        remote,
         status::{KwJobKind, KwJobStatus, KwPhase, KwStatusSnapshot},
     },
 };
@@ -55,66 +56,6 @@ pub const DEFAULT_KW_CHANNEL_SIZE: usize = 16;
 /// JobAlreadyRunning for the rest of the session.
 const TERM_GRACE: Duration = Duration::from_secs(3);
 const KILL_GRACE: Duration = Duration::from_secs(2);
-
-/// How a job's process ended, as observed by the detached task that owns
-/// the process handle.
-enum JobOutcome {
-    Exited(ExitStatus),
-    WaitFailed(ProcessError),
-    Cancelled,
-}
-
-/// Internal report from a job task back to the actor loop. Kept off the
-/// public [`KwMessage`] protocol: no caller can fake a completion.
-enum JobEvent {
-    Finished(JobOutcome),
-}
-
-/// Where RestorePreviousBranch switches back to: the branch HEAD was on
-/// when the last job was accepted, and the tree that branch lives in.
-/// Session-only, deliberately not persisted.
-struct RestoreContext {
-    tree_path: String,
-    branch: String,
-}
-
-/// What the actor remembers about the running job while the detached task
-/// owns the process itself (see [`run_job`]).
-struct JobState {
-    kind: KwJobKind,
-    phase: KwPhase,
-    kernel_tree_id: String,
-    branch: String,
-    /// Tree path, kw-env output dir, and build arch as probed at accept
-    /// time. The build runs under these, so the completion record
-    /// describes this snapshot — not whatever the tree's configuration
-    /// says by the time the job ends.
-    tree_path: String,
-    output_dir: Option<PathBuf>,
-    arch: Option<String>,
-    log_path: PathBuf,
-    /// Present for deploy kinds so a BuildThenDeploy job can spawn the
-    /// deploy process at the build/deploy boundary without the original
-    /// StartRequest.
-    deploy: Option<JobDeploy>,
-    /// `None` once a cancel has been requested; a second `Cancel` is an
-    /// idempotent ack.
-    cancel_tx: Option<oneshot::Sender<()>>,
-}
-
-/// Deploy argv inputs snapshotted at accept. The remote and options are
-/// resolved before the job starts so a chain cannot silently retarget
-/// mid-build.
-#[derive(Clone)]
-struct JobDeploy {
-    remote: KwRemote,
-    options: DeployOptions,
-    extra_args: Vec<String>,
-    /// Release of the kernel being deployed, from the build record, so
-    /// the deploy log can be checked for a GRUB menu that never listed
-    /// it. `None` until a BuildThenDeploy build has been recorded.
-    kernelrelease: Option<String>,
-}
 
 pub struct KwActor {
     rx: mpsc::Receiver<KwMessage>,
