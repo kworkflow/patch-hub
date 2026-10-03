@@ -154,6 +154,12 @@ pub struct KwOpsViewModel {
     pub deploy_label: String,
     pub build_deploy_label: String,
     pub branch_guidance: Option<String>,
+    /// Deploy warnings of the last job, joined with ` | `.
+    pub warnings: Option<String>,
+    /// First error line of the last failed job's log.
+    pub first_error: Option<String>,
+    /// Full log of the current or last job; the pane only shows its tail.
+    pub log_path: Option<String>,
     pub log_tail: String,
 }
 
@@ -193,7 +199,9 @@ pub enum ScreenViewModel {
     Latest(LatestPatchsetsViewModel),
     PatchsetDetails(PatchsetDetailsViewModel),
     EditConfig(EditConfigViewModel),
-    KwOps(KwOpsViewModel),
+    // Boxed to keep the enum small (clippy::large_enum_variant): KwOps
+    // carries one owned string per dashboard row.
+    KwOps(Box<KwOpsViewModel>),
 }
 
 /// Owned, typed projection of [`AppState`] for one TUI frame.
@@ -236,7 +244,7 @@ fn project_screen(state: &AppState) -> ScreenViewModel {
         CurrentScreen::LatestPatchsets => ScreenViewModel::Latest(project_latest(state)),
         CurrentScreen::PatchsetDetails => ScreenViewModel::PatchsetDetails(project_details(state)),
         CurrentScreen::EditConfig => ScreenViewModel::EditConfig(project_edit_config(state)),
-        CurrentScreen::KwOps => ScreenViewModel::KwOps(project_kw_ops(state)),
+        CurrentScreen::KwOps => ScreenViewModel::KwOps(Box::new(project_kw_ops(state))),
     }
 }
 
@@ -512,6 +520,17 @@ fn project_kw_ops(state: &AppState) -> KwOpsViewModel {
         (false, Some(branch)) => format!("available (r) to {branch}"),
         (false, None) => "unavailable".to_string(),
     };
+    let job = state.kw.status.as_ref().map(|status| &status.job);
+    let (warnings, first_error) = match job {
+        Some(KwJobStatus::Succeeded { warnings, .. }) if !warnings.is_empty() => {
+            (Some(warnings.join(" | ")), None)
+        }
+        Some(KwJobStatus::Failed { first_error, .. }) => (None, first_error.clone()),
+        _ => (None, None),
+    };
+    let log_path = job
+        .and_then(KwJobStatus::log_path)
+        .map(|path| path.display().to_string());
     let log_tail = if ops.log_tail.is_empty() {
         if running {
             "Waiting for kw output…".to_string()
@@ -542,10 +561,7 @@ fn project_kw_ops(state: &AppState) -> KwOpsViewModel {
         job_status: if start_requested && !running {
             "starting…".to_string()
         } else {
-            format_job_status(
-                state.kw.status.as_ref().map(|status| &status.job),
-                ops.cancel_requested,
-            )
+            format_job_status(job, ops.cancel_requested)
         },
         command: format!(
             "kw {}",
@@ -572,6 +588,9 @@ fn project_kw_ops(state: &AppState) -> KwOpsViewModel {
         } else {
             None
         },
+        warnings,
+        first_error,
+        log_path,
         log_tail,
     }
 }
@@ -681,7 +700,13 @@ fn format_job_status(job: Option<&KwJobStatus>, cancel_requested: bool) -> Strin
                 format!("{phase} {branch}")
             }
         }
-        Some(KwJobStatus::Succeeded { branch, .. }) => format!("succeeded on {branch}"),
+        Some(KwJobStatus::Succeeded {
+            branch, warnings, ..
+        }) => match warnings.len() {
+            0 => format!("succeeded on {branch}"),
+            1 => format!("succeeded on {branch} with 1 warning"),
+            count => format!("succeeded on {branch} with {count} warnings"),
+        },
         Some(KwJobStatus::Failed {
             phase: KwPhase::Deploying,
             exit_code,
@@ -1129,10 +1154,12 @@ mod tests {
     fn deploy_command_follows_reboot_and_force_config() {
         let mut state = app_state_with_kw(None);
         state.navigation.current_screen = CurrentScreen::KwOps;
-        let mut config = ConfigState::default();
-        config.kw_reboot_after_deploy = true;
-        config.kw_deploy_force = false;
-        state.config = config.to_snapshot();
+        state.config = ConfigState {
+            kw_reboot_after_deploy: true,
+            kw_deploy_force: false,
+            ..Default::default()
+        }
+        .to_snapshot();
         let mut ops = sample_kw_ops(Some("feature"));
         ops.readiness.deploy_remote = Ok(sample_remote());
         state.kw.ops = Some(ops);
@@ -1151,6 +1178,7 @@ mod tests {
                 phase: KwPhase::Deploying,
                 exit_code: Some(101),
                 log_path: PathBuf::from("/tmp/deploy.log"),
+                first_error: None,
             },
             restore_branch: None,
         }));
@@ -1176,6 +1204,7 @@ mod tests {
                 phase: KwPhase::Building,
                 exit_code: Some(1),
                 log_path: PathBuf::from("/tmp/build.log"),
+                first_error: None,
             },
             restore_branch: None,
         }));
@@ -1186,6 +1215,106 @@ mod tests {
             panic!("expected KwOps projection");
         };
         assert_eq!("failed (exit 1)", vm.job_status);
+        assert_eq!(None, vm.first_error);
+        assert_eq!(Some("/tmp/build.log".to_string()), vm.log_path);
+    }
+
+    #[test]
+    fn failed_build_projects_first_error_and_log_path() {
+        let mut state = app_state_with_kw(Some(KwStatusSnapshot {
+            job: KwJobStatus::Failed {
+                kind: KwJobKind::Build,
+                phase: KwPhase::Building,
+                exit_code: Some(2),
+                log_path: PathBuf::from("/tmp/build.log"),
+                first_error: Some("init/main.c:1:2: error: #error broken".to_string()),
+            },
+            restore_branch: None,
+        }));
+        state.navigation.current_screen = CurrentScreen::KwOps;
+        state.kw.ops = Some(sample_kw_ops(Some("feature")));
+
+        let ScreenViewModel::KwOps(vm) = project_state(&state).screen else {
+            panic!("expected KwOps projection");
+        };
+        assert_eq!("failed (exit 2)", vm.job_status);
+        assert_eq!(
+            Some("init/main.c:1:2: error: #error broken".to_string()),
+            vm.first_error
+        );
+        assert_eq!(Some("/tmp/build.log".to_string()), vm.log_path);
+        assert_eq!(None, vm.warnings);
+    }
+
+    fn succeeded_deploy(warnings: &[&str]) -> KwStatusSnapshot {
+        KwStatusSnapshot {
+            job: KwJobStatus::Succeeded {
+                kind: KwJobKind::Deploy,
+                kernel_tree_id: "mainline".to_string(),
+                branch: "patchset-x".to_string(),
+                log_path: PathBuf::from("/tmp/deploy.log"),
+                warnings: warnings.iter().map(|w| w.to_string()).collect(),
+            },
+            restore_branch: None,
+        }
+    }
+
+    #[test]
+    fn deploy_with_warnings_projects_count_and_joined_warnings() {
+        let mut state = app_state_with_kw(Some(succeeded_deploy(&[
+            "update-initramfs: failed for /boot/initrd.img-7.2.0 with 1.",
+            "GRUB did not list kernel 7.2.0",
+        ])));
+        state.navigation.current_screen = CurrentScreen::KwOps;
+        state.kw.ops = Some(sample_kw_ops(Some("feature")));
+
+        let ScreenViewModel::KwOps(vm) = project_state(&state).screen else {
+            panic!("expected KwOps projection");
+        };
+        assert_eq!("succeeded on patchset-x with 2 warnings", vm.job_status);
+        assert_eq!(
+            Some(
+                "update-initramfs: failed for /boot/initrd.img-7.2.0 with 1. | \
+                 GRUB did not list kernel 7.2.0"
+                    .to_string()
+            ),
+            vm.warnings
+        );
+        assert_eq!(None, vm.first_error);
+        assert_eq!(Some("/tmp/deploy.log".to_string()), vm.log_path);
+    }
+
+    #[test]
+    fn clean_success_projects_no_warning_rows() {
+        let mut state = app_state_with_kw(Some(succeeded_deploy(&[])));
+        state.navigation.current_screen = CurrentScreen::KwOps;
+        state.kw.ops = Some(sample_kw_ops(Some("feature")));
+
+        let ScreenViewModel::KwOps(vm) = project_state(&state).screen else {
+            panic!("expected KwOps projection");
+        };
+        assert_eq!("succeeded on patchset-x", vm.job_status);
+        assert_eq!(None, vm.warnings);
+
+        state.kw.status = Some(succeeded_deploy(&["GRUB did not list kernel 7.2.0"]));
+        let ScreenViewModel::KwOps(vm) = project_state(&state).screen else {
+            panic!("expected KwOps projection");
+        };
+        assert_eq!("succeeded on patchset-x with 1 warning", vm.job_status);
+    }
+
+    #[test]
+    fn idle_job_projects_no_log_path() {
+        let mut state = app_state_with_kw(Some(KwStatusSnapshot::idle()));
+        state.navigation.current_screen = CurrentScreen::KwOps;
+        state.kw.ops = Some(sample_kw_ops(Some("feature")));
+
+        let ScreenViewModel::KwOps(vm) = project_state(&state).screen else {
+            panic!("expected KwOps projection");
+        };
+        assert_eq!(None, vm.log_path);
+        assert_eq!(None, vm.warnings);
+        assert_eq!(None, vm.first_error);
     }
 
     #[test]
@@ -1203,6 +1332,7 @@ mod tests {
                     kernel_tree_id: "mainline".to_string(),
                     branch: "patchset-x".to_string(),
                     log_path: PathBuf::from("/tmp/build.log"),
+                    warnings: Vec::new(),
                 },
                 restore_branch: Some("master".to_string()),
             })))

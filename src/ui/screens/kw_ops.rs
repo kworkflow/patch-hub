@@ -33,6 +33,9 @@ pub fn build_scene(vm: &KwOpsViewModel) -> KwOpsScene {
         deploy_label: vm.deploy_label.clone(),
         build_deploy_label: vm.build_deploy_label.clone(),
         branch_guidance: vm.branch_guidance.clone(),
+        warnings: vm.warnings.clone(),
+        first_error: vm.first_error.clone(),
+        log_path: vm.log_path.clone(),
         log_tail: vm.log_tail.clone(),
     }
 }
@@ -76,6 +79,17 @@ fn paint_form(f: &mut Frame, scene: &KwOpsScene, chunk: Rect) {
         labeled("Remote", &scene.remote),
         labeled("Boot once", &scene.boot_once),
         labeled("Job", &scene.job_status),
+    ]);
+    if let Some(warnings) = &scene.warnings {
+        lines.push(labeled_colored("Warnings", warnings, Color::Yellow));
+    }
+    if let Some(first_error) = &scene.first_error {
+        lines.push(labeled_colored("First error", first_error, Color::Red));
+    }
+    if let Some(log_path) = &scene.log_path {
+        lines.push(labeled("Log", log_path));
+    }
+    lines.extend([
         labeled("Command", &scene.command),
         labeled("Deploy command", &scene.deploy_command),
         labeled("Start", &scene.start_label),
@@ -123,9 +137,13 @@ pub(crate) fn log_scroll_offset(text: &str, inner_width: u16, inner_height: u16)
 }
 
 fn labeled(label: &str, value: &str) -> Line<'static> {
+    labeled_colored(label, value, Color::White)
+}
+
+fn labeled_colored(label: &str, value: &str, color: Color) -> Line<'static> {
     Line::from(vec![
         Span::styled(format!("{label}: "), Style::default().fg(Color::Cyan)),
-        Span::styled(value.to_string(), Style::default().fg(Color::White)),
+        Span::styled(value.to_string(), Style::default().fg(color)),
     ])
 }
 

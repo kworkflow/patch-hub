@@ -58,7 +58,13 @@ pub(crate) fn apply_patchset(
         }
         Err(e) => {
             switch_to_branch(shell, kernel_tree, &original_branch)?;
-            Err(format!(" `git am` failed\n{}{}", &original_branch, e))
+            let cleanup_note = match delete_branch(shell, kernel_tree, &target_branch) {
+                Ok(()) => String::new(),
+                Err(error) => format!("\n\n(could not delete '{target_branch}': {error})"),
+            };
+            Err(format!(
+                " `git am` failed (back on branch '{original_branch}')\n{e}{cleanup_note}"
+            ))
         }
     }
 }
@@ -216,6 +222,30 @@ fn create_target_branch(
     }
 
     Ok(target_branch_name)
+}
+
+/// Deletes a branch `create_target_branch` made for an apply that failed.
+/// `-D` because `git am --abort` leaves it at the base commit, which is not
+/// necessarily merged into the branch HEAD switched back to.
+fn delete_branch(
+    shell: &dyn ShellTrait,
+    kernel_tree: &KernelTree,
+    branch: &str,
+) -> Result<(), String> {
+    let out = shell
+        .execute(
+            &ShellCommand::new("git")
+                .arg("-C")
+                .arg(kernel_tree.path())
+                .args(["branch", "-D", branch]),
+        )
+        .map_err(|e| e.to_string())?;
+
+    if !out.success {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+
+    Ok(())
 }
 
 fn run_git_am(
@@ -515,14 +545,15 @@ mod tests {
                 output("", "apply failed", false),
                 output("", "", true),
                 output("", "", true),
+                output("", "", true),
             ]);
 
             let result = apply_patchset(&request(), &fs, &shell, &config).unwrap_err();
 
-            assert!(result.contains("`git am` failed"));
-            assert!(result.contains("feature"));
-            assert!(result.contains("apply failed"));
+            assert!(result.starts_with(" `git am` failed (back on branch 'feature')\napply failed"));
+            assert!(!result.contains("could not delete"));
             let calls = calls.lock().unwrap();
+            assert_eq!(9, calls.len());
             assert_eq!(
                 &calls[6],
                 &command(&["git", "-C", KERNEL_TREE_PATH, "am", "--abort"])
@@ -531,6 +562,32 @@ mod tests {
                 &calls[7],
                 &command(&["git", "-C", KERNEL_TREE_PATH, "switch", "feature"])
             );
+            assert_eq!(
+                &calls[8],
+                &command(&["git", "-C", KERNEL_TREE_PATH, "branch", "-D", &calls[4][5]])
+            );
         }
+    }
+
+    #[test]
+    fn failed_branch_cleanup_is_noted_without_hiding_the_git_am_error() {
+        let fs = clean_fs();
+        let (shell, _calls) = shell_with_outputs(vec![
+            output("", "", true),
+            output("", "", true),
+            output("feature\n", "", true),
+            output("", "", true),
+            output("", "", true),
+            output("", "apply failed", false),
+            output("", "", true),
+            output("", "", true),
+            output("", "error: branch is locked\n", false),
+        ]);
+
+        let result = apply_patchset(&request(), &fs, &shell, &config()).unwrap_err();
+
+        assert!(result.starts_with(" `git am` failed (back on branch 'feature')\napply failed"));
+        assert!(result.contains("could not delete 'patchset-"));
+        assert!(result.contains("error: branch is locked)"));
     }
 }

@@ -122,10 +122,8 @@ pub fn parse_remote_config(content: &str) -> ParsedRemoteConfig {
             if !rest.is_empty() {
                 builder.port = Some(rest.to_string());
             }
-        } else if keyword.eq_ignore_ascii_case("user") {
-            if !rest.is_empty() {
-                builder.user = Some(rest.to_string());
-            }
+        } else if keyword.eq_ignore_ascii_case("user") && !rest.is_empty() {
+            builder.user = Some(rest.to_string());
         }
     }
     if let Some(host) = current.and_then(HostBuilder::finish) {
@@ -528,8 +526,8 @@ Host dut extra
         let home = home.map(str::to_string);
         let mut env = MockEnvTrait::new();
         env.expect_var().returning(move |key| match key {
-            "XDG_CONFIG_HOME" => xdg.clone().ok_or_else(|| missing_var()),
-            "HOME" => home.clone().ok_or_else(|| missing_var()),
+            "XDG_CONFIG_HOME" => xdg.clone().ok_or_else(missing_var),
+            "HOME" => home.clone().ok_or_else(missing_var),
             _ => Err(missing_var()),
         });
         env

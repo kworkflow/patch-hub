@@ -37,12 +37,18 @@ pub enum KwJobStatus {
         kernel_tree_id: String,
         branch: String,
         log_path: PathBuf,
+        /// Known deploy failures kw exited 0 through (see
+        /// [`crate::kw::log_scan::deploy_warnings`]). Always empty for a
+        /// build-only job.
+        warnings: Vec<String>,
     },
     Failed {
         kind: KwJobKind,
         phase: KwPhase,
         exit_code: Option<i32>,
         log_path: PathBuf,
+        /// First error line found in the log, if any.
+        first_error: Option<String>,
     },
     Cancelled {
         kind: KwJobKind,
@@ -162,6 +168,7 @@ mod tests {
                     kernel_tree_id: "mainline".to_string(),
                     branch: "patchset-x".to_string(),
                     log_path: PathBuf::from("/tmp/build.log"),
+                    warnings: Vec::new(),
                 },
                 restore_branch: Some("master".to_string()),
             }

@@ -38,6 +38,7 @@ use crate::{
         errors::{KwError, KwStartError, TreeGitError},
         handle::KwHandle,
         history::{KwBuildRecord, KwHistoryStore},
+        log_scan,
         messages::{DeployOptions, KwMessage, StartRequest},
         readiness::{self, BootOnceState, KwReadiness, KwVersionCheck, TreeReadiness},
         remote::{self, KwRemote},
@@ -109,6 +110,10 @@ struct JobDeploy {
     remote: KwRemote,
     options: DeployOptions,
     extra_args: Vec<String>,
+    /// Release of the kernel being deployed, from the build record, so
+    /// the deploy log can be checked for a GRUB menu that never listed
+    /// it. `None` until a BuildThenDeploy build has been recorded.
+    kernelrelease: Option<String>,
 }
 
 pub struct KwActor {
@@ -615,9 +620,23 @@ impl KwActor {
                 self.record_build_outcome(&job, &outcome);
                 let status = match outcome {
                     JobOutcome::Exited(exit) if exit.success() => {
+                        // kw deploy exits 0 through initramfs and GRUB
+                        // failures; only its log tells.
+                        let warnings = if job.phase == KwPhase::Deploying {
+                            let kernelrelease = job
+                                .deploy
+                                .as_ref()
+                                .and_then(|deploy| deploy.kernelrelease.as_deref());
+                            self.read_job_log(&job.log_path)
+                                .map(|log| log_scan::deploy_warnings(&log, kernelrelease))
+                                .unwrap_or_default()
+                        } else {
+                            Vec::new()
+                        };
                         tracing::info!(
                             kernel_tree_id = job.kernel_tree_id,
                             branch = job.branch,
+                            warnings = warnings.len(),
                             "kw job succeeded"
                         );
                         KwJobStatus::Succeeded {
@@ -625,6 +644,7 @@ impl KwActor {
                             kernel_tree_id: job.kernel_tree_id,
                             branch: job.branch,
                             log_path: job.log_path,
+                            warnings,
                         }
                     }
                     JobOutcome::Exited(exit) => {
@@ -638,6 +658,9 @@ impl KwActor {
                             kind: job.kind,
                             phase: job.phase,
                             exit_code: exit.code(),
+                            first_error: self
+                                .read_job_log(&job.log_path)
+                                .and_then(|log| log_scan::first_error(&log)),
                             log_path: job.log_path,
                         }
                     }
@@ -647,6 +670,9 @@ impl KwActor {
                             kind: job.kind,
                             phase: job.phase,
                             exit_code: None,
+                            first_error: self
+                                .read_job_log(&job.log_path)
+                                .and_then(|log| log_scan::first_error(&log)),
                             log_path: job.log_path,
                         }
                     }
@@ -689,17 +715,19 @@ impl KwActor {
         // Durable before the phase flips: a deploy spawn failure must not
         // lose the successful build, and KwOps watching Deploying must
         // already see the record.
-        self.record_build_outcome(&job, outcome);
-        let Some(deploy) = job.deploy.clone() else {
+        let kernelrelease = self.record_build_outcome(&job, outcome);
+        let Some(mut deploy) = job.deploy.clone() else {
             tracing::error!("BuildThenDeploy missing deploy context after a successful build");
             self.set_status(KwJobStatus::Failed {
                 kind: job.kind,
                 phase: KwPhase::Deploying,
                 exit_code: None,
                 log_path: job.log_path,
+                first_error: None,
             });
             return ControlFlow::Break(());
         };
+        deploy.kernelrelease = kernelrelease;
         match self.spawn_deploy_process(&job.tree_path, &deploy) {
             Ok((process, log_path)) => {
                 let (cancel_tx, cancel_rx) = oneshot::channel();
@@ -720,6 +748,7 @@ impl KwActor {
                 let mut job = job;
                 job.phase = KwPhase::Deploying;
                 job.log_path = log_path;
+                job.deploy = Some(deploy);
                 job.cancel_tx = Some(cancel_tx);
                 self.job = Some(job);
                 ControlFlow::Break(())
@@ -735,6 +764,7 @@ impl KwActor {
                     phase: KwPhase::Deploying,
                     exit_code: None,
                     log_path: job.log_path,
+                    first_error: None,
                 });
                 ControlFlow::Break(())
             }
@@ -744,16 +774,17 @@ impl KwActor {
     /// Persist a finished build (success or failure). Cancel writes
     /// nothing. History and patchset-link errors are logged, not folded
     /// into job status — the build's real outcome already reached the user.
-    fn record_build_outcome(&self, job: &JobState, outcome: &JobOutcome) {
+    /// Returns the recorded kernelrelease, if the build produced one.
+    fn record_build_outcome(&self, job: &JobState, outcome: &JobOutcome) -> Option<String> {
         if job.kind == KwJobKind::Deploy || job.phase == KwPhase::Deploying {
-            return;
+            return None;
         }
         let success = match outcome {
             JobOutcome::Exited(exit) => exit.success(),
             // The exit status is lost: record an honest failure rather
             // than guess, so deploy-alone readiness cannot trust it.
             JobOutcome::WaitFailed(_) => false,
-            JobOutcome::Cancelled => return,
+            JobOutcome::Cancelled => return None,
         };
 
         // The record describes the accept-time snapshot: the build ran
@@ -802,13 +833,27 @@ impl KwActor {
                 .output_dir
                 .as_ref()
                 .map(|path| path.to_string_lossy().into_owned()),
-            kernelrelease,
+            kernelrelease: kernelrelease.clone(),
             log_path: job.log_path.to_string_lossy().into_owned(),
             built_at: chrono::Utc::now().to_rfc3339(),
             success,
         };
         if let Err(error) = self.history.record_build(record) {
             tracing::warn!(%error, branch = job.branch, "failed to record kw build history");
+        }
+        kernelrelease
+    }
+
+    /// Reads a finished job's log for the findings its terminal status
+    /// carries. An unreadable log only loses those findings: the exit code
+    /// is still the verdict.
+    fn read_job_log(&self, log_path: &Path) -> Option<String> {
+        match self.fs.read_to_string(log_path) {
+            Ok(log) => Some(log),
+            Err(error) => {
+                tracing::warn!(%error, log_path = %log_path.display(), "failed to read kw job log");
+                None
+            }
         }
     }
 
@@ -928,6 +973,7 @@ fn prepare_deploy_blocking(
     });
     let remote = remote::resolve_deploy_remote(fs, env, tree_path)
         .map_err(KwStartError::RemoteUnresolved)?;
+    let mut kernelrelease = None;
     if kind == KwJobKind::Deploy {
         let (record, latest) = history.build_records(&request.kernel_tree_id, &request.branch)?;
         let image = readiness::find_newest_kernel_image(fs, output_dir.unwrap_or(tree_path), arch);
@@ -940,6 +986,7 @@ fn prepare_deploy_blocking(
             image.as_deref(),
         )
         .map_err(KwStartError::DeployAloneRefused)?;
+        kernelrelease = record.and_then(|record| record.kernelrelease);
     }
     let boot_once = readiness::probe_boot_once(fs, env, tree_path);
     if matches!(boot_once, BootOnceState::On | BootOnceState::Unknown)
@@ -951,6 +998,7 @@ fn prepare_deploy_blocking(
         remote,
         options,
         extra_args: request.extra_args.clone(),
+        kernelrelease,
     })
 }
 
@@ -1397,11 +1445,13 @@ mod tests {
         fs.expect_is_file()
             .returning(|path| !path.ends_with(".kw/env.current"));
         fs.expect_exists().returning(|_| true);
-        fs.expect_read_to_string().returning(|_| {
-            Err(FileSystemError::IoError(io::Error::new(
-                io::ErrorKind::NotFound,
-                "missing",
-            )))
+        fs.expect_read_to_string().returning(|path| {
+            read_real_job_log(path).unwrap_or_else(|| {
+                Err(FileSystemError::IoError(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "missing",
+                )))
+            })
         });
         fs.expect_read_dir().returning(|_| {
             Err(FileSystemError::IoError(io::Error::new(
@@ -1409,6 +1459,14 @@ mod tests {
                 "missing",
             )))
         });
+    }
+
+    /// Job logs are real files ([`FakeProcess`] creates them and
+    /// `write_log` appends to them), so fs doubles read `*.log` paths from
+    /// disk.
+    fn read_real_job_log(path: &Path) -> Option<Result<String, FileSystemError>> {
+        (path.extension() == Some("log".as_ref()))
+            .then(|| std::fs::read_to_string(path).map_err(FileSystemError::from))
     }
 
     /// A ready kernel tree whose log dir can be created.
@@ -1480,7 +1538,9 @@ mod tests {
             .returning(|path| !path.ends_with(".kw/env.current"));
         fs.expect_exists().returning(|_| true);
         fs.expect_read_to_string().returning(move |path| {
-            if path.ends_with("build.config") {
+            if let Some(log) = read_real_job_log(path) {
+                log
+            } else if path.ends_with("build.config") {
                 Ok("arch=x86\n".to_string())
             } else if path.ends_with("kernel.release") {
                 Ok("6.17.0\n".to_string())
@@ -1981,6 +2041,11 @@ mod tests {
         let mut watch = handle.watch_status().await.unwrap();
 
         handle.start_build(start_request()).await.unwrap();
+        process.last_child().write_log(
+            b"  CC      init/main.o\n\
+              init/main.c:1691:2: error: #error broken\n\
+              make: *** [Makefile:248: __sub-make] Error 2\n",
+        );
         process.last_child().finish(2);
 
         let status = wait_for_terminal_status(&mut watch).await;
@@ -1991,11 +2056,16 @@ mod tests {
                 phase,
                 exit_code,
                 log_path,
+                first_error,
             } => {
                 assert_eq!(KwJobKind::Build, kind);
                 assert_eq!(KwPhase::Building, phase);
                 assert_eq!(Some(2), exit_code);
                 assert!(log_path.starts_with(&log_dir));
+                assert_eq!(
+                    Some("init/main.c:1691:2: error: #error broken"),
+                    first_error.as_deref()
+                );
             }
             other => panic!("expected Failed, got {other:?}"),
         }
@@ -2349,6 +2419,78 @@ mod tests {
             ),
             "unexpected status: {status:?}"
         );
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn deploy_exit_zero_with_initramfs_failure_succeeds_with_warnings() {
+        let (handle, process, log_dir) = spawn_deploy_actor(
+            "deploy-warnings",
+            deploy_history(Some(matching_build_record())),
+            deploy_ready_fs(),
+        );
+        let mut watch = handle.watch_status().await.unwrap();
+
+        handle.start_deploy(deploy_request()).await.unwrap();
+        process.last_child().write_log(
+            b"update-initramfs: Generating /boot/initrd.img-6.17.0\n\
+              E: gzip compression (CONFIG_RD_GZIP) not supported by kernel\n\
+              update-initramfs: failed for /boot/initrd.img-6.17.0 with 1.\n\
+              Generating grub configuration file ...\n\
+              Found linux image: /boot/vmlinuz-6.8.0-generic\n\
+              done\n",
+        );
+        process.last_child().finish(0);
+
+        match wait_for_terminal_status(&mut watch).await {
+            KwJobStatus::Succeeded { kind, warnings, .. } => {
+                assert_eq!(KwJobKind::Deploy, kind);
+                assert_eq!(
+                    vec![
+                        "update-initramfs: failed for /boot/initrd.img-6.17.0 with 1.".to_string(),
+                        "GRUB did not list kernel 6.17.0".to_string(),
+                    ],
+                    warnings
+                );
+            }
+            other => panic!("expected Succeeded, got {other:?}"),
+        }
+
+        handle.shutdown().await;
+        std::fs::remove_dir_all(&log_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn build_then_deploy_checks_grub_for_the_release_it_just_built() {
+        let (handle, process, log_dir) =
+            spawn_deploy_actor("chain-warnings", quiet_history(), deploy_ready_fs());
+        let mut watch = handle.watch_status().await.unwrap();
+
+        handle
+            .start_build_then_deploy(deploy_request())
+            .await
+            .unwrap();
+        process.last_child().finish(0);
+        wait_for_running_phase(&mut watch, KwPhase::Deploying).await;
+        process.last_child().write_log(
+            b"Generating grub configuration file ...\n\
+              Found linux image: /boot/vmlinuz-6.8.0-generic\n\
+              Found linux image: /boot/Image-6.17.0-rc1\n\
+              done\n",
+        );
+        process.last_child().finish(0);
+
+        match wait_for_terminal_status(&mut watch).await {
+            KwJobStatus::Succeeded { warnings, .. } => {
+                assert_eq!(
+                    vec!["GRUB did not list kernel 6.17.0".to_string()],
+                    warnings
+                );
+            }
+            other => panic!("expected Succeeded, got {other:?}"),
+        }
 
         handle.shutdown().await;
         std::fs::remove_dir_all(&log_dir).unwrap();
@@ -3428,8 +3570,12 @@ mod tests {
         let env_current_reads = Arc::new(AtomicU64::new(0));
         let env_current_reads_in_fs = Arc::clone(&env_current_reads);
         let mut fs = MockFileSystemTrait::new();
-        fs.expect_is_dir().returning(|_| true);
-        fs.expect_is_file().returning(|_| true);
+        // With an env active the build artifacts live only under O=; the
+        // source tree is clean.
+        fs.expect_is_dir()
+            .returning(|path| path != Path::new("/home/user/linux/include/config"));
+        fs.expect_is_file()
+            .returning(|path| path != Path::new("/home/user/linux/.config"));
         fs.expect_exists().returning(|_| true);
         fs.expect_read_to_string().returning(move |path| {
             if path.ends_with("env.current") {
