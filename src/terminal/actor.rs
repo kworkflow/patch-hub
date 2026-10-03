@@ -1,7 +1,7 @@
 //! Terminal session actor: owns raw TUI I/O on a dedicated task.
 //!
 //! [`TerminalHandle`](crate::terminal::handle::TerminalHandle) exposes draw,
-//! poll/read event, size, and user-I/O setup as typed messages. The session
+//! poll event, size, and user-I/O setup as typed messages. The session
 //! implementation ([`TerminalSessionApi`](crate::terminal::session::TerminalSessionApi),
 //! e.g. crossterm) is moved into the actor at spawn time so no other component
 //! holds the terminal directly.
@@ -59,14 +59,6 @@ impl TerminalActor {
             TerminalMessage::Draw { frame, reply } => {
                 let result = self
                     .with_session(move |session| session.draw(frame))
-                    .await
-                    .and_then(|result| result);
-                send_terminal_reply(message_name, reply, result);
-            }
-            #[cfg(test)]
-            TerminalMessage::ReadEvent { reply } => {
-                let result = self
-                    .with_session(|session| session.read_event())
                     .await
                     .and_then(|result| result);
                 send_terminal_reply(message_name, reply, result);
@@ -167,11 +159,7 @@ mod tests {
 
     use ratatui::crossterm::event::KeyCode;
 
-    use crate::{
-        input::event::{KeyInput, TerminalEvent},
-        terminal::messages::TerminalFrame,
-        terminal::session::MockTerminalSessionApi,
-    };
+    use crate::{terminal::messages::TerminalFrame, terminal::session::MockTerminalSessionApi};
 
     use super::*;
 
@@ -192,30 +180,6 @@ mod tests {
         let result = handle.draw(TerminalFrame::Empty).await;
 
         assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn read_event_returns_terminal_event_from_actor() {
-        let expected = TerminalEvent::Key(KeyInput {
-            code: KeyCode::Char('j'),
-            ..Default::default()
-        });
-        let mut session = MockTerminalSessionApi::new();
-        session
-            .expect_read_event()
-            .times(1)
-            .returning(move || Ok(Some(expected.clone())));
-        let handle = spawn_test_actor(session);
-
-        let result = handle.read_event().await.unwrap();
-
-        assert_eq!(
-            result,
-            Some(TerminalEvent::Key(KeyInput {
-                code: KeyCode::Char('j'),
-                ..Default::default()
-            }))
-        );
     }
 
     #[tokio::test]

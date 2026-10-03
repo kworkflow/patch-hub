@@ -26,13 +26,6 @@ impl TerminalHandle {
             .await
     }
 
-    /// Reads the next raw terminal event, blocking until one arrives.
-    #[cfg(test)]
-    pub async fn read_event(&self) -> TerminalResult<Option<TerminalEvent>> {
-        self.request_result(|reply| TerminalMessage::ReadEvent { reply })
-            .await
-    }
-
     pub async fn poll_event(&self, timeout: Duration) -> TerminalResult<Option<TerminalEvent>> {
         self.request_result(|reply| TerminalMessage::PollEvent { timeout, reply })
             .await
