@@ -15,13 +15,13 @@ pub struct PatchFeed {
 #[derive(Getters, Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Patch {
     r#title: String,
-    #[serde(default = "default_version")]
+    #[serde(default = "Patch::default_version")]
     #[getter(skip)]
     version: usize,
-    #[serde(default = "default_number_in_series")]
+    #[serde(default = "Patch::default_number_in_series")]
     #[getter(skip)]
     number_in_series: usize,
-    #[serde(default = "default_total_in_series")]
+    #[serde(default = "Patch::default_total_in_series")]
     #[getter(skip)]
     total_in_series: usize,
     author: Author,
@@ -45,17 +45,17 @@ impl Display for Author {
     }
 }
 
-fn default_version() -> usize {
-    1
-}
-fn default_number_in_series() -> usize {
-    1
-}
-fn default_total_in_series() -> usize {
-    1
-}
-
 impl Patch {
+    fn default_version() -> usize {
+        1
+    }
+    fn default_number_in_series() -> usize {
+        1
+    }
+    fn default_total_in_series() -> usize {
+        1
+    }
+
     pub fn version(&self) -> usize {
         self.version
     }

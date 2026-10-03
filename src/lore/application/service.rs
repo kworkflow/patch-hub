@@ -27,9 +27,9 @@ use crate::{
         },
         infrastructure::{
             http_lore_client::{FeedGateway, ListsGateway, LoreHttpError, PatchHtmlGateway},
-            parsers,
+            parsers::LoreParserService,
             patchset_fetcher::PatchsetFetcher,
-            patchset_parser::{self, PatchsetParser},
+            patchset_parser::{PatchsetParser, PatchsetParserService},
             persistence::{MailingListsCacheStore, UserLoreStateStore},
         },
     },
@@ -128,7 +128,7 @@ impl LoreService {
             let body = gateway
                 .fetch_available_lists_page(offset)
                 .map_err(LoreError::Http)?;
-            let page = parsers::parse_available_lists(&body);
+            let page = LoreParserService::parse_available_lists(&body);
             if page.is_empty() {
                 break;
             }
@@ -225,7 +225,8 @@ impl LoreService {
             let offset = self.cache.feeds[target_list].index.next_offset();
             match gateway.fetch_patch_feed_page(target_list, offset) {
                 Ok(body) => {
-                    let feed = parsers::parse_patch_feed(&body).map_err(LoreError::Parse)?;
+                    let feed =
+                        LoreParserService::parse_patch_feed(&body).map_err(LoreError::Parse)?;
                     let Some(entry) = self.cache.feeds.get_mut(target_list) else {
                         return Err(LoreError::Parse(format!(
                             "feed cache entry missing for {target_list}"
@@ -290,8 +291,10 @@ impl LoreService {
             .split_patchset(&patchset_path)
             .map_err(LoreError::Parse)?;
 
-        let tag_summary: Vec<PatchTagSummary> =
-            raw_patches.iter().map(|p| extract_tag_summary(p)).collect();
+        let tag_summary: Vec<PatchTagSummary> = raw_patches
+            .iter()
+            .map(|p| Self::extract_tag_summary(p))
+            .collect();
 
         match mode {
             CacheMode::Bypass => {}
@@ -342,7 +345,7 @@ impl LoreService {
                 .ok_or_else(|| LoreError::Parse("Message-Id header not found".to_string()))?;
 
             let reply_path = tmp_dir.join(format!("{message_id}-reply.mbx"));
-            let mut reply = patchset_parser::generate_reply_template(patch);
+            let mut reply = PatchsetParserService::generate_reply_template(patch);
             reply.push_str(&format!("\nReviewed-by: {git_signature}\n"));
             self.fs
                 .write(&reply_path, reply.as_bytes())
@@ -352,7 +355,7 @@ impl LoreService {
                 .fetch_patch_html(target_list, message_id)
                 .map_err(LoreError::Http)?;
 
-            let command = patchset_parser::extract_git_reply_command(
+            let command = PatchsetParserService::extract_git_reply_command(
                 &patch_html,
                 git_send_email_options,
                 &format!("{}", reply_path.display()),
@@ -419,38 +422,38 @@ impl LoreService {
 
         (name, email)
     }
-}
 
-fn extract_tag_summary(raw_patch: &str) -> PatchTagSummary {
-    let (cover, _) = patchset_parser::split_cover(raw_patch);
+    fn extract_tag_summary(raw_patch: &str) -> PatchTagSummary {
+        let (cover, _) = PatchsetParserService::split_cover(raw_patch);
 
-    let mut reviewed_by = HashSet::new();
-    let mut tested_by = HashSet::new();
-    let mut acked_by = HashSet::new();
+        let mut reviewed_by = HashSet::new();
+        let mut tested_by = HashSet::new();
+        let mut acked_by = HashSet::new();
 
-    for line in cover.lines() {
-        let line = line.trim_start();
-        for (prefix, set) in [
-            ("Reviewed-by:", &mut reviewed_by),
-            ("Tested-by:", &mut tested_by),
-            ("Acked-by:", &mut acked_by),
-        ] {
-            if let Some(rest) = line.strip_prefix(prefix) {
-                let parts: Vec<&str> = rest.trim().split('<').collect();
-                if parts.len() == 2 {
-                    let name = parts[0].trim().to_string();
-                    let email = parts[1].trim_end_matches('>').trim().to_string();
-                    set.insert(Author { name, email });
+        for line in cover.lines() {
+            let line = line.trim_start();
+            for (prefix, set) in [
+                ("Reviewed-by:", &mut reviewed_by),
+                ("Tested-by:", &mut tested_by),
+                ("Acked-by:", &mut acked_by),
+            ] {
+                if let Some(rest) = line.strip_prefix(prefix) {
+                    let parts: Vec<&str> = rest.trim().split('<').collect();
+                    if parts.len() == 2 {
+                        let name = parts[0].trim().to_string();
+                        let email = parts[1].trim_end_matches('>').trim().to_string();
+                        set.insert(Author { name, email });
+                    }
+                    break;
                 }
-                break;
             }
         }
-    }
 
-    PatchTagSummary {
-        reviewed_by,
-        tested_by,
-        acked_by,
+        PatchTagSummary {
+            reviewed_by,
+            tested_by,
+            acked_by,
+        }
     }
 }
 
@@ -755,9 +758,9 @@ mod tests {
         );
 
         let feed = {
-            use crate::lore::infrastructure::parsers::parse_patch_feed;
+            use crate::lore::infrastructure::parsers::LoreParserService;
             let xml = fs::read_to_string(src).unwrap();
-            parse_patch_feed(&xml).unwrap()
+            LoreParserService::parse_patch_feed(&xml).unwrap()
         };
         let mut index = PatchFeedIndex::new();
         index.process_feed_page(feed);
@@ -796,7 +799,7 @@ mod tests {
         // Pre-populate the cache.
         let feed = {
             let xml = fs::read_to_string(src).unwrap();
-            crate::lore::infrastructure::parsers::parse_patch_feed(&xml).unwrap()
+            crate::lore::infrastructure::parsers::LoreParserService::parse_patch_feed(&xml).unwrap()
         };
         let mut index = PatchFeedIndex::new();
         index.process_feed_page(feed);

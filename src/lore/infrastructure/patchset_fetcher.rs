@@ -40,12 +40,25 @@ impl B4PatchsetFetcher {
             cache_dir,
         }
     }
+
+    fn extract_mbox_name_from_message_id(message_id: &str) -> String {
+        let mut mbox_name = message_id
+            .replace("http://lore.kernel.org/", "")
+            .replace("https://lore.kernel.org/", "")
+            .replace('/', ".");
+
+        if !mbox_name.ends_with('.') {
+            mbox_name.push('.');
+        }
+        mbox_name.push_str("mbx");
+        mbox_name
+    }
 }
 
 impl PatchsetFetcher for B4PatchsetFetcher {
     fn download(&self, patch: &Patch) -> Result<String, PatchFetchError> {
         let message_id: &str = &patch.message_id().href;
-        let mbox_name = extract_mbox_name_from_message_id(message_id);
+        let mbox_name = Self::extract_mbox_name_from_message_id(message_id);
         let output_dir = &self.cache_dir;
 
         if !self.fs.exists(Path::new(output_dir))
@@ -87,19 +100,6 @@ impl PatchsetFetcher for B4PatchsetFetcher {
     }
 }
 
-fn extract_mbox_name_from_message_id(message_id: &str) -> String {
-    let mut mbox_name = message_id
-        .replace("http://lore.kernel.org/", "")
-        .replace("https://lore.kernel.org/", "")
-        .replace('/', ".");
-
-    if !mbox_name.ends_with('.') {
-        mbox_name.push('.');
-    }
-    mbox_name.push_str("mbx");
-    mbox_name
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,7 +127,7 @@ mod tests {
                 </entry>
             </feed>"#,
         );
-        crate::lore::infrastructure::parsers::parse_patch_feed(&xml)
+        crate::lore::infrastructure::parsers::LoreParserService::parse_patch_feed(&xml)
             .unwrap()
             .patches()[0]
             .clone()

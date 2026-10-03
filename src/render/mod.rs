@@ -17,7 +17,7 @@ use tracing::{event, Level};
 
 use crate::{
     infrastructure::shell::ShellTrait,
-    lore::infrastructure::patchset_parser::split_cover,
+    lore::infrastructure::patchset_parser::PatchsetParserService,
     render::{cover_renderer::CoverRendererService, patch_renderer::PatchRendererService},
 };
 
@@ -41,7 +41,7 @@ impl RenderServiceApi for ShellRenderService {
         let mut previews = Vec::with_capacity(request.raw_patches.len());
         for raw_patch in request.raw_patches {
             let raw_patch_expanded = raw_patch.replace('\t', "        ");
-            let (raw_cover, raw_diff) = split_cover(&raw_patch_expanded);
+            let (raw_cover, raw_diff) = PatchsetParserService::split_cover(&raw_patch_expanded);
             let rendered_cover =
                 match CoverRendererService::render_cover(shell, raw_cover, &request.cover_renderer)
                 {

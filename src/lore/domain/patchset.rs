@@ -117,11 +117,11 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::lore::infrastructure::parsers::parse_patch_feed;
+    use crate::lore::infrastructure::parsers::LoreParserService;
 
     fn feed_from_file(path: &str) -> PatchFeed {
         let xml = fs::read_to_string(path).unwrap();
-        parse_patch_feed(&xml).unwrap()
+        LoreParserService::parse_patch_feed(&xml).unwrap()
     }
 
     #[test]
