@@ -36,13 +36,18 @@ impl<'a> PatchsetActionService<'a> {
         request: &ApplyPatchsetRequest,
         config: &ConfigSnapshot,
     ) -> Result<AppliedPatchset, String> {
-        apply::apply_patchset(request, self.fs, self.shell, config)
+        apply::ApplyPatchsetService::apply_patchset(request, self.fs, self.shell, config)
     }
 
     pub(crate) async fn execute_reviewed_reply(
         &self,
         request: ReviewedReplyRequest,
     ) -> Result<ReviewedReplyResult> {
-        reviewed_reply::execute_reviewed_reply(request, self.lore_api, self.shell).await
+        reviewed_reply::ReviewedReplyService::execute_reviewed_reply(
+            request,
+            self.lore_api,
+            self.shell,
+        )
+        .await
     }
 }

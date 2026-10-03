@@ -375,7 +375,7 @@ impl App {
             .details
             .as_ref()
             .expect("invariant: details must be loaded before executing reviewed reply");
-        if patchset_action_selected(details, &PatchsetAction::ReplyWithReviewedBy) {
+        if Self::is_patchset_action_selected(details, &PatchsetAction::ReplyWithReviewedBy) {
             let message_id = details.representative_patch.message_id().href.clone();
             debug!(msg_id = message_id, "executing reviewed-by reply");
             let successful_indexes = self
@@ -384,7 +384,7 @@ impl App {
                 .reviewed_patchsets
                 .remove(&message_id)
                 .unwrap_or_default();
-            let request = reviewed_reply_request(
+            let request = Self::build_reviewed_reply_request(
                 details,
                 successful_indexes,
                 self.state.config.git_send_email_options().to_string(),
@@ -429,7 +429,7 @@ impl App {
             .as_ref()
             .expect("invariant: details must be loaded before executing apply patchset");
 
-        if patchset_action_selected(details, &PatchsetAction::Apply) {
+        if Self::is_patchset_action_selected(details, &PatchsetAction::Apply) {
             debug!("applying patchset via git-am");
             // A running kw job owns the tree; applying would rewrite the
             // branch it is building. AppActor serializes this with Start,
@@ -469,7 +469,7 @@ impl App {
     /// Runs the git-am apply and maps the outcome to the result popup,
     /// recording the apply in the kw history on success.
     async fn apply_patchset_popup(&self, details: &PatchsetDetailsState) -> popup::AppPopup {
-        let request = apply_patchset_request(details);
+        let request = Self::build_apply_patchset_request(details);
         let action_service = PatchsetActionService::new(
             &*self.services.fs,
             &*self.services.shell,
@@ -477,7 +477,11 @@ impl App {
         );
         match action_service.apply_patchset(&request, &self.state.config) {
             Ok(applied) => {
-                let popup_body = match kw_apply_record(details, &self.state.config, &applied) {
+                let popup_body = match Self::build_kw_apply_record(
+                    details,
+                    &self.state.config,
+                    &applied,
+                ) {
                     // Defensive: the apply itself resolved this tree from
                     // the same snapshot, so this is unreachable unless the
                     // config changed mid-apply.
@@ -559,48 +563,50 @@ impl App {
     pub fn present(&self) -> AppViewModel {
         view_model::project_state(&self.state)
     }
-}
-
-fn patchset_action_selected(details: &PatchsetDetailsState, action: &PatchsetAction) -> bool {
-    matches!(details.patchset_actions.get(action), Some(true))
-}
-
-fn reviewed_reply_request(
-    details: &PatchsetDetailsState,
-    successful_indexes: std::collections::HashSet<usize>,
-    git_send_email_options: String,
-) -> ReviewedReplyRequest {
-    ReviewedReplyRequest {
-        raw_patches: details.raw_patches.clone(),
-        patches_to_reply: details.patches_to_reply.clone(),
-        successful_indexes,
-        git_send_email_options,
+    fn is_patchset_action_selected(
+        details: &PatchsetDetailsState,
+        action: &PatchsetAction,
+    ) -> bool {
+        matches!(details.patchset_actions.get(action), Some(true))
     }
-}
 
-fn apply_patchset_request(details: &PatchsetDetailsState) -> ApplyPatchsetRequest {
-    ApplyPatchsetRequest {
-        patch_title: details.representative_patch.title().clone(),
-        patchset_path: details.patchset_path.clone(),
+    fn build_reviewed_reply_request(
+        details: &PatchsetDetailsState,
+        successful_indexes: std::collections::HashSet<usize>,
+        git_send_email_options: String,
+    ) -> ReviewedReplyRequest {
+        ReviewedReplyRequest {
+            raw_patches: details.raw_patches.clone(),
+            patches_to_reply: details.patches_to_reply.clone(),
+            successful_indexes,
+            git_send_email_options,
+        }
     }
-}
 
-fn kw_apply_record(
-    details: &PatchsetDetailsState,
-    config: &ConfigSnapshot,
-    applied: &AppliedPatchset,
-) -> Option<KwApplyRecord> {
-    let kernel_tree_id = config.target_kernel_tree().as_ref()?;
-    let kernel_tree = config.get_kernel_tree(kernel_tree_id)?;
+    fn build_apply_patchset_request(details: &PatchsetDetailsState) -> ApplyPatchsetRequest {
+        ApplyPatchsetRequest {
+            patch_title: details.representative_patch.title().clone(),
+            patchset_path: details.patchset_path.clone(),
+        }
+    }
 
-    Some(KwApplyRecord {
-        message_id: details.representative_patch.message_id().href.clone(),
-        kernel_tree_id: kernel_tree_id.clone(),
-        tree_path: kernel_tree.path().clone(),
-        applied_branch: applied.applied_branch.clone(),
-        base_branch: kernel_tree.branch().clone(),
-        applied_at: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
-    })
+    fn build_kw_apply_record(
+        details: &PatchsetDetailsState,
+        config: &ConfigSnapshot,
+        applied: &AppliedPatchset,
+    ) -> Option<KwApplyRecord> {
+        let kernel_tree_id = config.target_kernel_tree().as_ref()?;
+        let kernel_tree = config.get_kernel_tree(kernel_tree_id)?;
+
+        Some(KwApplyRecord {
+            message_id: details.representative_patch.message_id().href.clone(),
+            kernel_tree_id: kernel_tree_id.clone(),
+            tree_path: kernel_tree.path().clone(),
+            applied_branch: applied.applied_branch.clone(),
+            base_branch: kernel_tree.branch().clone(),
+            applied_at: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -658,8 +664,11 @@ mod tests {
     fn patchset_action_selected_reads_action_map() {
         let mut details = details_state();
 
-        assert!(patchset_action_selected(&details, &PatchsetAction::Apply));
-        assert!(patchset_action_selected(
+        assert!(App::is_patchset_action_selected(
+            &details,
+            &PatchsetAction::Apply
+        ));
+        assert!(App::is_patchset_action_selected(
             &details,
             &PatchsetAction::ReplyWithReviewedBy
         ));
@@ -668,13 +677,16 @@ mod tests {
             .patchset_actions
             .insert(PatchsetAction::Apply, false);
 
-        assert!(!patchset_action_selected(&details, &PatchsetAction::Apply));
+        assert!(!App::is_patchset_action_selected(
+            &details,
+            &PatchsetAction::Apply
+        ));
     }
 
     #[test]
     fn reviewed_reply_request_copies_reply_inputs() {
         let details = details_state();
-        let request = reviewed_reply_request(
+        let request = App::build_reviewed_reply_request(
             &details,
             HashSet::from([4usize]),
             "--dry-run --suppress-cc=all".to_string(),
@@ -692,7 +704,7 @@ mod tests {
     #[test]
     fn apply_patchset_request_copies_apply_inputs() {
         let details = details_state();
-        let request = apply_patchset_request(&details);
+        let request = App::build_apply_patchset_request(&details);
 
         assert_eq!("[PATCH 1/1] test patch", request.patch_title);
         assert_eq!("/tmp/patchset.mbx", request.patchset_path);
