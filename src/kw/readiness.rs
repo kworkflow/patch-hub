@@ -632,6 +632,7 @@ pub struct KwReadiness {
 /// against (the branch typed on KwOps). `current_branch` still reports
 /// the real HEAD so the UI can show both.
 #[cfg(unix)]
+#[expect(clippy::too_many_arguments)]
 pub fn evaluate_readiness(
     fs: &dyn FileSystemTrait,
     env: &dyn EnvTrait,

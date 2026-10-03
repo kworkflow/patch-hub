@@ -956,6 +956,7 @@ impl KwActor {
 /// Deploy gates that must not run on the actor task: remote.config,
 /// history JSON, image globs, and boot-once files. Record match runs
 /// before the boot-once confirm so a missing build refuses cheaper.
+#[expect(clippy::too_many_arguments)]
 fn prepare_deploy_blocking(
     kind: KwJobKind,
     request: &StartRequest,

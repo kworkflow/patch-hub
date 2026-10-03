@@ -6,7 +6,7 @@ use std::{
     env,
 };
 
-use crate::config::update::ValidatedConfigUpdate;
+use crate::config::ValidatedConfigUpdate;
 use crate::infrastructure::env::EnvTrait;
 use crate::render_prefs::{CoverRenderer, PatchRenderer};
 

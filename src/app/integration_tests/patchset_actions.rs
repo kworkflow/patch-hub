@@ -489,7 +489,7 @@ fn app_with_details(
 /// Variant of [`app_with_details`] whose kw actor gets its own mocks,
 /// process double, and log dir, for tests that start jobs through the
 /// app's kw handle.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn app_with_details_and_kw(
     fs: MockFileSystemTrait,
     shell: MockShellTrait,

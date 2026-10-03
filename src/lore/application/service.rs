@@ -50,6 +50,7 @@ pub struct LoreService {
 }
 
 impl LoreService {
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         lists_gateway: Arc<dyn ListsGateway>,
         feed_gateway: Arc<dyn FeedGateway>,

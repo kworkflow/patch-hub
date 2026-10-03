@@ -14,10 +14,9 @@ use crate::{
     config::{
         handle::ConfigHandle,
         messages::{ConfigMessage, ConfigResult},
-        repository::{ConfigRepository, JsonConfigRepository},
+        normalize_derived_paths,
         service::{ensure_directories, validate_update},
-        state::{normalize_derived_paths, ConfigState},
-        ConfigSnapshot, ConfigUpdateDraft,
+        ConfigRepository, ConfigSnapshot, ConfigState, ConfigUpdateDraft, JsonConfigRepository,
     },
     infrastructure::file_system::FileSystemTrait,
 };

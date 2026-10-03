@@ -5,9 +5,10 @@ use serde_json::from_str;
 use crate::config::env_overrides;
 use crate::config::errors::ConfigError;
 use crate::config::parsing::{parse_cover_renderer, parse_patch_renderer};
-use crate::config::repository::{ConfigRepository, JsonConfigRepository};
-use crate::config::state::{normalize_derived_paths, ConfigState};
-use crate::config::update::{ConfigUpdateDraft, ValidatedConfigUpdate};
+use crate::config::{
+    normalize_derived_paths, ConfigRepository, ConfigState, ConfigUpdateDraft,
+    JsonConfigRepository, ValidatedConfigUpdate,
+};
 use crate::infrastructure::{env::EnvTrait, file_system::FileSystemTrait};
 
 /// Loads file or defaults, saves, applies env overrides, normalizes paths, and ensures directories.

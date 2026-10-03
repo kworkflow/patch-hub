@@ -109,6 +109,7 @@ impl App {
     /// # Returns
     ///
     /// `App` instance with loading configurations and app data.
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         config: ConfigSnapshot,
         config_handle: ConfigHandle,

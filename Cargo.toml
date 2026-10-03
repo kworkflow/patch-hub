@@ -60,7 +60,6 @@ warnings = "deny"
 unconditional_recursion = "deny"
 
 [lints.clippy]
-too-many-arguments = "allow"
 map_unwrap_or = "deny"
 
 [workspace]
