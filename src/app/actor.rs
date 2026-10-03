@@ -105,14 +105,19 @@ impl AppActor {
                     .map_err(terminal_error)?;
             }
 
-            let tail_while_running = kw_ops_should_tail(&self.app);
-            let poll_status = kw_status_rx.is_none() && should_poll_kw_status(&self.app);
+            let tail_while_running = Self::should_tail_kw_ops(&self.app);
+            let poll_status = kw_status_rx.is_none() && Self::should_poll_kw_status(&self.app);
             tokio::select! {
                 event = self.event_rx.recv() => {
                     match event {
                         Some(event) => {
-                            match on_input(&mut self.app, event, &self.terminal_handle, &mut loading)
-                                .await?
+                            match Self::dispatch_input(
+                                &mut self.app,
+                                event,
+                                &self.terminal_handle,
+                                &mut loading,
+                            )
+                            .await?
                             {
                                 ControlFlow::Continue(()) => {
                                     self.input_handle
@@ -130,7 +135,7 @@ impl AppActor {
                         }
                     }
                 }
-                watch_event = kw_status_changed(&mut kw_status_rx) => {
+                watch_event = Self::await_kw_status_change(&mut kw_status_rx) => {
                     match watch_event {
                         KwWatchEvent::Updated(snapshot) => {
                             self.app.apply_kw_snapshot_refreshing_readiness(snapshot).await;
@@ -190,151 +195,160 @@ impl AppActor {
     }
 }
 
-/// Waits for the next kw-status change. With no receiver this future
-/// never completes, so `select!` stays on the input arm instead of
-/// spinning.
-async fn kw_status_changed(rx: &mut Option<watch::Receiver<KwStatusSnapshot>>) -> KwWatchEvent {
-    match rx.as_mut() {
-        Some(rx) => match rx.changed().await {
-            Ok(()) => KwWatchEvent::Updated(rx.borrow_and_update().clone()),
-            Err(_) => KwWatchEvent::Closed,
-        },
-        None => std::future::pending().await,
+impl AppActor {
+    /// Waits for the next kw-status change. With no receiver this future
+    /// never completes, so `select!` stays on the input arm instead of
+    /// spinning.
+    async fn await_kw_status_change(
+        rx: &mut Option<watch::Receiver<KwStatusSnapshot>>,
+    ) -> KwWatchEvent {
+        match rx.as_mut() {
+            Some(rx) => match rx.changed().await {
+                Ok(()) => KwWatchEvent::Updated(rx.borrow_and_update().clone()),
+                Err(_) => KwWatchEvent::Closed,
+            },
+            None => std::future::pending().await,
+        }
     }
-}
 
-fn kw_ops_should_tail(app: &App) -> bool {
-    app.state.navigation.current_screen == CurrentScreen::KwOps
-        && matches!(
+    fn should_tail_kw_ops(app: &App) -> bool {
+        app.state.navigation.current_screen == CurrentScreen::KwOps
+            && matches!(
+                app.state.kw.status.as_ref().map(|status| &status.job),
+                Some(KwJobStatus::Running { .. })
+            )
+    }
+
+    /// When the status watch is missing, poll GetStatus while a start is
+    /// in flight or a job is running so `start_requested` cannot latch and
+    /// the nav indicator can leave "building".
+    fn should_poll_kw_status(app: &App) -> bool {
+        app.services.kw.is_some()
+            && (Self::is_kw_job_running(app)
+                || app
+                    .state
+                    .kw
+                    .ops
+                    .as_ref()
+                    .is_some_and(|ops| ops.start_requested))
+    }
+
+    async fn dispatch_input(
+        app: &mut App,
+        input: InputEvent,
+        terminal_handle: &TerminalHandle,
+        loading: &mut TerminalLoadingIndicator,
+    ) -> Result<ControlFlow<()>> {
+        if app.state.popup.is_some() {
+            match input {
+                InputEvent::ClosePopup => {
+                    Self::dismiss_open_popup(app);
+                }
+                InputEvent::ConfirmPopup => {
+                    if let Some(action) = app
+                        .state
+                        .popup
+                        .as_ref()
+                        .and_then(AppPopup::selected_confirm_action)
+                    {
+                        return Self::apply_confirm_action(app, action).await;
+                    }
+                }
+                _ => {
+                    if let Some(popup) = app.state.popup.as_mut() {
+                        popup.handle_input(input);
+                    }
+                }
+            }
+        } else if input == InputEvent::Quit && Self::is_kw_job_running(app) {
+            app.state.popup = Some(AppPopup::quit_while_job_running());
+        } else {
+            tracing::debug!(screen = ?app.state.navigation.current_screen, "dispatching input to screen handler");
+            match app.state.navigation.current_screen {
+                CurrentScreen::MailingListSelection => {
+                    match app.handle_mailing_list_selection(input, loading).await? {
+                        ControlFlow::Continue(()) => {}
+                        ControlFlow::Break(()) => return Ok(ControlFlow::Break(())),
+                    }
+                }
+                CurrentScreen::BookmarkedPatchsets => {
+                    app.handle_bookmarked_patchsets(input, loading).await?;
+                }
+                CurrentScreen::PatchsetDetails => {
+                    app.handle_patchset_details(input, terminal_handle).await?;
+                }
+                CurrentScreen::EditConfig => {
+                    app.handle_edit_config(input).await?;
+                }
+                CurrentScreen::LatestPatchsets => {
+                    app.handle_latest_patchsets(input, loading).await?;
+                }
+                CurrentScreen::KwOps => {
+                    app.handle_kw_ops(input).await?;
+                }
+            }
+        }
+        Ok(ControlFlow::Continue(()))
+    }
+
+    fn is_boot_once_confirm(popup: &AppPopup) -> bool {
+        matches!(
+            popup.selected_confirm_action(),
+            Some(ConfirmAction::ProceedWithBootOnce | ConfirmAction::BackOut)
+        )
+    }
+
+    fn dismiss_open_popup(app: &mut App) {
+        if app
+            .state
+            .popup
+            .as_ref()
+            .is_some_and(Self::is_boot_once_confirm)
+        {
+            app.clear_pending_deploy();
+        }
+        app.state.popup = None;
+    }
+
+    async fn apply_confirm_action(app: &mut App, action: ConfirmAction) -> Result<ControlFlow<()>> {
+        app.state.popup = None;
+        match action {
+            ConfirmAction::CancelKwAndQuit => Ok(Self::cancel_kw_and_quit(app).await),
+            ConfirmAction::Wait => Ok(ControlFlow::Continue(())),
+            ConfirmAction::ProceedWithBootOnce => {
+                app.resume_pending_deploy().await?;
+                Ok(ControlFlow::Continue(()))
+            }
+            ConfirmAction::BackOut => {
+                app.clear_pending_deploy();
+                Ok(ControlFlow::Continue(()))
+            }
+        }
+    }
+
+    fn is_kw_job_running(app: &App) -> bool {
+        matches!(
             app.state.kw.status.as_ref().map(|status| &status.job),
             Some(KwJobStatus::Running { .. })
         )
-}
+    }
 
-/// When the status watch is missing, poll GetStatus while a start is
-/// in flight or a job is running so `start_requested` cannot latch and
-/// the nav indicator can leave "building".
-fn should_poll_kw_status(app: &App) -> bool {
-    app.services.kw.is_some()
-        && (kw_job_is_running(app)
-            || app
-                .state
-                .kw
-                .ops
-                .as_ref()
-                .is_some_and(|ops| ops.start_requested))
-}
-
-async fn on_input(
-    app: &mut App,
-    input: InputEvent,
-    terminal_handle: &TerminalHandle,
-    loading: &mut TerminalLoadingIndicator,
-) -> Result<ControlFlow<()>> {
-    if app.state.popup.is_some() {
-        match input {
-            InputEvent::ClosePopup => {
-                dismiss_open_popup(app);
-            }
-            InputEvent::ConfirmPopup => {
-                if let Some(action) = app
-                    .state
-                    .popup
-                    .as_ref()
-                    .and_then(AppPopup::selected_confirm_action)
-                {
-                    return apply_confirm_action(app, action).await;
+    /// Cancel then leave. A job that finished while the confirm popup was
+    /// open is `NoJobRunning`; that race is harmless and still quits.
+    async fn cancel_kw_and_quit(app: &App) -> ControlFlow<()> {
+        if let Some(kw) = app.services.kw.as_ref() {
+            match kw.cancel().await {
+                Ok(()) => {}
+                Err(KwError::NoJobRunning) => {
+                    tracing::debug!("kw job already finished before cancel-and-quit");
                 }
-            }
-            _ => {
-                if let Some(popup) = app.state.popup.as_mut() {
-                    popup.handle_input(input);
+                Err(error) => {
+                    tracing::warn!(%error, "kw cancel failed while quitting");
                 }
             }
         }
-    } else if input == InputEvent::Quit && kw_job_is_running(app) {
-        app.state.popup = Some(AppPopup::quit_while_job_running());
-    } else {
-        tracing::debug!(screen = ?app.state.navigation.current_screen, "dispatching input to screen handler");
-        match app.state.navigation.current_screen {
-            CurrentScreen::MailingListSelection => {
-                match app.handle_mailing_list_selection(input, loading).await? {
-                    ControlFlow::Continue(()) => {}
-                    ControlFlow::Break(()) => return Ok(ControlFlow::Break(())),
-                }
-            }
-            CurrentScreen::BookmarkedPatchsets => {
-                app.handle_bookmarked_patchsets(input, loading).await?;
-            }
-            CurrentScreen::PatchsetDetails => {
-                app.handle_patchset_details(input, terminal_handle).await?;
-            }
-            CurrentScreen::EditConfig => {
-                app.handle_edit_config(input).await?;
-            }
-            CurrentScreen::LatestPatchsets => {
-                app.handle_latest_patchsets(input, loading).await?;
-            }
-            CurrentScreen::KwOps => {
-                app.handle_kw_ops(input).await?;
-            }
-        }
+        ControlFlow::Break(())
     }
-    Ok(ControlFlow::Continue(()))
-}
-
-fn is_boot_once_confirm(popup: &AppPopup) -> bool {
-    matches!(
-        popup.selected_confirm_action(),
-        Some(ConfirmAction::ProceedWithBootOnce | ConfirmAction::BackOut)
-    )
-}
-
-fn dismiss_open_popup(app: &mut App) {
-    if app.state.popup.as_ref().is_some_and(is_boot_once_confirm) {
-        app.clear_pending_deploy();
-    }
-    app.state.popup = None;
-}
-
-async fn apply_confirm_action(app: &mut App, action: ConfirmAction) -> Result<ControlFlow<()>> {
-    app.state.popup = None;
-    match action {
-        ConfirmAction::CancelKwAndQuit => Ok(cancel_kw_and_quit(app).await),
-        ConfirmAction::Wait => Ok(ControlFlow::Continue(())),
-        ConfirmAction::ProceedWithBootOnce => {
-            app.resume_pending_deploy().await?;
-            Ok(ControlFlow::Continue(()))
-        }
-        ConfirmAction::BackOut => {
-            app.clear_pending_deploy();
-            Ok(ControlFlow::Continue(()))
-        }
-    }
-}
-
-fn kw_job_is_running(app: &App) -> bool {
-    matches!(
-        app.state.kw.status.as_ref().map(|status| &status.job),
-        Some(KwJobStatus::Running { .. })
-    )
-}
-
-/// Cancel then leave. A job that finished while the confirm popup was
-/// open is `NoJobRunning`; that race is harmless and still quits.
-async fn cancel_kw_and_quit(app: &App) -> ControlFlow<()> {
-    if let Some(kw) = app.services.kw.as_ref() {
-        match kw.cancel().await {
-            Ok(()) => {}
-            Err(KwError::NoJobRunning) => {
-                tracing::debug!("kw job already finished before cancel-and-quit");
-            }
-            Err(error) => {
-                tracing::warn!(%error, "kw cancel failed while quitting");
-            }
-        }
-    }
-    ControlFlow::Break(())
 }
 
 #[cfg(test)]
@@ -580,7 +594,7 @@ mod tests {
         app.state.kw.ops = Some(ops);
         app.state.popup = Some(AppPopup::boot_once_warning());
 
-        let flow = apply_confirm_action(&mut app, ConfirmAction::ProceedWithBootOnce)
+        let flow = AppActor::apply_confirm_action(&mut app, ConfirmAction::ProceedWithBootOnce)
             .await
             .unwrap();
         assert_eq!(ControlFlow::Continue(()), flow);
@@ -605,7 +619,7 @@ mod tests {
         app.state.kw.ops = Some(ops);
         app.state.popup = Some(AppPopup::boot_once_warning());
 
-        let flow = apply_confirm_action(&mut app, ConfirmAction::BackOut)
+        let flow = AppActor::apply_confirm_action(&mut app, ConfirmAction::BackOut)
             .await
             .unwrap();
         assert_eq!(ControlFlow::Continue(()), flow);
@@ -623,7 +637,7 @@ mod tests {
         app.state.kw.ops = Some(ops);
         app.state.popup = Some(AppPopup::boot_once_warning());
 
-        dismiss_open_popup(&mut app);
+        AppActor::dismiss_open_popup(&mut app);
         assert!(app.state.popup.is_none());
         assert_eq!(None, app.state.kw.ops.as_ref().unwrap().pending_deploy);
         assert!(!app.state.kw.ops.as_ref().unwrap().boot_once_acknowledged);
@@ -637,7 +651,7 @@ mod tests {
         app.state.kw.ops = Some(ops);
         app.state.popup = Some(AppPopup::quit_while_job_running());
 
-        dismiss_open_popup(&mut app);
+        AppActor::dismiss_open_popup(&mut app);
         assert!(app.state.popup.is_none());
         assert_eq!(
             Some(crate::app::screens::kw_ops::DeployStartKind::Deploy),
