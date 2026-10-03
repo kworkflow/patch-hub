@@ -8,8 +8,6 @@ const LORE_PAGE_SIZE: usize = 200;
 ///
 /// Replaces the state that was previously mixed into [`LoreSession`].
 pub struct PatchFeedIndex {
-    #[allow(dead_code)]
-    target_list: String,
     next_offset: usize,
     representative_patch_ids: Vec<String>,
     patches_by_id: HashMap<String, Patch>,
@@ -17,19 +15,13 @@ pub struct PatchFeedIndex {
 }
 
 impl PatchFeedIndex {
-    pub fn new(target_list: String) -> Self {
+    pub fn new() -> Self {
         PatchFeedIndex {
-            target_list,
             next_offset: 0,
             representative_patch_ids: Vec::new(),
             patches_by_id: HashMap::new(),
             patch_regex: PatchRegex::new(),
         }
-    }
-
-    #[allow(dead_code)]
-    pub fn target_list(&self) -> &str {
-        &self.target_list
     }
 
     pub fn next_offset(&self) -> usize {
@@ -134,15 +126,14 @@ mod tests {
 
     #[test]
     fn new_starts_with_empty_state() {
-        let idx = PatchFeedIndex::new("linux-kernel".to_string());
-        assert_eq!("linux-kernel", idx.target_list());
+        let idx = PatchFeedIndex::new();
         assert_eq!(0, idx.next_offset());
         assert!(idx.representative_patch_ids().is_empty());
     }
 
     #[test]
     fn process_feed_page_extracts_representative_patch() {
-        let mut idx = PatchFeedIndex::new("some-list".to_string());
+        let mut idx = PatchFeedIndex::new();
         let feed = feed_from_file(
             "test_samples/lore_session/process_representative_patch/patch_feed_sample_1.xml",
         );
@@ -159,7 +150,7 @@ mod tests {
 
     #[test]
     fn process_feed_page_extracts_multiple_representative_patches() {
-        let mut idx = PatchFeedIndex::new("some-list".to_string());
+        let mut idx = PatchFeedIndex::new();
         let feed = feed_from_file(
             "test_samples/lore_session/process_representative_patch/patch_feed_sample_2.xml",
         );
@@ -171,7 +162,7 @@ mod tests {
 
     #[test]
     fn process_feed_page_deduplicates() {
-        let mut idx = PatchFeedIndex::new("some-list".to_string());
+        let mut idx = PatchFeedIndex::new();
         let feed = feed_from_file(
             "test_samples/lore_session/process_representative_patch/patch_feed_sample_1.xml",
         );
@@ -183,7 +174,7 @@ mod tests {
 
     #[test]
     fn advance_offset_increments_by_page_size() {
-        let mut idx = PatchFeedIndex::new("list".to_string());
+        let mut idx = PatchFeedIndex::new();
         assert_eq!(0, idx.next_offset());
         idx.advance_offset();
         assert_eq!(200, idx.next_offset());
@@ -193,13 +184,13 @@ mod tests {
 
     #[test]
     fn get_page_returns_none_when_empty() {
-        let idx = PatchFeedIndex::new("list".to_string());
+        let idx = PatchFeedIndex::new();
         assert!(idx.get_page(10, 1).is_none());
     }
 
     #[test]
     fn get_page_returns_correct_patches() {
-        let mut idx = PatchFeedIndex::new("some-list".to_string());
+        let mut idx = PatchFeedIndex::new();
         let feed = feed_from_file(
             "test_samples/lore_session/process_representative_patch/patch_feed_sample_2.xml",
         );

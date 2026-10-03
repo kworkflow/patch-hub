@@ -51,17 +51,6 @@ impl Default for CacheTtl {
     }
 }
 
-// ── Generic cache policy trait ────────────────────────────────────────────────
-
-/// Uniform cache interface (`get`, `put`, `invalidate`, `clear`) for Lore cache stores.
-#[allow(dead_code)]
-pub trait CachePolicy<K, V> {
-    fn get(&self, key: &K) -> Option<&V>;
-    fn put(&mut self, key: K, value: V);
-    fn invalidate(&mut self, key: &K);
-    fn clear(&mut self);
-}
-
 // ── Mailing lists cache ───────────────────────────────────────────────────────
 
 pub struct MailingListsCacheEntry {

@@ -206,7 +206,7 @@ impl LoreService {
         self.cache
             .feeds
             .entry(target_list.to_string())
-            .or_insert_with(|| FeedCacheEntry::new(PatchFeedIndex::new(target_list.to_string())));
+            .or_insert_with(|| FeedCacheEntry::new(PatchFeedIndex::new()));
 
         // Clone the Arc so the borrow on `self.feed_gateway` doesn't conflict
         // with the mutable borrow on `self.cache.feeds`.
@@ -758,7 +758,7 @@ mod tests {
             let xml = fs::read_to_string(src).unwrap();
             parse_patch_feed(&xml).unwrap()
         };
-        let mut index = PatchFeedIndex::new(target.to_string());
+        let mut index = PatchFeedIndex::new();
         index.process_feed_page(feed);
         svc.cache
             .feeds
@@ -797,7 +797,7 @@ mod tests {
             let xml = fs::read_to_string(src).unwrap();
             crate::lore::infrastructure::parsers::parse_patch_feed(&xml).unwrap()
         };
-        let mut index = PatchFeedIndex::new(target.to_string());
+        let mut index = PatchFeedIndex::new();
         index.process_feed_page(feed);
         svc.cache
             .feeds
