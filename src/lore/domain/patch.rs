@@ -136,9 +136,10 @@ impl Default for PatchRegex {
 
 impl PatchRegex {
     pub fn new() -> PatchRegex {
-        let re_patch_tag = Regex::new(r"(?i)\[[^\]]*(PATCH|RFC)[^\[]*\]").unwrap();
-        let re_patch_version = Regex::new(r"[v|V] *(\d+)").unwrap();
-        let re_patch_series = Regex::new(r"(\d+) */ *(\d+)").unwrap();
+        let re_patch_tag =
+            Regex::new(r"(?i)\[[^\]]*(PATCH|RFC)[^\[]*\]").expect("valid patch tag regex");
+        let re_patch_version = Regex::new(r"[v|V] *(\d+)").expect("valid patch version regex");
+        let re_patch_series = Regex::new(r"(\d+) */ *(\d+)").expect("valid patch series regex");
 
         PatchRegex {
             re_patch_tag,

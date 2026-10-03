@@ -322,8 +322,9 @@ impl LoreService {
         git_signature: &str,
         git_send_email_options: &str,
     ) -> Result<Vec<ShellCommand>, LoreError> {
-        static RE_MESSAGE_ID: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r"(?m)^Message-Id: <(.*?)>").unwrap());
+        static RE_MESSAGE_ID: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"(?m)^Message-Id: <(.*?)>").expect("valid message id regex")
+        });
 
         let gateway = Arc::clone(&self.patch_html_gateway);
         let mut commands = Vec::new();

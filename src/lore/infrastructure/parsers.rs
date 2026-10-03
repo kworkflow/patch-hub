@@ -12,11 +12,13 @@ pub fn parse_patch_feed(xml: &str) -> Result<PatchFeed, String> {
 /// sorted [`Vec<MailingList>`].
 pub fn parse_available_lists(html: &str) -> Vec<MailingList> {
     static RE_PRE_BLOCK: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r#"(?s)<pre>(.*?)</pre>"#).unwrap());
-    static RE_LIST_NAME: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r#"(?s)<a\s*href=".*?">(.*?)</a>"#).unwrap());
-    static RE_LIST_DESCRIPTION: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r#"(?s)</a>\s*(.*?)\s*\*"#).unwrap());
+        LazyLock::new(|| Regex::new(r#"(?s)<pre>(.*?)</pre>"#).expect("valid pre block regex"));
+    static RE_LIST_NAME: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?s)<a\s*href=".*?">(.*?)</a>"#).expect("valid list name regex")
+    });
+    static RE_LIST_DESCRIPTION: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?s)</a>\s*(.*?)\s*\*"#).expect("valid list description regex")
+    });
 
     let mut list_names: Vec<&str> = Vec::new();
     let mut list_descriptions: Vec<&str> = Vec::new();

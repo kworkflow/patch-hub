@@ -165,11 +165,12 @@ pub fn extract_git_reply_command(
     }
 
     static RE_FULL_GIT_COMMAND: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r#"(?s)git-send-email\(1\):(.*?)/path/to/YOUR_REPLY"#).unwrap()
+        Regex::new(r#"(?s)git-send-email\(1\):(.*?)/path/to/YOUR_REPLY"#)
+            .expect("valid full git command regex")
     });
 
     static RE_LONG_OPTIONS: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"--[^\s=]+=[^\s]+").unwrap());
+        LazyLock::new(|| Regex::new(r"--[^\s=]+=[^\s]+").expect("valid long options regex"));
 
     if let Some(capture) = RE_FULL_GIT_COMMAND.captures(patch_html) {
         if let Some(full_git_command_match) = capture.get(1) {
