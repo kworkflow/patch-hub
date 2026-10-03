@@ -1,4 +1,8 @@
-use std::{error::Error, panic};
+use std::{
+    error::Error,
+    io::{self, Write},
+    panic,
+};
 
 use color_eyre::{
     config::HookBuilder,
@@ -19,14 +23,18 @@ pub fn install_hooks() -> Result<()> {
     // convert from a color_eyre PanicHook to a standard panic hook
     let panic_hook = panic_hook.into_panic_hook();
     panic::set_hook(Box::new(move |panic_info| {
-        restore().unwrap();
+        if let Err(err) = restore() {
+            let _ = writeln!(io::stderr(), "failed to restore terminal: {err}");
+        }
         panic_hook(panic_info);
     }));
 
     // convert from a color_eyre EyreHook to a eyre ErrorHook
     let eyre_hook = eyre_hook.into_eyre_hook();
     set_hook(Box::new(move |error: &(dyn Error + 'static)| {
-        restore().unwrap();
+        if let Err(err) = restore() {
+            let _ = writeln!(io::stderr(), "failed to restore terminal: {err}");
+        }
         eyre_hook(error)
     }))?;
 
