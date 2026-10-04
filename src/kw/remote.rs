@@ -482,12 +482,27 @@ Host dut extra
         let read = Arc::new(map);
         let mut fs = MockFileSystemTrait::new();
         fs.expect_is_file()
-            .returning(move |path| is_file.contains_key(path));
-        fs.expect_read_to_string().returning(move |path| {
-            read.get(path).cloned().ok_or_else(|| {
-                FileSystemError::IoError(io::Error::new(io::ErrorKind::NotFound, "missing"))
+            .withf(|path| {
+                path == std::path::Path::new("/home/user/.config/kw/remote.config")
+                    || path == std::path::Path::new("/home/user/linux/.kw/remote.config")
+                    || path == std::path::Path::new("/kernel/.kw/remote.config")
+                    || path == std::path::Path::new("/xdg/kw/remote.config")
             })
-        });
+            .times(1..=2)
+            .returning(move |path| is_file.contains_key(path));
+        fs.expect_read_to_string()
+            .withf(|path| {
+                path == std::path::Path::new("/home/user/.config/kw/remote.config")
+                    || path == std::path::Path::new("/home/user/linux/.kw/remote.config")
+                    || path == std::path::Path::new("/kernel/.kw/remote.config")
+                    || path == std::path::Path::new("/xdg/kw/remote.config")
+            })
+            .times(0..=1)
+            .returning(move |path| {
+                read.get(path).cloned().ok_or_else(|| {
+                    FileSystemError::IoError(io::Error::new(io::ErrorKind::NotFound, "missing"))
+                })
+            });
         fs
     }
 
@@ -495,11 +510,14 @@ Host dut extra
         let xdg = xdg.map(str::to_string);
         let home = home.map(str::to_string);
         let mut env = MockEnvTrait::new();
-        env.expect_var().returning(move |key| match key {
-            "XDG_CONFIG_HOME" => xdg.clone().ok_or_else(missing_var),
-            "HOME" => home.clone().ok_or_else(missing_var),
-            _ => Err(missing_var()),
-        });
+        env.expect_var()
+            .withf(|key| matches!(key, "HOME" | "XDG_CONFIG_HOME"))
+            .times(0..=2)
+            .returning(move |key| match key {
+                "XDG_CONFIG_HOME" => xdg.clone().ok_or_else(missing_var),
+                "HOME" => home.clone().ok_or_else(missing_var),
+                _ => Err(missing_var()),
+            });
         env
     }
 
@@ -579,13 +597,18 @@ Host dut extra
     fn unreadable_local_file_does_not_fall_through() {
         let mut fs = MockFileSystemTrait::new();
         fs.expect_is_file()
+            .withf(|path| path == std::path::Path::new("/kernel/.kw/remote.config"))
+            .times(1)
             .returning(|path| path == Path::new("/kernel/.kw/remote.config"));
-        fs.expect_read_to_string().returning(|_| {
-            Err(FileSystemError::IoError(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "denied",
-            )))
-        });
+        fs.expect_read_to_string()
+            .withf(|path| path == std::path::Path::new("/kernel/.kw/remote.config"))
+            .times(1)
+            .returning(|_| {
+                Err(FileSystemError::IoError(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "denied",
+                )))
+            });
         let env = env_with(Some("/xdg"), Some("/home/user"));
 
         assert_eq!(

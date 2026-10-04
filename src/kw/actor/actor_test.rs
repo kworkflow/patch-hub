@@ -119,27 +119,55 @@ fn recording_shell(
     let calls = Arc::new(Mutex::new(Vec::new()));
     let calls_in_shell = Arc::clone(&calls);
     let mut shell = MockShellTrait::new();
-    shell.expect_execute().returning(move |cmd| {
-        calls_in_shell
-            .lock()
-            .expect("calls in shell locks")
-            .push(command_parts(cmd));
-        let output = |stdout: &[u8], stderr: &[u8], success: bool| ShellOutput {
-            stdout: stdout.to_vec(),
-            stderr: stderr.to_vec(),
-            success,
-        };
-        if cmd.program == "kw" {
-            return Ok(output(kw_version, b"", true));
-        }
-        if cmd.args.iter().any(|arg| arg == "status") {
-            return Ok(output(status.0, status.1, status.2));
-        }
-        if cmd.args.iter().any(|arg| arg == "switch") {
-            return Ok(output(b"", switch.0, switch.1));
-        }
-        Ok(output(b"master\n", b"", true))
-    });
+    shell
+        .expect_execute()
+        .withf(|cmd| {
+            cmd.program == "kw" && cmd.args == ["--version"]
+                || cmd.program == "git"
+                    && cmd.args
+                        == [
+                            "-C",
+                            "/home/user/linux",
+                            "status",
+                            "--porcelain",
+                            "--untracked-files=no",
+                        ]
+                || cmd.program == "git"
+                    && cmd.args == ["-C", "/home/user/linux", "branch", "--show-current"]
+                || cmd.program == "git"
+                    && cmd.args
+                        == [
+                            "-C",
+                            "/home/user/linux",
+                            "switch",
+                            "--",
+                            "patchset-2026-08-01-17-30-00",
+                        ]
+                || cmd.program == "git"
+                    && cmd.args == ["-C", "/home/user/linux", "switch", "--", "master"]
+        })
+        .times(2..=9)
+        .returning(move |cmd| {
+            calls_in_shell
+                .lock()
+                .expect("calls in shell locks")
+                .push(command_parts(cmd));
+            let output = |stdout: &[u8], stderr: &[u8], success: bool| ShellOutput {
+                stdout: stdout.to_vec(),
+                stderr: stderr.to_vec(),
+                success,
+            };
+            if cmd.program == "kw" {
+                return Ok(output(kw_version, b"", true));
+            }
+            if cmd.args.iter().any(|arg| arg == "status") {
+                return Ok(output(status.0, status.1, status.2));
+            }
+            if cmd.args.iter().any(|arg| arg == "switch") {
+                return Ok(output(b"", switch.0, switch.1));
+            }
+            Ok(output(b"master\n", b"", true))
+        });
     (shell, calls)
 }
 
@@ -172,43 +200,74 @@ impl GitStub {
         let dirty = Arc::clone(&self.dirty);
         let fail_switch_to = Arc::clone(&self.fail_switch_to);
         let mut shell = MockShellTrait::new();
-        shell.expect_execute().returning(move |cmd| {
-            let output = |stdout: &[u8]| ShellOutput {
-                stdout: stdout.to_vec(),
-                stderr: Vec::new(),
-                success: true,
-            };
-            if cmd.program == "kw" {
-                return Ok(output(KW_VERSION_OK));
-            }
-            if cmd.args.iter().any(|arg| arg == "status") {
-                let stdout: &[u8] = if dirty.load(Ordering::Relaxed) {
-                    b" M src/main.c\n"
-                } else {
-                    b""
+        shell
+            .expect_execute()
+            .withf(|cmd| {
+                cmd.program == "kw" && cmd.args == ["--version"]
+                    || cmd.program == "git"
+                        && cmd.args
+                            == [
+                                "-C",
+                                "/home/user/linux",
+                                "status",
+                                "--porcelain",
+                                "--untracked-files=no",
+                            ]
+                    || cmd.program == "git"
+                        && cmd.args == ["-C", "/home/user/linux", "branch", "--show-current"]
+                    || cmd.program == "git"
+                        && cmd.args
+                            == [
+                                "-C",
+                                "/home/user/linux",
+                                "switch",
+                                "--",
+                                "patchset-2026-08-01-17-30-00",
+                            ]
+                    || cmd.program == "git"
+                        && cmd.args == ["-C", "/home/user/linux", "switch", "--", "master"]
+                    || cmd.program == "git"
+                        && cmd.args == ["-C", "/home/user/linux", "switch", "--", "patchset-two"]
+            })
+            .times(5..=11)
+            .returning(move |cmd| {
+                let output = |stdout: &[u8]| ShellOutput {
+                    stdout: stdout.to_vec(),
+                    stderr: Vec::new(),
+                    success: true,
                 };
-                return Ok(output(stdout));
-            }
-            if cmd.args.iter().any(|arg| arg == "switch") {
-                let branch = cmd.args.last().expect("iterator yields last").clone();
-                if fail_switch_to
-                    .lock()
-                    .expect("fail switch to locks")
-                    .as_deref()
-                    == Some(branch.as_str())
-                {
-                    return Ok(ShellOutput {
-                        stdout: Vec::new(),
-                        stderr: b"error: you need to resolve your current index first\n".to_vec(),
-                        success: false,
-                    });
+                if cmd.program == "kw" {
+                    return Ok(output(KW_VERSION_OK));
                 }
-                *head.lock().expect("head locks") = branch;
-                return Ok(output(b""));
-            }
-            let current = format!("{}\n", head.lock().expect("head locks"));
-            Ok(output(current.as_bytes()))
-        });
+                if cmd.args.iter().any(|arg| arg == "status") {
+                    let stdout: &[u8] = if dirty.load(Ordering::Relaxed) {
+                        b" M src/main.c\n"
+                    } else {
+                        b""
+                    };
+                    return Ok(output(stdout));
+                }
+                if cmd.args.iter().any(|arg| arg == "switch") {
+                    let branch = cmd.args.last().expect("iterator yields last").clone();
+                    if fail_switch_to
+                        .lock()
+                        .expect("fail switch to locks")
+                        .as_deref()
+                        == Some(branch.as_str())
+                    {
+                        return Ok(ShellOutput {
+                            stdout: Vec::new(),
+                            stderr: b"error: you need to resolve your current index first\n"
+                                .to_vec(),
+                            success: false,
+                        });
+                    }
+                    *head.lock().expect("head locks") = branch;
+                    return Ok(output(b""));
+                }
+                let current = format!("{}\n", head.lock().expect("head locks"));
+                Ok(output(current.as_bytes()))
+            });
         shell
     }
 }
@@ -228,24 +287,63 @@ impl GitStub {
 /// absent, `.kw/build.config` is unreadable (arch probes as None),
 /// and there is no arch/ dir to glob images from.
 fn expect_ready_tree(fs: &mut MockFileSystemTrait) {
-    fs.expect_is_dir().returning(|_| true);
+    fs.expect_is_dir()
+        .withf(|path| {
+            path == std::path::Path::new("/home/user/linux")
+                || path == std::path::Path::new("/home/user/linux/.kw")
+                || path == std::path::Path::new("/home/user/linux/Documentation")
+                || path == std::path::Path::new("/home/user/linux/arch")
+                || path == std::path::Path::new("/home/user/linux/drivers")
+                || path == std::path::Path::new("/home/user/linux/fs")
+                || path == std::path::Path::new("/home/user/linux/include")
+                || path == std::path::Path::new("/home/user/linux/init")
+                || path == std::path::Path::new("/home/user/linux/ipc")
+                || path == std::path::Path::new("/home/user/linux/kernel")
+                || path == std::path::Path::new("/home/user/linux/lib")
+                || path == std::path::Path::new("/home/user/linux/scripts")
+        })
+        .times(12..=24)
+        .returning(|_| true);
     fs.expect_is_file()
+        .withf(|path| {
+            path == std::path::Path::new("/home/user/linux/.config")
+                || path == std::path::Path::new("/home/user/linux/.kw/env.current")
+                || path == std::path::Path::new("/home/user/linux/COPYING")
+                || path == std::path::Path::new("/home/user/linux/CREDITS")
+                || path == std::path::Path::new("/home/user/linux/Kbuild")
+                || path == std::path::Path::new("/home/user/linux/Makefile")
+                || path == std::path::Path::new("/home/user/linux/README")
+        })
+        .times(7..=14)
         .returning(|path| !path.ends_with(".kw/env.current"));
-    fs.expect_exists().returning(|_| true);
-    fs.expect_read_to_string().returning(|path| {
-        read_real_job_log(path).unwrap_or_else(|| {
+    fs.expect_exists()
+        .withf(|path| path == std::path::Path::new("/home/user/linux/MAINTAINERS"))
+        .times(1..=2)
+        .returning(|_| true);
+    fs.expect_read_to_string()
+        .withf(|path| {
+            path == std::path::Path::new("/home/user/linux/.kw/build.config")
+                || path == std::path::Path::new("/home/user/linux/include/config/kernel.release")
+                || path.extension() == Some("log".as_ref())
+        })
+        .times(1..=3)
+        .returning(|path| {
+            read_real_job_log(path).unwrap_or_else(|| {
+                Err(FileSystemError::IoError(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "missing",
+                )))
+            })
+        });
+    fs.expect_read_dir()
+        .withf(|path| path == std::path::Path::new("/home/user/linux/arch"))
+        .times(0..=1)
+        .returning(|_| {
             Err(FileSystemError::IoError(io::Error::new(
                 io::ErrorKind::NotFound,
                 "missing",
             )))
-        })
-    });
-    fs.expect_read_dir().returning(|_| {
-        Err(FileSystemError::IoError(io::Error::new(
-            io::ErrorKind::NotFound,
-            "missing",
-        )))
-    });
+        });
 }
 
 /// Job logs are real files ([`FakeProcess`] creates them and
@@ -260,7 +358,10 @@ fn read_real_job_log(path: &Path) -> Option<Result<String, FileSystemError>> {
 fn ready_fs() -> MockFileSystemTrait {
     let mut fs = MockFileSystemTrait::new();
     expect_ready_tree(&mut fs);
-    fs.expect_create_dir_all().returning(|_| Ok(()));
+    fs.expect_create_dir_all()
+        .withf(|path| path.starts_with(std::env::temp_dir()))
+        .times(1..=2)
+        .returning(|_| Ok(()));
     fs
 }
 
@@ -271,37 +372,82 @@ fn ready_fs() -> MockFileSystemTrait {
 /// epoch — still the only, hence newest, candidate.
 fn built_tree_fs() -> MockFileSystemTrait {
     let mut fs = MockFileSystemTrait::new();
-    fs.expect_is_dir().returning(|_| true);
+    fs.expect_is_dir()
+        .withf(|path| {
+            path == std::path::Path::new("/home/user/linux")
+                || path == std::path::Path::new("/home/user/linux/.kw")
+                || path == std::path::Path::new("/home/user/linux/Documentation")
+                || path == std::path::Path::new("/home/user/linux/arch")
+                || path == std::path::Path::new("/home/user/linux/drivers")
+                || path == std::path::Path::new("/home/user/linux/fs")
+                || path == std::path::Path::new("/home/user/linux/include")
+                || path == std::path::Path::new("/home/user/linux/init")
+                || path == std::path::Path::new("/home/user/linux/ipc")
+                || path == std::path::Path::new("/home/user/linux/kernel")
+                || path == std::path::Path::new("/home/user/linux/lib")
+                || path == std::path::Path::new("/home/user/linux/scripts")
+        })
+        .times(12)
+        .returning(|_| true);
     fs.expect_is_file()
+        .withf(|path| {
+            path == std::path::Path::new("/home/user/linux/.config")
+                || path == std::path::Path::new("/home/user/linux/.kw/env.current")
+                || path == std::path::Path::new("/home/user/linux/COPYING")
+                || path == std::path::Path::new("/home/user/linux/CREDITS")
+                || path == std::path::Path::new("/home/user/linux/Kbuild")
+                || path == std::path::Path::new("/home/user/linux/Makefile")
+                || path == std::path::Path::new("/home/user/linux/README")
+                || path == std::path::Path::new("/home/user/linux/arch/x86/boot/bzImage")
+        })
+        .times(7..=8)
         .returning(|path| !path.ends_with(".kw/env.current"));
-    fs.expect_exists().returning(|_| true);
-    fs.expect_read_to_string().returning(|path| {
-        if path.ends_with("build.config") {
-            Ok("arch=x86\n".to_string())
-        } else if path.ends_with("kernel.release") {
-            Ok("6.17.0\n".to_string())
-        } else {
-            Err(FileSystemError::IoError(io::Error::new(
-                io::ErrorKind::NotFound,
-                "missing",
-            )))
-        }
-    });
-    fs.expect_read_dir().returning(|path| {
-        if path.ends_with("arch/x86/boot") {
-            Ok(vec![PathBuf::from(
-                "/home/user/linux/arch/x86/boot/bzImage",
-            )])
-        } else {
-            Err(FileSystemError::IoError(io::Error::new(
-                io::ErrorKind::NotFound,
-                "missing",
-            )))
-        }
-    });
+    fs.expect_exists()
+        .withf(|path| path == std::path::Path::new("/home/user/linux/MAINTAINERS"))
+        .times(1)
+        .returning(|_| true);
+    fs.expect_read_to_string()
+        .withf(|path| {
+            path == std::path::Path::new("/home/user/linux/.kw/build.config")
+                || path == std::path::Path::new("/home/user/linux/include/config/kernel.release")
+                || path.extension() == Some("log".as_ref())
+        })
+        .times(2)
+        .returning(|path| {
+            if path.ends_with("build.config") {
+                Ok("arch=x86\n".to_string())
+            } else if path.ends_with("kernel.release") {
+                Ok("6.17.0\n".to_string())
+            } else {
+                Err(FileSystemError::IoError(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "missing",
+                )))
+            }
+        });
+    fs.expect_read_dir()
+        .withf(|path| path == std::path::Path::new("/home/user/linux/arch/x86/boot"))
+        .times(0..=1)
+        .returning(|path| {
+            if path.ends_with("arch/x86/boot") {
+                Ok(vec![PathBuf::from(
+                    "/home/user/linux/arch/x86/boot/bzImage",
+                )])
+            } else {
+                Err(FileSystemError::IoError(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "missing",
+                )))
+            }
+        });
     fs.expect_metadata()
+        .withf(|path| path == std::path::Path::new("/home/user/linux/arch/x86/boot/bzImage"))
+        .times(0..=1)
         .returning(|_| Err(FileSystemError::IoError(io::Error::other("no metadata"))));
-    fs.expect_create_dir_all().returning(|_| Ok(()));
+    fs.expect_create_dir_all()
+        .withf(|path| path.starts_with(std::env::temp_dir()))
+        .times(1)
+        .returning(|_| Ok(()));
     fs
 }
 
@@ -320,43 +466,92 @@ pub(super) fn deploy_fs(
     has_image: bool,
 ) -> MockFileSystemTrait {
     let mut fs = MockFileSystemTrait::new();
-    fs.expect_is_dir().returning(|_| true);
+    fs.expect_is_dir()
+        .withf(|path| {
+            path == std::path::Path::new("/home/user/linux")
+                || path == std::path::Path::new("/home/user/linux/.kw")
+                || path == std::path::Path::new("/home/user/linux/Documentation")
+                || path == std::path::Path::new("/home/user/linux/arch")
+                || path == std::path::Path::new("/home/user/linux/drivers")
+                || path == std::path::Path::new("/home/user/linux/fs")
+                || path == std::path::Path::new("/home/user/linux/include")
+                || path == std::path::Path::new("/home/user/linux/init")
+                || path == std::path::Path::new("/home/user/linux/ipc")
+                || path == std::path::Path::new("/home/user/linux/kernel")
+                || path == std::path::Path::new("/home/user/linux/lib")
+                || path == std::path::Path::new("/home/user/linux/scripts")
+        })
+        .times(12)
+        .returning(|_| true);
     fs.expect_is_file()
+        .withf(|path| {
+            path == std::path::Path::new("/home/user/linux/.config")
+                || path == std::path::Path::new("/home/user/linux/.kw/deploy.config")
+                || path == std::path::Path::new("/home/user/linux/.kw/env.current")
+                || path == std::path::Path::new("/home/user/linux/.kw/remote.config")
+                || path == std::path::Path::new("/home/user/linux/COPYING")
+                || path == std::path::Path::new("/home/user/linux/CREDITS")
+                || path == std::path::Path::new("/home/user/linux/Kbuild")
+                || path == std::path::Path::new("/home/user/linux/Makefile")
+                || path == std::path::Path::new("/home/user/linux/README")
+                || path == std::path::Path::new("/home/user/linux/arch/x86/boot/bzImage")
+        })
+        .times(8..=10)
         .returning(|path| !path.ends_with(".kw/env.current"));
-    fs.expect_exists().returning(|_| true);
-    fs.expect_read_to_string().returning(move |path| {
-        if let Some(log) = read_real_job_log(path) {
-            log
-        } else if path.ends_with("build.config") {
-            Ok("arch=x86\n".to_string())
-        } else if path.ends_with("kernel.release") {
-            Ok("6.17.0\n".to_string())
-        } else if path.ends_with("remote.config") {
-            Ok(remote_config.to_string())
-        } else if path.ends_with("deploy.config") {
-            Ok(deploy_config.to_string())
-        } else {
-            Err(FileSystemError::IoError(io::Error::new(
-                io::ErrorKind::NotFound,
-                "missing",
-            )))
-        }
-    });
-    fs.expect_read_dir().returning(move |path| {
-        if has_image && path.ends_with("arch/x86/boot") {
-            Ok(vec![PathBuf::from(
-                "/home/user/linux/arch/x86/boot/bzImage",
-            )])
-        } else {
-            Err(FileSystemError::IoError(io::Error::new(
-                io::ErrorKind::NotFound,
-                "missing",
-            )))
-        }
-    });
+    fs.expect_exists()
+        .withf(|path| path == std::path::Path::new("/home/user/linux/MAINTAINERS"))
+        .times(1)
+        .returning(|_| true);
+    fs.expect_read_to_string()
+        .withf(|path| {
+            path == std::path::Path::new("/home/user/linux/.kw/build.config")
+                || path == std::path::Path::new("/home/user/linux/.kw/deploy.config")
+                || path == std::path::Path::new("/home/user/linux/.kw/remote.config")
+                || path == std::path::Path::new("/home/user/linux/include/config/kernel.release")
+                || path.extension() == Some("log".as_ref())
+        })
+        .times(2..=5)
+        .returning(move |path| {
+            if let Some(log) = read_real_job_log(path) {
+                log
+            } else if path.ends_with("build.config") {
+                Ok("arch=x86\n".to_string())
+            } else if path.ends_with("kernel.release") {
+                Ok("6.17.0\n".to_string())
+            } else if path.ends_with("remote.config") {
+                Ok(remote_config.to_string())
+            } else if path.ends_with("deploy.config") {
+                Ok(deploy_config.to_string())
+            } else {
+                Err(FileSystemError::IoError(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "missing",
+                )))
+            }
+        });
+    fs.expect_read_dir()
+        .withf(|path| path == std::path::Path::new("/home/user/linux/arch/x86/boot"))
+        .times(0..=1)
+        .returning(move |path| {
+            if has_image && path.ends_with("arch/x86/boot") {
+                Ok(vec![PathBuf::from(
+                    "/home/user/linux/arch/x86/boot/bzImage",
+                )])
+            } else {
+                Err(FileSystemError::IoError(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "missing",
+                )))
+            }
+        });
     fs.expect_metadata()
+        .withf(|path| path == std::path::Path::new("/home/user/linux/arch/x86/boot/bzImage"))
+        .times(0..=1)
         .returning(|_| Err(FileSystemError::IoError(io::Error::other("no metadata"))));
-    fs.expect_create_dir_all().returning(|_| Ok(()));
+    fs.expect_create_dir_all()
+        .withf(|path| path.starts_with(std::env::temp_dir()))
+        .times(0..=2)
+        .returning(|_| Ok(()));
     fs
 }
 
@@ -399,14 +594,18 @@ pub(super) fn deploy_history(record: Option<KwBuildRecord>) -> MockKwHistoryStor
         .withf(|kernel_tree_id, branch| {
             kernel_tree_id == "mainline" && branch == "patchset-2026-08-01-17-30-00"
         })
+        .times(1)
         .returning(move |_, _| Ok((record.clone(), record.clone())));
-    history.expect_record_build().times(0);
+    history.expect_record_build().withf(|_| true).times(0);
     history
 }
 
 pub(super) fn env_with_kw() -> MockEnvTrait {
     let mut env = MockEnvTrait::new();
-    env.expect_which().returning(|_| true);
+    env.expect_which()
+        .withf(|name| name == "kw")
+        .times(1)
+        .returning(|_| true);
     env
 }
 
@@ -425,8 +624,14 @@ pub(super) fn quiet_history() -> MockKwHistoryStore {
     let mut history = MockKwHistoryStore::new();
     history
         .expect_apply_record_for_branch()
+        .withf(|tree, branch| tree == "mainline" && branch == "patchset-2026-08-01-17-30-00")
+        .times(1)
         .returning(|_, _| Ok(None));
-    history.expect_record_build().returning(|_| Ok(()));
+    history
+        .expect_record_build()
+        .withf(|record| record.branch == "patchset-2026-08-01-17-30-00")
+        .times(1)
+        .returning(|_| Ok(()));
     history
 }
 
@@ -440,14 +645,20 @@ pub(super) fn recording_history(
     let mut history = MockKwHistoryStore::new();
     history
         .expect_apply_record_for_branch()
+        .withf(|tree, branch| tree == "mainline" && branch == "patchset-2026-08-01-17-30-00")
+        .times(1)
         .returning(move |_, _| Ok(apply_record.clone()));
-    history.expect_record_build().returning(move |record| {
-        builds_in_store
-            .lock()
-            .expect("builds in store locks")
-            .push(record);
-        Ok(())
-    });
+    history
+        .expect_record_build()
+        .withf(|record| record.branch == "patchset-2026-08-01-17-30-00")
+        .times(1)
+        .returning(move |record| {
+            builds_in_store
+                .lock()
+                .expect("builds in store locks")
+                .push(record);
+            Ok(())
+        });
     (history, builds)
 }
 
@@ -483,7 +694,10 @@ fn spawn_job_actor_with_mocks(
     fs: MockFileSystemTrait,
 ) -> (KwHandle, Arc<FakeProcess>, PathBuf) {
     let mut env = MockEnvTrait::new();
-    env.expect_which().returning(|_| true);
+    env.expect_which()
+        .withf(|name| name == "kw")
+        .times(1..=2)
+        .returning(|_| true);
     spawn_full_actor(test_name, quiet_history(), shell, fs, env)
 }
 
@@ -532,6 +746,14 @@ async fn record_apply_surfaces_store_errors() {
     let mut history = MockKwHistoryStore::new();
     history
         .expect_record_apply()
+        .withf(|record| {
+            record.message_id == "msg-1"
+                && record.kernel_tree_id == "mainline"
+                && record.tree_path == "/home/user/linux"
+                && record.applied_branch == "patchset-2026-08-01-17-30-00"
+                && record.base_branch == "master"
+                && record.applied_at == "2026-08-01T17:30:00Z"
+        })
         .times(1)
         .returning(|_| Err(FileSystemError::IoError(io::Error::other("disk full"))));
     let handle = spawn_test_actor(
@@ -588,18 +810,34 @@ async fn get_readiness_composes_probes_and_head_branch() {
     let mut env = MockEnvTrait::new();
     env.expect_which()
         .withf(|name| name == "kw")
+        .times(1)
         .returning(|_| false);
     env.expect_var()
+        .withf(|key| matches!(key, "HOME" | "XDG_CONFIG_HOME"))
+        .times(4)
         .returning(|_| Err(env::VarError::NotPresent.into()));
     let mut fs = MockFileSystemTrait::new();
-    fs.expect_is_file().returning(|_| false);
-    fs.expect_is_dir().returning(|_| false);
-    fs.expect_read_dir().returning(|_| {
-        Err(FileSystemError::IoError(io::Error::new(
-            io::ErrorKind::NotFound,
-            "missing",
-        )))
-    });
+    fs.expect_is_file()
+        .withf(|path| {
+            path == std::path::Path::new("/home/user/linux/.kw/deploy.config")
+                || path == std::path::Path::new("/home/user/linux/.kw/env.current")
+                || path == std::path::Path::new("/home/user/linux/.kw/remote.config")
+        })
+        .times(3)
+        .returning(|_| false);
+    fs.expect_is_dir()
+        .withf(|path| path == std::path::Path::new("/home/user/linux"))
+        .times(1)
+        .returning(|_| false);
+    fs.expect_read_dir()
+        .withf(|path| path == std::path::Path::new("/home/user/linux/arch"))
+        .times(1)
+        .returning(|_| {
+            Err(FileSystemError::IoError(io::Error::new(
+                io::ErrorKind::NotFound,
+                "missing",
+            )))
+        });
     let mut history = MockKwHistoryStore::new();
     history
         .expect_build_records()
@@ -650,18 +888,34 @@ async fn get_readiness_for_branch_looks_up_that_branch_not_head() {
     let mut env = MockEnvTrait::new();
     env.expect_which()
         .withf(|name| name == "kw")
+        .times(1)
         .returning(|_| false);
     env.expect_var()
+        .withf(|key| matches!(key, "HOME" | "XDG_CONFIG_HOME"))
+        .times(4)
         .returning(|_| Err(env::VarError::NotPresent.into()));
     let mut fs = MockFileSystemTrait::new();
-    fs.expect_is_file().returning(|_| false);
-    fs.expect_is_dir().returning(|_| false);
-    fs.expect_read_dir().returning(|_| {
-        Err(FileSystemError::IoError(io::Error::new(
-            io::ErrorKind::NotFound,
-            "missing",
-        )))
-    });
+    fs.expect_is_file()
+        .withf(|path| {
+            path == std::path::Path::new("/home/user/linux/.kw/deploy.config")
+                || path == std::path::Path::new("/home/user/linux/.kw/env.current")
+                || path == std::path::Path::new("/home/user/linux/.kw/remote.config")
+        })
+        .times(3)
+        .returning(|_| false);
+    fs.expect_is_dir()
+        .withf(|path| path == std::path::Path::new("/home/user/linux"))
+        .times(1)
+        .returning(|_| false);
+    fs.expect_read_dir()
+        .withf(|path| path == std::path::Path::new("/home/user/linux/arch"))
+        .times(1)
+        .returning(|_| {
+            Err(FileSystemError::IoError(io::Error::new(
+                io::ErrorKind::NotFound,
+                "missing",
+            )))
+        });
     let mut history = MockKwHistoryStore::new();
     history
         .expect_build_records()
@@ -952,7 +1206,10 @@ async fn spawn_failure_refuses_start_and_stays_idle() {
 async fn start_build_refused_when_kw_binary_missing() {
     let process = Arc::new(FakeProcess::new());
     let mut env = MockEnvTrait::new();
-    env.expect_which().returning(|_| false);
+    env.expect_which()
+        .withf(|name| name == "kw")
+        .times(1)
+        .returning(|_| false);
     let log_dir = tmp_log_dir("kw-missing");
     let handle = KwActor::spawn(
         Arc::new(MockKwHistoryStore::new()),
@@ -982,23 +1239,57 @@ async fn start_build_refused_when_kw_binary_missing() {
 async fn start_build_refused_when_tree_not_ready() {
     let process = Arc::new(FakeProcess::new());
     let mut env = MockEnvTrait::new();
-    env.expect_which().returning(|_| true);
+    env.expect_which()
+        .withf(|name| name == "kw")
+        .times(1)
+        .returning(|_| true);
     let mut shell = MockShellTrait::new();
-    shell.expect_execute().returning(|_| {
-        Ok(ShellOutput {
-            stdout: b"kw, version 0.10.0\n".to_vec(),
-            stderr: Vec::new(),
-            success: true,
-        })
-    });
+    shell
+        .expect_execute()
+        .withf(|cmd| cmd.program == "kw" && cmd.args == ["--version"])
+        .times(1)
+        .returning(|_| {
+            Ok(ShellOutput {
+                stdout: b"kw, version 0.10.0\n".to_vec(),
+                stderr: Vec::new(),
+                success: true,
+            })
+        });
     // The kernel-root probes pass, but there is no .kw directory: kw
     // init was never run in this tree.
     let mut fs = MockFileSystemTrait::new();
     fs.expect_is_dir()
+        .withf(|path| {
+            path == std::path::Path::new("/home/user/linux")
+                || path == std::path::Path::new("/home/user/linux/.kw")
+                || path == std::path::Path::new("/home/user/linux/Documentation")
+                || path == std::path::Path::new("/home/user/linux/arch")
+                || path == std::path::Path::new("/home/user/linux/drivers")
+                || path == std::path::Path::new("/home/user/linux/fs")
+                || path == std::path::Path::new("/home/user/linux/include")
+                || path == std::path::Path::new("/home/user/linux/init")
+                || path == std::path::Path::new("/home/user/linux/ipc")
+                || path == std::path::Path::new("/home/user/linux/kernel")
+                || path == std::path::Path::new("/home/user/linux/lib")
+                || path == std::path::Path::new("/home/user/linux/scripts")
+        })
+        .times(12)
         .returning(|path| path.file_name().is_none_or(|name| name != ".kw"));
     fs.expect_is_file()
+        .withf(|path| {
+            path == std::path::Path::new("/home/user/linux/.kw/env.current")
+                || path == std::path::Path::new("/home/user/linux/COPYING")
+                || path == std::path::Path::new("/home/user/linux/CREDITS")
+                || path == std::path::Path::new("/home/user/linux/Kbuild")
+                || path == std::path::Path::new("/home/user/linux/Makefile")
+                || path == std::path::Path::new("/home/user/linux/README")
+        })
+        .times(6)
         .returning(|path| !path.ends_with(".kw/env.current"));
-    fs.expect_exists().returning(|_| true);
+    fs.expect_exists()
+        .withf(|path| path == std::path::Path::new("/home/user/linux/MAINTAINERS"))
+        .times(1)
+        .returning(|_| true);
     let log_dir = tmp_log_dir("tree-not-ready");
     let handle = KwActor::spawn(
         Arc::new(MockKwHistoryStore::new()),
@@ -1417,11 +1708,14 @@ async fn log_dir_creation_failure_refuses_start_and_stays_idle() {
     let git = GitStub::on_branch("master");
     let mut fs = MockFileSystemTrait::new();
     expect_ready_tree(&mut fs);
-    fs.expect_create_dir_all().returning(|_| {
-        Err(FileSystemError::IoError(io::Error::other(
-            "read-only filesystem",
-        )))
-    });
+    fs.expect_create_dir_all()
+        .withf(|path| path.starts_with(std::env::temp_dir()))
+        .times(1)
+        .returning(|_| {
+            Err(FileSystemError::IoError(io::Error::other(
+                "read-only filesystem",
+            )))
+        });
     let (handle, process, log_dir) = spawn_job_actor_with_mocks("log-dir-fail", git.shell(), fs);
 
     let err = handle.start_build(start_request()).await.unwrap_err();
@@ -1563,7 +1857,10 @@ async fn successful_build_writes_a_full_build_record() {
     let (handle, process, log_dir) =
         spawn_full_actor("build-record", history, shell, built_tree_fs(), {
             let mut env = MockEnvTrait::new();
-            env.expect_which().returning(|_| true);
+            env.expect_which()
+                .withf(|name| name == "kw")
+                .times(1)
+                .returning(|_| true);
             env
         });
     let mut watch = handle.watch_status().await.expect("status watch opens");
@@ -1610,7 +1907,10 @@ async fn failed_build_writes_a_failure_record() {
     let (handle, process, log_dir) =
         spawn_full_actor("failed-record", history, shell, built_tree_fs(), {
             let mut env = MockEnvTrait::new();
-            env.expect_which().returning(|_| true);
+            env.expect_which()
+                .withf(|name| name == "kw")
+                .times(1)
+                .returning(|_| true);
             env
         });
     let mut watch = handle.watch_status().await.expect("status watch opens");
@@ -1654,7 +1954,10 @@ async fn cancelled_build_writes_no_record() {
     let (handle, _process, log_dir) =
         spawn_full_actor("cancel-record", history, shell, ready_fs(), {
             let mut env = MockEnvTrait::new();
-            env.expect_which().returning(|_| true);
+            env.expect_which()
+                .withf(|name| name == "kw")
+                .times(1)
+                .returning(|_| true);
             env
         });
     let mut watch = handle.watch_status().await.expect("status watch opens");
@@ -1680,7 +1983,10 @@ async fn lost_exit_status_records_a_failed_build() {
     let (handle, process, log_dir) =
         spawn_full_actor("wait-failure", history, shell, ready_fs(), {
             let mut env = MockEnvTrait::new();
-            env.expect_which().returning(|_| true);
+            env.expect_which()
+                .withf(|name| name == "kw")
+                .times(1)
+                .returning(|_| true);
             env
         });
     let mut watch = handle.watch_status().await.expect("status watch opens");
@@ -1717,15 +2023,22 @@ async fn build_record_write_failure_keeps_the_terminal_status() {
     let mut history = MockKwHistoryStore::new();
     history
         .expect_apply_record_for_branch()
+        .withf(|tree, branch| tree == "mainline" && branch == "patchset-2026-08-01-17-30-00")
+        .times(1)
         .returning(|_, _| Ok(None));
     history
         .expect_record_build()
+        .withf(|record| record.branch == "patchset-2026-08-01-17-30-00")
+        .times(1)
         .returning(|_| Err(FileSystemError::IoError(io::Error::other("disk full"))));
     let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
     let (handle, process, log_dir) =
         spawn_full_actor("record-write-fails", history, shell, ready_fs(), {
             let mut env = MockEnvTrait::new();
-            env.expect_which().returning(|_| true);
+            env.expect_which()
+                .withf(|name| name == "kw")
+                .times(1)
+                .returning(|_| true);
             env
         });
     let mut watch = handle.watch_status().await.expect("status watch opens");
@@ -1750,23 +2063,34 @@ async fn build_record_keeps_no_patchset_link_when_apply_lookup_fails() {
     let builds = Arc::new(Mutex::new(Vec::new()));
     let builds_in_store = Arc::clone(&builds);
     let mut history = MockKwHistoryStore::new();
-    history.expect_apply_record_for_branch().returning(|_, _| {
-        Err(FileSystemError::IoError(io::Error::other(
-            "corrupt history",
-        )))
-    });
-    history.expect_record_build().returning(move |record| {
-        builds_in_store
-            .lock()
-            .expect("builds in store locks")
-            .push(record);
-        Ok(())
-    });
+    history
+        .expect_apply_record_for_branch()
+        .withf(|tree, branch| tree == "mainline" && branch == "patchset-2026-08-01-17-30-00")
+        .times(1)
+        .returning(|_, _| {
+            Err(FileSystemError::IoError(io::Error::other(
+                "corrupt history",
+            )))
+        });
+    history
+        .expect_record_build()
+        .withf(|record| record.branch == "patchset-2026-08-01-17-30-00")
+        .times(1)
+        .returning(move |record| {
+            builds_in_store
+                .lock()
+                .expect("builds in store locks")
+                .push(record);
+            Ok(())
+        });
     let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
     let (handle, process, log_dir) =
         spawn_full_actor("link-lookup-fails", history, shell, ready_fs(), {
             let mut env = MockEnvTrait::new();
-            env.expect_which().returning(|_| true);
+            env.expect_which()
+                .withf(|name| name == "kw")
+                .times(1)
+                .returning(|_| true);
             env
         });
     let mut watch = handle.watch_status().await.expect("status watch opens");
@@ -1801,11 +2125,46 @@ async fn successful_build_with_active_env_records_the_output_dir() {
     // With an env active the build artifacts live only under O=; the
     // source tree is clean.
     fs.expect_is_dir()
+        .withf(|path| {
+            path == std::path::Path::new("/home/user/linux")
+                || path == std::path::Path::new("/home/user/linux/.kw")
+                || path == std::path::Path::new("/home/user/linux/Documentation")
+                || path == std::path::Path::new("/home/user/linux/arch")
+                || path == std::path::Path::new("/home/user/linux/drivers")
+                || path == std::path::Path::new("/home/user/linux/fs")
+                || path == std::path::Path::new("/home/user/linux/include")
+                || path == std::path::Path::new("/home/user/linux/include/config")
+                || path == std::path::Path::new("/home/user/linux/init")
+                || path == std::path::Path::new("/home/user/linux/ipc")
+                || path == std::path::Path::new("/home/user/linux/kernel")
+                || path == std::path::Path::new("/home/user/linux/lib")
+                || path == std::path::Path::new("/home/user/linux/scripts")
+        })
+        .times(13)
         .returning(|path| path != Path::new("/home/user/linux/include/config"));
     fs.expect_is_file()
+        .withf(|path| {
+            path == std::path::Path::new(
+                "/home/user/.cache/kw/envs/L2hvbWUvdXNlci9saW51eA==/testenv/.config",
+            ) || path == std::path::Path::new(
+                "/home/user/.cache/kw/envs/L2hvbWUvdXNlci9saW51eA==/testenv/arch/x86/boot/bzImage",
+            ) || path == std::path::Path::new("/home/user/linux/.config")
+                || path == std::path::Path::new("/home/user/linux/.kw/env.current")
+                || path == std::path::Path::new("/home/user/linux/COPYING")
+                || path == std::path::Path::new("/home/user/linux/CREDITS")
+                || path == std::path::Path::new("/home/user/linux/Kbuild")
+                || path == std::path::Path::new("/home/user/linux/Makefile")
+                || path == std::path::Path::new("/home/user/linux/README")
+        })
+        .times(9)
         .returning(|path| path != Path::new("/home/user/linux/.config"));
-    fs.expect_exists().returning(|_| true);
-    fs.expect_read_to_string().returning(move |path| {
+    fs.expect_exists()
+        .withf(|path| path == std::path::Path::new("/home/user/linux/MAINTAINERS"))
+        .times(1)
+        .returning(|_| true);
+    fs.expect_read_to_string().withf(|path| path == std::path::Path::new("/home/user/.cache/kw/envs/L2hvbWUvdXNlci9saW51eA==/testenv/include/config/kernel.release")
+            || path == std::path::Path::new("/home/user/linux/.kw/build.config")
+            || path == std::path::Path::new("/home/user/linux/.kw/env.current")).times(3).returning(move |path| {
         if path.ends_with("env.current") {
             env_current_reads_in_fs.fetch_add(1, Ordering::SeqCst);
             Ok("testenv\n".to_string())
@@ -1822,22 +2181,43 @@ async fn successful_build_with_active_env_records_the_output_dir() {
     });
     // Every boot-dir probe answers with an image inside the probed
     // dir: the record's image path shows which build root was used.
-    fs.expect_read_dir().returning(|path| {
-        if path.ends_with("arch/x86/boot") {
-            Ok(vec![path.join("bzImage")])
-        } else {
-            Err(FileSystemError::IoError(io::Error::new(
-                io::ErrorKind::NotFound,
-                "missing",
-            )))
-        }
-    });
+    fs.expect_read_dir()
+        .withf(|path| {
+            path == std::path::Path::new(
+                "/home/user/.cache/kw/envs/L2hvbWUvdXNlci9saW51eA==/testenv/arch/x86/boot",
+            )
+        })
+        .times(1)
+        .returning(|path| {
+            if path.ends_with("arch/x86/boot") {
+                Ok(vec![path.join("bzImage")])
+            } else {
+                Err(FileSystemError::IoError(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "missing",
+                )))
+            }
+        });
     fs.expect_metadata()
+        .withf(|path| {
+            path == std::path::Path::new(
+                "/home/user/.cache/kw/envs/L2hvbWUvdXNlci9saW51eA==/testenv/arch/x86/boot/bzImage",
+            )
+        })
+        .times(1)
         .returning(|_| Err(FileSystemError::IoError(io::Error::other("no metadata"))));
-    fs.expect_create_dir_all().returning(|_| Ok(()));
+    fs.expect_create_dir_all()
+        .withf(|path| path.starts_with(std::env::temp_dir()))
+        .times(1)
+        .returning(|_| Ok(()));
     let mut env = MockEnvTrait::new();
-    env.expect_which().returning(|_| true);
+    env.expect_which()
+        .withf(|name| name == "kw")
+        .times(1)
+        .returning(|_| true);
     env.expect_var()
+        .withf(|key| key == "XDG_CACHE_HOME")
+        .times(1)
         .returning(|_| Ok("/home/user/.cache".to_string()));
     let (history, builds) = recording_history(None);
     let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);

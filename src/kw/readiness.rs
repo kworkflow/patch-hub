@@ -854,12 +854,17 @@ last_line_without_newline=yes";
         // Known vector: `printf '%s' /home/user/linux | base64 --wrap=0`.
         let mut fs = MockFileSystemTrait::new();
         fs.expect_is_file()
+            .withf(|path| path == std::path::Path::new("/home/user/linux/.kw/env.current"))
+            .times(1)
             .returning(|p| p == Path::new("/home/user/linux/.kw/env.current"));
         fs.expect_read_to_string()
+            .withf(|path| path == std::path::Path::new("/home/user/linux/.kw/env.current"))
+            .times(1)
             .returning(|_| Ok("minix\n".to_string()));
         let mut env = MockEnvTrait::new();
         env.expect_var()
             .withf(|key| key == "XDG_CACHE_HOME")
+            .times(1)
             .returning(|_| Ok("/xdg".to_string()));
 
         let resolved =
@@ -875,15 +880,22 @@ last_line_without_newline=yes";
     #[test]
     fn resolve_output_dir_falls_back_to_home_cache() {
         let mut fs = MockFileSystemTrait::new();
-        fs.expect_is_file().returning(|_| true);
+        fs.expect_is_file()
+            .withf(|path| path == std::path::Path::new("/kernel/.kw/env.current"))
+            .times(1)
+            .returning(|_| true);
         fs.expect_read_to_string()
+            .withf(|path| path == std::path::Path::new("/kernel/.kw/env.current"))
+            .times(1)
             .returning(|_| Ok("minix\n".to_string()));
         let mut env = MockEnvTrait::new();
         env.expect_var()
             .withf(|key| key == "XDG_CACHE_HOME")
+            .times(1)
             .returning(|_| Err(env::VarError::NotPresent.into()));
         env.expect_var()
             .withf(|key| key == "HOME")
+            .times(1)
             .returning(|_| Ok("/home/user".to_string()));
 
         let resolved = ReadinessService::resolve_output_dir(&fs, &env, Path::new("/kernel"))
@@ -904,15 +916,22 @@ last_line_without_newline=yes";
         // bash's `:-` (and the XDG spec) treat set-but-empty as unset;
         // otherwise the resolved path would be relative to cwd.
         let mut fs = MockFileSystemTrait::new();
-        fs.expect_is_file().returning(|_| true);
+        fs.expect_is_file()
+            .withf(|path| path == std::path::Path::new("/kernel/.kw/env.current"))
+            .times(1)
+            .returning(|_| true);
         fs.expect_read_to_string()
+            .withf(|path| path == std::path::Path::new("/kernel/.kw/env.current"))
+            .times(1)
             .returning(|_| Ok("minix\n".to_string()));
         let mut env = MockEnvTrait::new();
         env.expect_var()
             .withf(|key| key == "XDG_CACHE_HOME")
+            .times(1)
             .returning(|_| Ok(String::new()));
         env.expect_var()
             .withf(|key| key == "HOME")
+            .times(1)
             .returning(|_| Ok("/home/user".to_string()));
 
         let resolved = ReadinessService::resolve_output_dir(&fs, &env, Path::new("/kernel"))
@@ -933,12 +952,18 @@ last_line_without_newline=yes";
         // kw encodes $PWD after cd-ing into the tree, where the path no
         // longer carries a trailing slash.
         let mut fs = MockFileSystemTrait::new();
-        fs.expect_is_file().returning(|_| true);
+        fs.expect_is_file()
+            .withf(|path| path == std::path::Path::new("/home/user/linux/.kw/env.current"))
+            .times(1)
+            .returning(|_| true);
         fs.expect_read_to_string()
+            .withf(|path| path == std::path::Path::new("/home/user/linux/.kw/env.current"))
+            .times(1)
             .returning(|_| Ok("minix\n".to_string()));
         let mut env = MockEnvTrait::new();
         env.expect_var()
             .withf(|key| key == "XDG_CACHE_HOME")
+            .times(1)
             .returning(|_| Ok("/xdg".to_string()));
 
         let resolved =
@@ -954,8 +979,13 @@ last_line_without_newline=yes";
     #[test]
     fn resolve_output_dir_empty_env_file_is_inactive() {
         let mut fs = MockFileSystemTrait::new();
-        fs.expect_is_file().returning(|_| true);
+        fs.expect_is_file()
+            .withf(|path| path == std::path::Path::new("/kernel/.kw/env.current"))
+            .times(1)
+            .returning(|_| true);
         fs.expect_read_to_string()
+            .withf(|path| path == std::path::Path::new("/kernel/.kw/env.current"))
+            .times(1)
             .returning(|_| Ok("\n".to_string()));
         let env = MockEnvTrait::new();
 
@@ -969,8 +999,13 @@ last_line_without_newline=yes";
     #[test]
     fn resolve_output_dir_unreadable_env_file_errors() {
         let mut fs = MockFileSystemTrait::new();
-        fs.expect_is_file().returning(|_| true);
+        fs.expect_is_file()
+            .withf(|path| path == std::path::Path::new("/kernel/.kw/env.current"))
+            .times(1)
+            .returning(|_| true);
         fs.expect_read_to_string()
+            .withf(|path| path == std::path::Path::new("/kernel/.kw/env.current"))
+            .times(1)
             .returning(|_| Err(io::Error::new(io::ErrorKind::PermissionDenied, "denied").into()));
         let env = MockEnvTrait::new();
 
@@ -980,11 +1015,18 @@ last_line_without_newline=yes";
     #[test]
     fn resolve_output_dir_errors_without_any_cache_base() {
         let mut fs = MockFileSystemTrait::new();
-        fs.expect_is_file().returning(|_| true);
+        fs.expect_is_file()
+            .withf(|path| path == std::path::Path::new("/kernel/.kw/env.current"))
+            .times(1)
+            .returning(|_| true);
         fs.expect_read_to_string()
+            .withf(|path| path == std::path::Path::new("/kernel/.kw/env.current"))
+            .times(1)
             .returning(|_| Ok("minix\n".to_string()));
         let mut env = MockEnvTrait::new();
         env.expect_var()
+            .withf(|key| matches!(key, "HOME" | "XDG_CACHE_HOME"))
+            .times(2)
             .returning(|_| Err(env::VarError::NotPresent.into()));
 
         assert!(ReadinessService::resolve_output_dir(&fs, &env, Path::new("/kernel")).is_err());
@@ -1137,9 +1179,10 @@ last_line_without_newline=yes";
         let mut env = MockEnvTrait::new();
         env.expect_which()
             .withf(|name| name == "kw")
+            .times(1)
             .returning(|_| false);
         let mut shell = MockShellTrait::new();
-        shell.expect_execute().times(0);
+        shell.expect_execute().withf(|_| true).times(0);
 
         let probe = ReadinessService::probe_kw_binary(&env, &shell);
 
@@ -1163,12 +1206,16 @@ last_line_without_newline=yes";
             ("not a version\n", KwVersionCheck::Unknown),
         ] {
             let mut env = MockEnvTrait::new();
-            env.expect_which().returning(|_| true);
+            env.expect_which()
+                .withf(|name| name == "kw")
+                .times(1)
+                .returning(|_| true);
             let mut shell = MockShellTrait::new();
             let stdout_bytes = stdout.as_bytes().to_vec();
             shell
                 .expect_execute()
                 .withf(|cmd| cmd.program == "kw" && cmd.args == ["--version"])
+                .times(1)
                 .returning(move |_| {
                     Ok(shell_output(
                         str::from_utf8(&stdout_bytes).expect("bytes are utf-8"),
@@ -1186,14 +1233,21 @@ last_line_without_newline=yes";
     #[test]
     fn kw_probe_keeps_the_raw_first_line_verbatim() {
         let mut env = MockEnvTrait::new();
-        env.expect_which().returning(|_| true);
+        env.expect_which()
+            .withf(|name| name == "kw")
+            .times(1)
+            .returning(|_| true);
         let mut shell = MockShellTrait::new();
-        shell.expect_execute().returning(|_| {
-            Ok(shell_output(
-                "beta-0.9\nBranch: master\nCommit: 3575d38\n",
-                true,
-            ))
-        });
+        shell
+            .expect_execute()
+            .withf(|cmd| cmd.program == "kw" && cmd.args == ["--version"])
+            .times(1)
+            .returning(|_| {
+                Ok(shell_output(
+                    "beta-0.9\nBranch: master\nCommit: 3575d38\n",
+                    true,
+                ))
+            });
 
         let probe = ReadinessService::probe_kw_binary(&env, &shell);
 
@@ -1206,21 +1260,30 @@ last_line_without_newline=yes";
         let mut spawn_fails = MockShellTrait::new();
         spawn_fails
             .expect_execute()
+            .withf(|cmd| cmd.program == "kw" && cmd.args == ["--version"])
+            .times(1)
             .returning(|_| Err(io::Error::other("spawn failed").into()));
 
         let mut empty_stdout = MockShellTrait::new();
         empty_stdout
             .expect_execute()
+            .withf(|cmd| cmd.program == "kw" && cmd.args == ["--version"])
+            .times(1)
             .returning(|_| Ok(shell_output("", true)));
 
         let mut kw_fails = MockShellTrait::new();
         kw_fails
             .expect_execute()
+            .withf(|cmd| cmd.program == "kw" && cmd.args == ["--version"])
+            .times(1)
             .returning(|_| Ok(shell_output("0.10.0\n", false)));
 
         for shell in [spawn_fails, empty_stdout, kw_fails] {
             let mut env = MockEnvTrait::new();
-            env.expect_which().returning(|_| true);
+            env.expect_which()
+                .withf(|name| name == "kw")
+                .times(1)
+                .returning(|_| true);
 
             let probe = ReadinessService::probe_kw_binary(&env, &shell);
 
@@ -1416,10 +1479,15 @@ last_line_without_newline=yes";
             .expect("build records");
 
         let mut env = MockEnvTrait::new();
-        env.expect_which().returning(|_| true);
+        env.expect_which()
+            .withf(|name| name == "kw")
+            .times(1)
+            .returning(|_| true);
         let mut shell = MockShellTrait::new();
         shell
             .expect_execute()
+            .withf(|cmd| cmd.program == "kw" && cmd.args == ["--version"])
+            .times(1)
             .returning(|_| Ok(shell_output("0.10.0\n", true)));
 
         let tree = kernel_tree(dir.path());
@@ -1469,11 +1537,16 @@ last_line_without_newline=yes";
         );
 
         let mut env = MockEnvTrait::new();
-        env.expect_which().returning(|_| false);
+        env.expect_which()
+            .withf(|name| name == "kw")
+            .times(1)
+            .returning(|_| false);
         env.expect_var()
+            .withf(|key| matches!(key, "HOME" | "XDG_CONFIG_HOME"))
+            .times(4)
             .returning(|_| Err(env::VarError::NotPresent.into()));
         let mut shell = MockShellTrait::new();
-        shell.expect_execute().times(0);
+        shell.expect_execute().withf(|_| true).times(0);
 
         let tree = kernel_tree(&missing);
         let readiness = ReadinessService::evaluate_readiness(
@@ -1512,11 +1585,16 @@ last_line_without_newline=yes";
         );
 
         let mut env = MockEnvTrait::new();
-        env.expect_which().returning(|_| false);
+        env.expect_which()
+            .withf(|name| name == "kw")
+            .times(1)
+            .returning(|_| false);
         env.expect_var()
+            .withf(|key| matches!(key, "HOME" | "XDG_CONFIG_HOME"))
+            .times(4)
             .returning(|_| Err(env::VarError::NotPresent.into()));
         let mut shell = MockShellTrait::new();
-        shell.expect_execute().times(0);
+        shell.expect_execute().withf(|_| true).times(0);
 
         let tree = kernel_tree(dir.path());
         let readiness = ReadinessService::evaluate_readiness(
@@ -1551,11 +1629,16 @@ last_line_without_newline=yes";
             data.path().to_str().expect("path is utf-8").to_string(),
         );
         let mut env = MockEnvTrait::new();
-        env.expect_which().returning(|_| false);
+        env.expect_which()
+            .withf(|name| name == "kw")
+            .times(1)
+            .returning(|_| false);
         env.expect_var()
+            .withf(|key| matches!(key, "HOME" | "XDG_CONFIG_HOME"))
+            .times(4)
             .returning(|_| Err(env::VarError::NotPresent.into()));
         let mut shell = MockShellTrait::new();
-        shell.expect_execute().times(0);
+        shell.expect_execute().withf(|_| true).times(0);
         let tree = kernel_tree(dir.path());
         let readiness = ReadinessService::evaluate_readiness(
             &OsFileSystem,
@@ -1588,11 +1671,16 @@ last_line_without_newline=yes";
         fs::write(dir.path().join(".kw/build.config"), "arch=x86\n").expect("file writes");
 
         let mut env = MockEnvTrait::new();
-        env.expect_which().returning(|_| false);
+        env.expect_which()
+            .withf(|name| name == "kw")
+            .times(2)
+            .returning(|_| false);
         env.expect_var()
+            .withf(|key| matches!(key, "HOME" | "XDG_CONFIG_HOME"))
+            .times(8)
             .returning(|_| Err(env::VarError::NotPresent.into()));
         let mut shell = MockShellTrait::new();
-        shell.expect_execute().times(0);
+        shell.expect_execute().withf(|_| true).times(0);
         let tree = kernel_tree(dir.path());
 
         let on_head = ReadinessService::evaluate_readiness(
@@ -1662,6 +1750,8 @@ last_line_without_newline=yes";
         let empty = make_ready_tree("boot-once-missing");
         let mut env = MockEnvTrait::new();
         env.expect_var()
+            .withf(|key| matches!(key, "HOME" | "XDG_CONFIG_HOME"))
+            .times(2)
             .returning(|_| Err(env::VarError::NotPresent.into()));
         assert_eq!(
             BootOnceState::Unknown,
@@ -1683,19 +1773,32 @@ last_line_without_newline=yes";
     #[test]
     fn probe_boot_once_falls_through_to_xdg_when_the_tree_omits_the_key() {
         let mut fs = MockFileSystemTrait::new();
-        fs.expect_is_file().returning(|path| {
-            path.ends_with(".kw/deploy.config") || path == Path::new("/xdg/kw/deploy.config")
-        });
-        fs.expect_read_to_string().returning(|path| {
-            if path.ends_with(".kw/deploy.config") {
-                Ok("reboot=no\n".to_string())
-            } else {
-                Ok("boot_into_new_kernel_once=no\n".to_string())
-            }
-        });
+        fs.expect_is_file()
+            .withf(|path| {
+                path == std::path::Path::new("/kernel/.kw/deploy.config")
+                    || path == std::path::Path::new("/xdg/kw/deploy.config")
+            })
+            .times(2)
+            .returning(|path| {
+                path.ends_with(".kw/deploy.config") || path == Path::new("/xdg/kw/deploy.config")
+            });
+        fs.expect_read_to_string()
+            .withf(|path| {
+                path == std::path::Path::new("/kernel/.kw/deploy.config")
+                    || path == std::path::Path::new("/xdg/kw/deploy.config")
+            })
+            .times(2)
+            .returning(|path| {
+                if path.ends_with(".kw/deploy.config") {
+                    Ok("reboot=no\n".to_string())
+                } else {
+                    Ok("boot_into_new_kernel_once=no\n".to_string())
+                }
+            });
         let mut env = MockEnvTrait::new();
         env.expect_var()
             .withf(|key| key == "XDG_CONFIG_HOME")
+            .times(1)
             .returning(|_| Ok("/xdg".to_string()));
 
         assert_eq!(
@@ -1708,13 +1811,18 @@ last_line_without_newline=yes";
     fn probe_boot_once_unreadable_tree_file_does_not_fall_through() {
         let mut fs = MockFileSystemTrait::new();
         fs.expect_is_file()
+            .withf(|path| path == std::path::Path::new("/kernel/.kw/deploy.config"))
+            .times(1)
             .returning(|path| path.ends_with(".kw/deploy.config"));
-        fs.expect_read_to_string().returning(|_| {
-            Err(FileSystemError::IoError(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "denied",
-            )))
-        });
+        fs.expect_read_to_string()
+            .withf(|path| path == std::path::Path::new("/kernel/.kw/deploy.config"))
+            .times(1)
+            .returning(|_| {
+                Err(FileSystemError::IoError(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "denied",
+                )))
+            });
         let env = MockEnvTrait::new();
 
         assert_eq!(
@@ -1727,15 +1835,24 @@ last_line_without_newline=yes";
     fn probe_boot_once_treats_empty_xdg_config_home_as_unset() {
         let mut fs = MockFileSystemTrait::new();
         fs.expect_is_file()
+            .withf(|path| {
+                path == std::path::Path::new("/home/user/.config/kw/deploy.config")
+                    || path == std::path::Path::new("/kernel/.kw/deploy.config")
+            })
+            .times(2)
             .returning(|path| path == Path::new("/home/user/.config/kw/deploy.config"));
         fs.expect_read_to_string()
+            .withf(|path| path == std::path::Path::new("/home/user/.config/kw/deploy.config"))
+            .times(1)
             .returning(|_| Ok("boot_into_new_kernel_once=no\n".to_string()));
         let mut env = MockEnvTrait::new();
         env.expect_var()
             .withf(|key| key == "XDG_CONFIG_HOME")
+            .times(1)
             .returning(|_| Ok(String::new()));
         env.expect_var()
             .withf(|key| key == "HOME")
+            .times(1)
             .returning(|_| Ok("/home/user".to_string()));
 
         assert_eq!(

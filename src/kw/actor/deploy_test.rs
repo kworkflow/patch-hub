@@ -343,8 +343,10 @@ async fn start_deploy_refused_when_latest_build_is_on_another_branch() {
     let mut history = MockKwHistoryStore::new();
     history
         .expect_build_records()
+        .withf(|tree, branch| tree == "mainline" && branch == "patchset-2026-08-01-17-30-00")
+        .times(1)
         .returning(move |_, _| Ok((None, Some(latest.clone()))));
-    history.expect_record_build().times(0);
+    history.expect_record_build().withf(|_| true).times(0);
     let (handle, process, log_dir) =
         spawn_deploy_actor("deploy-head-mismatch", history, deploy_ready_fs());
 
