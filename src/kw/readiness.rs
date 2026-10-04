@@ -504,8 +504,7 @@ mod tests {
     mod helpers {
         use std::{
             fs,
-            path::{Path, PathBuf},
-            sync::atomic::{AtomicU64, Ordering},
+            path::Path,
             time::{Duration, SystemTime},
         };
 
@@ -514,39 +513,7 @@ mod tests {
 
         use crate::kw::models::history::KwBuildRecord;
 
-        use std::env;
-
-        use std::process;
-
-        pub(super) static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
-
-        pub(super) struct TempDir(PathBuf);
-
-        impl TempDir {
-            pub(super) fn new(test_name: &str) -> Self {
-                let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
-                let dir = env::temp_dir().join(format!(
-                    "patch-hub-kw-readiness-{}-{}-{}",
-                    test_name,
-                    process::id(),
-                    n
-                ));
-                // A leftover from a failed previous run must not poison this one.
-                let _ = fs::remove_dir_all(&dir);
-                fs::create_dir_all(&dir).expect("dir creates");
-                Self(dir)
-            }
-
-            pub(super) fn path(&self) -> &Path {
-                &self.0
-            }
-        }
-
-        impl Drop for TempDir {
-            fn drop(&mut self) {
-                let _ = fs::remove_dir_all(&self.0);
-            }
-        }
+        use crate::test_support::TempDir;
 
         pub(super) const KERNEL_ROOT_FILES: [&str; 6] = [
             "COPYING",
@@ -631,6 +598,7 @@ mod tests {
             }
         }
     }
+    use crate::test_support::TempDir;
     use helpers::*;
     use std::{
         fs,

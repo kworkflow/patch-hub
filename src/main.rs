@@ -11,6 +11,9 @@ mod render_prefs;
 mod terminal;
 mod ui;
 
+#[cfg(test)]
+mod test_support;
+
 use app::{actor::AppActor, dependencies::DependencyService, App};
 use clap::Parser;
 use cli::Cli;

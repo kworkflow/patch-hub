@@ -5,44 +5,19 @@ use super::{
     RunningProcess,
 };
 use crate::infrastructure::shell::ShellCommand;
+use crate::test_support::TempDir;
 use std::fs;
 use tokio::time;
 mod helpers {
 
     use nix::sys::signal::Signal;
     use nix::{errno::Errno, sys::signal::kill, unistd::Pid};
-    use std::env;
     use std::fs;
-    use std::process;
     use std::{
-        path::{Path, PathBuf},
+        path::Path,
         time::{Duration, Instant},
     };
     use tokio::time;
-
-    pub struct TempDir(PathBuf);
-
-    impl TempDir {
-        pub(super) fn new(test_name: &str) -> Self {
-            let dir = env::temp_dir().join(format!(
-                "patch_hub_process_test_{}_{test_name}",
-                process::id()
-            ));
-            let _ = fs::remove_dir_all(&dir);
-            fs::create_dir_all(&dir).expect("dir creates");
-            Self(dir)
-        }
-
-        pub(super) fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
 
     pub async fn wait_for(mut cond: impl FnMut() -> bool, timeout: Duration) -> bool {
         let start = Instant::now();
