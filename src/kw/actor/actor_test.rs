@@ -157,14 +157,6 @@ impl GitStub {
         }
     }
 
-    fn set_dirty(&self, dirty: bool) {
-        self.dirty.store(dirty, Ordering::Relaxed);
-    }
-
-    fn fail_switches_to(&self, branch: Option<&str>) {
-        *self.fail_switch_to.lock().unwrap() = branch.map(str::to_string);
-    }
-
     pub(super) fn head(&self) -> String {
         self.head.lock().unwrap().clone()
     }
@@ -207,6 +199,16 @@ impl GitStub {
             Ok(output(current.as_bytes()))
         });
         shell
+    }
+}
+
+impl GitStub {
+    fn set_dirty(&self, dirty: bool) {
+        self.dirty.store(dirty, Ordering::Relaxed);
+    }
+
+    fn fail_switches_to(&self, branch: Option<&str>) {
+        *self.fail_switch_to.lock().unwrap() = branch.map(str::to_string);
     }
 }
 
