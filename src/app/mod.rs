@@ -361,7 +361,7 @@ impl App {
     /// This is the primary way for the orchestration layer to hand off
     /// presentation data to the UI actor without exposing raw `AppState`.
     pub fn present(&self) -> AppViewModel {
-        view_model::project_state(&self.state)
+        AppViewModel::from(&self.state)
     }
 }
 
