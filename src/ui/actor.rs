@@ -17,6 +17,9 @@ use crate::ui::{core::UiCore, handle::UiHandle, messages::UiMessage};
 
 pub const DEFAULT_UI_CHANNEL_SIZE: usize = 32;
 
+const REQUEST_FAILED_LOG: &str = "ui request failed";
+const REPLY_DROPPED_LOG: &str = "ui reply receiver dropped before response";
+
 pub struct UiActor {
     core: UiCore,
     rx: mpsc::Receiver<UiMessage>,
@@ -64,8 +67,8 @@ impl UiActor {
                 tracing::debug!(ok = result.is_ok(), "ui scene built");
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "ui request failed",
-                    "ui reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply_to,
                     result,
                 );

@@ -19,6 +19,9 @@ use crate::render::{
 
 pub const DEFAULT_RENDER_CHANNEL_SIZE: usize = 32;
 
+const REQUEST_FAILED_LOG: &str = "render request failed";
+const REPLY_DROPPED_LOG: &str = "render reply receiver dropped before response";
+
 pub struct RenderActor {
     core: Option<Box<dyn RenderServiceApi>>,
     rx: mpsc::Receiver<RenderMessage>,
@@ -72,8 +75,8 @@ impl RenderActor {
                     .and_then(|result| result);
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "render request failed",
-                    "render reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     result,
                 );

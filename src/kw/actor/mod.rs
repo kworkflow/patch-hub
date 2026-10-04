@@ -53,6 +53,10 @@ use crate::{
 
 pub const DEFAULT_KW_CHANNEL_SIZE: usize = 16;
 
+const REQUEST_FAILED_LOG: &str = "kw request failed";
+const START_REQUEST_REFUSED_LOG: &str = "kw start request refused";
+const REPLY_DROPPED_LOG: &str = "kw reply receiver dropped before response";
+
 /// Grace periods for the cancel escalation ladder: SIGTERM the process
 /// group, wait, SIGKILL, wait, then give up. Giving up still terminates the
 /// job from the actor's point of view — a group that ignores both signals
@@ -154,8 +158,8 @@ impl KwActor {
             KwMessage::RecordApply { record, reply } => {
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "kw request failed",
-                    "kw reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     self.history.record_apply(record).map_err(KwError::from),
                 );
@@ -164,8 +168,8 @@ impl KwActor {
             KwMessage::StartBuild { request, reply } => {
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "kw start request refused",
-                    "kw reply receiver dropped before response",
+                    START_REQUEST_REFUSED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     self.start_job(KwJobKind::Build, request).await,
                 );
@@ -174,8 +178,8 @@ impl KwActor {
             KwMessage::StartDeploy { request, reply } => {
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "kw start request refused",
-                    "kw reply receiver dropped before response",
+                    START_REQUEST_REFUSED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     self.start_job(KwJobKind::Deploy, request).await,
                 );
@@ -184,8 +188,8 @@ impl KwActor {
             KwMessage::StartBuildThenDeploy { request, reply } => {
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "kw start request refused",
-                    "kw reply receiver dropped before response",
+                    START_REQUEST_REFUSED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     self.start_job(KwJobKind::BuildThenDeploy, request).await,
                 );
@@ -194,8 +198,8 @@ impl KwActor {
             KwMessage::Cancel { reply } => {
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "kw request failed",
-                    "kw reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     self.request_cancel(),
                 );
@@ -204,7 +208,7 @@ impl KwActor {
             KwMessage::GetStatus { reply } => {
                 ActorReplyService::deliver_value(
                     message_name,
-                    "kw reply receiver dropped before response",
+                    REPLY_DROPPED_LOG,
                     reply,
                     self.status_tx.borrow().clone(),
                 );
@@ -213,7 +217,7 @@ impl KwActor {
             KwMessage::WatchStatus { reply } => {
                 ActorReplyService::deliver_value(
                     message_name,
-                    "kw reply receiver dropped before response",
+                    REPLY_DROPPED_LOG,
                     reply,
                     self.status_tx.subscribe(),
                 );
@@ -227,8 +231,8 @@ impl KwActor {
             } => {
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "kw request failed",
-                    "kw reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     self.evaluate_readiness(&kernel_tree_id, &tree, for_branch)
                         .await,
@@ -238,8 +242,8 @@ impl KwActor {
             KwMessage::RestorePreviousBranch { reply } => {
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "kw request failed",
-                    "kw reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     self.restore_previous_branch().await,
                 );

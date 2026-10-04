@@ -16,6 +16,9 @@ use crate::lore::application::{
 
 pub const DEFAULT_LORE_API_CHANNEL_SIZE: usize = 32;
 
+const REQUEST_FAILED_LOG: &str = "lore api request failed";
+const REPLY_DROPPED_LOG: &str = "lore api reply receiver dropped before response";
+
 pub struct LoreApiActor {
     core: Option<LoreService>,
     rx: mpsc::Receiver<LoreApiMessage>,
@@ -64,8 +67,8 @@ impl LoreApiActor {
                     .and_then(|result| result);
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "lore api request failed",
-                    "lore api reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     result,
                 );
@@ -79,8 +82,8 @@ impl LoreApiActor {
                     .and_then(|result| result);
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "lore api request failed",
-                    "lore api reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     result,
                 );
@@ -108,8 +111,8 @@ impl LoreApiActor {
                     .and_then(|result| result);
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "lore api request failed",
-                    "lore api reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     result,
                 );
@@ -133,8 +136,8 @@ impl LoreApiActor {
                     .and_then(|result| result);
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "lore api request failed",
-                    "lore api reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     result,
                 );
@@ -148,8 +151,8 @@ impl LoreApiActor {
                     .and_then(|result| result);
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "lore api request failed",
-                    "lore api reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     result,
                 );
@@ -163,8 +166,8 @@ impl LoreApiActor {
                     .and_then(|result| result);
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "lore api request failed",
-                    "lore api reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     result,
                 );
@@ -180,8 +183,8 @@ impl LoreApiActor {
                     .await;
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "lore api request failed",
-                    "lore api reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     result,
                 );
@@ -217,8 +220,8 @@ impl LoreApiActor {
                     .and_then(|result| result);
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "lore api request failed",
-                    "lore api reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     result,
                 );

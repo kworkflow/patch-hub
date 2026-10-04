@@ -17,6 +17,9 @@ use crate::terminal::{
 
 pub const DEFAULT_TERMINAL_CHANNEL_SIZE: usize = 32;
 
+const REQUEST_FAILED_LOG: &str = "terminal request failed";
+const REPLY_DROPPED_LOG: &str = "terminal reply receiver dropped before response";
+
 pub struct TerminalActor {
     session: Option<Box<dyn TerminalSessionApi>>,
     rx: mpsc::Receiver<TerminalMessage>,
@@ -62,8 +65,8 @@ impl TerminalActor {
                     .and_then(|result| result);
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "terminal request failed",
-                    "terminal reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     result,
                 );
@@ -75,8 +78,8 @@ impl TerminalActor {
                     .and_then(|result| result);
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "terminal request failed",
-                    "terminal reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     result,
                 );
@@ -88,8 +91,8 @@ impl TerminalActor {
                     .and_then(|result| result);
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "terminal request failed",
-                    "terminal reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     result,
                 );
@@ -101,8 +104,8 @@ impl TerminalActor {
                     .and_then(|result| result);
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "terminal request failed",
-                    "terminal reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     result,
                 );
@@ -118,8 +121,8 @@ impl TerminalActor {
                     .and_then(|result| result);
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "terminal request failed",
-                    "terminal reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     result,
                 );
@@ -131,8 +134,8 @@ impl TerminalActor {
                     .and_then(|result| result);
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "terminal request failed",
-                    "terminal reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     result,
                 );
@@ -144,8 +147,8 @@ impl TerminalActor {
                     .and_then(|result| result);
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "terminal request failed",
-                    "terminal reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     result,
                 );

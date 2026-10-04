@@ -20,6 +20,9 @@ use crate::{
 
 pub const DEFAULT_CONFIG_CHANNEL_SIZE: usize = 16;
 
+const REQUEST_FAILED_LOG: &str = "config request failed";
+const REPLY_DROPPED_LOG: &str = "config reply receiver dropped before response";
+
 pub struct ConfigActor<FS: FileSystemTrait> {
     state: ConfigState,
     repo: JsonConfigRepository<FS>,
@@ -71,7 +74,7 @@ where
             ConfigMessage::GetSnapshot { reply } => {
                 ActorReplyService::deliver_value(
                     message_name,
-                    "config reply receiver dropped before response",
+                    REPLY_DROPPED_LOG,
                     reply,
                     self.state.to_snapshot(),
                 );
@@ -81,8 +84,8 @@ where
                 let result = self.apply(*draft);
                 ActorReplyService::send_actor_reply(
                     message_name,
-                    "config request failed",
-                    "config reply receiver dropped before response",
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
                     reply,
                     result,
                 );
