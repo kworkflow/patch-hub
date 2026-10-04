@@ -167,7 +167,7 @@ async fn main() -> Result<()> {
         //  6. RenderActor  — no further requests once App is gone
         //  7. UiActor      — no further scene builds once App is gone
         //  8. TerminalActor — restores the terminal last so the screen stays usable
-        //                     during the steps above
+        //                     while the actors above shut down
         AppActor::spawn(
             app,
             terminal_handle.clone(),

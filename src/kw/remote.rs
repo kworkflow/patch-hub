@@ -357,8 +357,8 @@ Host dut
 
     #[test]
     fn reordered_fields_and_comments_inside_a_stanza_are_tolerated() {
-        // kw used to assume Hostname/Port/User on the three lines after
-        // Host; that broke on comments and reordering. We key-match.
+        // Hostname, Port, and User are matched by key, not by their
+        // position on the three lines after Host.
         let content = "\
 #kw-default=origin
 Host origin

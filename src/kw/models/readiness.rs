@@ -140,7 +140,7 @@ pub enum BootOnceState {
     Unknown,
 }
 
-/// Snapshot of tree, kw binary, and history probes used to decide whether
+/// Snapshot of tree, kw binary, and history probes that decide whether
 /// a job can start, and why not.
 #[derive(Debug, Clone)]
 pub struct KwReadiness {

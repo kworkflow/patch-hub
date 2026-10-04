@@ -161,7 +161,6 @@ impl DetailsPainter {
 
         f.render_widget(patchset_details, details_chunk);
 
-        // TODO: Create a function to produce new action lines
         let patchset_actions = vec![
             Line::from(vec![
                 if scene.is_bookmarked {

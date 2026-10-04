@@ -116,7 +116,7 @@ mod tests {
     use super::*;
 
     /// `kw build` under an env `O=` with in-tree leftovers in the source
-    /// tree (lab/logs/20260920-122005).
+    /// tree.
     const UNCLEAN_TREE_BUILD_LOG: &str = "\
 /boot/config-6.8.0-138-generic:883:warning: symbol value '0' invalid for BASE_SMALL
   SYNC    include/config/auto.conf.cmd
@@ -132,7 +132,7 @@ make[1]: *** [/opt/ph-lab/work/linux/Makefile:248: __sub-make] Error 2
 make[1]: Leaving directory '/opt/ph-lab/work/out'
 ";
 
-    /// The M4 fixture's compile break (lab/logs/20260920-151635/M18).
+    /// A compile error that stops the build.
     const COMPILE_ERROR_BUILD_LOG: &str = "\
   CC      mm/filemap.o
   AS      arch/arm64/kernel/entry.o
@@ -146,9 +146,8 @@ make[3]: *** Waiting for unfinished jobs....
 make: *** [Makefile:248: __sub-make] Error 2
 ";
 
-    /// tinyconfig deploy to the Ubuntu DUT: kw exits 0 although
-    /// initramfs generation failed and GRUB never listed the kernel
-    /// (lab/logs/20261003-111949).
+    /// tinyconfig deploy: kw exits 0 although initramfs generation failed
+    /// and GRUB never listed the kernel.
     const TINYCONFIG_DEPLOY_LOG: &str = "\
 cp /tmp/kw/kw_pkg/Image-7.2.0-rc6+ /boot/
 generate_debian_temporary_root_file_system VERBOSE 7.2.0-rc6+ remote GRUB
@@ -168,8 +167,7 @@ Adding boot menu entry for UEFI Firmware Settings ...
 done
 ";
 
-    /// The real-boot deploy of the tipc patch: everything worked
-    /// (lab/logs/20261003-154745-real-boot-tui-tipc).
+    /// A deploy where initramfs generation and GRUB both succeed.
     const CLEAN_DEPLOY_LOG: &str = "\
 * Preparing modules
 cp: cannot stat '/home/lima.guest/.cache/kw/envs/L29wdC9waC1sYWIvd29yay9saW51eA==/ph-boot/arch/arm64/boot/dts/*.dtb': No such file or directory

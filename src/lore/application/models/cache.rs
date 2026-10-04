@@ -89,7 +89,7 @@ pub struct LoreCache {
     pub patchsets: HashMap<PatchsetCacheKey, PatchsetCacheEntry>,
 }
 
-/// Data returned by `LoreService::warm_bootstrap_cache`, used to initialise
+/// Data returned by `LoreService::warm_bootstrap_cache`, which initialises
 /// `App` without it knowing about persistence paths or network policy.
 #[derive(Default)]
 pub struct BootstrapLoreData {

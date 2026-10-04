@@ -6,7 +6,7 @@ use crate::infrastructure::env::EnvTrait;
 pub struct EnvOverrideService;
 
 impl EnvOverrideService {
-    /// Applies `PATCH_HUB_*` overrides (same semantics as legacy `Config::override_with_env_vars`).
+    /// Applies `PATCH_HUB_*` overrides onto `state`.
     pub fn apply_env_overrides(
         state: &mut ConfigState,
         env: &dyn EnvTrait,

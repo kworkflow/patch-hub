@@ -5,8 +5,6 @@ use crate::lore::domain::patch::{Patch, PatchFeed, PatchRegex};
 const LORE_PAGE_SIZE: usize = 200;
 
 /// Tracks feed pagination state for a single mailing list target.
-///
-/// Replaces the state that was previously mixed into [`LoreSession`].
 pub struct PatchFeedIndex {
     next_offset: usize,
     representative_patch_ids: Vec<String>,
