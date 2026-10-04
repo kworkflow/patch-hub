@@ -9,10 +9,10 @@ use crate::{
     infrastructure::shell::ShellCommand,
     lore::{
         application::{
-            cache::{BootstrapLoreData, CacheMode},
             dto::PatchsetDetails,
             errors::LoreError,
             messages::{LoreApiMessage, LoreApiResult},
+            models::cache::{BootstrapLoreData, CacheMode},
         },
         domain::{mailing_list::MailingList, patch::Patch},
     },
@@ -124,7 +124,9 @@ impl LoreApiHandle {
         })
         .await
     }
+}
 
+impl LoreApiHandle {
     async fn request_result<T>(
         &self,
         build_message: impl FnOnce(oneshot::Sender<LoreApiResult<T>>) -> LoreApiMessage,

@@ -13,7 +13,7 @@ use crate::{
         messages::{TerminalFrame, TerminalResult},
         TerminalError,
     },
-    ui::{loading_screen::draw_loading_screen, painter},
+    ui::{loading_screen::LoadingPainter, painter::FramePainter},
 };
 
 /// Stateful terminal session owned by the terminal actor.
@@ -45,8 +45,13 @@ impl CrosstermTerminalSession {
 
     pub fn terminal_event_from_crossterm_event(event: Event) -> Option<TerminalEvent> {
         match event {
-            Event::Key(key) if key.kind == KeyEventKind::Release => None,
-            Event::Key(key) => Some(TerminalEvent::Key(KeyInput::from(key))),
+            Event::Key(key) => {
+                if key.kind == KeyEventKind::Release {
+                    None
+                } else {
+                    Some(TerminalEvent::Key(KeyInput::from(key)))
+                }
+            }
             Event::Resize(width, height) => Some(TerminalEvent::Resize { width, height }),
             _ => None,
         }
@@ -57,10 +62,11 @@ impl TerminalSessionApi for CrosstermTerminalSession {
     fn draw(&mut self, frame: TerminalFrame) -> TerminalResult<()> {
         match frame {
             TerminalFrame::Main(scene) => {
-                self.terminal.draw(|f| painter::paint(f, &scene))?;
+                self.terminal.draw(|f| FramePainter::paint(f, &scene))?;
             }
             TerminalFrame::Loading(title) => {
-                self.terminal.draw(|f| draw_loading_screen(f, &title))?;
+                self.terminal
+                    .draw(|f| LoadingPainter::draw_loading_screen(f, &title))?;
             }
             TerminalFrame::Empty => {
                 self.terminal.draw(|_| {})?;
@@ -92,7 +98,21 @@ impl TerminalSessionApi for CrosstermTerminalSession {
     }
 
     fn wait_for_key_press(&mut self, key: KeyCode, timeout: Duration) -> TerminalResult<bool> {
-        wait_for_key_press_from_session(self, key, timeout)
+        let started_at = Instant::now();
+
+        while started_at.elapsed() < timeout {
+            let elapsed = started_at.elapsed();
+            let remaining = timeout.saturating_sub(elapsed);
+            let poll_timeout = remaining.min(Duration::from_millis(16));
+
+            if let Some(TerminalEvent::Key(input)) = self.poll_event(poll_timeout)? {
+                if input.code == key {
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
     }
 
     fn size(&self) -> TerminalResult<(u16, u16)> {
@@ -109,28 +129,6 @@ impl TerminalSessionApi for CrosstermTerminalSession {
         self.shutdown = true;
         Ok(())
     }
-}
-
-fn wait_for_key_press_from_session(
-    session: &mut dyn TerminalSessionApi,
-    key: KeyCode,
-    timeout: Duration,
-) -> TerminalResult<bool> {
-    let started_at = Instant::now();
-
-    while started_at.elapsed() < timeout {
-        let elapsed = started_at.elapsed();
-        let remaining = timeout.saturating_sub(elapsed);
-        let poll_timeout = remaining.min(Duration::from_millis(16));
-
-        if let Some(TerminalEvent::Key(input)) = session.poll_event(poll_timeout)? {
-            if input.code == key {
-                return Ok(true);
-            }
-        }
-    }
-
-    Ok(false)
 }
 
 #[cfg(test)]

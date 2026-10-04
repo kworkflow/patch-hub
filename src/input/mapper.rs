@@ -43,7 +43,9 @@ impl InputMapper {
             TerminalEvent::Resize { width, height } => Some(InputEvent::Resize { width, height }),
         }
     }
+}
 
+impl InputMapper {
     fn map_key_input(&mut self, key: KeyInput, context: &InputContext) -> Option<InputEvent> {
         if key.kind == KeyEventKind::Release {
             return None;
@@ -214,20 +216,16 @@ impl InputMapper {
     }
 
     fn map_details_go_to_first_line_chord(&mut self) -> Option<InputEvent> {
-        match self.pending {
-            Some(PendingInput::DetailsGoToFirstLine { started_at })
-                if started_at.elapsed() <= self.bindings.chord_timeout =>
-            {
+        if let Some(PendingInput::DetailsGoToFirstLine { started_at }) = self.pending {
+            if started_at.elapsed() <= self.bindings.chord_timeout {
                 self.pending = None;
-                Some(InputEvent::PreviewGoToFirstLine)
-            }
-            _ => {
-                self.pending = Some(PendingInput::DetailsGoToFirstLine {
-                    started_at: Instant::now(),
-                });
-                None
+                return Some(InputEvent::PreviewGoToFirstLine);
             }
         }
+        self.pending = Some(PendingInput::DetailsGoToFirstLine {
+            started_at: Instant::now(),
+        });
+        None
     }
 
     fn clear_expired_pending_input(&mut self) {
@@ -249,6 +247,40 @@ impl Default for InputMapper {
 
 #[cfg(test)]
 mod tests {
+
+    mod helpers {
+        use crate::{
+            app::screens::CurrentScreen,
+            input::{
+                context::InputContext,
+                event::{KeyInput, TerminalEvent},
+            },
+        };
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers};
+
+        pub(super) fn context(current_screen: CurrentScreen) -> InputContext {
+            InputContext {
+                current_screen,
+                ..Default::default()
+            }
+        }
+
+        pub(super) fn key(code: KeyCode) -> TerminalEvent {
+            TerminalEvent::Key(KeyInput {
+                code,
+                ..Default::default()
+            })
+        }
+
+        pub(super) fn modified_key(code: KeyCode, modifiers: KeyModifiers) -> TerminalEvent {
+            TerminalEvent::Key(KeyInput {
+                code,
+                modifiers,
+                ..Default::default()
+            })
+        }
+    }
+    use helpers::*;
     use ratatui::crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 
     use crate::{
@@ -260,22 +292,14 @@ mod tests {
         },
     };
 
-    fn context(current_screen: CurrentScreen) -> InputContext {
-        InputContext::new(current_screen)
-    }
-
-    fn key(code: KeyCode) -> TerminalEvent {
-        TerminalEvent::Key(KeyInput::press(code))
-    }
-
-    fn modified_key(code: KeyCode, modifiers: KeyModifiers) -> TerminalEvent {
-        TerminalEvent::Key(KeyInput::modified_press(code, modifiers))
-    }
-
     #[test]
     fn maps_escape_to_close_popup_when_popup_is_open() {
         let mut mapper = InputMapper::default();
-        let context = context(CurrentScreen::PatchsetDetails).with_popup_open(true);
+        let context = InputContext {
+            current_screen: CurrentScreen::PatchsetDetails,
+            popup_open: true,
+            ..Default::default()
+        };
 
         let event = mapper.map_terminal_event(key(KeyCode::Esc), &context);
 
@@ -285,13 +309,22 @@ mod tests {
     #[test]
     fn maps_enter_to_confirm_popup_only_for_confirm_popups() {
         let mut mapper = InputMapper::default();
-        let confirm = context(CurrentScreen::MailingListSelection).with_confirm_popup_open();
+        let confirm = InputContext {
+            current_screen: CurrentScreen::MailingListSelection,
+            popup_open: true,
+            confirm_popup_open: true,
+            ..Default::default()
+        };
         assert_eq!(
             mapper.map_terminal_event(key(KeyCode::Enter), &confirm),
             Some(InputEvent::ConfirmPopup)
         );
 
-        let info = context(CurrentScreen::MailingListSelection).with_popup_open(true);
+        let info = InputContext {
+            current_screen: CurrentScreen::MailingListSelection,
+            popup_open: true,
+            ..Default::default()
+        };
         assert_eq!(mapper.map_terminal_event(key(KeyCode::Enter), &info), None);
     }
 
@@ -337,7 +370,11 @@ mod tests {
     #[test]
     fn maps_enter_in_edit_mode_to_stage_config_edit() {
         let mut mapper = InputMapper::default();
-        let context = context(CurrentScreen::EditConfig).with_edit_config_editing(true);
+        let context = InputContext {
+            current_screen: CurrentScreen::EditConfig,
+            edit_config_editing: true,
+            ..Default::default()
+        };
 
         let event = mapper.map_terminal_event(key(KeyCode::Enter), &context);
 
@@ -357,7 +394,11 @@ mod tests {
     #[test]
     fn maps_arrows_to_navigate_while_editing_config_and_keeps_hl_as_text() {
         let mut mapper = InputMapper::default();
-        let editing = context(CurrentScreen::EditConfig).with_edit_config_editing(true);
+        let editing = InputContext {
+            current_screen: CurrentScreen::EditConfig,
+            edit_config_editing: true,
+            ..Default::default()
+        };
 
         assert_eq!(
             mapper.map_terminal_event(key(KeyCode::Left), &editing),
@@ -391,11 +432,11 @@ mod tests {
     fn ignores_key_release_events() {
         let mut mapper = InputMapper::default();
         let context = context(CurrentScreen::MailingListSelection);
-        let event = TerminalEvent::Key(KeyInput::new(
-            KeyCode::Esc,
-            KeyModifiers::NONE,
-            KeyEventKind::Release,
-        ));
+        let event = TerminalEvent::Key(KeyInput {
+            code: KeyCode::Esc,
+            kind: KeyEventKind::Release,
+            ..Default::default()
+        });
 
         let mapped = mapper.map_terminal_event(event, &context);
 
@@ -486,7 +527,10 @@ mod tests {
             Some(InputEvent::EditKwOpsField)
         );
 
-        let editing = context.with_kw_ops_editing(true);
+        let editing = InputContext {
+            kw_ops_editing: true,
+            ..context
+        };
         assert_eq!(
             mapper.map_terminal_event(key(KeyCode::Char('b')), &editing),
             Some(InputEvent::TextInput('b'))

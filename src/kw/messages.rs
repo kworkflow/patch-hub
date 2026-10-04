@@ -1,14 +1,10 @@
-// The actor that reads these fields is unix-only.
-#![cfg_attr(not(unix), allow(dead_code))]
-
 use tokio::sync::{oneshot, watch};
 
 use crate::{
     config::KernelTree,
     kw::{
         errors::{KwError, KwStartError},
-        history::KwApplyRecord,
-        readiness::KwReadiness,
+        models::{history::KwApplyRecord, readiness::KwReadiness},
         status::KwStatusSnapshot,
     },
 };

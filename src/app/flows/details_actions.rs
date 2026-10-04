@@ -5,125 +5,114 @@ use ratatui::crossterm::event::KeyCode;
 use tracing::debug;
 
 use crate::{
-    app::{popup::AppPopup, screens::CurrentScreen, App},
+    app::{models::popup::AppPopup, screens::CurrentScreen, App},
     input::event::{InputEvent, ScrollAmount},
     terminal::handle::TerminalHandle,
 };
 
 const USER_IO_ENTER_POLL_TIMEOUT: Duration = Duration::from_millis(200);
 
-pub async fn handle_patchset_details(
-    app: &mut App,
-    input: InputEvent,
-    terminal_handle: &TerminalHandle,
-) -> Result<()> {
-    if input == InputEvent::OpenKwOps {
-        return crate::app::flows::kw_ops::open_kw_ops(app).await;
-    }
+impl App {
+    pub async fn handle_patchset_details(
+        &mut self,
+        input: InputEvent,
+        terminal_handle: &TerminalHandle,
+    ) -> Result<()> {
+        if input == InputEvent::OpenKwOps {
+            return self.open_kw_ops().await;
+        }
 
-    let patchset_details_and_actions = app
-        .state
-        .lore
-        .details
-        .as_mut()
-        .expect("invariant: details must be loaded before handling patchset details input");
+        let patchset_details_and_actions = self
+            .state
+            .lore
+            .details
+            .as_mut()
+            .expect("invariant: details must be loaded before handling patchset details input");
 
-    match input {
-        InputEvent::OpenHelp => {
-            let popup = generate_help_popup();
-            app.state.popup = Some(popup);
-        }
-        InputEvent::Back => {
-            let ps_da_clone = patchset_details_and_actions.last_screen.clone();
-            app.set_current_screen(ps_da_clone);
-            app.reset_details_actions();
-        }
-        InputEvent::ToggleApply => {
-            patchset_details_and_actions.toggle_apply_action();
-        }
-        InputEvent::PreviewScrollDown(amount) => {
-            let lines = preview_scroll_lines(amount, terminal_handle).await?;
-            patchset_details_and_actions.preview_scroll_down(lines);
-        }
-        InputEvent::PreviewScrollUp(amount) => {
-            let lines = preview_scroll_lines(amount, terminal_handle).await?;
-            patchset_details_and_actions.preview_scroll_up(lines);
-        }
-        InputEvent::PreviewPanLeft => {
-            patchset_details_and_actions.preview_pan_left();
-        }
-        InputEvent::PreviewPanRight => {
-            patchset_details_and_actions.preview_pan_right();
-        }
-        InputEvent::PreviewGoToBeginningOfLine => {
-            patchset_details_and_actions.go_to_beg_of_line();
-        }
-        InputEvent::PreviewGoToFirstLine => {
-            patchset_details_and_actions.go_to_first_line();
-        }
-        InputEvent::PreviewGoToLastLine => {
-            patchset_details_and_actions.go_to_last_line();
-        }
-        InputEvent::TogglePreviewFullscreen => {
-            patchset_details_and_actions.toggle_preview_fullscreen();
-        }
-        InputEvent::PreviewNext => {
-            patchset_details_and_actions.preview_next_patch();
-        }
-        InputEvent::PreviewPrevious => {
-            patchset_details_and_actions.preview_previous_patch();
-        }
-        InputEvent::ToggleBookmark => {
-            patchset_details_and_actions.toggle_bookmark_action();
-        }
-        InputEvent::ToggleReplyWithReviewedBy => {
-            patchset_details_and_actions.toggle_reply_with_reviewed_by_action(false);
-        }
-        InputEvent::ToggleReplyWithReviewedByAll => {
-            patchset_details_and_actions.toggle_reply_with_reviewed_by_action(true);
-        }
-        InputEvent::ShowReviewTrailers => {
-            let popup = AppPopup::review_trailers(patchset_details_and_actions);
-            app.state.popup = Some(popup);
-        }
-        InputEvent::ConsolidatePatchsetActions => {
-            debug!(
-                requires_user_io = patchset_details_and_actions.actions_require_user_io(),
-                "consolidating patchset actions"
-            );
-            if patchset_details_and_actions.actions_require_user_io() {
-                terminal_handle.setup_user_io().await?;
-                app.consolidate_patchset_actions().await?;
-                println!("\nPress ENTER continue...");
-                while !terminal_handle
-                    .wait_for_key_press(KeyCode::Enter, USER_IO_ENTER_POLL_TIMEOUT)
-                    .await?
-                {}
-                terminal_handle.teardown_user_io().await?;
-            } else {
-                app.consolidate_patchset_actions().await?;
+        match input {
+            InputEvent::OpenHelp => {
+                let popup = Self::build_details_help_popup();
+                self.state.popup = Some(popup);
             }
-            app.set_current_screen(CurrentScreen::PatchsetDetails);
+            InputEvent::Back => {
+                let ps_da_clone = patchset_details_and_actions.last_screen.clone();
+                self.set_current_screen(ps_da_clone);
+                self.reset_details_actions();
+            }
+            InputEvent::ToggleApply => {
+                patchset_details_and_actions.toggle_apply_action();
+            }
+            InputEvent::PreviewScrollDown(amount) => {
+                let lines = Self::count_preview_scroll_lines(amount, terminal_handle).await?;
+                patchset_details_and_actions.preview_scroll_down(lines);
+            }
+            InputEvent::PreviewScrollUp(amount) => {
+                let lines = Self::count_preview_scroll_lines(amount, terminal_handle).await?;
+                patchset_details_and_actions.preview_scroll_up(lines);
+            }
+            InputEvent::PreviewPanLeft => {
+                patchset_details_and_actions.preview_pan_left();
+            }
+            InputEvent::PreviewPanRight => {
+                patchset_details_and_actions.preview_pan_right();
+            }
+            InputEvent::PreviewGoToBeginningOfLine => {
+                patchset_details_and_actions.go_to_beg_of_line();
+            }
+            InputEvent::PreviewGoToFirstLine => {
+                patchset_details_and_actions.go_to_first_line();
+            }
+            InputEvent::PreviewGoToLastLine => {
+                patchset_details_and_actions.go_to_last_line();
+            }
+            InputEvent::TogglePreviewFullscreen => {
+                patchset_details_and_actions.toggle_preview_fullscreen();
+            }
+            InputEvent::PreviewNext => {
+                patchset_details_and_actions.preview_next_patch();
+            }
+            InputEvent::PreviewPrevious => {
+                patchset_details_and_actions.preview_previous_patch();
+            }
+            InputEvent::ToggleBookmark => {
+                patchset_details_and_actions.toggle_bookmark_action();
+            }
+            InputEvent::ToggleReplyWithReviewedBy => {
+                patchset_details_and_actions.toggle_reply_with_reviewed_by_action(false);
+            }
+            InputEvent::ToggleReplyWithReviewedByAll => {
+                patchset_details_and_actions.toggle_reply_with_reviewed_by_action(true);
+            }
+            InputEvent::ShowReviewTrailers => {
+                let popup = AppPopup::review_trailers(patchset_details_and_actions);
+                self.state.popup = Some(popup);
+            }
+            InputEvent::ConsolidatePatchsetActions => {
+                debug!(
+                    requires_user_io = patchset_details_and_actions.actions_require_user_io(),
+                    "consolidating patchset actions"
+                );
+                if patchset_details_and_actions.actions_require_user_io() {
+                    terminal_handle.setup_user_io().await?;
+                    self.consolidate_patchset_actions().await?;
+                    println!("\nPress ENTER continue...");
+                    while !terminal_handle
+                        .wait_for_key_press(KeyCode::Enter, USER_IO_ENTER_POLL_TIMEOUT)
+                        .await?
+                    {}
+                    terminal_handle.teardown_user_io().await?;
+                } else {
+                    self.consolidate_patchset_actions().await?;
+                }
+                self.set_current_screen(CurrentScreen::PatchsetDetails);
+            }
+            _ => {}
         }
-        _ => {}
+        Ok(())
     }
-    Ok(())
-}
 
-async fn preview_scroll_lines(
-    amount: ScrollAmount,
-    terminal_handle: &TerminalHandle,
-) -> Result<usize> {
-    let (_, height) = terminal_handle.size().await?;
-    Ok(match amount {
-        ScrollAmount::Line => 1,
-        ScrollAmount::HalfPage => height as usize / 2,
-        ScrollAmount::Page => height as usize,
-    })
-}
-
-pub fn generate_help_popup() -> AppPopup {
-    AppPopup::help()
+    pub fn build_details_help_popup() -> AppPopup {
+        AppPopup::help()
         .title("Patchset Details and Actions")
         .description("This screen displays the details of a patchset and allows you to perform actions on it.\nA series of actions are available to you, they are:\n - Bookmark: Save the patchset for later\n - Reply with Reviewed-by: Reply to the patchset with a Reviewed-by tag")
         .keybind("ESC", "Exit")
@@ -145,4 +134,19 @@ pub fn generate_help_popup() -> AppPopup {
         .keybind("Ctrl+t", "Show code-review trailers details")
         .keybind("w", "Kw operations")
         .build()
+    }
+}
+
+impl App {
+    async fn count_preview_scroll_lines(
+        amount: ScrollAmount,
+        terminal_handle: &TerminalHandle,
+    ) -> Result<usize> {
+        let (_, height) = terminal_handle.size().await?;
+        Ok(match amount {
+            ScrollAmount::Line => 1,
+            ScrollAmount::HalfPage => height as usize / 2,
+            ScrollAmount::Page => height as usize,
+        })
+    }
 }

@@ -13,12 +13,12 @@ use crate::{
     },
     lore::{
         application::{
-            cache::{
+            dto::{PatchTagSummary, PatchsetDetails},
+            errors::LoreError,
+            models::cache::{
                 BootstrapLoreData, CacheMode, CacheTtl, FeedCacheEntry, LoreCache,
                 MailingListsCacheEntry, PatchsetCacheEntry, PatchsetCacheKey,
             },
-            dto::{PatchTagSummary, PatchsetDetails},
-            errors::LoreError,
         },
         domain::{
             mailing_list::MailingList,
@@ -27,9 +27,9 @@ use crate::{
         },
         infrastructure::{
             http_lore_client::{FeedGateway, ListsGateway, LoreHttpError, PatchHtmlGateway},
-            parsers,
+            parsers::LoreParserService,
             patchset_fetcher::PatchsetFetcher,
-            patchset_parser::{self, PatchsetParser},
+            patchset_parser::{PatchsetParser, PatchsetTextService},
             persistence::{MailingListsCacheStore, UserLoreStateStore},
         },
     },
@@ -50,6 +50,7 @@ pub struct LoreService {
 }
 
 impl LoreService {
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         lists_gateway: Arc<dyn ListsGateway>,
         feed_gateway: Arc<dyn FeedGateway>,
@@ -127,7 +128,7 @@ impl LoreService {
             let body = gateway
                 .fetch_available_lists_page(offset)
                 .map_err(LoreError::Http)?;
-            let page = parsers::parse_available_lists(&body);
+            let page = LoreParserService::parse_available_lists(&body);
             if page.is_empty() {
                 break;
             }
@@ -206,7 +207,7 @@ impl LoreService {
         self.cache
             .feeds
             .entry(target_list.to_string())
-            .or_insert_with(|| FeedCacheEntry::new(PatchFeedIndex::new(target_list.to_string())));
+            .or_insert_with(|| FeedCacheEntry::new(PatchFeedIndex::new()));
 
         // Clone the Arc so the borrow on `self.feed_gateway` doesn't conflict
         // with the mutable borrow on `self.cache.feeds`.
@@ -224,8 +225,13 @@ impl LoreService {
             let offset = self.cache.feeds[target_list].index.next_offset();
             match gateway.fetch_patch_feed_page(target_list, offset) {
                 Ok(body) => {
-                    let feed = parsers::parse_patch_feed(&body).map_err(LoreError::Parse)?;
-                    let entry = self.cache.feeds.get_mut(target_list).unwrap();
+                    let feed =
+                        LoreParserService::parse_patch_feed(&body).map_err(LoreError::Parse)?;
+                    let Some(entry) = self.cache.feeds.get_mut(target_list) else {
+                        return Err(LoreError::Parse(format!(
+                            "feed cache entry missing for {target_list}"
+                        )));
+                    };
                     entry.index.process_feed_page(feed);
                     entry.index.advance_offset();
                 }
@@ -250,7 +256,7 @@ impl LoreService {
         representative_patch: &Patch,
         mode: CacheMode,
     ) -> Result<PatchsetDetails, LoreError> {
-        let key = PatchsetCacheKey::from_patch(representative_patch);
+        let key = PatchsetCacheKey::from(representative_patch);
 
         match mode {
             CacheMode::Refresh => {
@@ -285,8 +291,10 @@ impl LoreService {
             .split_patchset(&patchset_path)
             .map_err(LoreError::Parse)?;
 
-        let tag_summary: Vec<PatchTagSummary> =
-            raw_patches.iter().map(|p| extract_tag_summary(p)).collect();
+        let tag_summary = raw_patches
+            .iter()
+            .map(|p| Self::extract_tag_summary(p))
+            .collect::<Vec<PatchTagSummary>>();
 
         match mode {
             CacheMode::Bypass => {}
@@ -318,8 +326,9 @@ impl LoreService {
         git_signature: &str,
         git_send_email_options: &str,
     ) -> Result<Vec<ShellCommand>, LoreError> {
-        static RE_MESSAGE_ID: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r"(?m)^Message-Id: <(.*?)>").unwrap());
+        static RE_MESSAGE_ID: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"(?m)^Message-Id: <(.*?)>").expect("valid message id regex")
+        });
 
         let gateway = Arc::clone(&self.patch_html_gateway);
         let mut commands = Vec::new();
@@ -336,7 +345,7 @@ impl LoreService {
                 .ok_or_else(|| LoreError::Parse("Message-Id header not found".to_string()))?;
 
             let reply_path = tmp_dir.join(format!("{message_id}-reply.mbx"));
-            let mut reply = patchset_parser::generate_reply_template(patch);
+            let mut reply = PatchsetTextService::generate_reply_template(patch);
             reply.push_str(&format!("\nReviewed-by: {git_signature}\n"));
             self.fs
                 .write(&reply_path, reply.as_bytes())
@@ -346,7 +355,7 @@ impl LoreService {
                 .fetch_patch_html(target_list, message_id)
                 .map_err(LoreError::Http)?;
 
-            let command = patchset_parser::extract_git_reply_command(
+            let command = PatchsetTextService::extract_git_reply_command(
                 &patch_html,
                 git_send_email_options,
                 &format!("{}", reply_path.display()),
@@ -415,88 +424,115 @@ impl LoreService {
     }
 }
 
-fn extract_tag_summary(raw_patch: &str) -> PatchTagSummary {
-    let (cover, _) = patchset_parser::split_cover(raw_patch);
+impl LoreService {
+    fn extract_tag_summary(raw_patch: &str) -> PatchTagSummary {
+        let (cover, _) = PatchsetTextService::split_cover(raw_patch);
 
-    let mut reviewed_by = HashSet::new();
-    let mut tested_by = HashSet::new();
-    let mut acked_by = HashSet::new();
+        let mut reviewed_by = HashSet::new();
+        let mut tested_by = HashSet::new();
+        let mut acked_by = HashSet::new();
 
-    for line in cover.lines() {
-        let line = line.trim_start();
-        for (prefix, set) in [
-            ("Reviewed-by:", &mut reviewed_by),
-            ("Tested-by:", &mut tested_by),
-            ("Acked-by:", &mut acked_by),
-        ] {
-            if let Some(rest) = line.strip_prefix(prefix) {
-                let parts: Vec<&str> = rest.trim().split('<').collect();
-                if parts.len() == 2 {
-                    let name = parts[0].trim().to_string();
-                    let email = parts[1].trim_end_matches('>').trim().to_string();
-                    set.insert(Author { name, email });
+        for line in cover.lines() {
+            let line = line.trim_start();
+            for (prefix, set) in [
+                ("Reviewed-by:", &mut reviewed_by),
+                ("Tested-by:", &mut tested_by),
+                ("Acked-by:", &mut acked_by),
+            ] {
+                if let Some(rest) = line.strip_prefix(prefix) {
+                    let parts = rest.trim().split('<').collect::<Vec<&str>>();
+                    if parts.len() == 2 {
+                        let name = parts[0].trim().to_string();
+                        let email = parts[1].trim_end_matches('>').trim().to_string();
+                        set.insert(Author { name, email });
+                    }
+                    break;
                 }
-                break;
             }
         }
-    }
 
-    PatchTagSummary {
-        reviewed_by,
-        tested_by,
-        acked_by,
+        PatchTagSummary {
+            reviewed_by,
+            tested_by,
+            acked_by,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, sync::Arc};
+
+    mod helpers {
+        use super::super::*;
+        use crate::lore::infrastructure::{
+            http_lore_client::{MockFeedGateway, MockListsGateway, MockPatchHtmlGateway},
+            patchset_fetcher::MockPatchsetFetcher,
+            patchset_parser::MockPatchsetParser,
+            persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
+        };
+        use crate::{
+            infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
+            lore::application::models::cache::CacheTtl,
+        };
+        use std::sync::Arc;
+
+        // ── helpers ───────────────────────────────────────────────────────────────
+
+        pub(super) fn make_service(
+            lists_gateway: MockListsGateway,
+            feed_gateway: MockFeedGateway,
+            patch_html_gateway: MockPatchHtmlGateway,
+            lists_store: MockMailingListsCacheStore,
+            user_state: MockUserLoreStateStore,
+            fetcher: MockPatchsetFetcher,
+            parser: MockPatchsetParser,
+        ) -> LoreService {
+            LoreService::new(
+                Arc::new(lists_gateway),
+                Arc::new(feed_gateway),
+                Arc::new(patch_html_gateway),
+                Arc::new(lists_store),
+                Arc::new(user_state),
+                Arc::new(fetcher),
+                Arc::new(parser),
+                Arc::new(MockFileSystemTrait::new()),
+                Arc::new(MockShellTrait::new()),
+                CacheTtl::default(),
+            )
+        }
+
+        // ── patchset details cache tests ──────────────────────────────────────────
+
+        pub(super) fn make_patch_for_cache(msg_id: &str) -> Patch {
+            serde_json::from_value(serde_json::json!({
+                "title": "test",
+                "author": { "name": "T", "email": "t@t.com" },
+                "link": { "@href": msg_id },
+                "updated": "2023-01-01"
+            }))
+            .expect("json parses")
+        }
+    }
+    use helpers::*;
+    use std::fs;
 
     use crate::lore::infrastructure::{
         http_lore_client::{
             LoreHttpError, MockFeedGateway, MockListsGateway, MockPatchHtmlGateway,
         },
+        parsers::LoreParserService,
         patchset_fetcher::MockPatchsetFetcher,
         patchset_parser::MockPatchsetParser,
         persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
     };
-    use crate::{
-        infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
-        lore::{
-            application::cache::{
-                CacheTtl, FeedCacheEntry, MailingListsCacheEntry, PatchsetCacheEntry,
-                PatchsetCacheKey,
-            },
-            domain::{mailing_list::MailingList, patchset::PatchFeedIndex},
+    use crate::lore::{
+        application::models::cache::{
+            FeedCacheEntry, MailingListsCacheEntry, PatchsetCacheEntry, PatchsetCacheKey,
         },
+        domain::{mailing_list::MailingList, patchset::PatchFeedIndex},
     };
 
     use super::*;
-
-    // ── helpers ───────────────────────────────────────────────────────────────
-
-    fn make_service(
-        lists_gateway: MockListsGateway,
-        feed_gateway: MockFeedGateway,
-        patch_html_gateway: MockPatchHtmlGateway,
-        lists_store: MockMailingListsCacheStore,
-        user_state: MockUserLoreStateStore,
-        fetcher: MockPatchsetFetcher,
-        parser: MockPatchsetParser,
-    ) -> LoreService {
-        LoreService::new(
-            Arc::new(lists_gateway),
-            Arc::new(feed_gateway),
-            Arc::new(patch_html_gateway),
-            Arc::new(lists_store),
-            Arc::new(user_state),
-            Arc::new(fetcher),
-            Arc::new(parser),
-            Arc::new(MockFileSystemTrait::new()),
-            Arc::new(MockShellTrait::new()),
-            CacheTtl::default(),
-        )
-    }
 
     // ── mailing lists cache tests ─────────────────────────────────────────────
 
@@ -505,6 +541,7 @@ mod tests {
         let mut lists_store = MockMailingListsCacheStore::new();
         lists_store
             .expect_load_available_lists()
+            .withf(|| true)
             .times(1)
             .returning(|| Ok(vec![MailingList::new("linux-mm", "desc")]));
 
@@ -518,7 +555,9 @@ mod tests {
             MockPatchsetParser::new(),
         );
 
-        let result = svc.fetch_available_lists(CacheMode::UseCache).unwrap();
+        let result = svc
+            .fetch_available_lists(CacheMode::UseCache)
+            .expect("available lists fetches");
         assert_eq!(1, result.len());
         assert_eq!("linux-mm", result[0].name());
     }
@@ -542,7 +581,9 @@ mod tests {
             "in memory",
         )]));
 
-        let result = svc.fetch_available_lists(CacheMode::UseCache).unwrap();
+        let result = svc
+            .fetch_available_lists(CacheMode::UseCache)
+            .expect("available lists fetches");
         assert_eq!(1, result.len());
         assert_eq!("cached-list", result[0].name());
     }
@@ -558,7 +599,7 @@ mod tests {
                 Ok(fs::read_to_string(
                     "test_samples/lore_session/process_available_lists/available_lists_response-1.html",
                 )
-                .unwrap())
+                .expect("file reads"))
             });
         lists_gateway
             .expect_fetch_available_lists_page()
@@ -568,7 +609,7 @@ mod tests {
                 Ok(fs::read_to_string(
                     "test_samples/lore_session/process_available_lists/available_lists_response-2.html",
                 )
-                .unwrap())
+                .expect("file reads"))
             });
         lists_gateway
             .expect_fetch_available_lists_page()
@@ -578,12 +619,13 @@ mod tests {
                 Ok(fs::read_to_string(
                     "test_samples/lore_session/process_available_lists/available_lists_response-3.html",
                 )
-                .unwrap())
+                .expect("file reads"))
             });
 
         let mut lists_store = MockMailingListsCacheStore::new();
         lists_store
             .expect_save_available_lists()
+            .withf(|lists| lists.len() == 320)
             .times(1)
             .returning(|_| Ok(()));
 
@@ -597,7 +639,9 @@ mod tests {
             MockPatchsetParser::new(),
         );
 
-        let lists = svc.fetch_available_lists(CacheMode::Refresh).unwrap();
+        let lists = svc
+            .fetch_available_lists(CacheMode::Refresh)
+            .expect("available lists fetches");
         assert_eq!(320, lists.len());
         assert_eq!("accel-config", lists[0].name());
         assert_eq!("yocto-toaster", lists[319].name());
@@ -609,12 +653,14 @@ mod tests {
         let mut lists_gateway = MockListsGateway::new();
         lists_gateway
             .expect_fetch_available_lists_page()
+            .withf(|offset| *offset == 0)
             .times(1)
             .returning(|_| Ok(String::new())); // empty page → break loop
 
         let mut lists_store = MockMailingListsCacheStore::new();
         lists_store
             .expect_save_available_lists()
+            .withf(|lists| lists.is_empty())
             .times(1)
             .returning(|_| Ok(()));
 
@@ -634,7 +680,9 @@ mod tests {
             "",
         )]));
 
-        let result = svc.fetch_available_lists(CacheMode::Refresh).unwrap();
+        let result = svc
+            .fetch_available_lists(CacheMode::Refresh)
+            .expect("available lists fetches");
         // Network returned an empty page, so result is empty.
         assert!(result.is_empty());
         // In-memory cache was updated (cleared then set to empty result).
@@ -646,16 +694,19 @@ mod tests {
         let mut lists_store = MockMailingListsCacheStore::new();
         lists_store
             .expect_load_available_lists()
+            .withf(|| true)
             .times(1)
             .returning(|| Ok(vec![MailingList::new("linux-mm", "")]));
 
         let mut user_state = MockUserLoreStateStore::new();
         user_state
             .expect_load_bookmarked_patchsets()
+            .withf(|| true)
             .times(1)
             .returning(|| Ok(vec![]));
         user_state
             .expect_load_reviewed_patchsets()
+            .withf(|| true)
             .times(1)
             .returning(|| Ok(HashMap::new()));
 
@@ -669,7 +720,7 @@ mod tests {
             MockPatchsetParser::new(),
         );
 
-        let data = svc.warm_bootstrap_cache().unwrap();
+        let data = svc.warm_bootstrap_cache().expect("bootstrap cache warms");
         assert_eq!(1, data.mailing_lists.len());
         assert_eq!("linux-mm", data.mailing_lists[0].name());
         assert!(data.bookmarks.is_empty());
@@ -688,7 +739,7 @@ mod tests {
             .expect_fetch_patch_feed_page()
             .withf(move |list, offset| list == target && *offset == 0)
             .times(1)
-            .returning(move |_, _| Ok(fs::read_to_string(src).unwrap()));
+            .returning(move |_, _| Ok(fs::read_to_string(src).expect("file reads")));
 
         let mut svc = make_service(
             MockListsGateway::new(),
@@ -702,7 +753,7 @@ mod tests {
 
         let patches = svc
             .fetch_next_patch_page(target, 1, 1, CacheMode::UseCache)
-            .unwrap();
+            .expect("next patch page fetches");
         assert_eq!(1, patches.len());
         assert!(patches[0]
             .message_id()
@@ -715,6 +766,7 @@ mod tests {
         let mut feed_gateway = MockFeedGateway::new();
         feed_gateway
             .expect_fetch_patch_feed_page()
+            .withf(|list, offset| list == "some-list" && *offset == 0)
             .times(1)
             .returning(|_, _| Err(LoreHttpError::EndOfFeed));
 
@@ -749,11 +801,10 @@ mod tests {
         );
 
         let feed = {
-            use crate::lore::infrastructure::parsers::parse_patch_feed;
-            let xml = fs::read_to_string(src).unwrap();
-            parse_patch_feed(&xml).unwrap()
+            let xml = fs::read_to_string(src).expect("file reads");
+            LoreParserService::parse_patch_feed(&xml).expect("patch feed parses")
         };
-        let mut index = PatchFeedIndex::new(target.to_string());
+        let mut index = PatchFeedIndex::new();
         index.process_feed_page(feed);
         svc.cache
             .feeds
@@ -761,7 +812,7 @@ mod tests {
 
         let patches = svc
             .fetch_next_patch_page(target, 1, 1, CacheMode::UseCache)
-            .unwrap();
+            .expect("next patch page fetches");
         assert_eq!(1, patches.len());
     }
 
@@ -774,8 +825,9 @@ mod tests {
         let mut feed_gateway = MockFeedGateway::new();
         feed_gateway
             .expect_fetch_patch_feed_page()
+            .withf(|list, offset| list == "some-list" && *offset == 0)
             .times(1)
-            .returning(move |_, _| Ok(fs::read_to_string(src).unwrap()));
+            .returning(move |_, _| Ok(fs::read_to_string(src).expect("file reads")));
 
         let mut svc = make_service(
             MockListsGateway::new(),
@@ -789,10 +841,10 @@ mod tests {
 
         // Pre-populate the cache.
         let feed = {
-            let xml = fs::read_to_string(src).unwrap();
-            crate::lore::infrastructure::parsers::parse_patch_feed(&xml).unwrap()
+            let xml = fs::read_to_string(src).expect("file reads");
+            LoreParserService::parse_patch_feed(&xml).expect("patch feed parses")
         };
-        let mut index = PatchFeedIndex::new(target.to_string());
+        let mut index = PatchFeedIndex::new();
         index.process_feed_page(feed);
         svc.cache
             .feeds
@@ -800,20 +852,8 @@ mod tests {
 
         let patches = svc
             .fetch_next_patch_page(target, 1, 1, CacheMode::Refresh)
-            .unwrap();
+            .expect("next patch page fetches");
         assert_eq!(1, patches.len());
-    }
-
-    // ── patchset details cache tests ──────────────────────────────────────────
-
-    fn make_patch_for_cache(msg_id: &str) -> Patch {
-        serde_json::from_value(serde_json::json!({
-            "title": "test",
-            "author": { "name": "T", "email": "t@t.com" },
-            "link": { "@href": msg_id },
-            "updated": "2023-01-01"
-        }))
-        .unwrap()
     }
 
     #[test]
@@ -831,7 +871,7 @@ mod tests {
             MockPatchsetParser::new(),  // no expectations
         );
 
-        let key = PatchsetCacheKey::from_patch(&patch);
+        let key = PatchsetCacheKey::from(&patch);
         svc.cache.patchsets.insert(
             key,
             PatchsetCacheEntry::new(
@@ -843,7 +883,7 @@ mod tests {
 
         let details = svc
             .fetch_patchset_details(&patch, CacheMode::UseCache)
-            .unwrap();
+            .expect("patchset details fetches");
         assert_eq!("/tmp/cached.mbx", details.patchset_path);
         assert_eq!(1, details.raw_patches.len());
     }
@@ -856,12 +896,14 @@ mod tests {
         let mut fetcher = MockPatchsetFetcher::new();
         fetcher
             .expect_download()
+            .withf(|patch| patch.title() == "test")
             .times(1)
             .returning(|_| Ok("/tmp/new.mbx".to_string()));
 
         let mut parser = MockPatchsetParser::new();
         parser
             .expect_split_patchset()
+            .withf(|path| path == "/tmp/new.mbx")
             .times(1)
             .returning(|_| Ok(vec!["raw".to_string()]));
 
@@ -877,10 +919,10 @@ mod tests {
 
         let details = svc
             .fetch_patchset_details(&patch, CacheMode::UseCache)
-            .unwrap();
+            .expect("patchset details fetches");
         assert_eq!("/tmp/new.mbx", details.patchset_path);
         // The result should now be in cache.
-        let key = PatchsetCacheKey::from_patch(&patch);
+        let key = PatchsetCacheKey::from(&patch);
         assert!(svc.cache.patchsets.contains_key(&key));
     }
 
@@ -892,12 +934,14 @@ mod tests {
         let mut fetcher = MockPatchsetFetcher::new();
         fetcher
             .expect_download()
+            .withf(|patch| patch.title() == "test")
             .times(1)
             .returning(|_| Ok("/tmp/refreshed.mbx".to_string()));
 
         let mut parser = MockPatchsetParser::new();
         parser
             .expect_split_patchset()
+            .withf(|path| path == "/tmp/refreshed.mbx")
             .times(1)
             .returning(|_| Ok(vec!["fresh raw".to_string()]));
 
@@ -912,7 +956,7 @@ mod tests {
         );
 
         // Pre-populate the cache.
-        let key = PatchsetCacheKey::from_patch(&patch);
+        let key = PatchsetCacheKey::from(&patch);
         svc.cache.patchsets.insert(
             key.clone(),
             PatchsetCacheEntry::new("/tmp/old.mbx".to_string(), vec![], vec![]),
@@ -920,7 +964,7 @@ mod tests {
 
         let details = svc
             .fetch_patchset_details(&patch, CacheMode::Refresh)
-            .unwrap();
+            .expect("patchset details fetches");
         assert_eq!("/tmp/refreshed.mbx", details.patchset_path);
         // Cache is updated with the fresh entry.
         assert_eq!(

@@ -26,6 +26,60 @@ impl MboxPatchsetParser {
     }
 }
 
+impl MboxPatchsetParser {
+    fn extract_patches(
+        fs: &dyn FileSystemTrait,
+        mbox_path: &Path,
+        patches: &mut Vec<String>,
+    ) -> Result<(), String> {
+        let mut current_patch = String::new();
+        let mut is_reading_patch = false;
+        let mut is_last_line = false;
+
+        let mbox_reader = fs
+            .open_bufreader(mbox_path)
+            .map_err(|err| format!("{}: {err}", mbox_path.display()))?;
+
+        for line in mbox_reader.lines() {
+            let line = line.map_err(|err| format!("{}: {err}", mbox_path.display()))?;
+
+            if line.starts_with("Subject: ") {
+                is_reading_patch = true;
+            } else if is_reading_patch && line.trim_end().eq("--") {
+                is_last_line = true;
+            } else if is_last_line {
+                current_patch.push_str(&line);
+                current_patch.push('\n');
+
+                let mut patch_to_add = String::new();
+                swap(&mut patch_to_add, &mut current_patch);
+                patches.push(patch_to_add);
+
+                is_reading_patch = false;
+                is_last_line = false;
+            } else if is_reading_patch && line.trim_end().eq("From git@z Thu Jan  1 00:00:00 1970")
+            {
+                let mut patch_to_add = String::new();
+                swap(&mut patch_to_add, &mut current_patch);
+                patches.push(patch_to_add);
+
+                is_reading_patch = false;
+            }
+
+            if is_reading_patch {
+                current_patch.push_str(&line);
+                current_patch.push('\n');
+            }
+        }
+
+        if !current_patch.is_empty() {
+            patches.push(current_patch);
+        }
+
+        Ok(())
+    }
+}
+
 impl PatchsetParser for MboxPatchsetParser {
     fn split_patchset(&self, patchset_path_str: &str) -> Result<Vec<String>, String> {
         let mut patches: Vec<String> = Vec::new();
@@ -40,161 +94,129 @@ impl PatchsetParser for MboxPatchsetParser {
         }
 
         if self.fs.exists(cover_letter_path) && self.fs.is_file(cover_letter_path) {
-            extract_patches(&*self.fs, cover_letter_path, &mut patches);
+            Self::extract_patches(&*self.fs, cover_letter_path, &mut patches)?;
         }
 
-        extract_patches(&*self.fs, patchset_path, &mut patches);
+        Self::extract_patches(&*self.fs, patchset_path, &mut patches)?;
 
         Ok(patches)
     }
 }
 
-fn extract_patches(fs: &dyn FileSystemTrait, mbox_path: &Path, patches: &mut Vec<String>) {
-    let mut current_patch = String::new();
-    let mut is_reading_patch = false;
-    let mut is_last_line = false;
+pub struct PatchsetTextService;
 
-    let mbox_reader = fs.open_bufreader(mbox_path).unwrap();
+impl PatchsetTextService {
+    /// Splits a raw patch string into `(cover, diff)` at the first `\n---\n` separator.
+    ///
+    /// Everything before (and including) the separator line is the cover; everything
+    /// after is the diff. If there is no separator, the entire input is returned as the
+    /// cover with an empty diff slice.
+    pub fn split_cover(patch: &str) -> (&str, &str) {
+        let mut cover: &str = patch;
+        let mut diff = "";
 
-    for line in mbox_reader.lines() {
-        let line = line.unwrap();
-
-        if line.starts_with("Subject: ") {
-            is_reading_patch = true;
-        } else if is_reading_patch && line.trim_end().eq("--") {
-            is_last_line = true;
-        } else if is_last_line {
-            current_patch.push_str(&line);
-            current_patch.push('\n');
-
-            let mut patch_to_add = String::new();
-            swap(&mut patch_to_add, &mut current_patch);
-            patches.push(patch_to_add);
-
-            is_reading_patch = false;
-            is_last_line = false;
-        } else if is_reading_patch && line.trim_end().eq("From git@z Thu Jan  1 00:00:00 1970") {
-            let mut patch_to_add = String::new();
-            swap(&mut patch_to_add, &mut current_patch);
-            patches.push(patch_to_add);
-
-            is_reading_patch = false;
+        if let Some(cover_end) = patch.find("\n---\n") {
+            cover = &patch[..cover_end + 1];
+            diff = &patch[cover_end + 5..];
         }
 
-        if is_reading_patch {
-            current_patch.push_str(&line);
-            current_patch.push('\n');
-        }
+        (cover, diff)
     }
 
-    if !current_patch.is_empty() {
-        patches.push(current_patch);
-    }
-}
+    /// Generates a reply template from a raw patch string, quoting the body and
+    /// prefixing the subject with `"Re: "`.
+    pub fn generate_reply_template(patch_contents: &str) -> String {
+        let mut reply_template = String::new();
+        let mut patch_lines_iterator = patch_contents.lines();
 
-/// Splits a raw patch string into `(cover, diff)` at the first `\n---\n` separator.
-///
-/// Everything before (and including) the separator line is the cover; everything
-/// after is the diff. If there is no separator, the entire input is returned as the
-/// cover with an empty diff slice.
-pub fn split_cover(patch: &str) -> (&str, &str) {
-    let mut cover: &str = patch;
-    let mut diff: &str = "";
+        for line in patch_lines_iterator.by_ref() {
+            let mut line_to_push = String::new();
 
-    if let Some(cover_end) = patch.find("\n---\n") {
-        cover = &patch[..cover_end + 1];
-        diff = &patch[cover_end + 5..];
-    }
+            if line.starts_with("Subject: ") {
+                line_to_push = line.replace("Subject: ", "Subject: Re: ") + "\n";
+            } else if line.starts_with("From: ")
+                || line.starts_with("Date: ")
+                || line.starts_with("Message-Id: ")
+            {
+                continue;
+            } else if !line.trim().is_empty() {
+                line_to_push = format!("{line}\n");
+            } else if line.trim().is_empty() && !reply_template.is_empty() {
+                reply_template.push('\n');
+                break;
+            }
 
-    (cover, diff)
-}
-
-/// Generates a reply template from a raw patch string, quoting the body and
-/// prefixing the subject with `"Re: "`.
-pub fn generate_reply_template(patch_contents: &str) -> String {
-    let mut reply_template = String::new();
-    let mut patch_lines_iterator = patch_contents.lines();
-
-    for line in patch_lines_iterator.by_ref() {
-        let mut line_to_push = String::new();
-
-        if line.starts_with("Subject: ") {
-            line_to_push = line.replace("Subject: ", "Subject: Re: ") + "\n";
-        } else if line.starts_with("From: ")
-            || line.starts_with("Date: ")
-            || line.starts_with("Message-Id: ")
-        {
-            continue;
-        } else if !line.trim().is_empty() {
-            line_to_push = format!("{line}\n");
-        } else if line.trim().is_empty() && !reply_template.is_empty() {
-            reply_template.push('\n');
-            break;
+            reply_template.push_str(&line_to_push);
         }
 
-        reply_template.push_str(&line_to_push);
+        for line in patch_lines_iterator {
+            reply_template.push_str(&format!("> {line}\n"));
+        }
+
+        reply_template
     }
 
-    for line in patch_lines_iterator {
-        reply_template.push_str(&format!("> {line}\n"));
-    }
+    /// Extracts the `git send-email` command from a lore patch HTML page and returns
+    /// a [`ShellCommand`] ready to invoke, with `reply_path` appended as the last
+    /// argument.
+    pub fn extract_git_reply_command(
+        patch_html: &str,
+        git_send_email_options: &str,
+        reply_path: &str,
+    ) -> ShellCommand {
+        let mut args: Vec<String> = vec!["send-email".to_string()];
 
-    reply_template
-}
+        for option in git_send_email_options.split_whitespace() {
+            args.push(option.to_string());
+        }
 
-/// Extracts the `git send-email` command from a lore patch HTML page and returns
-/// a [`ShellCommand`] ready to invoke, with `reply_path` appended as the last
-/// argument.
-pub fn extract_git_reply_command(
-    patch_html: &str,
-    git_send_email_options: &str,
-    reply_path: &str,
-) -> ShellCommand {
-    let mut args: Vec<String> = vec!["send-email".to_string()];
+        static RE_FULL_GIT_COMMAND: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r#"(?s)git-send-email\(1\):(.*?)/path/to/YOUR_REPLY"#)
+                .expect("valid full git command regex")
+        });
 
-    for option in git_send_email_options.split_whitespace() {
-        args.push(option.to_string());
-    }
+        static RE_LONG_OPTIONS: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"--[^\s=]+=[^\s]+").expect("valid long options regex"));
 
-    static RE_FULL_GIT_COMMAND: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r#"(?s)git-send-email\(1\):(.*?)/path/to/YOUR_REPLY"#).unwrap()
-    });
-
-    static RE_LONG_OPTIONS: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"--[^\s=]+=[^\s]+").unwrap());
-
-    if let Some(capture) = RE_FULL_GIT_COMMAND.captures(patch_html) {
-        if let Some(full_git_command_match) = capture.get(1) {
-            for long_option_match in RE_LONG_OPTIONS.find_iter(full_git_command_match.as_str()) {
-                args.push(long_option_match.as_str().to_string());
+        if let Some(capture) = RE_FULL_GIT_COMMAND.captures(patch_html) {
+            if let Some(full_git_command_match) = capture.get(1) {
+                for long_option_match in RE_LONG_OPTIONS.find_iter(full_git_command_match.as_str())
+                {
+                    args.push(long_option_match.as_str().to_string());
+                }
             }
         }
-    }
 
-    args.push(reply_path.to_string());
+        args.push(reply_path.to_string());
 
-    ShellCommand {
-        program: "git".to_string(),
-        args,
+        ShellCommand {
+            program: "git".to_string(),
+            args,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::sync::Arc;
 
-    use crate::infrastructure::file_system::OsFileSystem;
+    mod helpers {
+
+        use super::super::*;
+        use crate::infrastructure::file_system::OsFileSystem;
+        use std::sync::Arc;
+
+        pub(super) fn parser() -> MboxPatchsetParser {
+            MboxPatchsetParser::new(Arc::new(OsFileSystem))
+        }
+
+        pub(super) fn commands_eq(cmd1: &ShellCommand, cmd2: &ShellCommand) -> bool {
+            cmd1.program == cmd2.program && cmd1.args == cmd2.args
+        }
+    }
+    use helpers::*;
+    use std::{env, fs, process};
 
     use super::*;
-
-    fn parser() -> MboxPatchsetParser {
-        MboxPatchsetParser::new(Arc::new(OsFileSystem))
-    }
-
-    fn commands_eq(cmd1: &ShellCommand, cmd2: &ShellCommand) -> bool {
-        cmd1.program == cmd2.program && cmd1.args == cmd2.args
-    }
 
     #[test]
     fn split_patchset_returns_error_on_missing_path() {
@@ -212,6 +234,22 @@ mod tests {
     }
 
     #[test]
+    fn split_patchset_returns_error_on_invalid_utf8() {
+        let path =
+            env::temp_dir().join(format!("patch-hub-mbox-invalid-utf8-{}.mbx", process::id()));
+        fs::write(&path, b"Subject: not utf-8\n\xff\n").expect("write invalid mbox");
+        let path_str = path.to_str().expect("temp path is utf-8");
+        let err = parser()
+            .split_patchset(path_str)
+            .expect_err("invalid UTF-8 must return an error");
+        let _ = fs::remove_file(&path);
+        assert!(
+            err.starts_with(&format!("{path_str}: ")),
+            "expected \"{{path}}: {{err}}\", got {err}"
+        );
+    }
+
+    #[test]
     fn split_patchset_without_cover_letter() {
         let patches = parser()
             .split_patchset(
@@ -222,17 +260,17 @@ mod tests {
         assert_eq!(3, patches.len(), "Wrong number of patches");
         assert_eq!(
             fs::read_to_string("test_samples/lore_session/split_patchset/expected_patch_1.mbx")
-                .unwrap(),
+                .expect("file reads"),
             patches[0]
         );
         assert_eq!(
             fs::read_to_string("test_samples/lore_session/split_patchset/expected_patch_2.mbx")
-                .unwrap(),
+                .expect("file reads"),
             patches[1]
         );
         assert_eq!(
             fs::read_to_string("test_samples/lore_session/split_patchset/expected_patch_3.mbx")
-                .unwrap(),
+                .expect("file reads"),
             patches[2]
         );
     }
@@ -248,23 +286,23 @@ mod tests {
             fs::read_to_string(
                 "test_samples/lore_session/split_patchset/expected_cover_letter.cover"
             )
-            .unwrap(),
+            .expect("file reads"),
             patches[0],
             "Wrong cover letter"
         );
         assert_eq!(
             fs::read_to_string("test_samples/lore_session/split_patchset/expected_patch_1.mbx")
-                .unwrap(),
+                .expect("file reads"),
             patches[1]
         );
         assert_eq!(
             fs::read_to_string("test_samples/lore_session/split_patchset/expected_patch_2.mbx")
-                .unwrap(),
+                .expect("file reads"),
             patches[2]
         );
         assert_eq!(
             fs::read_to_string("test_samples/lore_session/split_patchset/expected_patch_3.mbx")
-                .unwrap(),
+                .expect("file reads"),
             patches[3]
         );
     }
@@ -272,7 +310,7 @@ mod tests {
     #[test]
     fn split_cover_finds_separator() {
         let raw = "Subject: test\nTo: list\n\nBody text.\n---\ndiff --git a/foo b/foo";
-        let (cover, diff) = split_cover(raw);
+        let (cover, diff) = PatchsetTextService::split_cover(raw);
         assert!(cover.contains("Body text."));
         assert!(diff.contains("diff --git"));
     }
@@ -280,7 +318,7 @@ mod tests {
     #[test]
     fn split_cover_returns_full_patch_when_no_separator() {
         let raw = "Subject: no diff here\nBody only.";
-        let (cover, diff) = split_cover(raw);
+        let (cover, diff) = PatchsetTextService::split_cover(raw);
         assert_eq!(raw, cover);
         assert!(diff.is_empty());
     }
@@ -290,13 +328,16 @@ mod tests {
         let patch_sample = fs::read_to_string(
             "test_samples/lore_session/generate_patch_reply_template/patch_sample.mbx",
         )
-        .unwrap();
+        .expect("file reads");
         let expected = fs::read_to_string(
             "test_samples/lore_session/generate_patch_reply_template/expected_reply_template.mbx",
         )
-        .unwrap();
+        .expect("file reads");
 
-        assert_eq!(expected, generate_reply_template(&patch_sample));
+        assert_eq!(
+            expected,
+            PatchsetTextService::generate_reply_template(&patch_sample)
+        );
     }
 
     #[test]
@@ -304,7 +345,7 @@ mod tests {
         let patch_html = fs::read_to_string(
             "test_samples/lore_session/extract_git_reply_command/patch_lore_sample.html",
         )
-        .unwrap();
+        .expect("file reads");
         let reply_path = "/tmp/some-reply.mbx";
         let expected = ShellCommand {
             program: "git".to_string(),
@@ -321,8 +362,11 @@ mod tests {
             ],
         };
 
-        let result =
-            extract_git_reply_command(&patch_html, "--dry-run --suppress-cc=all", reply_path);
+        let result = PatchsetTextService::extract_git_reply_command(
+            &patch_html,
+            "--dry-run --suppress-cc=all",
+            reply_path,
+        );
 
         assert!(
             commands_eq(&expected, &result),

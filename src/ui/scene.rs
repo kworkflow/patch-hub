@@ -1,15 +1,11 @@
-//! Scene types produced by [`super::core::UiCore`] and consumed by
-//! [`super::painter`].
+//! Scene types produced by `UiCore` and consumed by the painter.
 //!
-//! A `UiScene` is a fully projected, paint-ready snapshot of application
-//! state. Nothing inside this module reads from `App`, `AppState`, or any
-//! actor handle — it is pure presentation data.
+//! A `UiScene` is a fully projected, paint-ready snapshot. Nothing here
+//! reads `App`, `AppState`, or an actor handle.
 
 use ratatui::text::{Span, Text};
 
-// Shared presentation-row types live in the app view-model layer. Re-export
-// them here so callers within `ui/` only import from `scene`.
-pub use crate::app::view_model::{
+use crate::app::models::view_model::{
     ConfigEntryRow, MailingListEntry, PatchSummaryRow, TagTrailerCounts,
 };
 

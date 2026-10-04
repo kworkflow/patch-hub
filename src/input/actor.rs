@@ -1,15 +1,8 @@
-//! Input mediation actor: polls the terminal and maps raw events to semantic
-//! [`InputEvent`](crate::input::event::InputEvent) values for the application.
+//! Input actor: polls the terminal and maps events to `InputEvent`.
 //!
-//! A dedicated pump subtask calls
-//! [`TerminalHandle::poll_event`](crate::terminal::handle::TerminalHandle::poll_event)
-//! so an in-flight poll is never abandoned when a control message wins the
-//! select race. Mapped events are delivered to the subscriber channel
-//! registered via
-//! [`InputHandle::subscribe_app`](crate::input::handle::InputHandle::subscribe_app);
-//! context updates from
-//! [`InputHandle::update_context`](crate::input::handle::InputHandle::update_context)
-//! change key bindings without restarting the pump.
+//! A pump task calls `TerminalHandle::poll_event` so an in-flight poll is
+//! not dropped when a control message wins the select. Events go to the
+//! `subscribe_app` channel; `update_context` changes bindings without a restart.
 use std::time::Duration;
 
 use tokio::{select, spawn, sync::mpsc};
@@ -128,7 +121,9 @@ impl InputActor {
 
         tracing::info!("input actor stopped");
     }
+}
 
+impl InputActor {
     async fn deliver(&mut self, event: InputEvent) {
         let Some(tx) = &self.subscriber else {
             return;
@@ -142,35 +137,51 @@ impl InputActor {
 
 #[cfg(test)]
 mod tests {
+
+    mod helpers {
+
+        use super::super::*;
+        use crate::{
+            app::screens::CurrentScreen,
+            input::context::InputContext,
+            terminal::{actor::TerminalActor, session::MockTerminalSessionApi},
+        };
+
+        pub(super) fn mailing_list_context() -> InputContext {
+            InputContext {
+                current_screen: CurrentScreen::MailingListSelection,
+                ..Default::default()
+            }
+        }
+
+        pub(super) fn details_context() -> InputContext {
+            InputContext {
+                current_screen: CurrentScreen::PatchsetDetails,
+                ..Default::default()
+            }
+        }
+
+        pub(super) fn spawn_test_actor(
+            session: MockTerminalSessionApi,
+            context: InputContext,
+        ) -> (InputHandle, TerminalHandle) {
+            let terminal_handle = TerminalActor::spawn(Box::new(session));
+            let input_handle = InputActor::spawn(terminal_handle.clone(), context);
+            (input_handle, terminal_handle)
+        }
+    }
+    use helpers::*;
     use ratatui::crossterm::event::KeyCode;
 
     use crate::{
-        app::screens::CurrentScreen,
         input::{
             context::InputContext,
             event::{InputEvent, KeyInput, TerminalEvent},
         },
-        terminal::{actor::TerminalActor, session::MockTerminalSessionApi, TerminalError},
+        terminal::{session::MockTerminalSessionApi, TerminalError},
     };
 
     use super::*;
-
-    fn mailing_list_context() -> InputContext {
-        InputContext::new(CurrentScreen::MailingListSelection)
-    }
-
-    fn details_context() -> InputContext {
-        InputContext::new(CurrentScreen::PatchsetDetails)
-    }
-
-    fn spawn_test_actor(
-        session: MockTerminalSessionApi,
-        context: InputContext,
-    ) -> (InputHandle, TerminalHandle) {
-        let terminal_handle = TerminalActor::spawn(Box::new(session));
-        let input_handle = InputActor::spawn(terminal_handle.clone(), context);
-        (input_handle, terminal_handle)
-    }
 
     #[tokio::test]
     async fn key_event_in_mailing_list_context_delivers_navigate_down() {
@@ -178,14 +189,27 @@ mod tests {
         // First poll returns the key; subsequent polls time-out (return None).
         session
             .expect_poll_event()
+            .withf(|timeout| *timeout == std::time::Duration::from_millis(50))
             .times(1)
-            .returning(|_| Ok(Some(TerminalEvent::Key(KeyInput::press(KeyCode::Down)))));
-        session.expect_poll_event().returning(|_| Ok(None));
+            .returning(|_| {
+                Ok(Some(TerminalEvent::Key(KeyInput {
+                    code: KeyCode::Down,
+                    ..Default::default()
+                })))
+            });
+        session
+            .expect_poll_event()
+            .withf(|timeout| *timeout == std::time::Duration::from_millis(50))
+            .times(1..)
+            .returning(|_| Ok(None));
 
         let (input_handle, _terminal_handle) = spawn_test_actor(session, mailing_list_context());
         let (sub_tx, mut sub_rx) = mpsc::channel::<InputEvent>(8);
 
-        input_handle.subscribe_app(sub_tx).await.unwrap();
+        input_handle
+            .subscribe_app(sub_tx)
+            .await
+            .expect("app subscribes");
 
         let received = sub_rx.recv().await;
         assert_eq!(received, Some(InputEvent::NavigateDown));
@@ -197,23 +221,40 @@ mod tests {
         // First call returns None so the actor can process the context update
         // before the key arrives.  Second call returns the Esc key.
         // Remaining calls time-out.
-        session.expect_poll_event().times(1).returning(|_| Ok(None));
         session
             .expect_poll_event()
+            .withf(|timeout| *timeout == std::time::Duration::from_millis(50))
             .times(1)
-            .returning(|_| Ok(Some(TerminalEvent::Key(KeyInput::press(KeyCode::Esc)))));
-        session.expect_poll_event().returning(|_| Ok(None));
+            .returning(|_| Ok(None));
+        session
+            .expect_poll_event()
+            .withf(|timeout| *timeout == std::time::Duration::from_millis(50))
+            .times(1)
+            .returning(|_| {
+                Ok(Some(TerminalEvent::Key(KeyInput {
+                    code: KeyCode::Esc,
+                    ..Default::default()
+                })))
+            });
+        session
+            .expect_poll_event()
+            .withf(|timeout| *timeout == std::time::Duration::from_millis(50))
+            .times(1..)
+            .returning(|_| Ok(None));
 
         let (input_handle, _terminal_handle) = spawn_test_actor(session, mailing_list_context());
         let (sub_tx, mut sub_rx) = mpsc::channel::<InputEvent>(8);
 
-        input_handle.subscribe_app(sub_tx).await.unwrap();
+        input_handle
+            .subscribe_app(sub_tx)
+            .await
+            .expect("app subscribes");
         // In MailingListSelection, Esc maps to Quit. Switch to PatchsetDetails
         // so Esc maps to Back instead.
         input_handle
             .update_context(details_context())
             .await
-            .unwrap();
+            .expect("context updates");
 
         let received = sub_rx.recv().await;
         assert_eq!(received, Some(InputEvent::Back));
@@ -225,19 +266,38 @@ mod tests {
         // F6 has no mapping in any screen — it should be silently dropped.
         session
             .expect_poll_event()
+            .withf(|timeout| *timeout == std::time::Duration::from_millis(50))
             .times(1)
-            .returning(|_| Ok(Some(TerminalEvent::Key(KeyInput::press(KeyCode::F(6))))));
+            .returning(|_| {
+                Ok(Some(TerminalEvent::Key(KeyInput {
+                    code: KeyCode::F(6),
+                    ..Default::default()
+                })))
+            });
         // Second event — Down — is delivered so we can wait for it to confirm
         // the actor kept running after discarding the unmapped event.
         session
             .expect_poll_event()
+            .withf(|timeout| *timeout == std::time::Duration::from_millis(50))
             .times(1)
-            .returning(|_| Ok(Some(TerminalEvent::Key(KeyInput::press(KeyCode::Down)))));
-        session.expect_poll_event().returning(|_| Ok(None));
+            .returning(|_| {
+                Ok(Some(TerminalEvent::Key(KeyInput {
+                    code: KeyCode::Down,
+                    ..Default::default()
+                })))
+            });
+        session
+            .expect_poll_event()
+            .withf(|timeout| *timeout == std::time::Duration::from_millis(50))
+            .times(1..)
+            .returning(|_| Ok(None));
 
         let (input_handle, _terminal_handle) = spawn_test_actor(session, mailing_list_context());
         let (sub_tx, mut sub_rx) = mpsc::channel::<InputEvent>(8);
-        input_handle.subscribe_app(sub_tx).await.unwrap();
+        input_handle
+            .subscribe_app(sub_tx)
+            .await
+            .expect("app subscribes");
 
         // Only NavigateDown arrives; the F6 event is silently discarded.
         let received = sub_rx.recv().await;
@@ -247,13 +307,20 @@ mod tests {
     #[tokio::test]
     async fn shutdown_closes_subscriber_channel() {
         let mut session = MockTerminalSessionApi::new();
-        session.expect_poll_event().returning(|_| Ok(None));
+        session
+            .expect_poll_event()
+            .withf(|timeout| *timeout == std::time::Duration::from_millis(50))
+            .times(1..)
+            .returning(|_| Ok(None));
 
         let (input_handle, _terminal_handle) = spawn_test_actor(session, mailing_list_context());
         let (sub_tx, mut sub_rx) = mpsc::channel::<InputEvent>(8);
 
-        input_handle.subscribe_app(sub_tx).await.unwrap();
-        input_handle.shutdown().await.unwrap();
+        input_handle
+            .subscribe_app(sub_tx)
+            .await
+            .expect("app subscribes");
+        input_handle.shutdown().await.expect("actor shuts down");
 
         // When the actor stops it drops the subscriber Sender, closing the
         // channel. recv() returns None once all senders are gone.
@@ -266,15 +333,22 @@ mod tests {
     async fn terminal_poll_error_stops_input_actor_and_closes_subscriber() {
         let mut session = MockTerminalSessionApi::new();
         // First poll returns an error; the pump detects it and stops.
-        session.expect_poll_event().times(1).returning(|_| {
-            Err(TerminalError::Session(
-                "simulated terminal failure".to_string(),
-            ))
-        });
+        session
+            .expect_poll_event()
+            .withf(|timeout| *timeout == std::time::Duration::from_millis(50))
+            .times(1)
+            .returning(|_| {
+                Err(TerminalError::Session(
+                    "simulated terminal failure".to_string(),
+                ))
+            });
 
         let (input_handle, _terminal_handle) = spawn_test_actor(session, mailing_list_context());
         let (sub_tx, mut sub_rx) = mpsc::channel::<InputEvent>(8);
-        input_handle.subscribe_app(sub_tx).await.unwrap();
+        input_handle
+            .subscribe_app(sub_tx)
+            .await
+            .expect("app subscribes");
 
         // When the pump stops due to the error, it drops event_tx.
         // InputActor sees event_rx close and stops, dropping the subscriber sender.
@@ -287,14 +361,30 @@ mod tests {
         let mut session = MockTerminalSessionApi::new();
         session
             .expect_poll_event()
+            .withf(|timeout| *timeout == std::time::Duration::from_millis(50))
             .times(1)
-            .returning(|_| Ok(Some(TerminalEvent::Key(KeyInput::press(KeyCode::Esc)))));
-        session.expect_poll_event().returning(|_| Ok(None));
+            .returning(|_| {
+                Ok(Some(TerminalEvent::Key(KeyInput {
+                    code: KeyCode::Esc,
+                    ..Default::default()
+                })))
+            });
+        session
+            .expect_poll_event()
+            .withf(|timeout| *timeout == std::time::Duration::from_millis(50))
+            .times(1..)
+            .returning(|_| Ok(None));
 
-        let context = details_context().with_popup_open(true);
+        let context = InputContext {
+            popup_open: true,
+            ..details_context()
+        };
         let (input_handle, _terminal_handle) = spawn_test_actor(session, context);
         let (sub_tx, mut sub_rx) = mpsc::channel::<InputEvent>(8);
-        input_handle.subscribe_app(sub_tx).await.unwrap();
+        input_handle
+            .subscribe_app(sub_tx)
+            .await
+            .expect("app subscribes");
 
         let received = sub_rx.recv().await;
         assert_eq!(received, Some(InputEvent::ClosePopup));

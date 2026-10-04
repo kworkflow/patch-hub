@@ -1,7 +1,7 @@
 use color_eyre::{eyre::bail, Result};
 
 use crate::lore::{
-    application::{cache::CacheMode, errors::LoreError, handle::LoreApiHandle},
+    application::{errors::LoreError, handle::LoreApiHandle, models::cache::CacheMode},
     domain::patch::Patch,
 };
 
@@ -110,74 +110,79 @@ impl LatestPatchsetsState {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::sync::Arc;
 
-    use crate::{
-        infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
-        lore::{
-            application::{actor::LoreApiActor, cache::CacheTtl, service::LoreService},
-            infrastructure::{
-                http_lore_client::{
-                    LoreHttpError, MockFeedGateway, MockListsGateway, MockPatchHtmlGateway,
+    mod helpers {
+        use super::super::*;
+        use crate::{
+            infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
+            lore::{
+                application::{actor::LoreApiActor, models::cache::CacheTtl, service::LoreService},
+                infrastructure::{
+                    http_lore_client::{MockFeedGateway, MockListsGateway, MockPatchHtmlGateway},
+                    patchset_fetcher::MockPatchsetFetcher,
+                    patchset_parser::MockPatchsetParser,
+                    persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
                 },
-                patchset_fetcher::MockPatchsetFetcher,
-                patchset_parser::MockPatchsetParser,
-                persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
             },
-        },
-    };
+        };
+        use std::sync::Arc;
 
-    fn make_patch(msg_id: &str) -> Patch {
-        serde_json::from_value(serde_json::json!({
-            "title": "test patch",
-            "author": { "name": "Test", "email": "test@test.com" },
-            "link": { "@href": msg_id },
-            "updated": "2023-01-01"
-        }))
-        .unwrap()
-    }
+        pub(super) fn make_patch(msg_id: &str) -> Patch {
+            serde_json::from_value(serde_json::json!({
+                "title": "test patch",
+                "author": { "name": "Test", "email": "test@test.com" },
+                "link": { "@href": msg_id },
+                "updated": "2023-01-01"
+            }))
+            .expect("json parses")
+        }
 
-    fn make_handle(feed_gateway: MockFeedGateway) -> LoreApiHandle {
-        let service = LoreService::new(
-            Arc::new(MockListsGateway::new()),
-            Arc::new(feed_gateway),
-            Arc::new(MockPatchHtmlGateway::new()),
-            Arc::new(MockMailingListsCacheStore::new()),
-            Arc::new(MockUserLoreStateStore::new()),
-            Arc::new(MockPatchsetFetcher::new()),
-            Arc::new(MockPatchsetParser::new()),
-            Arc::new(MockFileSystemTrait::new()),
-            Arc::new(MockShellTrait::new()),
-            CacheTtl::default(),
-        );
-        LoreApiActor::spawn(service)
-    }
+        pub(super) fn make_handle(feed_gateway: MockFeedGateway) -> LoreApiHandle {
+            let service = LoreService::new(
+                Arc::new(MockListsGateway::new()),
+                Arc::new(feed_gateway),
+                Arc::new(MockPatchHtmlGateway::new()),
+                Arc::new(MockMailingListsCacheStore::new()),
+                Arc::new(MockUserLoreStateStore::new()),
+                Arc::new(MockPatchsetFetcher::new()),
+                Arc::new(MockPatchsetParser::new()),
+                Arc::new(MockFileSystemTrait::new()),
+                Arc::new(MockShellTrait::new()),
+                CacheTtl::default(),
+            );
+            LoreApiActor::spawn(service)
+        }
 
-    fn patch_feed_response() -> String {
-        r#"<?xml version="1.0" encoding="UTF-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
-  <entry>
+        pub(super) fn patch_feed_response() -> String {
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+    <feed xmlns="http://www.w3.org/2005/Atom">
+      <entry>
     <title>test patch</title>
     <author><name>Test</name><email>test@test.com</email></author>
     <link href="id-1"/>
     <updated>2023-01-01</updated>
-  </entry>
-  <entry>
+      </entry>
+      <entry>
     <title>test patch 2</title>
     <author><name>Test</name><email>test@test.com</email></author>
     <link href="id-2"/>
     <updated>2023-01-01</updated>
-  </entry>
-</feed>"#
-            .to_string()
+      </entry>
+    </feed>"#
+                .to_string()
+        }
     }
+    use super::*;
+    use helpers::*;
+
+    use crate::lore::infrastructure::http_lore_client::{LoreHttpError, MockFeedGateway};
 
     #[tokio::test]
     async fn test_fetch_current_page_success() {
         let mut feed_gateway = MockFeedGateway::new();
         feed_gateway
             .expect_fetch_patch_feed_page()
+            .withf(|list, offset| list == "some-list" && *offset == 0)
             .times(1)
             .returning(|_, _| Ok(patch_feed_response()));
 
@@ -194,6 +199,7 @@ mod tests {
         let mut feed_gateway = MockFeedGateway::new();
         feed_gateway
             .expect_fetch_patch_feed_page()
+            .withf(|list, offset| list == "some-list" && *offset == 0)
             .times(1)
             .returning(|_, _| Err(LoreHttpError::EndOfFeed));
 
@@ -212,6 +218,7 @@ mod tests {
         let mut feed_gateway = MockFeedGateway::new();
         feed_gateway
             .expect_fetch_patch_feed_page()
+            .withf(|list, offset| list == "some-list" && *offset == 0)
             .times(1)
             .returning(|_, _| {
                 Err(LoreHttpError::Net(NetError::HttpStatus {

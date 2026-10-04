@@ -59,7 +59,9 @@ impl FileLorePersistence {
             reviewed_path,
         }
     }
+}
 
+impl FileLorePersistence {
     fn read_json<T: DeserializeOwned>(&self, path: &str) -> Result<T, FileSystemError> {
         let reader = self.fs.open_bufreader(Path::new(path))?;
         from_reader(reader)
@@ -101,34 +103,51 @@ impl UserLoreStateStore for FileLorePersistence {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
-    use std::env;
-    use std::fs;
-    use std::sync::Arc;
 
-    use crate::infrastructure::file_system::OsFileSystem;
+    mod helpers {
+
+        use std::{env, fs, path::PathBuf, process, sync::Arc};
+
+        use super::super::*;
+        use crate::infrastructure::file_system::OsFileSystem;
+
+        pub(super) fn tmp_dir(test_name: &str) -> PathBuf {
+            let dir = env::temp_dir().join(format!(
+                "patch-hub-persistence-{}-{}",
+                test_name,
+                process::id()
+            ));
+            fs::create_dir_all(&dir).expect("dir creates");
+            dir
+        }
+
+        pub(super) fn make_persistence(dir: &Path) -> FileLorePersistence {
+            FileLorePersistence::new(
+                Arc::new(OsFileSystem),
+                dir.join("lists.json")
+                    .to_str()
+                    .expect("path is utf-8")
+                    .to_string(),
+                dir.join("bookmarked.json")
+                    .to_str()
+                    .expect("path is utf-8")
+                    .to_string(),
+                dir.join("reviewed.json")
+                    .to_str()
+                    .expect("path is utf-8")
+                    .to_string(),
+            )
+        }
+    }
+    use helpers::*;
+    use std::{
+        collections::{HashMap, HashSet},
+        fs,
+    };
+
     use crate::lore::domain::mailing_list::MailingList;
 
     use super::*;
-
-    fn tmp_dir(test_name: &str) -> std::path::PathBuf {
-        let dir = env::temp_dir().join(format!(
-            "patch-hub-persistence-{}-{}",
-            test_name,
-            std::process::id()
-        ));
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
-    fn make_persistence(dir: &std::path::Path) -> FileLorePersistence {
-        FileLorePersistence::new(
-            Arc::new(OsFileSystem),
-            dir.join("lists.json").to_str().unwrap().to_string(),
-            dir.join("bookmarked.json").to_str().unwrap().to_string(),
-            dir.join("reviewed.json").to_str().unwrap().to_string(),
-        )
-    }
 
     #[test]
     fn available_lists_round_trip() {
@@ -141,14 +160,15 @@ mod tests {
         ];
 
         // MailingListsCacheStore
-        p.save_available_lists(&lists).unwrap();
-        let loaded = p.load_available_lists().unwrap();
+        p.save_available_lists(&lists)
+            .expect("available lists saves");
+        let loaded = p.load_available_lists().expect("available lists loads");
 
         assert_eq!(2, loaded.len());
         assert_eq!("linux-mm", loaded[0].name());
         assert_eq!("linux-kernel", loaded[1].name());
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
@@ -161,14 +181,17 @@ mod tests {
         reviewed.entry("some-id".to_string()).or_default().insert(2);
 
         // UserLoreStateStore
-        p.save_reviewed_patchsets(&reviewed).unwrap();
-        let loaded = p.load_reviewed_patchsets().unwrap();
+        p.save_reviewed_patchsets(&reviewed)
+            .expect("reviewed patchsets saves");
+        let loaded = p
+            .load_reviewed_patchsets()
+            .expect("reviewed patchsets loads");
 
         assert!(loaded.contains_key("some-id"));
         assert!(loaded["some-id"].contains(&1));
         assert!(loaded["some-id"].contains(&2));
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
@@ -181,6 +204,6 @@ mod tests {
         assert!(p.load_bookmarked_patchsets().is_err());
         assert!(p.load_reviewed_patchsets().is_err());
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 }

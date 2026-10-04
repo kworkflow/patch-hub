@@ -2,84 +2,85 @@ use color_eyre::Result;
 use tracing::debug;
 
 use crate::{
-    app::{popup::AppPopup, screens::CurrentScreen, App},
+    app::{models::popup::AppPopup, screens::CurrentScreen, App},
     input::event::InputEvent,
 };
 
-pub async fn handle_edit_config(app: &mut App, input: InputEvent) -> Result<()> {
-    let Some(is_editing) = app
-        .state
-        .config_state
-        .edit_config
-        .as_ref()
-        .map(|edit_config_state| edit_config_state.is_editing())
-    else {
-        return Ok(());
-    };
+impl App {
+    pub async fn handle_edit_config(&mut self, input: InputEvent) -> Result<()> {
+        let Some(is_editing) = self
+            .state
+            .config_state
+            .edit_config
+            .as_ref()
+            .map(|edit_config_state| edit_config_state.is_editing())
+        else {
+            return Ok(());
+        };
 
-    match is_editing {
-        true => {
-            if let Some(edit_config_state) = app.state.config_state.edit_config.as_mut() {
-                match input {
-                    InputEvent::CancelConfigEdit => {
-                        edit_config_state.clear_edit();
-                        edit_config_state.toggle_editing();
+        match is_editing {
+            true => {
+                if let Some(edit_config_state) = self.state.config_state.edit_config.as_mut() {
+                    match input {
+                        InputEvent::CancelConfigEdit => {
+                            edit_config_state.clear_edit();
+                            edit_config_state.toggle_editing();
+                        }
+                        InputEvent::Backspace => {
+                            edit_config_state.backspace_edit();
+                        }
+                        InputEvent::TextInput(ch) => {
+                            edit_config_state.append_edit(ch);
+                        }
+                        InputEvent::StageConfigEdit => {
+                            edit_config_state.stage_edit();
+                            edit_config_state.clear_edit();
+                            edit_config_state.toggle_editing();
+                        }
+                        InputEvent::NavigateLeft => {
+                            edit_config_state.cycle_edit(false);
+                        }
+                        InputEvent::NavigateRight => {
+                            edit_config_state.cycle_edit(true);
+                        }
+                        _ => {}
                     }
-                    InputEvent::Backspace => {
-                        edit_config_state.backspace_edit();
-                    }
-                    InputEvent::TextInput(ch) => {
-                        edit_config_state.append_edit(ch);
-                    }
-                    InputEvent::StageConfigEdit => {
-                        edit_config_state.stage_edit();
-                        edit_config_state.clear_edit();
-                        edit_config_state.toggle_editing();
-                    }
-                    InputEvent::NavigateLeft => {
-                        edit_config_state.cycle_edit(false);
-                    }
-                    InputEvent::NavigateRight => {
-                        edit_config_state.cycle_edit(true);
-                    }
-                    _ => {}
                 }
             }
+            false => match input {
+                InputEvent::OpenHelp => {
+                    let popup = Self::build_edit_config_help_popup();
+                    self.state.popup = Some(popup);
+                }
+                InputEvent::SaveConfig => {
+                    debug!("saving edited configuration");
+                    self.consolidate_edit_config().await?;
+                    self.reset_edit_config();
+                    self.set_current_screen(CurrentScreen::MailingListSelection);
+                }
+                InputEvent::EditConfigField => {
+                    if let Some(edit_config_state) = self.state.config_state.edit_config.as_mut() {
+                        edit_config_state.toggle_editing();
+                    }
+                }
+                InputEvent::NavigateDown => {
+                    if let Some(edit_config_state) = self.state.config_state.edit_config.as_mut() {
+                        edit_config_state.highlight_next();
+                    }
+                }
+                InputEvent::NavigateUp => {
+                    if let Some(edit_config_state) = self.state.config_state.edit_config.as_mut() {
+                        edit_config_state.highlight_prev();
+                    }
+                }
+                _ => {}
+            },
         }
-        false => match input {
-            InputEvent::OpenHelp => {
-                let popup = generate_help_popup();
-                app.state.popup = Some(popup);
-            }
-            InputEvent::SaveConfig => {
-                debug!("saving edited configuration");
-                app.consolidate_edit_config().await?;
-                app.reset_edit_config();
-                app.set_current_screen(CurrentScreen::MailingListSelection);
-            }
-            InputEvent::EditConfigField => {
-                if let Some(edit_config_state) = app.state.config_state.edit_config.as_mut() {
-                    edit_config_state.toggle_editing();
-                }
-            }
-            InputEvent::NavigateDown => {
-                if let Some(edit_config_state) = app.state.config_state.edit_config.as_mut() {
-                    edit_config_state.highlight_next();
-                }
-            }
-            InputEvent::NavigateUp => {
-                if let Some(edit_config_state) = app.state.config_state.edit_config.as_mut() {
-                    edit_config_state.highlight_prev();
-                }
-            }
-            _ => {}
-        },
+        Ok(())
     }
-    Ok(())
-}
 
-pub fn generate_help_popup() -> AppPopup {
-    AppPopup::help()
+    pub fn build_edit_config_help_popup() -> AppPopup {
+        AppPopup::help()
         .title("Edit Config")
         .description("This screen allows you to edit the configuration options for patch-hub.\nKernel trees are added by editing the config file; this screen selects among existing keys.")
         .keybind("ESC / q", "Save and exit")
@@ -89,140 +90,157 @@ pub fn generate_help_popup() -> AppPopup {
         .keybind("k/🡅", "Up")
         .keybind("←/→", "Cycle the target kernel tree while editing that row")
         .build()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::HashMap,
-        env::VarError,
-        fs,
-        path::PathBuf,
-        sync::{
-            atomic::{AtomicU64, Ordering},
-            Arc,
-        },
-    };
 
-    use tokio::sync::mpsc;
+    mod helpers {
+        use crate::{
+            app::{
+                screens::{
+                    bookmarked::BookmarkedPatchsetsState, mail_list::MailingListSelectionState,
+                    CurrentScreen,
+                },
+                state::{AppState, ConfigUiState, LoreUiState, NavigationState, UserLoreState},
+                App, AppServices,
+            },
+            config::{ConfigActor, ConfigHandle, ConfigService, ConfigSnapshot},
+            infrastructure::{
+                env::MockEnvTrait, file_system::MockFileSystemTrait, file_system::OsFileSystem,
+                shell::MockShellTrait,
+            },
+            kw::history::MockKwHistoryStore,
+            lore::{application::handle::LoreApiHandle, domain::mailing_list::MailingList},
+            render::handle::RenderHandle,
+        };
+        use std::{
+            collections::HashMap,
+            env::{self, VarError},
+            fs,
+            path::PathBuf,
+            process,
+            sync::{
+                atomic::{AtomicU64, Ordering},
+                Arc,
+            },
+        };
+        use tokio::sync::mpsc;
+
+        pub(super) static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
+
+        pub(super) fn unique_test_dir(prefix: &str) -> PathBuf {
+            let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
+            let p = env::temp_dir().join(format!(
+                "patch-hub-edit-config-{prefix}-{}-{n}",
+                process::id()
+            ));
+            fs::create_dir_all(&p).expect("dir creates");
+            p
+        }
+
+        pub(super) fn default_env() -> (MockEnvTrait, PathBuf) {
+            let home = unique_test_dir("home");
+            let home_s = home.to_string_lossy().into_owned();
+            let mut mock = MockEnvTrait::new();
+            mock.expect_var()
+                .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+                .times(1)
+                .returning(|_| Err(VarError::NotPresent.into()));
+            mock.expect_var()
+                .withf(move |key| key == "HOME")
+                .times(2)
+                .returning(move |_| Ok(home_s.clone()));
+            mock.expect_var()
+                .withf(|key| {
+                    matches!(
+                        key,
+                        "PATCH_HUB_PAGE_SIZE"
+                            | "PATCH_HUB_CACHE_DIR"
+                            | "PATCH_HUB_DATA_DIR"
+                            | "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS"
+                            | "PATCH_HUB_PATCH_RENDERER"
+                    )
+                })
+                .times(5)
+                .returning(|_| Err(VarError::NotPresent.into()));
+            (mock, home)
+        }
+
+        pub(super) fn app_with_kernel_trees(
+            keys: &[&str],
+            target: Option<&str>,
+        ) -> (App, ConfigHandle, PathBuf) {
+            let (env, home) = default_env();
+            let (mut state, repo) =
+                ConfigService::bootstrap_parts(&env, OsFileSystem).expect("config bootstraps");
+            for key in keys {
+                state.kernel_trees.insert(
+                    (*key).to_string(),
+                    serde_json::from_value(serde_json::json!({
+                        "path": format!("/{key}"),
+                        "branch": "master"
+                    }))
+                    .expect("json parses"),
+                );
+            }
+            state.target_kernel_tree = target.map(str::to_string);
+            let snapshot = ConfigSnapshot::from(&state);
+            let config = ConfigActor::spawn(state, repo);
+
+            let dummy_list = MailingList::new("test-list", "Test list");
+            let (lore_tx, _lore_rx) = mpsc::channel(1);
+            let (render_tx, _render_rx) = mpsc::channel(1);
+            let app = App {
+                state: AppState {
+                    navigation: NavigationState {
+                        current_screen: CurrentScreen::EditConfig,
+                    },
+                    lore: LoreUiState {
+                        mailing_list_selection: MailingListSelectionState {
+                            mailing_lists: vec![dummy_list.clone()],
+                            target_list: String::new(),
+                            possible_mailing_lists: vec![dummy_list],
+                            highlighted_list_index: 0,
+                        },
+                        latest_patchsets: None,
+                        details: None,
+                    },
+                    user_state: UserLoreState {
+                        bookmarked_patchsets: BookmarkedPatchsetsState {
+                            bookmarked_patchsets: vec![],
+                            patchset_index: 0,
+                        },
+                        reviewed_patchsets: HashMap::new(),
+                    },
+                    config_state: ConfigUiState { edit_config: None },
+                    config: snapshot,
+                    popup: None,
+                    kw: Default::default(),
+                },
+                services: AppServices {
+                    lore_api: LoreApiHandle::new(lore_tx),
+                    render: RenderHandle::new(render_tx),
+                    shell: Box::new(MockShellTrait::new()),
+                    fs: Arc::new(MockFileSystemTrait::new()),
+                    config: config.clone(),
+                    kw_history: Arc::new(MockKwHistoryStore::new()),
+                    kw: None,
+                },
+            };
+            (app, config, home)
+        }
+    }
+    use helpers::*;
+    use std::fs;
 
     use crate::{
-        app::{
-            screens::{
-                bookmarked::BookmarkedPatchsetsState, mail_list::MailingListSelectionState,
-                CurrentScreen,
-            },
-            state::{AppState, ConfigUiState, LoreUiState, NavigationState, UserLoreState},
-            App, AppServices,
-        },
-        config::{bootstrap_parts, ConfigActor, ConfigHandle, DEFAULT_CONFIG_PATH_SUFFIX},
-        infrastructure::{
-            env::MockEnvTrait, file_system::MockFileSystemTrait, file_system::OsFileSystem,
-            shell::MockShellTrait,
-        },
-        kw::history::MockKwHistoryStore,
-        lore::{application::handle::LoreApiHandle, domain::mailing_list::MailingList},
-        render::handle::RenderHandle,
+        app::{screens::CurrentScreen, App},
+        config::DEFAULT_CONFIG_PATH_SUFFIX,
     };
 
     use super::*;
-
-    static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
-
-    fn unique_test_dir(prefix: &str) -> PathBuf {
-        let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
-        let p = std::env::temp_dir().join(format!(
-            "patch-hub-edit-config-{prefix}-{}-{n}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&p).unwrap();
-        p
-    }
-
-    fn default_env() -> (MockEnvTrait, PathBuf) {
-        let home = unique_test_dir("home");
-        let home_s = home.to_string_lossy().into_owned();
-        let mut mock = MockEnvTrait::new();
-        mock.expect_var()
-            .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
-            .returning(|_| Err(VarError::NotPresent.into()));
-        mock.expect_var()
-            .withf(move |key| key == "HOME")
-            .returning(move |_| Ok(home_s.clone()));
-        mock.expect_var()
-            .withf(|key| {
-                matches!(
-                    key,
-                    "PATCH_HUB_PAGE_SIZE"
-                        | "PATCH_HUB_CACHE_DIR"
-                        | "PATCH_HUB_DATA_DIR"
-                        | "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS"
-                        | "PATCH_HUB_PATCH_RENDERER"
-                )
-            })
-            .returning(|_| Err(VarError::NotPresent.into()));
-        (mock, home)
-    }
-
-    fn app_with_kernel_trees(keys: &[&str], target: Option<&str>) -> (App, ConfigHandle, PathBuf) {
-        let (env, home) = default_env();
-        let (mut state, repo) = bootstrap_parts(&env, OsFileSystem).unwrap();
-        for key in keys {
-            state.kernel_trees.insert(
-                (*key).to_string(),
-                serde_json::from_value(serde_json::json!({
-                    "path": format!("/{key}"),
-                    "branch": "master"
-                }))
-                .unwrap(),
-            );
-        }
-        state.target_kernel_tree = target.map(str::to_string);
-        let snapshot = state.to_snapshot();
-        let config = ConfigActor::spawn(state, repo);
-
-        let dummy_list = MailingList::new("test-list", "Test list");
-        let (lore_tx, _lore_rx) = mpsc::channel(1);
-        let (render_tx, _render_rx) = mpsc::channel(1);
-        let app = App {
-            state: AppState {
-                navigation: NavigationState {
-                    current_screen: CurrentScreen::EditConfig,
-                },
-                lore: LoreUiState {
-                    mailing_list_selection: MailingListSelectionState {
-                        mailing_lists: vec![dummy_list.clone()],
-                        target_list: String::new(),
-                        possible_mailing_lists: vec![dummy_list],
-                        highlighted_list_index: 0,
-                    },
-                    latest_patchsets: None,
-                    details: None,
-                },
-                user_state: UserLoreState {
-                    bookmarked_patchsets: BookmarkedPatchsetsState {
-                        bookmarked_patchsets: vec![],
-                        patchset_index: 0,
-                    },
-                    reviewed_patchsets: HashMap::new(),
-                },
-                config_state: ConfigUiState { edit_config: None },
-                config: snapshot,
-                popup: None,
-                kw: Default::default(),
-            },
-            services: AppServices {
-                lore_api: LoreApiHandle::new(lore_tx),
-                render: RenderHandle::new(render_tx),
-                shell: Box::new(MockShellTrait::new()),
-                fs: Arc::new(MockFileSystemTrait::new()),
-                config: config.clone(),
-                kw_history: Arc::new(MockKwHistoryStore::new()),
-                kw: None,
-            },
-        };
-        (app, config, home)
-    }
 
     #[test]
     fn help_documents_tree_cycle_and_save_keys() {
@@ -230,7 +248,7 @@ mod tests {
             description,
             formatted_keybinds,
             ..
-        } = generate_help_popup()
+        } = App::build_edit_config_help_popup()
         else {
             panic!("expected help popup");
         };
@@ -249,22 +267,22 @@ mod tests {
         app.init_edit_config();
 
         for _ in 0..11 {
-            handle_edit_config(&mut app, InputEvent::NavigateDown)
+            app.handle_edit_config(InputEvent::NavigateDown)
                 .await
-                .unwrap();
+                .expect("edit config handles");
         }
-        handle_edit_config(&mut app, InputEvent::EditConfigField)
+        app.handle_edit_config(InputEvent::EditConfigField)
             .await
-            .unwrap();
-        handle_edit_config(&mut app, InputEvent::NavigateRight)
+            .expect("edit config handles");
+        app.handle_edit_config(InputEvent::NavigateRight)
             .await
-            .unwrap();
-        handle_edit_config(&mut app, InputEvent::StageConfigEdit)
+            .expect("edit config handles");
+        app.handle_edit_config(InputEvent::StageConfigEdit)
             .await
-            .unwrap();
-        handle_edit_config(&mut app, InputEvent::SaveConfig)
+            .expect("edit config handles");
+        app.handle_edit_config(InputEvent::SaveConfig)
             .await
-            .unwrap();
+            .expect("edit config handles");
 
         assert_eq!(
             Some("linux"),
@@ -276,8 +294,8 @@ mod tests {
             app.state.navigation.current_screen
         );
 
-        let raw = fs::read_to_string(home.join(DEFAULT_CONFIG_PATH_SUFFIX)).unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let raw = fs::read_to_string(home.join(DEFAULT_CONFIG_PATH_SUFFIX)).expect("file reads");
+        let parsed: serde_json::Value = serde_json::from_str(&raw).expect("config parses");
         assert_eq!(parsed["target_kernel_tree"], "linux");
         config.shutdown().await;
     }
@@ -291,13 +309,13 @@ mod tests {
         );
         app.init_edit_config();
 
-        handle_edit_config(&mut app, InputEvent::SaveConfig)
+        app.handle_edit_config(InputEvent::SaveConfig)
             .await
-            .unwrap();
+            .expect("edit config handles");
 
         assert!(app.state.config.target_kernel_tree().is_none());
-        let raw = fs::read_to_string(home.join(DEFAULT_CONFIG_PATH_SUFFIX)).unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let raw = fs::read_to_string(home.join(DEFAULT_CONFIG_PATH_SUFFIX)).expect("file reads");
+        let parsed: serde_json::Value = serde_json::from_str(&raw).expect("config parses");
         assert!(parsed["target_kernel_tree"].is_null());
         config.shutdown().await;
     }

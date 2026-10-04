@@ -1,11 +1,8 @@
 use mockall::automock;
 use thiserror::Error;
 
-use std::{
-    fs::Metadata,
-    io,
-    path::{Path, PathBuf},
-};
+use std::path::PathBuf;
+use std::{fs::Metadata, io, path::Path};
 
 #[derive(Debug, Error)]
 pub enum FileSystemError {

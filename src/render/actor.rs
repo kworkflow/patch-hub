@@ -1,19 +1,13 @@
-//! Render actor: serializes patch/cover preview rendering on a dedicated task.
+//! Render actor: serializes patch and cover preview rendering.
 //!
-//! [`RenderHandle::render_patchset_preview`](crate::render::handle::RenderHandle::render_patchset_preview)
-//! sends a [`RenderMessage`](crate::render::messages::RenderMessage) to this
-//! actor, which delegates to a [`RenderServiceApi`](crate::render::RenderServiceApi)
-//! implementation (typically [`ShellRenderService`](crate::render::ShellRenderService))
-//! on a blocking thread pool. Keeps shell subprocess work off the async runtime
-//! and the UI thread.
+//! `RenderHandle::render_patchset_preview` sends a `RenderMessage`. The
+//! actor runs a `RenderServiceApi` (typically `ShellRenderService`) on a
+//! blocking pool, off the async runtime and the UI thread.
 use std::ops::ControlFlow;
 
-use tokio::{
-    spawn,
-    sync::{mpsc, oneshot},
-    task,
-};
+use tokio::{spawn, sync::mpsc, task};
 
+use crate::infrastructure::actor_reply::ActorReplyService;
 use crate::render::{
     handle::RenderHandle,
     messages::{RenderMessage, RenderResult},
@@ -21,6 +15,9 @@ use crate::render::{
 };
 
 pub const DEFAULT_RENDER_CHANNEL_SIZE: usize = 32;
+
+const REQUEST_FAILED_LOG: &str = "render request failed";
+const REPLY_DROPPED_LOG: &str = "render reply receiver dropped before response";
 
 pub struct RenderActor {
     core: Option<Box<dyn RenderServiceApi>>,
@@ -54,7 +51,9 @@ impl RenderActor {
         }
         tracing::info!("render actor stopped");
     }
+}
 
+impl RenderActor {
     async fn handle_message(&mut self, message: RenderMessage) -> ControlFlow<()> {
         let message_name = message.name();
         tracing::debug!(message = message_name, "render request received");
@@ -71,7 +70,13 @@ impl RenderActor {
                     .with_core(move |core| core.render_patchset_preview(request))
                     .await
                     .and_then(|result| result);
-                send_render_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
+                    reply,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             RenderMessage::Shutdown => {
@@ -101,42 +106,24 @@ impl RenderActor {
     }
 }
 
-fn send_render_reply<T>(
-    message_name: &'static str,
-    reply: oneshot::Sender<RenderResult<T>>,
-    result: RenderResult<T>,
-) {
-    if let Err(error) = &result {
-        tracing::warn!(
-            message = message_name,
-            error = %error,
-            "render request failed"
-        );
-    }
-
-    if reply.send(result).is_err() {
-        tracing::warn!(
-            message = message_name,
-            "render reply receiver dropped before response"
-        );
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+
+    mod helpers {
+        use super::super::*;
+        use crate::{infrastructure::shell::OsShell, render::ShellRenderService};
+        use std::sync::Arc;
+
+        pub(super) fn spawn_test_actor() -> RenderHandle {
+            RenderActor::spawn(Box::new(ShellRenderService::new(Arc::new(OsShell))))
+        }
+    }
+    use helpers::*;
 
     use crate::{
-        infrastructure::shell::OsShell,
-        render::{RenderPatchsetRequest, ShellRenderService},
+        render::RenderPatchsetRequest,
         render_prefs::{CoverRenderer, PatchRenderer},
     };
-
-    use super::*;
-
-    fn spawn_test_actor() -> RenderHandle {
-        RenderActor::spawn(Box::new(ShellRenderService::new(Arc::new(OsShell))))
-    }
 
     #[tokio::test]
     async fn render_patchset_preview_returns_one_entry_per_patch() {

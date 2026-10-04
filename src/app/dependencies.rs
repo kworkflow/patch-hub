@@ -4,84 +4,120 @@ use crate::{
     app::errors::AppError,
     config::ConfigSnapshot,
     infrastructure::{env::EnvTrait, shell::ShellTrait},
-    kw::readiness::{probe_kw_binary, KwVersionCheck},
+    kw::{models::readiness::KwVersionCheck, readiness::ReadinessService},
     render_prefs::PatchRenderer,
 };
 
-/// Verifies required and optional external binaries before the terminal starts.
-///
-/// A missing `b4` is a hard failure; all other missing binaries only emit
-/// warnings — including `kw`, and including an unverifiable kw version,
-/// since kw's own VERSION file is stale upstream (it reports `beta-0.9`
-/// even at the 0.10 tag). This keeps fatal startup failures out of
-/// terminal raw mode.
-pub(crate) fn check_external_deps(
-    env: &dyn EnvTrait,
-    shell: &dyn ShellTrait,
-    config: &ConfigSnapshot,
-) -> Result<(), AppError> {
-    if !env.which("b4") {
-        event!(
-            Level::ERROR,
-            "b4 is not installed, patchsets cannot be downloaded"
-        );
-        return Err(AppError::Dependencies(
-            "b4 is not installed; patchsets cannot be downloaded".to_string(),
-        ));
-    }
+pub(crate) struct DependencyService;
 
-    if !env.which("git") {
-        event!(Level::WARN, "git is not installed, send-email won't work");
-    }
+impl DependencyService {
+    /// Verifies external binaries before the terminal starts.
+    ///
+    /// A missing `b4` is fatal. Other misses, including `kw` and an
+    /// unverifiable version, only warn: kw's VERSION file reports `beta-0.9`
+    /// even at the 0.10 tag, and fatal checks must stay out of raw mode.
+    pub(crate) fn check_external_deps(
+        env: &dyn EnvTrait,
+        shell: &dyn ShellTrait,
+        config: &ConfigSnapshot,
+    ) -> Result<(), AppError> {
+        if !env.which("b4") {
+            event!(
+                Level::ERROR,
+                "b4 is not installed, patchsets cannot be downloaded"
+            );
+            return Err(AppError::Dependencies(
+                "b4 is not installed; patchsets cannot be downloaded".to_string(),
+            ));
+        }
 
-    match config.patch_renderer() {
-        PatchRenderer::Bat => {
-            if !env.which("bat") {
-                event!(
-                    Level::WARN,
-                    "bat is not installed, patch rendering will fallback to default"
-                );
-            }
+        if !env.which("git") {
+            event!(Level::WARN, "git is not installed, send-email won't work");
         }
-        PatchRenderer::Delta => {
-            if !env.which("delta") {
-                event!(
-                    Level::WARN,
-                    "delta is not installed, patch rendering will fallback to default",
-                );
-            }
-        }
-        PatchRenderer::DiffSoFancy => {
-            if !env.which("diff-so-fancy") {
-                event!(
-                    Level::WARN,
-                    "diff-so-fancy is not installed, patch rendering will fallback to default",
-                );
-            }
-        }
-        _ => {}
-    }
 
-    let kw = probe_kw_binary(env, shell);
-    if !kw.available {
-        event!(
-            Level::WARN,
-            "kw is not installed, kernel build/deploy won't work"
-        );
-    } else if !matches!(kw.check, KwVersionCheck::Meets) {
-        event!(
-            Level::WARN,
-            version = kw.version_line.as_deref().unwrap_or("unknown"),
-            "could not confirm kw >= 0.10; the build/deploy integration is \
+        match config.patch_renderer() {
+            PatchRenderer::Bat => {
+                if !env.which("bat") {
+                    event!(
+                        Level::WARN,
+                        "bat is not installed, patch rendering will fallback to default"
+                    );
+                }
+            }
+            PatchRenderer::Delta => {
+                if !env.which("delta") {
+                    event!(
+                        Level::WARN,
+                        "delta is not installed, patch rendering will fallback to default",
+                    );
+                }
+            }
+            PatchRenderer::DiffSoFancy => {
+                if !env.which("diff-so-fancy") {
+                    event!(
+                        Level::WARN,
+                        "diff-so-fancy is not installed, patch rendering will fallback to default",
+                    );
+                }
+            }
+            PatchRenderer::Default => {}
+        }
+
+        let kw = ReadinessService::probe_kw_binary(env, shell);
+        let kw_version_unconfirmed = match &kw.check {
+            KwVersionCheck::Meets => false,
+            KwVersionCheck::Below(_) | KwVersionCheck::Unknown => true,
+        };
+        if !kw.available {
+            event!(
+                Level::WARN,
+                "kw is not installed, kernel build/deploy won't work"
+            );
+        } else if kw_version_unconfirmed {
+            event!(
+                Level::WARN,
+                version = kw.version_line.as_deref().unwrap_or("unknown"),
+                "could not confirm kw >= 0.10; the build/deploy integration is \
              verified against kw 0.10 (kw's own VERSION file may be stale)"
-        );
-    }
+            );
+        }
 
-    Ok(())
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+
+    mod helpers {
+        use crate::infrastructure::{
+            env::MockEnvTrait,
+            shell::{MockShellTrait, ShellOutput},
+        };
+
+        /// An env where every binary is present and kw reports a current
+        /// version, so individual tests only need to override their own case.
+        pub(super) fn happy_env() -> (MockEnvTrait, MockShellTrait) {
+            let mut env = MockEnvTrait::new();
+            env.expect_which()
+                .withf(|name| matches!(name, "b4" | "bat" | "git" | "kw"))
+                .times(3..=4)
+                .returning(|_| true);
+            let mut shell = MockShellTrait::new();
+            shell
+                .expect_execute()
+                .withf(|cmd| cmd.program == "kw" && cmd.args == ["--version"])
+                .times(1)
+                .returning(|_| {
+                    Ok(ShellOutput {
+                        stdout: b"0.10.0\n".to_vec(),
+                        stderr: Vec::new(),
+                        success: true,
+                    })
+                });
+            (env, shell)
+        }
+    }
     use crate::{
         config::{ConfigState, ValidatedConfigUpdate},
         infrastructure::{
@@ -90,36 +126,26 @@ mod tests {
         },
         render_prefs::PatchRenderer,
     };
+    use helpers::*;
 
     use super::*;
-
-    /// An env where every binary is present and kw reports a current
-    /// version, so individual tests only need to override their own case.
-    fn happy_env() -> (MockEnvTrait, MockShellTrait) {
-        let mut env = MockEnvTrait::new();
-        env.expect_which().returning(|_| true);
-        let mut shell = MockShellTrait::new();
-        shell.expect_execute().returning(|_| {
-            Ok(ShellOutput {
-                stdout: b"0.10.0\n".to_vec(),
-                stderr: Vec::new(),
-                success: true,
-            })
-        });
-        (env, shell)
-    }
 
     #[test]
     fn missing_b4_returns_dependencies_error() {
         let mut env = MockEnvTrait::new();
         env.expect_which()
             .withf(|name| name == "b4")
+            .times(1)
             .returning(|_| false);
         let mut shell = MockShellTrait::new();
-        shell.expect_execute().times(0);
+        shell.expect_execute().withf(|_| true).times(0);
 
-        let err =
-            check_external_deps(&env, &shell, &ConfigState::default().to_snapshot()).unwrap_err();
+        let err = DependencyService::check_external_deps(
+            &env,
+            &shell,
+            &ConfigSnapshot::from(&ConfigState::default()),
+        )
+        .expect_err("missing b4 errors");
 
         assert!(matches!(err, AppError::Dependencies(_)));
     }
@@ -129,9 +155,14 @@ mod tests {
         let (mut env, shell) = happy_env();
         env.expect_which()
             .withf(|name| name == "git")
+            .times(0)
             .returning(|_| false);
 
-        let result = check_external_deps(&env, &shell, &ConfigState::default().to_snapshot());
+        let result = DependencyService::check_external_deps(
+            &env,
+            &shell,
+            &ConfigSnapshot::from(&ConfigState::default()),
+        );
 
         assert!(result.is_ok());
     }
@@ -147,9 +178,11 @@ mod tests {
         let (mut env, shell) = happy_env();
         env.expect_which()
             .withf(|name| name == "bat")
+            .times(0)
             .returning(|_| false);
 
-        let result = check_external_deps(&env, &shell, &state.to_snapshot());
+        let result =
+            DependencyService::check_external_deps(&env, &shell, &ConfigSnapshot::from(&state));
 
         assert!(result.is_ok());
     }
@@ -159,11 +192,16 @@ mod tests {
         let (mut env, mut shell) = happy_env();
         env.expect_which()
             .withf(|name| name == "kw")
+            .times(0)
             .returning(|_| false);
         // No kw on PATH: the version probe must not spawn anything.
-        shell.expect_execute().times(0);
+        shell.expect_execute().withf(|_| true).times(0);
 
-        let result = check_external_deps(&env, &shell, &ConfigState::default().to_snapshot());
+        let result = DependencyService::check_external_deps(
+            &env,
+            &shell,
+            &ConfigSnapshot::from(&ConfigState::default()),
+        );
 
         assert!(result.is_ok());
     }
@@ -173,15 +211,23 @@ mod tests {
         let (env, mut shell) = happy_env();
         // Real 0.10 installs can still report the stale beta-0.9: the floor
         // check stays a warning regardless of what kw answers.
-        shell.expect_execute().returning(|_| {
-            Ok(ShellOutput {
-                stdout: b"beta-0.9\nBranch: master\nCommit: 3575d38\n".to_vec(),
-                stderr: Vec::new(),
-                success: true,
-            })
-        });
+        shell
+            .expect_execute()
+            .withf(|_| true)
+            .times(0)
+            .returning(|_| {
+                Ok(ShellOutput {
+                    stdout: b"beta-0.9\nBranch: master\nCommit: 3575d38\n".to_vec(),
+                    stderr: Vec::new(),
+                    success: true,
+                })
+            });
 
-        let result = check_external_deps(&env, &shell, &ConfigState::default().to_snapshot());
+        let result = DependencyService::check_external_deps(
+            &env,
+            &shell,
+            &ConfigSnapshot::from(&ConfigState::default()),
+        );
 
         assert!(result.is_ok());
     }

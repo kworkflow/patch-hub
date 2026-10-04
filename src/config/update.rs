@@ -18,7 +18,7 @@ pub struct ConfigUpdateDraft {
     pub target_kernel_tree: Option<String>,
 }
 
-/// Parsed and validated update ready to merge into [`crate::config::ConfigState`](super::state::ConfigState).
+/// Parsed and validated update ready to merge into `config::ConfigState`.
 #[derive(Debug, Default, Clone)]
 pub struct ValidatedConfigUpdate {
     pub page_size: Option<usize>,

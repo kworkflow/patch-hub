@@ -42,10 +42,25 @@ impl B4PatchsetFetcher {
     }
 }
 
+impl B4PatchsetFetcher {
+    fn extract_mbox_name_from_message_id(message_id: &str) -> String {
+        let mut mbox_name = message_id
+            .replace("http://lore.kernel.org/", "")
+            .replace("https://lore.kernel.org/", "")
+            .replace('/', ".");
+
+        if !mbox_name.ends_with('.') {
+            mbox_name.push('.');
+        }
+        mbox_name.push_str("mbx");
+        mbox_name
+    }
+}
+
 impl PatchsetFetcher for B4PatchsetFetcher {
     fn download(&self, patch: &Patch) -> Result<String, PatchFetchError> {
         let message_id: &str = &patch.message_id().href;
-        let mbox_name = extract_mbox_name_from_message_id(message_id);
+        let mbox_name = Self::extract_mbox_name_from_message_id(message_id);
         let output_dir = &self.cache_dir;
 
         if !self.fs.exists(Path::new(output_dir))
@@ -87,36 +102,24 @@ impl PatchsetFetcher for B4PatchsetFetcher {
     }
 }
 
-fn extract_mbox_name_from_message_id(message_id: &str) -> String {
-    let mut mbox_name = message_id
-        .replace("http://lore.kernel.org/", "")
-        .replace("https://lore.kernel.org/", "")
-        .replace('/', ".");
-
-    if !mbox_name.ends_with('.') {
-        mbox_name.push('.');
-    }
-    mbox_name.push_str("mbx");
-    mbox_name
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::infrastructure::{
-        file_system::MockFileSystemTrait,
-        shell::{MockShellTrait, ShellOutput},
-    };
 
-    // message_id → "linux-kernel.1234.567-1-john@johnson.com.mbx"
-    // (trailing slash in href becomes the last dot, then "mbx")
-    const CACHE_DIR: &str = "/cache";
-    const MESSAGE_ID: &str = "https://lore.kernel.org/linux-kernel/1234.567-1-john@johnson.com/";
-    const CACHED_FILE: &str = "/cache/linux-kernel.1234.567-1-john@johnson.com.mbx";
+    mod helpers {
+        use super::super::*;
 
-    fn make_patch_with_message_id(message_id: &str) -> Patch {
-        let xml = format!(
-            r#"<?xml version="1.0" encoding="UTF-8"?>
+        use crate::lore::infrastructure::parsers::LoreParserService;
+
+        // message_id → "linux-kernel.1234.567-1-john@johnson.com.mbx"
+        // (trailing slash in href becomes the last dot, then "mbx")
+        pub(super) const CACHE_DIR: &str = "/cache";
+        pub(super) const MESSAGE_ID: &str =
+            "https://lore.kernel.org/linux-kernel/1234.567-1-john@johnson.com/";
+        pub(super) const CACHED_FILE: &str = "/cache/linux-kernel.1234.567-1-john@johnson.com.mbx";
+
+        pub(super) fn make_patch_with_message_id(message_id: &str) -> Patch {
+            let xml = format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
             <feed xmlns="http://www.w3.org/2005/Atom">
                 <entry>
                     <title>some/subsystem: Do this</title>
@@ -126,12 +129,21 @@ mod tests {
                     <link href="{message_id}"/>
                 </entry>
             </feed>"#,
-        );
-        crate::lore::infrastructure::parsers::parse_patch_feed(&xml)
-            .unwrap()
-            .patches()[0]
-            .clone()
+            );
+            LoreParserService::parse_patch_feed(&xml)
+                .expect("patch feed parses")
+                .patches()[0]
+                .clone()
+        }
     }
+    use super::*;
+    use crate::infrastructure::{
+        file_system::MockFileSystemTrait,
+        shell::{MockShellTrait, ShellError, ShellOutput},
+    };
+    use helpers::*;
+
+    use std::{io, sync::atomic};
 
     #[test]
     fn download_skips_b4_when_file_already_exists() {
@@ -142,11 +154,13 @@ mod tests {
         mock_fs
             .expect_exists()
             .withf(|p| p == Path::new(CACHE_DIR))
+            .times(1)
             .returning(|_| true);
         // file already cached
         mock_fs
             .expect_exists()
             .withf(|p| p == Path::new(CACHED_FILE))
+            .times(2)
             .returning(|_| true);
 
         let mock_shell = MockShellTrait::new(); // b4 must NOT be called
@@ -168,19 +182,21 @@ mod tests {
         // Track how many times exists(CACHED_FILE) was called so we can
         // return false the first time (file missing) and true the second
         // time (after b4 fetched it).
-        let call_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let call_count = Arc::new(atomic::AtomicUsize::new(0));
         let call_count_clone = call_count.clone();
 
         let mut mock_fs = MockFileSystemTrait::new();
         mock_fs
             .expect_exists()
             .withf(|p| p == Path::new(CACHE_DIR))
+            .times(1)
             .returning(|_| true);
         mock_fs
             .expect_exists()
             .withf(|p| p == Path::new(CACHED_FILE))
+            .times(2)
             .returning(move |_| {
-                let n = call_count_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let n = call_count_clone.fetch_add(1, atomic::Ordering::SeqCst);
                 n > 0 // false on first call (before b4), true on second (after b4)
             });
 
@@ -215,18 +231,34 @@ mod tests {
         mock_fs
             .expect_exists()
             .withf(|p| p == Path::new(CACHE_DIR))
+            .times(1)
             .returning(|_| true);
         mock_fs
             .expect_exists()
             .withf(|p| p == Path::new(CACHED_FILE))
+            .times(1)
             .returning(|_| false);
 
         let mut mock_shell = MockShellTrait::new();
-        mock_shell.expect_execute().times(1).returning(|_| {
-            Err(crate::infrastructure::shell::ShellError::IoError(
-                std::io::Error::other("b4 not found"),
-            ))
-        });
+        mock_shell
+            .expect_execute()
+            .withf(|cmd| {
+                cmd.program == "b4"
+                    && cmd.args
+                        == [
+                            "--quiet",
+                            "am",
+                            "--use-version",
+                            "1",
+                            "https://lore.kernel.org/linux-kernel/1234.567-1-john@johnson.com/",
+                            "--outdir",
+                            "/cache",
+                            "--mbox-name",
+                            "linux-kernel.1234.567-1-john@johnson.com.mbx",
+                        ]
+            })
+            .times(1)
+            .returning(|_| Err(ShellError::IoError(io::Error::other("b4 not found"))));
 
         let fetcher = B4PatchsetFetcher::new(
             Arc::new(mock_shell),

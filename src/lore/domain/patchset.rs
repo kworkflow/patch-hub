@@ -5,11 +5,7 @@ use crate::lore::domain::patch::{Patch, PatchFeed, PatchRegex};
 const LORE_PAGE_SIZE: usize = 200;
 
 /// Tracks feed pagination state for a single mailing list target.
-///
-/// Replaces the state that was previously mixed into [`LoreSession`].
 pub struct PatchFeedIndex {
-    #[allow(dead_code)]
-    target_list: String,
     next_offset: usize,
     representative_patch_ids: Vec<String>,
     patches_by_id: HashMap<String, Patch>,
@@ -17,19 +13,13 @@ pub struct PatchFeedIndex {
 }
 
 impl PatchFeedIndex {
-    pub fn new(target_list: String) -> Self {
+    pub fn new() -> Self {
         PatchFeedIndex {
-            target_list,
             next_offset: 0,
             representative_patch_ids: Vec::new(),
             patches_by_id: HashMap::new(),
             patch_regex: PatchRegex::new(),
         }
-    }
-
-    #[allow(dead_code)]
-    pub fn target_list(&self) -> &str {
-        &self.target_list
     }
 
     pub fn next_offset(&self) -> usize {
@@ -38,11 +28,6 @@ impl PatchFeedIndex {
 
     pub fn representative_patch_ids(&self) -> &[String] {
         &self.representative_patch_ids
-    }
-
-    #[cfg(test)]
-    pub fn get_patch(&self, id: &str) -> Option<&Patch> {
-        self.patches_by_id.get(id)
     }
 
     /// Process a page of [`PatchFeed`] entries, deduplicating and tracking
@@ -77,13 +62,15 @@ impl PatchFeedIndex {
             upper_end = max_index + 1;
         }
 
-        let page: Vec<&Patch> = (lower_end..upper_end)
+        let page = (lower_end..upper_end)
             .filter_map(|i| self.patches_by_id.get(&self.representative_patch_ids[i]))
             .collect();
 
         Some(page)
     }
+}
 
+impl PatchFeedIndex {
     fn ingest_patches(&mut self, feed: PatchFeed) -> Vec<String> {
         let mut new_ids = Vec::new();
         for mut patch in feed.patches().clone() {
@@ -99,7 +86,9 @@ impl PatchFeedIndex {
 
     fn update_representative_ids(&mut self, new_ids: Vec<String>) {
         for id in new_ids {
-            let patch = self.patches_by_id.get(&id).unwrap();
+            let Some(patch) = self.patches_by_id.get(&id) else {
+                continue;
+            };
             let number_in_series = patch.number_in_series();
 
             if number_in_series > 1 {
@@ -125,27 +114,31 @@ impl PatchFeedIndex {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+
+    mod helpers {
+        use super::super::*;
+        use crate::lore::infrastructure::parsers::LoreParserService;
+        use std::fs;
+
+        pub(super) fn feed_from_file(path: &str) -> PatchFeed {
+            let xml = fs::read_to_string(path).expect("file reads");
+            LoreParserService::parse_patch_feed(&xml).expect("patch feed parses")
+        }
+    }
+    use helpers::*;
 
     use super::*;
-    use crate::lore::infrastructure::parsers::parse_patch_feed;
-
-    fn feed_from_file(path: &str) -> PatchFeed {
-        let xml = fs::read_to_string(path).unwrap();
-        parse_patch_feed(&xml).unwrap()
-    }
 
     #[test]
     fn new_starts_with_empty_state() {
-        let idx = PatchFeedIndex::new("linux-kernel".to_string());
-        assert_eq!("linux-kernel", idx.target_list());
+        let idx = PatchFeedIndex::new();
         assert_eq!(0, idx.next_offset());
         assert!(idx.representative_patch_ids().is_empty());
     }
 
     #[test]
     fn process_feed_page_extracts_representative_patch() {
-        let mut idx = PatchFeedIndex::new("some-list".to_string());
+        let mut idx = PatchFeedIndex::new();
         let feed = feed_from_file(
             "test_samples/lore_session/process_representative_patch/patch_feed_sample_1.xml",
         );
@@ -155,14 +148,14 @@ mod tests {
         assert_eq!(1, idx.representative_patch_ids().len());
         let id = &idx.representative_patch_ids()[0];
         assert!(id.contains("1234.567-1-john@johnson.com"));
-        let patch = idx.get_patch(id).unwrap();
+        let patch = idx.patches_by_id.get(id).expect("entry is present");
         assert_eq!("some/subsystem: Do this and that", patch.title());
         assert_eq!(1, patch.version());
     }
 
     #[test]
     fn process_feed_page_extracts_multiple_representative_patches() {
-        let mut idx = PatchFeedIndex::new("some-list".to_string());
+        let mut idx = PatchFeedIndex::new();
         let feed = feed_from_file(
             "test_samples/lore_session/process_representative_patch/patch_feed_sample_2.xml",
         );
@@ -174,7 +167,7 @@ mod tests {
 
     #[test]
     fn process_feed_page_deduplicates() {
-        let mut idx = PatchFeedIndex::new("some-list".to_string());
+        let mut idx = PatchFeedIndex::new();
         let feed = feed_from_file(
             "test_samples/lore_session/process_representative_patch/patch_feed_sample_1.xml",
         );
@@ -186,7 +179,7 @@ mod tests {
 
     #[test]
     fn advance_offset_increments_by_page_size() {
-        let mut idx = PatchFeedIndex::new("list".to_string());
+        let mut idx = PatchFeedIndex::new();
         assert_eq!(0, idx.next_offset());
         idx.advance_offset();
         assert_eq!(200, idx.next_offset());
@@ -196,22 +189,22 @@ mod tests {
 
     #[test]
     fn get_page_returns_none_when_empty() {
-        let idx = PatchFeedIndex::new("list".to_string());
+        let idx = PatchFeedIndex::new();
         assert!(idx.get_page(10, 1).is_none());
     }
 
     #[test]
     fn get_page_returns_correct_patches() {
-        let mut idx = PatchFeedIndex::new("some-list".to_string());
+        let mut idx = PatchFeedIndex::new();
         let feed = feed_from_file(
             "test_samples/lore_session/process_representative_patch/patch_feed_sample_2.xml",
         );
         idx.process_feed_page(feed);
 
-        let page = idx.get_page(2, 1).unwrap();
+        let page = idx.get_page(2, 1).expect("page loads");
         assert_eq!(2, page.len());
 
-        let page2 = idx.get_page(2, 2).unwrap();
+        let page2 = idx.get_page(2, 2).expect("page loads");
         assert_eq!(1, page2.len());
 
         assert!(idx.get_page(2, 3).is_none());

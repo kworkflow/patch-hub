@@ -31,7 +31,9 @@ impl RenderHandle {
         self.request_result(|reply| RenderMessage::RenderPatchsetPreview { request, reply })
             .await
     }
+}
 
+impl RenderHandle {
     async fn request_result<T>(
         &self,
         build_message: impl FnOnce(oneshot::Sender<RenderResult<T>>) -> RenderMessage,

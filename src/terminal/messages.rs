@@ -22,10 +22,6 @@ pub enum TerminalMessage {
         frame: TerminalFrame,
         reply: oneshot::Sender<TerminalResult<()>>,
     },
-    #[cfg(test)]
-    ReadEvent {
-        reply: oneshot::Sender<TerminalResult<Option<TerminalEvent>>>,
-    },
     PollEvent {
         timeout: Duration,
         reply: oneshot::Sender<TerminalResult<Option<TerminalEvent>>>,
@@ -53,8 +49,6 @@ impl TerminalMessage {
     pub fn name(&self) -> &'static str {
         match self {
             TerminalMessage::Draw { .. } => "Draw",
-            #[cfg(test)]
-            TerminalMessage::ReadEvent { .. } => "ReadEvent",
             TerminalMessage::PollEvent { .. } => "PollEvent",
             TerminalMessage::SetupUserIo { .. } => "SetupUserIo",
             TerminalMessage::TeardownUserIo { .. } => "TeardownUserIo",

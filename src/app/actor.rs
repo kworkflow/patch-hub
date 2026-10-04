@@ -1,36 +1,22 @@
-//! Central orchestration actor: owns [`App`] and drives the main render/input loop.
+//! Central orchestration actor: owns `App` and drives the render/input loop.
 //!
-//! Each frame: process system updates → project state to [`AppViewModel`] via
-//! [`UiHandle`](crate::ui::handle::UiHandle) → draw through
-//! [`TerminalHandle`](crate::terminal::handle::TerminalHandle) → await the next
-//! [`InputEvent`](crate::input::event::InputEvent), a kw-status change, or a
-//! KwOps log-tail tick while a job is running on that screen.
-//!
-//! The actor stops when the input event channel closes (user quit) or when I/O
-//! returns an unrecoverable error. Startup dependency checks run before this
-//! actor is spawned.
-use std::{ops::ControlFlow, time::Duration};
+//! Each frame projects `AppViewModel`, draws through `TerminalHandle`, then
+//! awaits an `InputEvent`, a kw-status change, or a KwOps log tick. It stops
+//! when the input channel closes or I/O returns an unrecoverable error.
+use std::{future::pending, ops::ControlFlow, time::Duration};
 
-use color_eyre::{eyre::eyre, Result};
-use tokio::{spawn, sync::mpsc, sync::watch, time::MissedTickBehavior};
+use color_eyre::{eyre::eyre, Report, Result};
+use tokio::{
+    spawn,
+    sync::{mpsc, watch},
+    time::{self, MissedTickBehavior},
+};
 
 use crate::{
     app::{
-        flows::{
-            bookmarked::handle_bookmarked_patchsets,
-            details_actions::handle_patchset_details,
-            edit_config::handle_edit_config,
-            kw_ops::{
-                apply_kw_snapshot, apply_kw_snapshot_refreshing_readiness, clear_pending_deploy,
-                fallback_kw_status, handle_kw_ops, poll_kw_status, refresh_kw_ops_log_tail,
-                resume_pending_deploy,
-            },
-            latest::handle_latest_patchsets,
-            mail_list::handle_mailing_list_selection,
-        },
         handle::AppHandle,
-        loading::{terminal_error, TerminalLoadingIndicator},
-        popup::{AppPopup, ConfirmAction},
+        loading::TerminalLoadingIndicator,
+        models::popup::{AppPopup, ConfirmAction},
         screens::CurrentScreen,
         App,
     },
@@ -39,17 +25,15 @@ use crate::{
         errors::KwError,
         status::{KwJobStatus, KwStatusSnapshot},
     },
-    terminal::{handle::TerminalHandle, messages::TerminalFrame},
+    terminal::{handle::TerminalHandle, messages::TerminalFrame, TerminalError},
     ui::handle::UiHandle,
 };
 
-/// Owns `App` state and drives the main application loop on a dedicated task.
+/// Owns `App` state and drives the main loop on a dedicated task.
 ///
-/// Constructed via [`AppActor::spawn`], which moves all owned resources into
-/// the actor and returns an [`AppHandle`] to the caller.
-///
-/// The actor runs until the input event channel closes (the user requested
-/// exit via the normal key binding) or an unrecoverable error occurs.
+/// [`AppActor::spawn`] moves owned resources in and returns an [`AppHandle`].
+/// The actor runs until the input channel closes or an unrecoverable error
+/// occurs.
 pub struct AppActor {
     app: App,
     terminal_handle: TerminalHandle,
@@ -85,17 +69,17 @@ impl AppActor {
         };
         AppHandle::new(spawn(actor.run()))
     }
+}
 
+impl AppActor {
     async fn run(mut self) -> Result<()> {
         tracing::info!("app actor started");
         tracing::info!("app actor initialized");
 
         let mut kw_status_rx = self.subscribe_kw_status().await;
         let mut loading = TerminalLoadingIndicator::new(self.terminal_handle.clone());
-        let mut log_interval = tokio::time::interval_at(
-            tokio::time::Instant::now() + KW_OPS_LOG_TICK,
-            KW_OPS_LOG_TICK,
-        );
+        let mut log_interval =
+            time::interval_at(time::Instant::now() + KW_OPS_LOG_TICK, KW_OPS_LOG_TICK);
         log_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         let mut redraw = true;
@@ -114,17 +98,22 @@ impl AppActor {
                 self.terminal_handle
                     .draw(TerminalFrame::Main(Box::new(scene)))
                     .await
-                    .map_err(terminal_error)?;
+                    .map_err(Self::convert_terminal_error)?;
             }
 
-            let tail_while_running = kw_ops_should_tail(&self.app);
-            let poll_status = kw_status_rx.is_none() && should_poll_kw_status(&self.app);
+            let tail_while_running = Self::should_tail_kw_ops(&self.app);
+            let poll_status = kw_status_rx.is_none() && Self::should_poll_kw_status(&self.app);
             tokio::select! {
                 event = self.event_rx.recv() => {
                     match event {
                         Some(event) => {
-                            match on_input(&mut self.app, event, &self.terminal_handle, &mut loading)
-                                .await?
+                            match Self::dispatch_input(
+                                &mut self.app,
+                                event,
+                                &self.terminal_handle,
+                                &mut loading,
+                            )
+                            .await?
                             {
                                 ControlFlow::Continue(()) => {
                                     self.input_handle
@@ -142,13 +131,13 @@ impl AppActor {
                         }
                     }
                 }
-                watch_event = kw_status_changed(&mut kw_status_rx) => {
+                watch_event = Self::await_kw_status_change(&mut kw_status_rx) => {
                     match watch_event {
                         KwWatchEvent::Updated(snapshot) => {
-                            apply_kw_snapshot_refreshing_readiness(&mut self.app, snapshot).await;
+                            self.app.apply_kw_snapshot_refreshing_readiness(snapshot).await;
                             if self.app.state.navigation.current_screen == CurrentScreen::KwOps
                             {
-                                refresh_kw_ops_log_tail(&mut self.app).await;
+                                self.app.refresh_kw_ops_log_tail().await;
                             }
                         }
                         KwWatchEvent::Closed => {
@@ -156,7 +145,7 @@ impl AppActor {
                                 "kw status watch closed; falling back to keyboard-only redraws"
                             );
                             kw_status_rx = None;
-                            fallback_kw_status(&mut self.app).await;
+                            self.app.fallback_kw_status().await;
                         }
                     }
                     redraw = true;
@@ -164,10 +153,10 @@ impl AppActor {
                 _ = log_interval.tick(), if tail_while_running || poll_status => {
                     let mut changed = false;
                     if poll_status {
-                        changed |= poll_kw_status(&mut self.app).await;
+                        changed |= self.app.poll_kw_status().await;
                     }
                     if tail_while_running {
-                        changed |= refresh_kw_ops_log_tail(&mut self.app).await;
+                        changed |= self.app.refresh_kw_ops_log_tail().await;
                     }
                     redraw = changed;
                 }
@@ -187,7 +176,7 @@ impl AppActor {
         let kw = self.app.services.kw.clone()?;
         match kw.watch_status().await {
             Ok(mut rx) => {
-                apply_kw_snapshot(&mut self.app, rx.borrow_and_update().clone());
+                self.app.apply_kw_snapshot(rx.borrow_and_update().clone());
                 Some(rx)
             }
             Err(error) => {
@@ -195,192 +184,347 @@ impl AppActor {
                     %error,
                     "failed to subscribe to kw status; keyboard-only redraws"
                 );
-                fallback_kw_status(&mut self.app).await;
+                self.app.fallback_kw_status().await;
                 None
             }
         }
     }
-}
 
-/// Waits for the next kw-status change. With no receiver this future
-/// never completes, so `select!` stays on the input arm instead of
-/// spinning.
-async fn kw_status_changed(rx: &mut Option<watch::Receiver<KwStatusSnapshot>>) -> KwWatchEvent {
-    match rx.as_mut() {
-        Some(rx) => match rx.changed().await {
-            Ok(()) => KwWatchEvent::Updated(rx.borrow_and_update().clone()),
-            Err(_) => KwWatchEvent::Closed,
-        },
-        None => std::future::pending().await,
+    fn convert_terminal_error(error: TerminalError) -> Report {
+        eyre!("{error}")
     }
 }
 
-fn kw_ops_should_tail(app: &App) -> bool {
-    app.state.navigation.current_screen == CurrentScreen::KwOps
-        && matches!(
-            app.state.kw.status.as_ref().map(|status| &status.job),
-            Some(KwJobStatus::Running { .. })
-        )
-}
+impl AppActor {
+    /// Waits for the next kw-status change. With no receiver this future
+    /// never completes, so `select!` stays on the input arm instead of
+    /// spinning.
+    async fn await_kw_status_change(
+        rx: &mut Option<watch::Receiver<KwStatusSnapshot>>,
+    ) -> KwWatchEvent {
+        match rx.as_mut() {
+            Some(rx) => match rx.changed().await {
+                Ok(()) => KwWatchEvent::Updated(rx.borrow_and_update().clone()),
+                Err(_) => KwWatchEvent::Closed,
+            },
+            None => pending().await,
+        }
+    }
 
-/// When the status watch is missing, poll GetStatus while a start is
-/// in flight or a job is running so `start_requested` cannot latch and
-/// the nav indicator can leave "building".
-fn should_poll_kw_status(app: &App) -> bool {
-    app.services.kw.is_some()
-        && (kw_job_is_running(app)
-            || app
-                .state
-                .kw
-                .ops
-                .as_ref()
-                .is_some_and(|ops| ops.start_requested))
-}
+    fn should_tail_kw_ops(app: &App) -> bool {
+        app.state.navigation.current_screen == CurrentScreen::KwOps && Self::is_kw_job_running(app)
+    }
 
-async fn on_input(
-    app: &mut App,
-    input: InputEvent,
-    terminal_handle: &TerminalHandle,
-    loading: &mut TerminalLoadingIndicator,
-) -> Result<ControlFlow<()>> {
-    if app.state.popup.is_some() {
-        match input {
-            InputEvent::ClosePopup => {
-                dismiss_open_popup(app);
-            }
-            InputEvent::ConfirmPopup => {
-                if let Some(action) = app
+    /// When the status watch is missing, poll GetStatus while a start is
+    /// in flight or a job is running so `start_requested` cannot latch and
+    /// the nav indicator can leave "building".
+    fn should_poll_kw_status(app: &App) -> bool {
+        app.services.kw.is_some()
+            && (Self::is_kw_job_running(app)
+                || app
                     .state
-                    .popup
+                    .kw
+                    .ops
                     .as_ref()
-                    .and_then(AppPopup::selected_confirm_action)
-                {
-                    return apply_confirm_action(app, action).await;
+                    .is_some_and(|ops| ops.start_requested))
+    }
+
+    async fn dispatch_input(
+        app: &mut App,
+        input: InputEvent,
+        terminal_handle: &TerminalHandle,
+        loading: &mut TerminalLoadingIndicator,
+    ) -> Result<ControlFlow<()>> {
+        if app.state.popup.is_some() {
+            match input {
+                InputEvent::ClosePopup => {
+                    Self::dismiss_open_popup(app);
+                }
+                InputEvent::ConfirmPopup => {
+                    if let Some(action) = app
+                        .state
+                        .popup
+                        .as_ref()
+                        .and_then(AppPopup::selected_confirm_action)
+                    {
+                        return Self::apply_confirm_action(app, action).await;
+                    }
+                }
+                _ => {
+                    if let Some(popup) = app.state.popup.as_mut() {
+                        popup.handle_input(input);
+                    }
                 }
             }
-            _ => {
-                if let Some(popup) = app.state.popup.as_mut() {
-                    popup.handle_input(input);
+        } else if input == InputEvent::Quit && Self::is_kw_job_running(app) {
+            app.state.popup = Some(AppPopup::quit_while_job_running());
+        } else {
+            tracing::debug!(screen = ?app.state.navigation.current_screen, "dispatching input to screen handler");
+            match app.state.navigation.current_screen {
+                CurrentScreen::MailingListSelection => {
+                    match app.handle_mailing_list_selection(input, loading).await? {
+                        ControlFlow::Continue(()) => {}
+                        ControlFlow::Break(()) => return Ok(ControlFlow::Break(())),
+                    }
+                }
+                CurrentScreen::BookmarkedPatchsets => {
+                    app.handle_bookmarked_patchsets(input, loading).await?;
+                }
+                CurrentScreen::PatchsetDetails => {
+                    app.handle_patchset_details(input, terminal_handle).await?;
+                }
+                CurrentScreen::EditConfig => {
+                    app.handle_edit_config(input).await?;
+                }
+                CurrentScreen::LatestPatchsets => {
+                    app.handle_latest_patchsets(input, loading).await?;
+                }
+                CurrentScreen::KwOps => {
+                    app.handle_kw_ops(input).await?;
                 }
             }
         }
-    } else if input == InputEvent::Quit && kw_job_is_running(app) {
-        app.state.popup = Some(AppPopup::quit_while_job_running());
-    } else {
-        tracing::debug!(screen = ?app.state.navigation.current_screen, "dispatching input to screen handler");
-        match app.state.navigation.current_screen {
-            CurrentScreen::MailingListSelection => {
-                match handle_mailing_list_selection(app, input, loading).await? {
-                    ControlFlow::Continue(()) => {}
-                    ControlFlow::Break(()) => return Ok(ControlFlow::Break(())),
+        Ok(ControlFlow::Continue(()))
+    }
+
+    fn is_boot_once_confirm(popup: &AppPopup) -> bool {
+        matches!(
+            popup.selected_confirm_action(),
+            Some(ConfirmAction::ProceedWithBootOnce | ConfirmAction::BackOut)
+        )
+    }
+
+    fn dismiss_open_popup(app: &mut App) {
+        if app
+            .state
+            .popup
+            .as_ref()
+            .is_some_and(Self::is_boot_once_confirm)
+        {
+            app.clear_pending_deploy();
+        }
+        app.state.popup = None;
+    }
+
+    async fn apply_confirm_action(app: &mut App, action: ConfirmAction) -> Result<ControlFlow<()>> {
+        app.state.popup = None;
+        match action {
+            ConfirmAction::CancelKwAndQuit => Ok(Self::cancel_kw_and_quit(app).await),
+            ConfirmAction::Wait => Ok(ControlFlow::Continue(())),
+            ConfirmAction::ProceedWithBootOnce => {
+                app.resume_pending_deploy().await?;
+                Ok(ControlFlow::Continue(()))
+            }
+            ConfirmAction::BackOut => {
+                app.clear_pending_deploy();
+                Ok(ControlFlow::Continue(()))
+            }
+        }
+    }
+
+    fn is_kw_job_running(app: &App) -> bool {
+        match app.state.kw.status.as_ref().map(|status| &status.job) {
+            Some(KwJobStatus::Running { .. }) => true,
+            Some(
+                KwJobStatus::Idle
+                | KwJobStatus::Succeeded { .. }
+                | KwJobStatus::Failed { .. }
+                | KwJobStatus::Cancelled { .. },
+            )
+            | None => false,
+        }
+    }
+
+    /// Cancel then leave. A job that finished while the confirm popup was
+    /// open is `NoJobRunning`; that race is harmless and still quits.
+    async fn cancel_kw_and_quit(app: &App) -> ControlFlow<()> {
+        if let Some(kw) = app.services.kw.as_ref() {
+            match kw.cancel().await {
+                Ok(()) => {}
+                Err(KwError::NoJobRunning) => {
+                    tracing::debug!("kw job already finished before cancel-and-quit");
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "kw cancel failed while quitting");
                 }
             }
-            CurrentScreen::BookmarkedPatchsets => {
-                handle_bookmarked_patchsets(app, input, loading).await?;
-            }
-            CurrentScreen::PatchsetDetails => {
-                handle_patchset_details(app, input, terminal_handle).await?;
-            }
-            CurrentScreen::EditConfig => {
-                handle_edit_config(app, input).await?;
-            }
-            CurrentScreen::LatestPatchsets => {
-                handle_latest_patchsets(app, input, loading).await?;
-            }
-            CurrentScreen::KwOps => {
-                handle_kw_ops(app, input).await?;
-            }
         }
+        ControlFlow::Break(())
     }
-    Ok(ControlFlow::Continue(()))
-}
-
-fn is_boot_once_confirm(popup: &AppPopup) -> bool {
-    matches!(
-        popup.selected_confirm_action(),
-        Some(ConfirmAction::ProceedWithBootOnce | ConfirmAction::BackOut)
-    )
-}
-
-fn dismiss_open_popup(app: &mut App) {
-    if app.state.popup.as_ref().is_some_and(is_boot_once_confirm) {
-        clear_pending_deploy(app);
-    }
-    app.state.popup = None;
-}
-
-async fn apply_confirm_action(app: &mut App, action: ConfirmAction) -> Result<ControlFlow<()>> {
-    app.state.popup = None;
-    match action {
-        ConfirmAction::CancelKwAndQuit => Ok(cancel_kw_and_quit(app).await),
-        ConfirmAction::Wait => Ok(ControlFlow::Continue(())),
-        ConfirmAction::ProceedWithBootOnce => {
-            resume_pending_deploy(app).await?;
-            Ok(ControlFlow::Continue(()))
-        }
-        ConfirmAction::BackOut => {
-            clear_pending_deploy(app);
-            Ok(ControlFlow::Continue(()))
-        }
-    }
-}
-
-fn kw_job_is_running(app: &App) -> bool {
-    matches!(
-        app.state.kw.status.as_ref().map(|status| &status.job),
-        Some(KwJobStatus::Running { .. })
-    )
-}
-
-/// Cancel then leave. A job that finished while the confirm popup was
-/// open is `NoJobRunning`; that race is harmless and still quits.
-async fn cancel_kw_and_quit(app: &App) -> ControlFlow<()> {
-    if let Some(kw) = app.services.kw.as_ref() {
-        match kw.cancel().await {
-            Ok(()) => {}
-            Err(KwError::NoJobRunning) => {
-                tracing::debug!("kw job already finished before cancel-and-quit");
-            }
-            Err(error) => {
-                tracing::warn!(%error, "kw cancel failed while quitting");
-            }
-        }
-    }
-    ControlFlow::Break(())
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Arc};
+
+    mod helpers {
+        use super::super::*;
+        use crate::app::models::kw_ops::KwOpsState;
+        use crate::kw::models::{
+            readiness::{
+                BootOnceState, DeployAloneRefusal, KwBinaryProbe, KwReadiness, KwVersionCheck,
+                TreeReadiness,
+            },
+            remote::RemoteRefusal,
+        };
+        use crate::{
+            app::{
+                screens::{
+                    bookmarked::BookmarkedPatchsetsState, mail_list::MailingListSelectionState,
+                    CurrentScreen,
+                },
+                state::{AppState, ConfigUiState, LoreUiState, NavigationState, UserLoreState},
+                AppServices,
+            },
+            config::{ConfigHandle, ConfigSnapshot, ConfigState},
+            infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
+            kw::history::MockKwHistoryStore,
+            lore::{
+                application::{
+                    actor::LoreApiActor, handle::LoreApiHandle, models::cache::CacheTtl,
+                    service::LoreService,
+                },
+                domain::mailing_list::MailingList,
+                infrastructure::{
+                    http_lore_client::{MockFeedGateway, MockListsGateway, MockPatchHtmlGateway},
+                    patchset_fetcher::MockPatchsetFetcher,
+                    patchset_parser::MockPatchsetParser,
+                    persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
+                },
+            },
+            render::{actor::RenderActor, handle::RenderHandle, ShellRenderService},
+        };
+        use std::{collections::HashMap, sync::Arc};
+        use tokio::sync::mpsc;
+
+        pub(super) fn dummy_config_handle() -> ConfigHandle {
+            let (config_tx, _config_rx) = mpsc::channel(1);
+            ConfigHandle::new(config_tx)
+        }
+
+        pub(super) fn minimal_app() -> App {
+            let (lore_tx, _lore_rx) = mpsc::channel(1);
+            let (render_tx, _render_rx) = mpsc::channel(1);
+
+            let dummy_list = MailingList::new("test-list", "Test list");
+
+            App {
+                state: AppState {
+                    navigation: NavigationState {
+                        current_screen: CurrentScreen::MailingListSelection,
+                    },
+                    lore: LoreUiState {
+                        mailing_list_selection: MailingListSelectionState {
+                            mailing_lists: vec![dummy_list.clone()],
+                            target_list: String::new(),
+                            possible_mailing_lists: vec![dummy_list],
+                            highlighted_list_index: 0,
+                        },
+                        latest_patchsets: None,
+                        details: None,
+                    },
+                    user_state: UserLoreState {
+                        bookmarked_patchsets: BookmarkedPatchsetsState {
+                            bookmarked_patchsets: vec![],
+                            patchset_index: 0,
+                        },
+                        reviewed_patchsets: HashMap::new(),
+                    },
+                    config_state: ConfigUiState { edit_config: None },
+                    config: ConfigSnapshot::from(&ConfigState::default()),
+                    popup: None,
+                    kw: Default::default(),
+                },
+                services: AppServices {
+                    lore_api: LoreApiHandle::new(lore_tx),
+                    render: RenderHandle::new(render_tx),
+                    shell: Box::new(MockShellTrait::new()),
+                    fs: Arc::new(MockFileSystemTrait::new()),
+                    config: dummy_config_handle(),
+                    kw_history: Arc::new(MockKwHistoryStore::new()),
+                    kw: None,
+                },
+            }
+        }
+
+        pub(super) fn spawn_real_lore_api(list: MailingList) -> LoreApiHandle {
+            let mut lists_store = MockMailingListsCacheStore::new();
+            lists_store
+                .expect_load_available_lists()
+                .withf(|| true)
+                .times(1)
+                .returning(move || Ok(vec![list.clone()]));
+            let mut user_state = MockUserLoreStateStore::new();
+            user_state
+                .expect_load_bookmarked_patchsets()
+                .withf(|| true)
+                .times(1)
+                .returning(|| Ok(vec![]));
+            user_state
+                .expect_load_reviewed_patchsets()
+                .withf(|| true)
+                .times(1)
+                .returning(|| Ok(HashMap::new()));
+
+            let service = LoreService::new(
+                Arc::new(MockListsGateway::new()),
+                Arc::new(MockFeedGateway::new()),
+                Arc::new(MockPatchHtmlGateway::new()),
+                Arc::new(lists_store),
+                Arc::new(user_state),
+                Arc::new(MockPatchsetFetcher::new()),
+                Arc::new(MockPatchsetParser::new()),
+                Arc::new(MockFileSystemTrait::new()),
+                Arc::new(MockShellTrait::new()),
+                CacheTtl::default(),
+            );
+            LoreApiActor::spawn(service)
+        }
+
+        pub(super) fn spawn_real_render() -> RenderHandle {
+            RenderActor::spawn(Box::new(ShellRenderService::new(Arc::new(
+                MockShellTrait::new(),
+            ))))
+        }
+
+        pub(super) fn sample_kw_ops() -> KwOpsState {
+            KwOpsState::new(
+                "title".to_string(),
+                "mid".to_string(),
+                "linux".to_string(),
+                serde_json::from_value(serde_json::json!({
+                    "path": "/kernel",
+                    "branch": "main"
+                }))
+                .expect("json parses"),
+                KwReadiness {
+                    kw_binary: KwBinaryProbe {
+                        available: true,
+                        version_line: Some("kw, version 0.10.0".to_string()),
+                        check: KwVersionCheck::Meets,
+                    },
+                    tree: TreeReadiness::Ready {
+                        arch: Some("x86_64".to_string()),
+                    },
+                    output_dir: None,
+                    deploy_alone: Err(DeployAloneRefusal::NoBuildRecord),
+                    current_branch: Some("main".to_string()),
+                    deploy_remote: Err(RemoteRefusal::NoRemotesConfigured),
+                    boot_once: BootOnceState::Unknown,
+                },
+            )
+        }
+    }
+    use helpers::*;
+    use std::sync::Arc;
 
     use tokio::sync::mpsc;
 
     use crate::{
-        app::{
-            screens::{
-                bookmarked::BookmarkedPatchsetsState, mail_list::MailingListSelectionState,
-                CurrentScreen,
-            },
-            state::{AppState, ConfigUiState, LoreUiState, NavigationState, UserLoreState},
-            AppServices,
-        },
-        config::{ConfigHandle, ConfigState},
+        config::{ConfigSnapshot, ConfigState},
         infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
         input::{event::InputEvent, handle::InputHandle, messages::InputMessage},
         kw::history::MockKwHistoryStore,
-        lore::{
-            application::{
-                actor::LoreApiActor, cache::CacheTtl, handle::LoreApiHandle, service::LoreService,
-            },
-            domain::mailing_list::MailingList,
-            infrastructure::{
-                http_lore_client::{MockFeedGateway, MockListsGateway, MockPatchHtmlGateway},
-                patchset_fetcher::MockPatchsetFetcher,
-                patchset_parser::MockPatchsetParser,
-                persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
-            },
-        },
-        render::{actor::RenderActor, handle::RenderHandle, ShellRenderService},
+        lore::domain::mailing_list::MailingList,
         terminal::{
             actor::TerminalActor, messages::TerminalFrame, session::MockTerminalSessionApi,
         },
@@ -388,56 +532,7 @@ mod tests {
     };
 
     use super::*;
-
-    fn dummy_config_handle() -> ConfigHandle {
-        let (config_tx, _config_rx) = mpsc::channel(1);
-        ConfigHandle::new(config_tx)
-    }
-
-    fn minimal_app() -> App {
-        let (lore_tx, _lore_rx) = mpsc::channel(1);
-        let (render_tx, _render_rx) = mpsc::channel(1);
-
-        let dummy_list = MailingList::new("test-list", "Test list");
-
-        App {
-            state: AppState {
-                navigation: NavigationState {
-                    current_screen: CurrentScreen::MailingListSelection,
-                },
-                lore: LoreUiState {
-                    mailing_list_selection: MailingListSelectionState {
-                        mailing_lists: vec![dummy_list.clone()],
-                        target_list: String::new(),
-                        possible_mailing_lists: vec![dummy_list],
-                        highlighted_list_index: 0,
-                    },
-                    latest_patchsets: None,
-                    details: None,
-                },
-                user_state: UserLoreState {
-                    bookmarked_patchsets: BookmarkedPatchsetsState {
-                        bookmarked_patchsets: vec![],
-                        patchset_index: 0,
-                    },
-                    reviewed_patchsets: HashMap::new(),
-                },
-                config_state: ConfigUiState { edit_config: None },
-                config: ConfigState::default().to_snapshot(),
-                popup: None,
-                kw: Default::default(),
-            },
-            services: AppServices {
-                lore_api: LoreApiHandle::new(lore_tx),
-                render: RenderHandle::new(render_tx),
-                shell: Box::new(MockShellTrait::new()),
-                fs: Arc::new(MockFileSystemTrait::new()),
-                config: dummy_config_handle(),
-                kw_history: Arc::new(MockKwHistoryStore::new()),
-                kw: None,
-            },
-        }
-    }
+    use crate::app::models::kw_ops::DeployStartKind;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn input_channel_close_stops_actor_and_returns_ok() {
@@ -470,40 +565,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    fn spawn_real_lore_api(list: MailingList) -> LoreApiHandle {
-        let mut lists_store = MockMailingListsCacheStore::new();
-        lists_store
-            .expect_load_available_lists()
-            .returning(move || Ok(vec![list.clone()]));
-        let mut user_state = MockUserLoreStateStore::new();
-        user_state
-            .expect_load_bookmarked_patchsets()
-            .returning(|| Ok(vec![]));
-        user_state
-            .expect_load_reviewed_patchsets()
-            .returning(|| Ok(HashMap::new()));
-
-        let service = LoreService::new(
-            Arc::new(MockListsGateway::new()),
-            Arc::new(MockFeedGateway::new()),
-            Arc::new(MockPatchHtmlGateway::new()),
-            Arc::new(lists_store),
-            Arc::new(user_state),
-            Arc::new(MockPatchsetFetcher::new()),
-            Arc::new(MockPatchsetParser::new()),
-            Arc::new(MockFileSystemTrait::new()),
-            Arc::new(MockShellTrait::new()),
-            CacheTtl::default(),
-        );
-        LoreApiActor::spawn(service)
-    }
-
-    fn spawn_real_render() -> RenderHandle {
-        RenderActor::spawn(Box::new(ShellRenderService::new(Arc::new(
-            MockShellTrait::new(),
-        ))))
-    }
-
     /// Verifies that AppActor, LoreApiActor, and RenderActor can be wired
     /// together, go through a full bootstrap cycle, and all shut down cleanly
     /// in the documented order when the input channel closes.
@@ -529,7 +590,7 @@ mod tests {
         let ui_handle = UiActor::spawn();
 
         let app = App::new(
-            ConfigState::default().to_snapshot(),
+            ConfigSnapshot::from(&ConfigState::default()),
             dummy_config_handle(),
             bootstrap,
             Arc::new(MockFileSystemTrait::new()),
@@ -556,50 +617,19 @@ mod tests {
         render.shutdown().await;
     }
 
-    fn sample_kw_ops() -> crate::app::screens::kw_ops::KwOpsState {
-        crate::app::screens::kw_ops::KwOpsState::new(
-            "title".to_string(),
-            "mid".to_string(),
-            "linux".to_string(),
-            serde_json::from_value(serde_json::json!({
-                "path": "/kernel",
-                "branch": "main"
-            }))
-            .unwrap(),
-            crate::kw::readiness::KwReadiness {
-                kw_binary: crate::kw::readiness::KwBinaryProbe {
-                    available: true,
-                    version_line: Some("kw, version 0.10.0".to_string()),
-                    check: crate::kw::readiness::KwVersionCheck::Meets,
-                },
-                tree: crate::kw::readiness::TreeReadiness::Ready {
-                    arch: Some("x86_64".to_string()),
-                },
-                output_dir: None,
-                kernel_image: None,
-                build_record: None,
-                latest_build: None,
-                deploy_alone: Err(crate::kw::readiness::DeployAloneRefusal::NoBuildRecord),
-                current_branch: Some("main".to_string()),
-                deploy_remote: Err(crate::kw::remote::RemoteRefusal::NoRemotesConfigured),
-                boot_once: crate::kw::readiness::BootOnceState::Unknown,
-            },
-        )
-    }
-
     #[tokio::test]
     async fn proceed_with_boot_once_acks_and_clears_pending() {
         let mut app = minimal_app();
         let mut ops = sample_kw_ops();
-        ops.pending_deploy = Some(crate::app::screens::kw_ops::DeployStartKind::Deploy);
+        ops.pending_deploy = Some(DeployStartKind::Deploy);
         app.state.kw.ops = Some(ops);
         app.state.popup = Some(AppPopup::boot_once_warning());
 
-        let flow = apply_confirm_action(&mut app, ConfirmAction::ProceedWithBootOnce)
+        let flow = AppActor::apply_confirm_action(&mut app, ConfirmAction::ProceedWithBootOnce)
             .await
-            .unwrap();
+            .expect("confirm action applies");
         assert_eq!(ControlFlow::Continue(()), flow);
-        let ops = app.state.kw.ops.as_ref().unwrap();
+        let ops = app.state.kw.ops.as_ref().expect("ops is set");
         assert!(ops.boot_once_acknowledged);
         assert_eq!(None, ops.pending_deploy);
         let Some(AppPopup::Info { title, body, .. }) = &app.state.popup else {
@@ -616,16 +646,16 @@ mod tests {
     async fn back_out_clears_pending_without_acknowledging() {
         let mut app = minimal_app();
         let mut ops = sample_kw_ops();
-        ops.pending_deploy = Some(crate::app::screens::kw_ops::DeployStartKind::BuildThenDeploy);
+        ops.pending_deploy = Some(DeployStartKind::BuildThenDeploy);
         app.state.kw.ops = Some(ops);
         app.state.popup = Some(AppPopup::boot_once_warning());
 
-        let flow = apply_confirm_action(&mut app, ConfirmAction::BackOut)
+        let flow = AppActor::apply_confirm_action(&mut app, ConfirmAction::BackOut)
             .await
-            .unwrap();
+            .expect("confirm action applies");
         assert_eq!(ControlFlow::Continue(()), flow);
         assert!(app.state.popup.is_none());
-        let ops = app.state.kw.ops.as_ref().unwrap();
+        let ops = app.state.kw.ops.as_ref().expect("ops is set");
         assert!(!ops.boot_once_acknowledged);
         assert_eq!(None, ops.pending_deploy);
     }
@@ -634,29 +664,49 @@ mod tests {
     fn closing_the_boot_once_popup_clears_pending() {
         let mut app = minimal_app();
         let mut ops = sample_kw_ops();
-        ops.pending_deploy = Some(crate::app::screens::kw_ops::DeployStartKind::Deploy);
+        ops.pending_deploy = Some(DeployStartKind::Deploy);
         app.state.kw.ops = Some(ops);
         app.state.popup = Some(AppPopup::boot_once_warning());
 
-        dismiss_open_popup(&mut app);
+        AppActor::dismiss_open_popup(&mut app);
         assert!(app.state.popup.is_none());
-        assert_eq!(None, app.state.kw.ops.as_ref().unwrap().pending_deploy);
-        assert!(!app.state.kw.ops.as_ref().unwrap().boot_once_acknowledged);
+        assert_eq!(
+            None,
+            app.state
+                .kw
+                .ops
+                .as_ref()
+                .expect("ops is set")
+                .pending_deploy
+        );
+        assert!(
+            !app.state
+                .kw
+                .ops
+                .as_ref()
+                .expect("ops is set")
+                .boot_once_acknowledged
+        );
     }
 
     #[test]
     fn closing_the_quit_popup_does_not_touch_pending_deploy() {
         let mut app = minimal_app();
         let mut ops = sample_kw_ops();
-        ops.pending_deploy = Some(crate::app::screens::kw_ops::DeployStartKind::Deploy);
+        ops.pending_deploy = Some(DeployStartKind::Deploy);
         app.state.kw.ops = Some(ops);
         app.state.popup = Some(AppPopup::quit_while_job_running());
 
-        dismiss_open_popup(&mut app);
+        AppActor::dismiss_open_popup(&mut app);
         assert!(app.state.popup.is_none());
         assert_eq!(
-            Some(crate::app::screens::kw_ops::DeployStartKind::Deploy),
-            app.state.kw.ops.as_ref().unwrap().pending_deploy
+            Some(DeployStartKind::Deploy),
+            app.state
+                .kw
+                .ops
+                .as_ref()
+                .expect("ops is set")
+                .pending_deploy
         );
     }
 }

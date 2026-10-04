@@ -4,56 +4,18 @@
 //! Apply and build records are user state — not a cache — and are never
 //! refreshed from lore.
 
+use chrono::DateTime;
 use mockall::automock;
-use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
 use serde_json::from_reader;
 
 use std::{collections::HashMap, io, path::Path, sync::Arc};
 
 use crate::infrastructure::file_system::{FileSystemError, FileSystemTrait, JsonUtils};
+use crate::kw::models::history::{KwApplyRecord, KwBuildRecord};
 
 pub const APPLY_HISTORY_FILENAME: &str = "kw_apply_history.json";
 pub const BUILD_HISTORY_FILENAME: &str = "kw_build_history.json";
-
-/// One recorded `git am` application of a lore patchset to a kernel tree.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct KwApplyRecord {
-    pub message_id: String,
-    pub kernel_tree_id: String,
-    /// Snapshot of `KernelTree.path` when the record was written.
-    pub tree_path: String,
-    pub applied_branch: String,
-    pub base_branch: String,
-    /// RFC3339 timestamp.
-    pub applied_at: String,
-}
-
-/// One recorded `kw build` attempt on a kernel tree branch, whether it
-/// succeeded or not. Failed attempts are stored so deploy-alone can refuse
-/// them instead of treating the tree as never built.
-///
-/// `message_id`, `arch`, `image_path`, and `kernelrelease` are optional: a
-/// build can target a branch no patchset was applied to, `arch` is unknown
-/// when image discovery had to glob, and a failed build may never have
-/// produced an image or a kernelrelease.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct KwBuildRecord {
-    pub kernel_tree_id: String,
-    /// Snapshot of `KernelTree.path` when the record was written.
-    pub tree_path: String,
-    pub message_id: Option<String>,
-    pub branch: String,
-    pub arch: Option<String>,
-    pub image_path: Option<String>,
-    /// Resolved kw-env `O=` dir at build time, if an env was active.
-    pub output_dir: Option<String>,
-    pub kernelrelease: Option<String>,
-    pub log_path: String,
-    /// RFC3339 timestamp. Readers compare parsed timestamps; records with
-    /// unparseable `built_at` values sort oldest.
-    pub built_at: String,
-    pub success: bool,
-}
 
 /// message id → kernel tree id → record: applying the same patchset to
 /// several trees keeps one record per tree.
@@ -70,24 +32,11 @@ pub trait KwHistoryStore: Send + Sync {
     /// `(message_id, kernel_tree_id)` pair.
     fn record_apply(&self, record: KwApplyRecord) -> Result<(), FileSystemError>;
 
-    /// Returns the apply record for the `(message_id, kernel_tree_id)` pair,
-    /// or `None` if it was never recorded. A missing history file is a normal
-    /// state, not an error.
-    #[allow(dead_code)]
-    fn apply_record(
-        &self,
-        message_id: &str,
-        kernel_tree_id: &str,
-    ) -> Result<Option<KwApplyRecord>, FileSystemError>;
-
     /// Returns the newest apply record for the tree whose applied branch
     /// is `branch` — the link from a build's branch back to the patchset
     /// it came from. A missing history file is a normal state, not an
     /// error. Records with unparseable `applied_at` values sort oldest,
     /// same convention as the build records.
-    // The only production caller is the unix-only actor's build-record
-    // writer.
-    #[cfg_attr(not(unix), allow(dead_code))]
     fn apply_record_for_branch(
         &self,
         kernel_tree_id: &str,
@@ -96,28 +45,7 @@ pub trait KwHistoryStore: Send + Sync {
 
     /// Inserts or replaces the build record for the record's
     /// `(kernel_tree_id, branch)` pair.
-    // The only production caller is the unix-only actor's build-record
-    // writer.
-    #[cfg_attr(not(unix), allow(dead_code))]
     fn record_build(&self, record: KwBuildRecord) -> Result<(), FileSystemError>;
-
-    /// Returns the build record for the `(kernel_tree_id, branch)` pair, or
-    /// `None` if it was never recorded. A missing history file is a normal
-    /// state, not an error.
-    #[allow(dead_code)]
-    fn build_record(
-        &self,
-        kernel_tree_id: &str,
-        branch: &str,
-    ) -> Result<Option<KwBuildRecord>, FileSystemError>;
-
-    /// Returns the chronologically newest build record for the tree, across
-    /// branches, or `None` if none was recorded.
-    #[allow(dead_code)]
-    fn latest_build_record(
-        &self,
-        kernel_tree_id: &str,
-    ) -> Result<Option<KwBuildRecord>, FileSystemError>;
 
     /// Returns the record for `(kernel_tree_id, branch)` and the newest
     /// record for the tree across branches from a single load of the
@@ -136,8 +64,8 @@ pub struct FileKwHistoryStore {
 }
 
 impl FileKwHistoryStore {
-    /// Creates a store keeping both history files ([`APPLY_HISTORY_FILENAME`]
-    /// and [`BUILD_HISTORY_FILENAME`]) directly under `data_dir`.
+    /// Creates a store keeping `kw_apply_history.json` and
+    /// `kw_build_history.json` under `data_dir`.
     pub fn new(fs: Arc<dyn FileSystemTrait>, data_dir: String) -> Self {
         FileKwHistoryStore {
             fs,
@@ -145,13 +73,15 @@ impl FileKwHistoryStore {
             build_history_path: format!("{data_dir}/{BUILD_HISTORY_FILENAME}"),
         }
     }
+}
 
+impl FileKwHistoryStore {
     /// Loads a history file, or its empty default when the file does not
     /// exist. A corrupt file is an error rather than an empty map: history
     /// must never be silently clobbered by the next write.
     fn load_records<T>(&self, path: &str) -> Result<T, FileSystemError>
     where
-        T: serde::de::DeserializeOwned + Default,
+        T: DeserializeOwned + Default,
     {
         let path_ref = Path::new(path);
         if !self.fs.is_file(path_ref) {
@@ -194,21 +124,6 @@ impl KwHistoryStore for FileKwHistoryStore {
             .map_err(|e| self.error_with_path(&self.apply_history_path, e))
     }
 
-    fn apply_record(
-        &self,
-        message_id: &str,
-        kernel_tree_id: &str,
-    ) -> Result<Option<KwApplyRecord>, FileSystemError> {
-        self.load_records(&self.apply_history_path)
-            .map(|records: ApplyRecords| {
-                records
-                    .get(message_id)
-                    .and_then(|by_tree| by_tree.get(kernel_tree_id))
-                    .cloned()
-            })
-            .map_err(|e| self.error_with_path(&self.apply_history_path, e))
-    }
-
     fn apply_record_for_branch(
         &self,
         kernel_tree_id: &str,
@@ -220,9 +135,7 @@ impl KwHistoryStore for FileKwHistoryStore {
                     .values()
                     .filter_map(|by_tree| by_tree.get(kernel_tree_id))
                     .filter(|record| record.applied_branch == branch)
-                    .max_by_key(|record| {
-                        chrono::DateTime::parse_from_rfc3339(&record.applied_at).ok()
-                    })
+                    .max_by_key(|record| DateTime::parse_from_rfc3339(&record.applied_at).ok())
                     .cloned()
             })
             .map_err(|e| self.error_with_path(&self.apply_history_path, e))
@@ -231,24 +144,6 @@ impl KwHistoryStore for FileKwHistoryStore {
     fn record_build(&self, record: KwBuildRecord) -> Result<(), FileSystemError> {
         self.store_build_record(record)
             .map_err(|e| self.error_with_path(&self.build_history_path, e))
-    }
-
-    fn build_record(
-        &self,
-        kernel_tree_id: &str,
-        branch: &str,
-    ) -> Result<Option<KwBuildRecord>, FileSystemError> {
-        self.build_records(kernel_tree_id, branch)
-            .map(|(record, _)| record)
-    }
-
-    fn latest_build_record(
-        &self,
-        kernel_tree_id: &str,
-    ) -> Result<Option<KwBuildRecord>, FileSystemError> {
-        // The branch half of the pair is unused here.
-        self.build_records(kernel_tree_id, "")
-            .map(|(_, latest)| latest)
     }
 
     fn build_records(
@@ -265,9 +160,7 @@ impl KwHistoryStore for FileKwHistoryStore {
                 let latest = by_branch.and_then(|by_branch| {
                     by_branch
                         .values()
-                        .max_by_key(|record| {
-                            chrono::DateTime::parse_from_rfc3339(&record.built_at).ok()
-                        })
+                        .max_by_key(|record| DateTime::parse_from_rfc3339(&record.built_at).ok())
                         .cloned()
                 });
                 (record, latest)
@@ -278,73 +171,90 @@ impl KwHistoryStore for FileKwHistoryStore {
 
 #[cfg(test)]
 mod tests {
+
+    mod helpers {
+        use super::super::*;
+        use crate::infrastructure::file_system::OsFileSystem;
+        use std::{
+            env, fs,
+            path::PathBuf,
+            process,
+            sync::atomic::{AtomicU64, Ordering},
+        };
+
+        pub(super) static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
+
+        pub(super) fn tmp_dir(test_name: &str) -> PathBuf {
+            let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
+            let dir = env::temp_dir().join(format!(
+                "patch-hub-kw-history-{}-{}-{}",
+                test_name,
+                process::id(),
+                n
+            ));
+            // A leftover from a failed previous run (pid reuse + counter reset)
+            // must not poison this one.
+            let _ = fs::remove_dir_all(&dir);
+            fs::create_dir_all(&dir).expect("dir creates");
+            dir
+        }
+
+        pub(super) fn store_at(dir: &Path) -> FileKwHistoryStore {
+            FileKwHistoryStore::new(
+                Arc::new(OsFileSystem),
+                dir.to_str().expect("path is utf-8").to_string(),
+            )
+        }
+
+        pub(super) fn record(
+            message_id: &str,
+            kernel_tree_id: &str,
+            branch: &str,
+        ) -> KwApplyRecord {
+            KwApplyRecord {
+                message_id: message_id.to_string(),
+                kernel_tree_id: kernel_tree_id.to_string(),
+                tree_path: format!("/home/user/{kernel_tree_id}"),
+                applied_branch: branch.to_string(),
+                base_branch: "master".to_string(),
+                applied_at: "2026-08-01T17:30:00Z".to_string(),
+            }
+        }
+
+        pub(super) fn record_at(
+            message_id: &str,
+            kernel_tree_id: &str,
+            branch: &str,
+            applied_at: &str,
+        ) -> KwApplyRecord {
+            KwApplyRecord {
+                applied_at: applied_at.to_string(),
+                ..record(message_id, kernel_tree_id, branch)
+            }
+        }
+
+        pub(super) fn build(kernel_tree_id: &str, branch: &str, built_at: &str) -> KwBuildRecord {
+            KwBuildRecord {
+                kernel_tree_id: kernel_tree_id.to_string(),
+                tree_path: format!("/home/user/{kernel_tree_id}"),
+                message_id: None,
+                branch: branch.to_string(),
+                arch: Some("x86".to_string()),
+                image_path: Some(format!("/home/user/{kernel_tree_id}/arch/x86/boot/bzImage")),
+                output_dir: None,
+                kernelrelease: Some("6.17.0".to_string()),
+                log_path: "/home/user/.cache/patch_hub/kw_logs/build-1.log".to_string(),
+                built_at: built_at.to_string(),
+                success: true,
+            }
+        }
+    }
+    use helpers::*;
     use std::fs;
-    use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU64, Ordering};
 
     use crate::infrastructure::file_system::OsFileSystem;
 
     use super::*;
-
-    static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
-
-    fn tmp_dir(test_name: &str) -> PathBuf {
-        let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!(
-            "patch-hub-kw-history-{}-{}-{}",
-            test_name,
-            std::process::id(),
-            n
-        ));
-        // A leftover from a failed previous run (pid reuse + counter reset)
-        // must not poison this one.
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
-    fn store_at(dir: &Path) -> FileKwHistoryStore {
-        FileKwHistoryStore::new(Arc::new(OsFileSystem), dir.to_str().unwrap().to_string())
-    }
-
-    fn record(message_id: &str, kernel_tree_id: &str, branch: &str) -> KwApplyRecord {
-        KwApplyRecord {
-            message_id: message_id.to_string(),
-            kernel_tree_id: kernel_tree_id.to_string(),
-            tree_path: format!("/home/user/{kernel_tree_id}"),
-            applied_branch: branch.to_string(),
-            base_branch: "master".to_string(),
-            applied_at: "2026-08-01T17:30:00Z".to_string(),
-        }
-    }
-
-    fn record_at(
-        message_id: &str,
-        kernel_tree_id: &str,
-        branch: &str,
-        applied_at: &str,
-    ) -> KwApplyRecord {
-        KwApplyRecord {
-            applied_at: applied_at.to_string(),
-            ..record(message_id, kernel_tree_id, branch)
-        }
-    }
-
-    fn build(kernel_tree_id: &str, branch: &str, built_at: &str) -> KwBuildRecord {
-        KwBuildRecord {
-            kernel_tree_id: kernel_tree_id.to_string(),
-            tree_path: format!("/home/user/{kernel_tree_id}"),
-            message_id: None,
-            branch: branch.to_string(),
-            arch: Some("x86".to_string()),
-            image_path: Some(format!("/home/user/{kernel_tree_id}/arch/x86/boot/bzImage")),
-            output_dir: None,
-            kernelrelease: Some("6.17.0".to_string()),
-            log_path: "/home/user/.cache/patch_hub/kw_logs/build-1.log".to_string(),
-            built_at: built_at.to_string(),
-            success: true,
-        }
-    }
 
     #[test]
     fn record_and_read_round_trip() {
@@ -353,21 +263,25 @@ mod tests {
 
         store
             .record_apply(record("msg-1", "mainline", "patchset-2026-08-01-17-30-00"))
-            .unwrap();
+            .expect("apply records");
         store
             .record_apply(record("msg-2", "mainline", "patchset-2026-08-02-10-00-00"))
-            .unwrap();
+            .expect("apply records");
 
         assert_eq!(
             Some(record("msg-1", "mainline", "patchset-2026-08-01-17-30-00")),
-            store.apply_record("msg-1", "mainline").unwrap()
+            store
+                .apply_record_for_branch("mainline", "patchset-2026-08-01-17-30-00")
+                .expect("apply record loads")
         );
         assert_eq!(
             Some(record("msg-2", "mainline", "patchset-2026-08-02-10-00-00")),
-            store.apply_record("msg-2", "mainline").unwrap()
+            store
+                .apply_record_for_branch("mainline", "patchset-2026-08-02-10-00-00")
+                .expect("apply record loads")
         );
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
@@ -377,17 +291,25 @@ mod tests {
 
         store
             .record_apply(record("msg-1", "mainline", "patchset-old"))
-            .unwrap();
+            .expect("apply records");
         store
             .record_apply(record("msg-1", "mainline", "patchset-new"))
-            .unwrap();
+            .expect("apply records");
 
         assert_eq!(
             Some(record("msg-1", "mainline", "patchset-new")),
-            store.apply_record("msg-1", "mainline").unwrap()
+            store
+                .apply_record_for_branch("mainline", "patchset-new")
+                .expect("apply record loads")
+        );
+        assert_eq!(
+            None,
+            store
+                .apply_record_for_branch("mainline", "patchset-old")
+                .expect("apply record loads")
         );
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
@@ -397,22 +319,31 @@ mod tests {
 
         store
             .record_apply(record("msg-1", "mainline", "patchset-mainline"))
-            .unwrap();
+            .expect("apply records");
         store
             .record_apply(record("msg-1", "stable", "patchset-stable"))
-            .unwrap();
+            .expect("apply records");
 
         assert_eq!(
             Some(record("msg-1", "mainline", "patchset-mainline")),
-            store.apply_record("msg-1", "mainline").unwrap()
+            store
+                .apply_record_for_branch("mainline", "patchset-mainline")
+                .expect("apply record loads")
         );
         assert_eq!(
             Some(record("msg-1", "stable", "patchset-stable")),
-            store.apply_record("msg-1", "stable").unwrap()
+            store
+                .apply_record_for_branch("stable", "patchset-stable")
+                .expect("apply record loads")
         );
-        assert_eq!(None, store.apply_record("msg-1", "amd-gfx").unwrap());
+        assert_eq!(
+            None,
+            store
+                .apply_record_for_branch("amd-gfx", "patchset-mainline")
+                .expect("apply record loads")
+        );
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
@@ -420,9 +351,14 @@ mod tests {
         let dir = tmp_dir("missing");
         let store = store_at(&dir);
 
-        assert_eq!(None, store.apply_record("msg-1", "mainline").unwrap());
+        assert_eq!(
+            None,
+            store
+                .apply_record_for_branch("mainline", "patchset-x")
+                .expect("apply record loads")
+        );
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
@@ -432,25 +368,25 @@ mod tests {
 
         store
             .record_apply(record("msg-1", "mainline", "patchset-x"))
-            .unwrap();
+            .expect("apply records");
         store
             .record_apply(record("msg-2", "mainline", "patchset-y"))
-            .unwrap();
+            .expect("apply records");
 
         assert_eq!(
             Some(record("msg-2", "mainline", "patchset-y")),
             store
                 .apply_record_for_branch("mainline", "patchset-y")
-                .unwrap()
+                .expect("apply record loads")
         );
         assert_eq!(
             None,
             store
                 .apply_record_for_branch("mainline", "never-applied")
-                .unwrap()
+                .expect("apply record loads")
         );
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
@@ -461,25 +397,25 @@ mod tests {
         // The same branch name applied to two trees resolves per tree.
         store
             .record_apply(record("msg-1", "mainline", "patchset-x"))
-            .unwrap();
+            .expect("apply records");
         store
             .record_apply(record("msg-2", "stable", "patchset-x"))
-            .unwrap();
+            .expect("apply records");
 
         assert_eq!(
             Some(record("msg-2", "stable", "patchset-x")),
             store
                 .apply_record_for_branch("stable", "patchset-x")
-                .unwrap()
+                .expect("apply record loads")
         );
         assert_eq!(
             None,
             store
                 .apply_record_for_branch("amd-gfx", "patchset-x")
-                .unwrap()
+                .expect("apply record loads")
         );
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
@@ -497,7 +433,7 @@ mod tests {
                 "patchset-x",
                 "2026-08-01T10:00:00Z",
             ))
-            .unwrap();
+            .expect("apply records");
         store
             .record_apply(record_at(
                 "msg-new",
@@ -505,7 +441,7 @@ mod tests {
                 "patchset-x",
                 "2026-08-02T10:00:00Z",
             ))
-            .unwrap();
+            .expect("apply records");
         store
             .record_apply(record_at(
                 "msg-broken",
@@ -513,7 +449,7 @@ mod tests {
                 "patchset-x",
                 "not a timestamp",
             ))
-            .unwrap();
+            .expect("apply records");
 
         assert_eq!(
             Some(record_at(
@@ -524,10 +460,10 @@ mod tests {
             )),
             store
                 .apply_record_for_branch("mainline", "patchset-x")
-                .unwrap()
+                .expect("apply record loads")
         );
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
@@ -539,10 +475,10 @@ mod tests {
             None,
             store
                 .apply_record_for_branch("mainline", "patchset-x")
-                .unwrap()
+                .expect("apply record loads")
         );
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
@@ -553,29 +489,33 @@ mod tests {
             dir.join("nested")
                 .join("deeper")
                 .to_str()
-                .unwrap()
+                .expect("path is utf-8")
                 .to_string(),
         );
 
         store
             .record_apply(record("msg-1", "mainline", "patchset-x"))
-            .unwrap();
+            .expect("apply records");
 
         assert_eq!(
             Some(record("msg-1", "mainline", "patchset-x")),
-            store.apply_record("msg-1", "mainline").unwrap()
+            store
+                .apply_record_for_branch("mainline", "patchset-x")
+                .expect("apply record loads")
         );
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
     fn corrupt_history_file_errors_instead_of_clobbering() {
         let dir = tmp_dir("corrupt");
         let store = store_at(&dir);
-        fs::write(dir.join(APPLY_HISTORY_FILENAME), b"not json").unwrap();
+        fs::write(dir.join(APPLY_HISTORY_FILENAME), b"not json").expect("file writes");
 
-        let err = store.apply_record("msg-1", "mainline").unwrap_err();
+        let err = store
+            .apply_record_for_branch("mainline", "patchset-x")
+            .expect_err("corrupt history errors");
         // Errors name the file so the warning popup can point at it.
         assert!(err.to_string().contains(APPLY_HISTORY_FILENAME));
         assert!(store
@@ -584,10 +524,10 @@ mod tests {
         // The corrupt file is left untouched for the user to inspect.
         assert_eq!(
             "not json",
-            fs::read_to_string(dir.join(APPLY_HISTORY_FILENAME)).unwrap()
+            fs::read_to_string(dir.join(APPLY_HISTORY_FILENAME)).expect("file reads")
         );
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
@@ -597,15 +537,15 @@ mod tests {
 
         store
             .record_apply(record("msg-1", "mainline", "patchset-x"))
-            .unwrap();
+            .expect("apply records");
 
-        let tmp_left = fs::read_dir(&dir).unwrap().any(|e| {
+        let tmp_left = fs::read_dir(&dir).expect("dir reads").any(|e| {
             e.ok()
                 .is_some_and(|x| x.file_name().to_string_lossy().ends_with(".tmp"))
         });
         assert!(!tmp_left, "atomic write should rename away .tmp");
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
@@ -615,26 +555,38 @@ mod tests {
 
         store
             .record_build(build("mainline", "for-next", "2026-08-01T18:10:00Z"))
-            .unwrap();
+            .expect("build records");
         let mut failed = build("mainline", "patchset-x", "2026-08-02T09:00:00Z");
         failed.success = false;
         failed.image_path = None;
         failed.kernelrelease = None;
-        store.record_build(failed.clone()).unwrap();
+        store.record_build(failed.clone()).expect("build records");
 
         // A failed attempt is stored, not dropped: deploy-alone readiness
-        // refuses it.
+        // refuses it. The newer failed record is also the tree's latest.
         assert_eq!(
-            Some(build("mainline", "for-next", "2026-08-01T18:10:00Z")),
-            store.build_record("mainline", "for-next").unwrap()
+            (
+                Some(build("mainline", "for-next", "2026-08-01T18:10:00Z")),
+                Some(failed.clone()),
+            ),
+            store
+                .build_records("mainline", "for-next")
+                .expect("build history loads")
         );
         assert_eq!(
-            Some(failed),
-            store.build_record("mainline", "patchset-x").unwrap()
+            (Some(failed.clone()), Some(failed.clone())),
+            store
+                .build_records("mainline", "patchset-x")
+                .expect("build history loads")
         );
-        assert_eq!(None, store.build_record("mainline", "master").unwrap());
+        assert_eq!(
+            (None, Some(failed)),
+            store
+                .build_records("mainline", "master")
+                .expect("build history loads")
+        );
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
@@ -644,17 +596,20 @@ mod tests {
 
         store
             .record_build(build("mainline", "for-next", "2026-08-01T18:10:00Z"))
-            .unwrap();
+            .expect("build records");
         store
             .record_build(build("mainline", "for-next", "2026-08-02T18:10:00Z"))
-            .unwrap();
+            .expect("build records");
 
+        let overwritten = build("mainline", "for-next", "2026-08-02T18:10:00Z");
         assert_eq!(
-            Some(build("mainline", "for-next", "2026-08-02T18:10:00Z")),
-            store.build_record("mainline", "for-next").unwrap()
+            (Some(overwritten.clone()), Some(overwritten)),
+            store
+                .build_records("mainline", "for-next")
+                .expect("build history loads")
         );
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
@@ -664,56 +619,84 @@ mod tests {
 
         store
             .record_build(build("mainline", "for-next", "2026-08-01T18:10:00Z"))
-            .unwrap();
+            .expect("build records");
         store
             .record_build(build("mainline", "patchset-x", "2026-08-02T18:10:00Z"))
-            .unwrap();
+            .expect("build records");
         store
             .record_build(build("stable", "for-next", "2026-08-03T18:10:00Z"))
-            .unwrap();
+            .expect("build records");
 
+        let mainline_latest = build("mainline", "patchset-x", "2026-08-02T18:10:00Z");
         assert_eq!(
-            Some(build("mainline", "for-next", "2026-08-01T18:10:00Z")),
-            store.build_record("mainline", "for-next").unwrap()
+            (
+                Some(build("mainline", "for-next", "2026-08-01T18:10:00Z")),
+                Some(mainline_latest.clone()),
+            ),
+            store
+                .build_records("mainline", "for-next")
+                .expect("build history loads")
         );
         assert_eq!(
-            Some(build("mainline", "patchset-x", "2026-08-02T18:10:00Z")),
-            store.build_record("mainline", "patchset-x").unwrap()
+            (Some(mainline_latest.clone()), Some(mainline_latest)),
+            store
+                .build_records("mainline", "patchset-x")
+                .expect("build history loads")
         );
+        let stable = build("stable", "for-next", "2026-08-03T18:10:00Z");
         assert_eq!(
-            Some(build("stable", "for-next", "2026-08-03T18:10:00Z")),
-            store.build_record("stable", "for-next").unwrap()
+            (Some(stable.clone()), Some(stable)),
+            store
+                .build_records("stable", "for-next")
+                .expect("build history loads")
         );
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
-    fn latest_build_record_picks_newest_across_branches() {
+    fn build_records_picks_newest_across_branches() {
         let dir = tmp_dir("build-latest");
         let store = store_at(&dir);
 
         store
             .record_build(build("mainline", "for-next", "2026-08-01T18:10:00Z"))
-            .unwrap();
+            .expect("build records");
         store
             .record_build(build("mainline", "patchset-x", "2026-08-03T18:10:00Z"))
-            .unwrap();
+            .expect("build records");
         store
             .record_build(build("mainline", "master", "2026-08-02T18:10:00Z"))
-            .unwrap();
+            .expect("build records");
         // Unparseable timestamps sort oldest.
         store
             .record_build(build("mainline", "broken-ts", "not a timestamp"))
-            .unwrap();
+            .expect("build records");
 
+        let newest = build("mainline", "patchset-x", "2026-08-03T18:10:00Z");
         assert_eq!(
-            Some(build("mainline", "patchset-x", "2026-08-03T18:10:00Z")),
-            store.latest_build_record("mainline").unwrap()
+            (
+                Some(build("mainline", "for-next", "2026-08-01T18:10:00Z")),
+                Some(newest.clone()),
+            ),
+            store
+                .build_records("mainline", "for-next")
+                .expect("build history loads")
         );
-        assert_eq!(None, store.latest_build_record("amd-gfx").unwrap());
+        assert_eq!(
+            (Some(newest.clone()), Some(newest)),
+            store
+                .build_records("mainline", "patchset-x")
+                .expect("build history loads")
+        );
+        assert_eq!(
+            (None, None),
+            store
+                .build_records("amd-gfx", "patchset-x")
+                .expect("build history loads")
+        );
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
@@ -723,17 +706,19 @@ mod tests {
 
         store
             .record_build(build("mainline", "for-next", "2026-08-01T18:10:00Z"))
-            .unwrap();
+            .expect("build records");
         store
             .record_build(build("mainline", "patchset-x", "2026-08-03T18:10:00Z"))
-            .unwrap();
+            .expect("build records");
 
         assert_eq!(
             (
                 Some(build("mainline", "for-next", "2026-08-01T18:10:00Z")),
                 Some(build("mainline", "patchset-x", "2026-08-03T18:10:00Z")),
             ),
-            store.build_records("mainline", "for-next").unwrap()
+            store
+                .build_records("mainline", "for-next")
+                .expect("build history loads")
         );
         // An unbuilt branch still reports the tree's latest record.
         assert_eq!(
@@ -741,14 +726,18 @@ mod tests {
                 None,
                 Some(build("mainline", "patchset-x", "2026-08-03T18:10:00Z")),
             ),
-            store.build_records("mainline", "never-built").unwrap()
+            store
+                .build_records("mainline", "never-built")
+                .expect("build history loads")
         );
         assert_eq!(
             (None, None),
-            store.build_records("amd-gfx", "for-next").unwrap()
+            store
+                .build_records("amd-gfx", "for-next")
+                .expect("build history loads")
         );
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
@@ -756,29 +745,35 @@ mod tests {
         let dir = tmp_dir("build-missing");
         let store = store_at(&dir);
 
-        assert_eq!(None, store.build_record("mainline", "for-next").unwrap());
-        assert_eq!(None, store.latest_build_record("mainline").unwrap());
+        assert_eq!(
+            (None, None),
+            store
+                .build_records("mainline", "for-next")
+                .expect("build history loads")
+        );
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
     fn corrupt_build_history_errors_instead_of_clobbering() {
         let dir = tmp_dir("build-corrupt");
         let store = store_at(&dir);
-        fs::write(dir.join(BUILD_HISTORY_FILENAME), b"not json").unwrap();
+        fs::write(dir.join(BUILD_HISTORY_FILENAME), b"not json").expect("file writes");
 
-        let err = store.build_record("mainline", "for-next").unwrap_err();
+        let err = store
+            .build_records("mainline", "for-next")
+            .expect_err("corrupt build history errors");
         assert!(err.to_string().contains(BUILD_HISTORY_FILENAME));
         assert!(store
             .record_build(build("mainline", "for-next", "2026-08-01T18:10:00Z"))
             .is_err());
         assert_eq!(
             "not json",
-            fs::read_to_string(dir.join(BUILD_HISTORY_FILENAME)).unwrap()
+            fs::read_to_string(dir.join(BUILD_HISTORY_FILENAME)).expect("file reads")
         );
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
@@ -788,15 +783,15 @@ mod tests {
 
         store
             .record_build(build("mainline", "for-next", "2026-08-01T18:10:00Z"))
-            .unwrap();
+            .expect("build records");
 
-        let tmp_left = fs::read_dir(&dir).unwrap().any(|e| {
+        let tmp_left = fs::read_dir(&dir).expect("dir reads").any(|e| {
             e.ok()
                 .is_some_and(|x| x.file_name().to_string_lossy().ends_with(".tmp"))
         });
         assert!(!tmp_left, "atomic write should rename away .tmp");
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 
     #[test]
@@ -806,20 +801,27 @@ mod tests {
 
         store
             .record_apply(record("msg-1", "mainline", "patchset-x"))
-            .unwrap();
+            .expect("apply records");
         assert!(!dir.join(BUILD_HISTORY_FILENAME).exists());
-        assert_eq!(None, store.build_record("mainline", "patchset-x").unwrap());
+        assert_eq!(
+            (None, None),
+            store
+                .build_records("mainline", "patchset-x")
+                .expect("build history loads")
+        );
 
         store
             .record_build(build("mainline", "patchset-x", "2026-08-01T18:10:00Z"))
-            .unwrap();
+            .expect("build records");
         assert!(dir.join(APPLY_HISTORY_FILENAME).exists());
         assert!(dir.join(BUILD_HISTORY_FILENAME).exists());
         assert_eq!(
             Some(record("msg-1", "mainline", "patchset-x")),
-            store.apply_record("msg-1", "mainline").unwrap()
+            store
+                .apply_record_for_branch("mainline", "patchset-x")
+                .expect("apply record loads")
         );
 
-        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&dir).expect("temp dir removes");
     }
 }

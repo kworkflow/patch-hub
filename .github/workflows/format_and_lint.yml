@@ -58,4 +58,4 @@ jobs:
       - name: Check clippy errors
         shell: bash
         run: |
-          cargo clippy --all-features --all-targets --tests -- --allow=clippy::too-many-arguments --deny=warnings --deny=clippy::map_unwrap_or --deny=unconditional_recursion
+          cargo clippy --all-features --all-targets --tests -- --deny=warnings --deny=clippy::map_unwrap_or --deny=unconditional_recursion

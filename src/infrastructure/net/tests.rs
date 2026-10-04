@@ -4,26 +4,31 @@ use super::{HttpMethod, MockNetClientTrait, NetClientTrait, NetError};
 fn mock_net_client_returns_configured_response() {
     let mut mock = MockNetClientTrait::new();
     mock.expect_request()
+        .withf(|_method, url| url == "https://example.com")
+        .times(1)
         .returning(|_, _| Ok("<html>response</html>".to_string()));
 
     let result = mock.request(HttpMethod::Get, "https://example.com");
     assert!(result.is_ok());
-    assert_eq!("<html>response</html>", result.unwrap());
+    assert_eq!("<html>response</html>", result.expect("request completes"));
 }
 
 #[test]
 fn mock_net_client_can_return_http_status_error() {
     let mut mock = MockNetClientTrait::new();
-    mock.expect_request().returning(|_, _| {
-        Err(NetError::HttpStatus {
-            code: 404,
-            message: "HTTP 404".to_string(),
-        })
-    });
+    mock.expect_request()
+        .withf(|_method, url| url == "https://example.com/missing")
+        .times(1)
+        .returning(|_, _| {
+            Err(NetError::HttpStatus {
+                code: 404,
+                message: "HTTP 404".to_string(),
+            })
+        });
 
     let result = mock.request(HttpMethod::Get, "https://example.com/missing");
     assert!(result.is_err());
-    let err = result.unwrap_err();
+    let err = result.expect_err("request fails");
     assert!(err.to_string().contains("404"));
 }
 

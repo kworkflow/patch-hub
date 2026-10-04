@@ -1,11 +1,8 @@
 //! Protocol boundary between terminal input and application intent.
 //!
-//! The Input actor mediates between the Terminal actor (producer of raw
-//! [`event::TerminalEvent`] values) and the App (consumer of semantic
-//! [`event::InputEvent`] values). [`mapper::InputMapper`] translates events
-//! using the current [`context::InputContext`], which the App updates after
-//! every state mutation. [`handle::InputHandle`] is the cloneable public
-//! interface to the actor.
+//! The Input actor turns `TerminalEvent` values into `InputEvent` values
+//! via `InputMapper` and the App's `InputContext`. `InputHandle` is the
+//! cloneable interface.
 
 pub mod actor;
 pub mod bindings;

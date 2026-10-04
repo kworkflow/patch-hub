@@ -4,10 +4,10 @@ use tokio::sync::mpsc;
 
 use crate::{
     app::App,
-    config::{ConfigHandle, ConfigState},
+    config::{ConfigHandle, ConfigSnapshot, ConfigState},
     infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
     kw::history::MockKwHistoryStore,
-    lore::application::{cache::BootstrapLoreData, handle::LoreApiHandle},
+    lore::application::{handle::LoreApiHandle, models::cache::BootstrapLoreData},
     render::handle::RenderHandle,
     terminal::{handle::TerminalHandle, messages::TerminalMessage},
 };
@@ -48,7 +48,7 @@ pub(crate) fn app_with_bootstrap_and_handles(
     render: RenderHandle,
 ) -> App {
     App::new(
-        ConfigState::default().to_snapshot(),
+        ConfigSnapshot::from(&ConfigState::default()),
         dummy_config_handle(),
         bootstrap,
         Arc::new(MockFileSystemTrait::new()),

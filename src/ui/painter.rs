@@ -17,71 +17,81 @@ use crate::ui::{
     screens,
 };
 
-/// Paint `scene` onto `f`, replacing the entire frame contents.
-pub fn paint(f: &mut Frame, scene: &UiScene) {
-    f.render_widget(Clear, f.area());
+pub struct FramePainter;
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(1),
-            Constraint::Length(3),
-        ])
-        .split(f.area());
+impl FramePainter {
+    /// Paint `scene` onto `f`, replacing the entire frame contents.
+    pub fn paint(f: &mut Frame, scene: &UiScene) {
+        f.render_widget(Clear, f.area());
 
-    paint_title(f, chunks[0]);
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Min(1),
+                Constraint::Length(3),
+            ])
+            .split(f.area());
 
-    match &scene.body {
-        UiBody::MailingListSelection(s) => screens::mailing_list::paint(f, s, chunks[1]),
-        UiBody::Bookmarked(s) => screens::bookmarked::paint(f, s, chunks[1]),
-        UiBody::Latest(s) => screens::latest::paint(f, s, chunks[1]),
-        UiBody::PatchsetDetails(s) => screens::details::paint(f, s, chunks[1]),
-        UiBody::EditConfig(s) => screens::edit_config::paint(f, s, chunks[1]),
-        UiBody::KwOps(s) => screens::kw_ops::paint(f, s, chunks[1]),
+        Self::paint_title(f, chunks[0]);
+
+        match &scene.body {
+            UiBody::MailingListSelection(s) => {
+                screens::mailing_list::MailingListPainter::paint(f, s, chunks[1])
+            }
+            UiBody::Bookmarked(s) => screens::bookmarked::BookmarkedPainter::paint(f, s, chunks[1]),
+            UiBody::Latest(s) => screens::latest::LatestPainter::paint(f, s, chunks[1]),
+            UiBody::PatchsetDetails(s) => screens::details::DetailsPainter::paint(f, s, chunks[1]),
+            UiBody::EditConfig(s) => {
+                screens::edit_config::EditConfigPainter::paint(f, s, chunks[1])
+            }
+            UiBody::KwOps(s) => screens::kw_ops::KwOpsPainter::paint(f, s, chunks[1]),
+        }
+
+        screens::navigation_bar::NavigationBarPainter::paint(f, &scene.navigation, chunks[2]);
+
+        if let Some(popup) = &scene.popup {
+            let (x, y) = popup.dimensions;
+            let rect = Self::center_rect(x, y, f.area());
+            screens::popup::PopupPainter::paint(f, popup, rect);
+        }
     }
 
-    screens::navigation_bar::paint(f, &scene.navigation, chunks[2]);
+    pub(super) fn center_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+        let popup_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Percentage((100 - percent_y) / 2),
+                Constraint::Percentage(percent_y),
+                Constraint::Percentage((100 - percent_y) / 2),
+            ])
+            .split(r);
 
-    if let Some(popup) = &scene.popup {
-        let (x, y) = popup.dimensions;
-        let rect = centered_rect(x, y, f.area());
-        screens::popup::paint(f, popup, rect);
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage((100 - percent_x) / 2),
+                Constraint::Percentage(percent_x),
+                Constraint::Percentage((100 - percent_x) / 2),
+            ])
+            .split(popup_layout[1])[1]
     }
 }
 
-fn paint_title(f: &mut Frame, chunk: Rect) {
-    let title_block = Block::default()
-        .borders(Borders::ALL)
-        .style(Style::default())
-        .title_alignment(Alignment::Center);
+impl FramePainter {
+    fn paint_title(f: &mut Frame, chunk: Rect) {
+        let title_block = Block::default()
+            .borders(Borders::ALL)
+            .style(Style::default())
+            .title_alignment(Alignment::Center);
 
-    let title = Paragraph::new(Text::styled(
-        "patch-hub",
-        Style::default().fg(Color::Green).bold(),
-    ))
-    .centered()
-    .block(title_block);
+        let title = Paragraph::new(Text::styled(
+            "patch-hub",
+            Style::default().fg(Color::Green).bold(),
+        ))
+        .centered()
+        .block(title_block);
 
-    f.render_widget(title, chunk);
-}
-
-pub(super) fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(r);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(popup_layout[1])[1]
+        f.render_widget(title, chunk);
+    }
 }

@@ -1,16 +1,11 @@
 //! Terminal session actor: owns raw TUI I/O on a dedicated task.
 //!
-//! [`TerminalHandle`](crate::terminal::handle::TerminalHandle) exposes draw,
-//! poll/read event, size, and user-I/O setup as typed messages. The session
-//! implementation ([`TerminalSessionApi`](crate::terminal::session::TerminalSessionApi),
-//! e.g. crossterm) is moved into the actor at spawn time so no other component
-//! holds the terminal directly.
-use tokio::{
-    spawn,
-    sync::{mpsc, oneshot},
-    task,
-};
+//! `TerminalHandle` exposes draw, poll, size, and user-I/O setup. The
+//! session (`TerminalSessionApi`, e.g. crossterm) moves into the actor at
+//! spawn so nothing else holds the terminal.
+use tokio::{spawn, sync::mpsc, task};
 
+use crate::infrastructure::actor_reply::ActorReplyService;
 use crate::terminal::{
     handle::TerminalHandle,
     messages::{TerminalMessage, TerminalResult},
@@ -19,6 +14,9 @@ use crate::terminal::{
 };
 
 pub const DEFAULT_TERMINAL_CHANNEL_SIZE: usize = 32;
+
+const REQUEST_FAILED_LOG: &str = "terminal request failed";
+const REPLY_DROPPED_LOG: &str = "terminal reply receiver dropped before response";
 
 pub struct TerminalActor {
     session: Option<Box<dyn TerminalSessionApi>>,
@@ -50,7 +48,9 @@ impl TerminalActor {
         }
         tracing::info!("terminal actor stopped");
     }
+}
 
+impl TerminalActor {
     async fn handle_message(&mut self, message: TerminalMessage) {
         let message_name = message.name();
         tracing::debug!(message = message_name, "terminal request received");
@@ -61,36 +61,52 @@ impl TerminalActor {
                     .with_session(move |session| session.draw(frame))
                     .await
                     .and_then(|result| result);
-                send_terminal_reply(message_name, reply, result);
-            }
-            #[cfg(test)]
-            TerminalMessage::ReadEvent { reply } => {
-                let result = self
-                    .with_session(|session| session.read_event())
-                    .await
-                    .and_then(|result| result);
-                send_terminal_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
+                    reply,
+                    result,
+                );
             }
             TerminalMessage::PollEvent { timeout, reply } => {
                 let result = self
                     .with_session(move |session| session.poll_event(timeout))
                     .await
                     .and_then(|result| result);
-                send_terminal_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
+                    reply,
+                    result,
+                );
             }
             TerminalMessage::SetupUserIo { reply } => {
                 let result = self
                     .with_session(|session| session.setup_user_io())
                     .await
                     .and_then(|result| result);
-                send_terminal_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
+                    reply,
+                    result,
+                );
             }
             TerminalMessage::TeardownUserIo { reply } => {
                 let result = self
                     .with_session(|session| session.teardown_user_io())
                     .await
                     .and_then(|result| result);
-                send_terminal_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
+                    reply,
+                    result,
+                );
             }
             TerminalMessage::WaitForKeyPress {
                 key,
@@ -101,21 +117,39 @@ impl TerminalActor {
                     .with_session(move |session| session.wait_for_key_press(key, timeout))
                     .await
                     .and_then(|result| result);
-                send_terminal_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
+                    reply,
+                    result,
+                );
             }
             TerminalMessage::GetSize { reply } => {
                 let result = self
                     .with_session(|session| session.size())
                     .await
                     .and_then(|result| result);
-                send_terminal_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
+                    reply,
+                    result,
+                );
             }
             TerminalMessage::Shutdown { reply } => {
                 let result = self
                     .with_session(|session| session.shutdown())
                     .await
                     .and_then(|result| result);
-                send_terminal_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
+                    reply,
+                    result,
+                );
             }
         }
     }
@@ -140,44 +174,26 @@ impl TerminalActor {
     }
 }
 
-fn send_terminal_reply<T>(
-    message_name: &'static str,
-    reply: oneshot::Sender<TerminalResult<T>>,
-    result: TerminalResult<T>,
-) {
-    if let Err(error) = &result {
-        tracing::warn!(
-            message = message_name,
-            error = %error,
-            "terminal request failed"
-        );
-    }
-
-    if reply.send(result).is_err() {
-        tracing::warn!(
-            message = message_name,
-            "terminal reply receiver dropped before response"
-        );
-    }
-}
-
 #[cfg(test)]
 mod tests {
+
+    mod helpers {
+
+        use super::super::*;
+        use crate::terminal::session::MockTerminalSessionApi;
+
+        pub(super) fn spawn_test_actor(session: MockTerminalSessionApi) -> TerminalHandle {
+            TerminalActor::spawn(Box::new(session))
+        }
+    }
+    use helpers::*;
     use std::time::Duration;
 
     use ratatui::crossterm::event::KeyCode;
 
-    use crate::{
-        input::event::{KeyInput, TerminalEvent},
-        terminal::messages::TerminalFrame,
-        terminal::session::MockTerminalSessionApi,
-    };
+    use crate::{terminal::messages::TerminalFrame, terminal::session::MockTerminalSessionApi};
 
     use super::*;
-
-    fn spawn_test_actor(session: MockTerminalSessionApi) -> TerminalHandle {
-        TerminalActor::spawn(Box::new(session))
-    }
 
     #[tokio::test]
     async fn draw_returns_ok_from_actor() {
@@ -195,24 +211,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn read_event_returns_terminal_event_from_actor() {
-        let expected = TerminalEvent::Key(KeyInput::press(KeyCode::Char('j')));
-        let mut session = MockTerminalSessionApi::new();
-        session
-            .expect_read_event()
-            .times(1)
-            .returning(move || Ok(Some(expected.clone())));
-        let handle = spawn_test_actor(session);
-
-        let result = handle.read_event().await.unwrap();
-
-        assert_eq!(
-            result,
-            Some(TerminalEvent::Key(KeyInput::press(KeyCode::Char('j'))))
-        );
-    }
-
-    #[tokio::test]
     async fn sequential_requests_preserve_session() {
         let mut session = MockTerminalSessionApi::new();
         session
@@ -220,11 +218,18 @@ mod tests {
             .withf(|frame| matches!(frame, TerminalFrame::Empty))
             .times(1)
             .returning(|_| Ok(()));
-        session.expect_size().times(1).returning(|| Ok((120, 40)));
+        session
+            .expect_size()
+            .withf(|| true)
+            .times(1)
+            .returning(|| Ok((120, 40)));
         let handle = spawn_test_actor(session);
 
-        handle.draw(TerminalFrame::Empty).await.unwrap();
-        let size = handle.size().await.unwrap();
+        handle
+            .draw(TerminalFrame::Empty)
+            .await
+            .expect("terminal draws");
+        let size = handle.size().await.expect("terminal size reads");
 
         assert_eq!(size, (120, 40));
     }
@@ -242,7 +247,7 @@ mod tests {
         let pressed = handle
             .wait_for_key_press(KeyCode::Enter, Duration::from_millis(50))
             .await
-            .unwrap();
+            .expect("key press completes");
 
         assert!(pressed);
     }
@@ -250,10 +255,14 @@ mod tests {
     #[tokio::test]
     async fn setup_user_io_delegates_to_session() {
         let mut session = MockTerminalSessionApi::new();
-        session.expect_setup_user_io().times(1).returning(|| Ok(()));
+        session
+            .expect_setup_user_io()
+            .withf(|| true)
+            .times(1)
+            .returning(|| Ok(()));
         let handle = spawn_test_actor(session);
 
-        handle.setup_user_io().await.unwrap();
+        handle.setup_user_io().await.expect("user io sets up");
     }
 
     #[tokio::test]
@@ -261,21 +270,26 @@ mod tests {
         let mut session = MockTerminalSessionApi::new();
         session
             .expect_teardown_user_io()
+            .withf(|| true)
             .times(1)
             .returning(|| Ok(()));
         let handle = spawn_test_actor(session);
 
-        handle.teardown_user_io().await.unwrap();
+        handle.teardown_user_io().await.expect("user io tears down");
     }
 
     #[tokio::test]
     async fn shutdown_delegates_to_session_and_is_safe_to_repeat() {
         let mut session = MockTerminalSessionApi::new();
-        session.expect_shutdown().times(2).returning(|| Ok(()));
+        session
+            .expect_shutdown()
+            .withf(|| true)
+            .times(2)
+            .returning(|| Ok(()));
         let handle = spawn_test_actor(session);
 
-        handle.shutdown().await.unwrap();
-        handle.shutdown().await.unwrap();
+        handle.shutdown().await.expect("actor shuts down");
+        handle.shutdown().await.expect("actor shuts down");
     }
 
     #[tokio::test]

@@ -3,52 +3,60 @@ use std::sync::LazyLock;
 
 use crate::lore::domain::{mailing_list::MailingList, patch::PatchFeed};
 
-/// Parses an Atom feed XML body into a [`PatchFeed`].
-pub fn parse_patch_feed(xml: &str) -> Result<PatchFeed, String> {
-    serde_xml_rs::from_str(xml).map_err(|e| e.to_string())
-}
+pub struct LoreParserService;
 
-/// Parses the HTML body returned by the Lore available-lists endpoint into a
-/// sorted [`Vec<MailingList>`].
-pub fn parse_available_lists(html: &str) -> Vec<MailingList> {
-    static RE_PRE_BLOCK: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r#"(?s)<pre>(.*?)</pre>"#).unwrap());
-    static RE_LIST_NAME: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r#"(?s)<a\s*href=".*?">(.*?)</a>"#).unwrap());
-    static RE_LIST_DESCRIPTION: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r#"(?s)</a>\s*(.*?)\s*\*"#).unwrap());
-
-    let mut list_names: Vec<&str> = Vec::new();
-    let mut list_descriptions: Vec<&str> = Vec::new();
-    let mut available_lists: Vec<MailingList> = Vec::new();
-
-    let pre_blocks: Vec<&str> = RE_PRE_BLOCK
-        .captures_iter(html)
-        .map(|cap| cap.get(1).unwrap().as_str())
-        .collect();
-
-    if pre_blocks.len() < 3 {
-        return available_lists;
+impl LoreParserService {
+    /// Parses an Atom feed XML body into a [`PatchFeed`].
+    pub fn parse_patch_feed(xml: &str) -> Result<PatchFeed, String> {
+        serde_xml_rs::from_str(xml).map_err(|e| e.to_string())
     }
 
-    for capture in RE_LIST_NAME.captures_iter(pre_blocks[2]) {
-        let name = capture.get(1).unwrap().as_str().trim();
-        list_names.push(name);
-    }
+    /// Parses the HTML body returned by the Lore available-lists endpoint into a
+    /// sorted [`Vec<MailingList>`].
+    pub fn parse_available_lists(html: &str) -> Vec<MailingList> {
+        static RE_PRE_BLOCK: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r#"(?s)<pre>(.*?)</pre>"#).expect("valid pre block regex"));
+        static RE_LIST_NAME: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r#"(?s)<a\s*href=".*?">(.*?)</a>"#).expect("valid list name regex")
+        });
+        static RE_LIST_DESCRIPTION: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r#"(?s)</a>\s*(.*?)\s*\*"#).expect("valid list description regex")
+        });
 
-    for capture in RE_LIST_DESCRIPTION.captures_iter(pre_blocks[2]) {
-        let description = capture.get(1).unwrap().as_str().trim();
-        list_descriptions.push(description);
-    }
+        let mut list_names: Vec<&str> = Vec::new();
+        let mut list_descriptions: Vec<&str> = Vec::new();
+        let mut available_lists: Vec<MailingList> = Vec::new();
 
-    for (name, description) in list_names.into_iter().zip(list_descriptions) {
-        if name == "all" {
-            continue;
+        let pre_blocks = RE_PRE_BLOCK
+            .captures_iter(html)
+            .filter_map(|cap| cap.get(1).map(|m| m.as_str()))
+            .collect::<Vec<&str>>();
+
+        if pre_blocks.len() < 3 {
+            return available_lists;
         }
-        available_lists.push(MailingList::new(name, description));
-    }
 
-    available_lists
+        list_names.extend(
+            RE_LIST_NAME
+                .captures_iter(pre_blocks[2])
+                .filter_map(|capture| capture.get(1).map(|m| m.as_str().trim())),
+        );
+
+        list_descriptions.extend(
+            RE_LIST_DESCRIPTION
+                .captures_iter(pre_blocks[2])
+                .filter_map(|capture| capture.get(1).map(|m| m.as_str().trim())),
+        );
+
+        for (name, description) in list_names.into_iter().zip(list_descriptions) {
+            if name == "all" {
+                continue;
+            }
+            available_lists.push(MailingList::new(name, description));
+        }
+
+        available_lists
+    }
 }
 
 #[cfg(test)]
@@ -62,9 +70,9 @@ mod tests {
         let html = fs::read_to_string(
             "test_samples/lore_session/process_available_lists/available_lists_response-1.html",
         )
-        .unwrap();
+        .expect("file reads");
 
-        let lists = parse_available_lists(&html);
+        let lists = LoreParserService::parse_available_lists(&html);
 
         assert_eq!(199, lists.len(), "Should've processed 199 lists");
         assert_eq!("linux-mm", lists[0].name());
@@ -81,16 +89,16 @@ mod tests {
         let xml = fs::read_to_string(
             "test_samples/lore_session/process_representative_patch/patch_feed_sample_1.xml",
         )
-        .unwrap();
+        .expect("file reads");
 
-        let feed = parse_patch_feed(&xml);
+        let feed = LoreParserService::parse_patch_feed(&xml);
         assert!(feed.is_ok(), "Should parse a valid feed XML");
-        assert!(!feed.unwrap().patches().is_empty());
+        assert!(!feed.expect("feed loads").patches().is_empty());
     }
 
     #[test]
     fn parse_patch_feed_returns_error_for_invalid_xml() {
-        let result = parse_patch_feed("this is not xml");
+        let result = LoreParserService::parse_patch_feed("this is not xml");
         assert!(result.is_err());
     }
 }

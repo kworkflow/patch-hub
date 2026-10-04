@@ -15,13 +15,13 @@ pub struct PatchFeed {
 #[derive(Getters, Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Patch {
     r#title: String,
-    #[serde(default = "default_version")]
+    #[serde(default = "Patch::default_version")]
     #[getter(skip)]
     version: usize,
-    #[serde(default = "default_number_in_series")]
+    #[serde(default = "Patch::default_number_in_series")]
     #[getter(skip)]
     number_in_series: usize,
-    #[serde(default = "default_total_in_series")]
+    #[serde(default = "Patch::default_total_in_series")]
     #[getter(skip)]
     total_in_series: usize,
     author: Author,
@@ -43,16 +43,6 @@ impl Display for Author {
         write!(f, "{} <{}>", self.name, self.email)?;
         Ok(())
     }
-}
-
-fn default_version() -> usize {
-    1
-}
-fn default_number_in_series() -> usize {
-    1
-}
-fn default_total_in_series() -> usize {
-    1
 }
 
 impl Patch {
@@ -79,6 +69,18 @@ impl Patch {
         self.set_number_in_series(&patch_tag, &patch_regex.re_patch_series);
         self.set_total_in_series(&patch_tag, &patch_regex.re_patch_series);
     }
+}
+
+impl Patch {
+    fn default_version() -> usize {
+        1
+    }
+    fn default_number_in_series() -> usize {
+        1
+    }
+    fn default_total_in_series() -> usize {
+        1
+    }
 
     fn get_patch_tag(&self, re_patch_tag: &Regex) -> Option<&str> {
         match re_patch_tag.find(&self.title) {
@@ -94,7 +96,9 @@ impl Patch {
     fn set_version(&mut self, patch_tag: &str, re_patch_version: &Regex) {
         if let Some(capture) = re_patch_version.captures(patch_tag) {
             if let Some(version) = capture.get(1) {
-                self.version = version.as_str().parse().unwrap();
+                if let Ok(version) = version.as_str().parse() {
+                    self.version = version;
+                }
             }
         }
     }
@@ -102,7 +106,9 @@ impl Patch {
     fn set_number_in_series(&mut self, patch_tag: &str, re_patch_series: &Regex) {
         if let Some(capture) = re_patch_series.captures(patch_tag) {
             if let Some(number_in_series) = capture.get(1) {
-                self.number_in_series = number_in_series.as_str().parse().unwrap();
+                if let Ok(number_in_series) = number_in_series.as_str().parse() {
+                    self.number_in_series = number_in_series;
+                }
             }
         }
     }
@@ -110,7 +116,9 @@ impl Patch {
     fn set_total_in_series(&mut self, patch_tag: &str, re_patch_series: &Regex) {
         if let Some(capture) = re_patch_series.captures(patch_tag) {
             if let Some(total_in_series) = capture.get(2) {
-                self.total_in_series = total_in_series.as_str().parse().unwrap();
+                if let Ok(total_in_series) = total_in_series.as_str().parse() {
+                    self.total_in_series = total_in_series;
+                }
             }
         }
     }
@@ -130,9 +138,10 @@ impl Default for PatchRegex {
 
 impl PatchRegex {
     pub fn new() -> PatchRegex {
-        let re_patch_tag = Regex::new(r"(?i)\[[^\]]*(PATCH|RFC)[^\[]*\]").unwrap();
-        let re_patch_version = Regex::new(r"[v|V] *(\d+)").unwrap();
-        let re_patch_series = Regex::new(r"(\d+) */ *(\d+)").unwrap();
+        let re_patch_tag =
+            Regex::new(r"(?i)\[[^\]]*(PATCH|RFC)[^\[]*\]").expect("valid patch tag regex");
+        let re_patch_version = Regex::new(r"[v|V] *(\d+)").expect("valid patch version regex");
+        let re_patch_series = Regex::new(r"(\d+) */ *(\d+)").expect("valid patch series regex");
 
         PatchRegex {
             re_patch_tag,
@@ -171,7 +180,7 @@ mod tests {
                 updated,
             }
         };
-        let serialized_patch: &str = r#"
+        let serialized_patch = r#"
             <entry xmlns:thr="http://purl.org/syndication/thread/1.0">
                 <author>
                     <name>Foo Bar</name>
@@ -186,7 +195,7 @@ mod tests {
             </entry>
         "#;
 
-        let actual_patch: Patch = from_str(serialized_patch).unwrap();
+        let actual_patch: Patch = from_str(serialized_patch).expect("patch parses");
 
         assert_eq!(
             expected_patch, actual_patch,
@@ -221,7 +230,7 @@ mod tests {
                 updated,
             }
         };
-        let serialized_patch: &str = r#"
+        let serialized_patch = r#"
             <entry xmlns:thr="http://purl.org/syndication/thread/1.0">
                 <author>
                     <name>Foo Bar</name>
@@ -239,7 +248,7 @@ mod tests {
             </entry>
         "#;
 
-        let actual_patch: Patch = from_str(serialized_patch).unwrap();
+        let actual_patch: Patch = from_str(serialized_patch).expect("patch parses");
 
         assert_eq!(
             expected_patch, actual_patch,
@@ -249,7 +258,7 @@ mod tests {
 
     #[test]
     fn test_update_patch_metadata() {
-        let patch_regex: PatchRegex = PatchRegex::new();
+        let patch_regex = PatchRegex::new();
         let mut patch: Patch = {
             let title =
                 "[RESEND][v7 PATCH 3/42] hitchhiker/guide: Life, the Universe and Everything"
@@ -287,5 +296,37 @@ mod tests {
         assert_eq!(7, patch.version(), "Wrong version!");
         assert_eq!(3, patch.number_in_series(), "Wrong number in series!");
         assert_eq!(42, patch.total_in_series(), "Wrong total in series!");
+    }
+
+    #[test]
+    fn update_patch_metadata_keeps_default_version_when_unparseable() {
+        let patch_regex = PatchRegex::new();
+        let mut patch = Patch {
+            title:
+                "[PATCH v99999999999999999999] hitchhiker/guide: Life, the Universe and Everything"
+                    .to_string(),
+            author: Author {
+                name: "Foo Bar".to_string(),
+                email: "foo@bar.foo.bar".to_string(),
+            },
+            version: 1,
+            number_in_series: 1,
+            total_in_series: 1,
+            message_id: MessageID {
+                href: "http://lore.kernel.org/some-list/1234-2-foo@bar.foo.bar".to_string(),
+            },
+            in_reply_to: None,
+            updated: "2024-07-06T19:16:53Z".to_string(),
+        };
+
+        patch.update_patch_metadata(&patch_regex);
+
+        assert_eq!(
+            "hitchhiker/guide: Life, the Universe and Everything",
+            patch.title()
+        );
+        assert_eq!(1, patch.version());
+        assert_eq!(1, patch.number_in_series());
+        assert_eq!(1, patch.total_in_series());
     }
 }

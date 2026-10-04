@@ -2,10 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     app::{
-        popup::AppPopup,
+        models::{kw_ops::KwOpsState, popup::AppPopup},
         screens::{
             bookmarked::BookmarkedPatchsetsState, details_actions::PatchsetDetailsState,
-            edit_config::EditConfigState, kw_ops::KwOpsState, latest::LatestPatchsetsState,
+            edit_config::EditConfigState, latest::LatestPatchsetsState,
             mail_list::MailingListSelectionState, CurrentScreen,
         },
     },
@@ -42,8 +42,8 @@ pub struct ConfigUiState {
 
 /// Projection of kw job status owned by AppActor, not the job itself.
 ///
-/// `status` is `None` when no KwActor is attached (non-unix, or the
-/// watch subscription failed) rather than a fabricated idle job.
+/// `status` is `None` when no KwActor is attached or the watch
+/// subscription failed, rather than a fabricated idle job.
 #[derive(Clone, Debug, Default)]
 pub struct KwUiState {
     pub status: Option<KwStatusSnapshot>,

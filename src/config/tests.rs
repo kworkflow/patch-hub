@@ -1,132 +1,148 @@
 use serde_json::json;
-use std::{
-    collections::HashSet,
-    env::VarError,
-    fs,
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::{collections::HashSet, env::VarError, fs};
 
 use crate::config::actor::ConfigActor;
 use crate::config::repository::{ConfigRepository, JsonConfigRepository};
-use crate::config::service::{bootstrap_parts, validate_update};
-use crate::config::state::{normalize_derived_paths, ConfigState};
+use crate::config::service::ConfigService;
+use crate::config::state::ConfigState;
 use crate::config::{
-    ConfigError, ConfigSnapshot, ConfigUpdateDraft, KernelTree, ValidatedConfigUpdate,
-    DEFAULT_CONFIG_PATH_SUFFIX,
+    ConfigError, ConfigUpdateDraft, ValidatedConfigUpdate, DEFAULT_CONFIG_PATH_SUFFIX,
 };
-use crate::infrastructure::{
-    env::{EnvTrait, MockEnvTrait},
-    file_system::OsFileSystem,
-};
+use crate::infrastructure::env::MockEnvTrait;
+mod helpers {
 
-static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
+    use crate::config::service::ConfigService;
+    use crate::config::state::ConfigState;
+    use crate::config::{ConfigSnapshot, KernelTree};
+    use crate::infrastructure::{
+        env::{EnvTrait, MockEnvTrait},
+        file_system::OsFileSystem,
+    };
+    use serde_json::json;
+    use std::{
+        env::{self, VarError},
+        fs,
+        path::{Path, PathBuf},
+        process,
+        sync::atomic::{AtomicU64, Ordering},
+    };
 
-fn os_fs() -> OsFileSystem {
-    OsFileSystem
+    pub static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
+
+    pub fn os_fs() -> OsFileSystem {
+        OsFileSystem
+    }
+
+    pub fn sample_kernel_tree(path: &str, branch: &str) -> KernelTree {
+        serde_json::from_value(json!({
+            "path": path,
+            "branch": branch
+        }))
+        .expect("json parses")
+    }
+
+    pub fn state_with_trees(env: &dyn EnvTrait) -> ConfigState {
+        let mut state = ConfigState::new_with_defaults(env);
+        state.kernel_trees.insert(
+            "linux".into(),
+            sample_kernel_tree("/home/user/linux", "master"),
+        );
+        state.kernel_trees.insert(
+            "amd-gfx".into(),
+            sample_kernel_tree("/home/user/amd-gfx", "amd-staging-drm-next"),
+        );
+        state
+    }
+
+    pub fn unique_test_dir(prefix: &str) -> PathBuf {
+        let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
+        let p = env::temp_dir().join(format!("patch-hub-{prefix}-{}-{}", process::id(), n));
+        fs::create_dir_all(&p).expect("dir creates");
+        p
+    }
+
+    pub fn bootstrap_snapshot(env: &dyn EnvTrait) -> ConfigSnapshot {
+        ConfigSnapshot::from(
+            &ConfigService::bootstrap_parts(env, os_fs())
+                .expect("config bootstraps")
+                .0,
+        )
+    }
+
+    /// Writable `HOME` and mock env: no `PATCH_HUB_CONFIG_PATH` (uses `HOME/.config/...`).
+    pub fn default_env() -> (MockEnvTrait, PathBuf) {
+        let home = unique_test_dir("home");
+        let home_s = home.to_string_lossy().into_owned();
+        let mut mock = MockEnvTrait::new();
+        mock.expect_var()
+            .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+            .times(0..=1)
+            .returning(|_| Err(VarError::NotPresent.into()));
+        mock.expect_var()
+            .withf(move |key| key == "HOME")
+            .times(1..=2)
+            .returning(move |_| Ok(home_s.clone()));
+        mock.expect_var()
+            .withf(|key| {
+                matches!(
+                    key,
+                    "PATCH_HUB_PAGE_SIZE"
+                        | "PATCH_HUB_CACHE_DIR"
+                        | "PATCH_HUB_DATA_DIR"
+                        | "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS"
+                        | "PATCH_HUB_PATCH_RENDERER"
+                )
+            })
+            .times(0..=5)
+            .returning(|_| Err(VarError::NotPresent.into()));
+        (mock, home)
+    }
+
+    /// Fully-populated config file content, with paths under `root` so
+    /// `ensure_directories` stays inside a writable temp tree. After bootstrap, `normalize_derived_paths`
+    /// overwrites patchset/data paths from `cache_dir` and `data_dir` only (explicit per-field paths
+    /// in JSON are not preserved).
+    pub fn config_fixture_json(root: &Path) -> String {
+        let patchsets_cache_dir = root.join("cachedir").join("path");
+        let bookmarked = root.join("bookmarked").join("patchsets.json");
+        let mailing = root.join("mailing").join("lists.json");
+        let reviewed = root.join("reviewed").join("patchsets.json");
+        let logs = root.join("logs");
+        let cache_dir = root.join("cache_dir");
+        let data_dir = root.join("data_dir");
+
+        let v = json!({
+          "page_size": 1234,
+          "patchsets_cache_dir": patchsets_cache_dir.to_str(),
+          "bookmarked_patchsets_path": bookmarked.to_str(),
+          "mailing_lists_path": mailing.to_str(),
+          "reviewed_patchsets_path": reviewed.to_str(),
+          "logs_path": logs.to_str(),
+          "git_send_email_options": "--long-option value -s -h -o -r -t",
+          "cache_dir": cache_dir.to_str(),
+          "data_dir": data_dir.to_str(),
+          "patch_renderer": "default",
+          "cover_renderer": "default",
+          "max_log_age": 42,
+          "kernel_trees": {
+            "linux": {
+              "path": "/home/user/linux",
+              "branch": "master"
+            },
+            "amd-gfx": {
+              "path": "/home/user/amd-gfx",
+              "branch": "amd-staging-drm-next"
+            }
+          },
+          "target_kernel_tree": "linux",
+          "git_am_options": "--foo-bar foobar -s -n -o -r -l -a -x",
+          "git_am_branch_prefix": "really-creative-prefix-",
+          "stay_on_applied_branch": false
+        });
+        serde_json::to_string_pretty(&v).expect("config serializes")
+    }
 }
-
-fn sample_kernel_tree(path: &str, branch: &str) -> KernelTree {
-    serde_json::from_value(json!({
-        "path": path,
-        "branch": branch
-    }))
-    .unwrap()
-}
-
-fn state_with_trees(env: &dyn EnvTrait) -> ConfigState {
-    let mut state = ConfigState::new_with_defaults(env);
-    state.kernel_trees.insert(
-        "linux".into(),
-        sample_kernel_tree("/home/user/linux", "master"),
-    );
-    state.kernel_trees.insert(
-        "amd-gfx".into(),
-        sample_kernel_tree("/home/user/amd-gfx", "amd-staging-drm-next"),
-    );
-    state
-}
-
-fn unique_test_dir(prefix: &str) -> PathBuf {
-    let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
-    let p = std::env::temp_dir().join(format!("patch-hub-{prefix}-{}-{}", std::process::id(), n));
-    fs::create_dir_all(&p).unwrap();
-    p
-}
-
-fn bootstrap_snapshot(env: &dyn EnvTrait) -> ConfigSnapshot {
-    bootstrap_parts(env, os_fs()).unwrap().0.to_snapshot()
-}
-
-/// Writable `HOME` and mock env: no `PATCH_HUB_CONFIG_PATH` (uses `HOME/.config/...`).
-fn default_env() -> (MockEnvTrait, PathBuf) {
-    let home = unique_test_dir("home");
-    let home_s = home.to_string_lossy().into_owned();
-    let mut mock = MockEnvTrait::new();
-    mock.expect_var()
-        .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
-        .returning(|_| Err(VarError::NotPresent.into()));
-    mock.expect_var()
-        .withf(move |key| key == "HOME")
-        .returning(move |_| Ok(home_s.clone()));
-    mock.expect_var()
-        .withf(|key| {
-            matches!(
-                key,
-                "PATCH_HUB_PAGE_SIZE"
-                    | "PATCH_HUB_CACHE_DIR"
-                    | "PATCH_HUB_DATA_DIR"
-                    | "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS"
-                    | "PATCH_HUB_PATCH_RENDERER"
-            )
-        })
-        .returning(|_| Err(VarError::NotPresent.into()));
-    (mock, home)
-}
-
-/// Fully-populated config file content, with paths under `root` so
-/// `ensure_directories` stays inside a writable temp tree. After bootstrap, `normalize_derived_paths`
-/// overwrites patchset/data paths from `cache_dir` and `data_dir` only (explicit per-field paths
-/// in JSON are not preserved).
-fn config_fixture_json(root: &Path) -> String {
-    let patchsets_cache_dir = root.join("cachedir").join("path");
-    let bookmarked = root.join("bookmarked").join("patchsets.json");
-    let mailing = root.join("mailing").join("lists.json");
-    let reviewed = root.join("reviewed").join("patchsets.json");
-    let logs = root.join("logs");
-    let cache_dir = root.join("cache_dir");
-    let data_dir = root.join("data_dir");
-
-    let v = json!({
-      "page_size": 1234,
-      "patchsets_cache_dir": patchsets_cache_dir.to_str(),
-      "bookmarked_patchsets_path": bookmarked.to_str(),
-      "mailing_lists_path": mailing.to_str(),
-      "reviewed_patchsets_path": reviewed.to_str(),
-      "logs_path": logs.to_str(),
-      "git_send_email_options": "--long-option value -s -h -o -r -t",
-      "cache_dir": cache_dir.to_str(),
-      "data_dir": data_dir.to_str(),
-      "patch_renderer": "default",
-      "cover_renderer": "default",
-      "max_log_age": 42,
-      "kernel_trees": {
-        "linux": {
-          "path": "/home/user/linux",
-          "branch": "master"
-        },
-        "amd-gfx": {
-          "path": "/home/user/amd-gfx",
-          "branch": "amd-staging-drm-next"
-        }
-      },
-      "target_kernel_tree": "linux",
-      "git_am_options": "--foo-bar foobar -s -n -o -r -l -a -x",
-      "git_am_branch_prefix": "really-creative-prefix-",
-      "stay_on_applied_branch": false
-    });
-    serde_json::to_string_pretty(&v).unwrap()
-}
+pub use helpers::*;
 
 #[test]
 fn bootstrap_with_default_values() {
@@ -173,7 +189,7 @@ fn bootstrap_with_default_values() {
 fn bootstrap_with_config_file() {
     let fixture_root = unique_test_dir("fixture");
     let tmp_path = fixture_root.join("config.json");
-    fs::write(&tmp_path, config_fixture_json(&fixture_root)).unwrap();
+    fs::write(&tmp_path, config_fixture_json(&fixture_root)).expect("file writes");
     let tmp_path_s = tmp_path.to_string_lossy().into_owned();
 
     let home = unique_test_dir("home-cfg");
@@ -182,9 +198,11 @@ fn bootstrap_with_config_file() {
     let mut mock = MockEnvTrait::new();
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .times(1)
         .returning(move |_| Ok(tmp_path_s.clone()));
     mock.expect_var()
         .withf(|key| key == "HOME")
+        .times(0)
         .returning(move |_| Ok(home_s.clone()));
     mock.expect_var()
         .withf(|key| {
@@ -197,6 +215,7 @@ fn bootstrap_with_config_file() {
                     | "PATCH_HUB_PATCH_RENDERER"
             )
         })
+        .times(5)
         .returning(|_| Err(VarError::NotPresent.into()));
 
     let config = bootstrap_snapshot(&mock);
@@ -236,13 +255,17 @@ fn bootstrap_with_config_file() {
         HashSet::from([&"linux".to_string(), &"amd-gfx".to_string()]),
         config.kernel_trees()
     );
-    let linux = config.get_kernel_tree("linux").unwrap();
+    let linux = config.get_kernel_tree("linux").expect("kernel tree loads");
     assert_eq!(linux.path().as_str(), "/home/user/linux");
     assert_eq!(linux.branch().as_str(), "master");
     assert!(config.get_kernel_tree("invalid-id").is_none());
     assert_eq!(
         "linux",
-        config.target_kernel_tree().as_ref().unwrap().as_str()
+        config
+            .target_kernel_tree()
+            .as_ref()
+            .expect("target kernel tree is set")
+            .as_str()
     );
     assert_eq!(
         "--foo-bar foobar -s -n -o -r -l -a -x",
@@ -270,24 +293,31 @@ fn bootstrap_with_env_vars() {
     let mut mock = MockEnvTrait::new();
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .times(1)
         .returning(|_| Err(VarError::NotPresent.into()));
     mock.expect_var()
         .withf(move |key| key == "HOME")
+        .times(2)
         .returning(move |_| Ok(home_s.clone()));
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_PAGE_SIZE")
+        .times(1)
         .returning(|_| Ok("42".to_string()));
     mock.expect_var()
         .withf(move |key| key == "PATCH_HUB_CACHE_DIR")
+        .times(1)
         .returning(move |_| Ok(cache_s.clone()));
     mock.expect_var()
         .withf(move |key| key == "PATCH_HUB_DATA_DIR")
+        .times(1)
         .returning(move |_| Ok(data_s.clone()));
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS")
+        .times(1)
         .returning(|_| Ok("--option1 --option2".to_string()));
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_PATCH_RENDERER")
+        .times(1)
         .returning(|_| Err(VarError::NotPresent.into()));
 
     let config = bootstrap_snapshot(&mock);
@@ -326,7 +356,7 @@ fn bootstrap_config_precedence() {
 
     let fixture_root = unique_test_dir("prec");
     let tmp_path = fixture_root.join("config.json");
-    fs::write(&tmp_path, config_fixture_json(&fixture_root)).unwrap();
+    fs::write(&tmp_path, config_fixture_json(&fixture_root)).expect("file writes");
     let tmp_path_s = tmp_path.to_string_lossy().into_owned();
 
     let home_s = home.to_string_lossy().into_owned();
@@ -334,10 +364,12 @@ fn bootstrap_config_precedence() {
     env_with_file
         .expect_var()
         .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .times(1)
         .returning(move |_| Ok(tmp_path_s.clone()));
     env_with_file
         .expect_var()
         .withf(move |key| key == "HOME")
+        .times(0)
         .returning(move |_| Ok(home_s.clone()));
     env_with_file
         .expect_var()
@@ -351,6 +383,7 @@ fn bootstrap_config_precedence() {
                     | "PATCH_HUB_PATCH_RENDERER"
             )
         })
+        .times(5)
         .returning(|_| Err(VarError::NotPresent.into()));
 
     assert_eq!(1234, bootstrap_snapshot(&env_with_file).page_size());
@@ -361,14 +394,17 @@ fn bootstrap_config_precedence() {
     env_with_file_and_var
         .expect_var()
         .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .times(1)
         .returning(move |_| Ok(tmp_path_s2.clone()));
     env_with_file_and_var
         .expect_var()
         .withf(|key| key == "PATCH_HUB_PAGE_SIZE")
+        .times(1)
         .returning(|_| Ok("42".to_string()));
     env_with_file_and_var
         .expect_var()
         .withf(move |key| key == "HOME")
+        .times(0)
         .returning(move |_| Ok(home_s2.clone()));
     env_with_file_and_var
         .expect_var()
@@ -381,6 +417,7 @@ fn bootstrap_config_precedence() {
                     | "PATCH_HUB_PATCH_RENDERER"
             )
         })
+        .times(4)
         .returning(|_| Err(VarError::NotPresent.into()));
 
     assert_eq!(42, bootstrap_snapshot(&env_with_file_and_var).page_size());
@@ -394,9 +431,9 @@ fn deserialize_config_state_with_missing_field() {
         "max_log_age": 500
     });
 
-    let state: ConfigState = serde_json::from_value(json_data).unwrap();
+    let state: ConfigState = serde_json::from_value(json_data).expect("json parses");
 
-    assert_eq!(state.page_size(), 30);
+    assert_eq!(state.page_size, 30);
     assert_eq!(state.max_log_age(), 500);
     // Missing fields fall back to the compiled-in defaults; in particular the
     // kw-integration apply toggle defaults to staying on the applied branch.
@@ -412,6 +449,7 @@ fn bootstrap_rejects_invalid_patch_hub_page_size_env() {
     let mut mock = MockEnvTrait::new();
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .times(1)
         .returning(|_| Err(VarError::NotPresent.into()));
     mock.expect_var()
         .withf(|key| key == "HOME")
@@ -419,6 +457,7 @@ fn bootstrap_rejects_invalid_patch_hub_page_size_env() {
         .returning(move |_| Ok(home_s.clone()));
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_PAGE_SIZE")
+        .times(1)
         .returning(|_| Ok("not-a-number".into()));
     mock.expect_var()
         .withf(|key| {
@@ -430,9 +469,10 @@ fn bootstrap_rejects_invalid_patch_hub_page_size_env() {
                     | "PATCH_HUB_PATCH_RENDERER"
             )
         })
+        .times(0)
         .returning(|_| Err(VarError::NotPresent.into()));
 
-    match bootstrap_parts(&mock, os_fs()) {
+    match ConfigService::bootstrap_parts(&mock, os_fs()) {
         Ok(_) => panic!("expected bootstrap to fail"),
         Err(err) => {
             assert!(matches!(err, ConfigError::InvalidPageSize(ref s) if s == "not-a-number"))
@@ -447,6 +487,7 @@ fn bootstrap_rejects_invalid_patch_hub_patch_renderer_env() {
     let mut mock = MockEnvTrait::new();
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .times(1)
         .returning(|_| Err(VarError::NotPresent.into()));
     mock.expect_var()
         .withf(|key| key == "HOME")
@@ -454,21 +495,26 @@ fn bootstrap_rejects_invalid_patch_hub_patch_renderer_env() {
         .returning(move |_| Ok(home_s.clone()));
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_PAGE_SIZE")
+        .times(1)
         .returning(|_| Err(VarError::NotPresent.into()));
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_CACHE_DIR")
+        .times(1)
         .returning(|_| Err(VarError::NotPresent.into()));
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_DATA_DIR")
+        .times(1)
         .returning(|_| Err(VarError::NotPresent.into()));
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS")
+        .times(1)
         .returning(|_| Err(VarError::NotPresent.into()));
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_PATCH_RENDERER")
+        .times(1)
         .returning(|_| Ok("not-a-real-renderer".into()));
 
-    match bootstrap_parts(&mock, os_fs()) {
+    match ConfigService::bootstrap_parts(&mock, os_fs()) {
         Ok(_) => panic!("expected bootstrap to fail"),
         Err(err) => assert!(matches!(
             err,
@@ -489,7 +535,7 @@ fn normalize_derived_paths_recomputes_cache_and_data_subpaths() {
     state.reviewed_patchsets_path = "stale-r".into();
     state.logs_path = "stale-logs".into();
 
-    normalize_derived_paths(&mut state);
+    state.normalize_derived_paths();
 
     assert_eq!(state.patchsets_cache_dir, "/tmp/custom-cache/patchsets");
     assert_eq!(
@@ -509,7 +555,7 @@ fn normalize_derived_paths_recomputes_cache_and_data_subpaths() {
 
 #[test]
 fn validate_update_rejects_invalid_page_size() {
-    let err = validate_update(
+    let err = ConfigService::validate_update(
         ConfigUpdateDraft {
             page_size: Some("xyz".into()),
             ..Default::default()
@@ -517,13 +563,13 @@ fn validate_update_rejects_invalid_page_size() {
         &os_fs(),
         &ConfigState::default(),
     )
-    .unwrap_err();
+    .expect_err("invalid page size rejects");
     assert!(matches!(err, ConfigError::InvalidPageSize(ref s) if s == "xyz"));
 }
 
 #[test]
 fn validate_update_rejects_invalid_patch_renderer() {
-    let err = validate_update(
+    let err = ConfigService::validate_update(
         ConfigUpdateDraft {
             patch_renderer: Some("nope".into()),
             ..Default::default()
@@ -531,7 +577,7 @@ fn validate_update_rejects_invalid_patch_renderer() {
         &os_fs(),
         &ConfigState::default(),
     )
-    .unwrap_err();
+    .expect_err("invalid patch renderer rejects");
     assert!(matches!(
         err,
         ConfigError::InvalidPatchRenderer(ref s) if s == "nope"
@@ -540,7 +586,7 @@ fn validate_update_rejects_invalid_patch_renderer() {
 
 #[test]
 fn validate_update_rejects_invalid_cover_renderer() {
-    let err = validate_update(
+    let err = ConfigService::validate_update(
         ConfigUpdateDraft {
             cover_renderer: Some("delta".into()),
             ..Default::default()
@@ -548,7 +594,7 @@ fn validate_update_rejects_invalid_cover_renderer() {
         &os_fs(),
         &ConfigState::default(),
     )
-    .unwrap_err();
+    .expect_err("invalid cover renderer rejects");
     assert!(matches!(
         err,
         ConfigError::InvalidCoverRenderer(ref s) if s == "delta"
@@ -557,7 +603,7 @@ fn validate_update_rejects_invalid_cover_renderer() {
 
 #[test]
 fn validate_update_rejects_invalid_max_log_age() {
-    let err = validate_update(
+    let err = ConfigService::validate_update(
         ConfigUpdateDraft {
             max_log_age: Some("not-a-number".into()),
             ..Default::default()
@@ -565,7 +611,7 @@ fn validate_update_rejects_invalid_max_log_age() {
         &os_fs(),
         &ConfigState::default(),
     )
-    .unwrap_err();
+    .expect_err("invalid max log age rejects");
     assert!(matches!(
         err,
         ConfigError::InvalidMaxLogAge(ref s) if s == "not-a-number"
@@ -575,7 +621,7 @@ fn validate_update_rejects_invalid_max_log_age() {
 #[test]
 fn validate_update_rejects_invalid_stay_on_applied_branch() {
     for raw in ["not-a-bool", ""] {
-        let err = validate_update(
+        let err = ConfigService::validate_update(
             ConfigUpdateDraft {
                 stay_on_applied_branch: Some(raw.into()),
                 ..Default::default()
@@ -583,7 +629,7 @@ fn validate_update_rejects_invalid_stay_on_applied_branch() {
             &os_fs(),
             &ConfigState::default(),
         )
-        .unwrap_err();
+        .expect_err("invalid stay-on flag rejects");
         assert!(matches!(
             err,
             ConfigError::InvalidStayOnAppliedBranch(ref s) if s == raw
@@ -616,7 +662,7 @@ fn validate_update_rejects_invalid_kw_deploy_bools() {
         (None, Some("not-a-bool"), false),
         (None, Some(""), false),
     ] {
-        let err = validate_update(
+        let err = ConfigService::validate_update(
             ConfigUpdateDraft {
                 kw_reboot_after_deploy: reboot.map(str::to_string),
                 kw_deploy_force: force.map(str::to_string),
@@ -625,15 +671,15 @@ fn validate_update_rejects_invalid_kw_deploy_bools() {
             &os_fs(),
             &ConfigState::default(),
         )
-        .unwrap_err();
+        .expect_err("invalid deploy flag rejects");
         if expect_reboot_err {
-            let raw = reboot.unwrap();
+            let raw = reboot.expect("reboot value is set");
             assert!(
                 matches!(err, ConfigError::InvalidKwRebootAfterDeploy(ref s) if s == raw),
                 "unexpected error for reboot={reboot:?}: {err:?}"
             );
         } else {
-            let raw = force.unwrap();
+            let raw = force.expect("force value is set");
             assert!(
                 matches!(err, ConfigError::InvalidKwDeployForce(ref s) if s == raw),
                 "unexpected error for force={force:?}: {err:?}"
@@ -667,7 +713,7 @@ fn apply_update_toggles_kw_deploy_knobs() {
 fn validate_update_accepts_existing_target_kernel_tree() {
     let (env, _home) = default_env();
     let state = state_with_trees(&env);
-    let update = validate_update(
+    let update = ConfigService::validate_update(
         ConfigUpdateDraft {
             target_kernel_tree: Some("linux".into()),
             ..Default::default()
@@ -675,7 +721,7 @@ fn validate_update_accepts_existing_target_kernel_tree() {
         &os_fs(),
         &state,
     )
-    .unwrap();
+    .expect("update validates");
     assert_eq!(Some(Some("linux".to_string())), update.target_kernel_tree);
 }
 
@@ -683,7 +729,7 @@ fn validate_update_accepts_existing_target_kernel_tree() {
 fn validate_update_unsets_target_kernel_tree_on_empty_string() {
     let (env, _home) = default_env();
     let state = state_with_trees(&env);
-    let update = validate_update(
+    let update = ConfigService::validate_update(
         ConfigUpdateDraft {
             target_kernel_tree: Some("".into()),
             ..Default::default()
@@ -691,7 +737,7 @@ fn validate_update_unsets_target_kernel_tree_on_empty_string() {
         &os_fs(),
         &state,
     )
-    .unwrap();
+    .expect("update validates");
     assert_eq!(Some(None), update.target_kernel_tree);
 }
 
@@ -699,7 +745,7 @@ fn validate_update_unsets_target_kernel_tree_on_empty_string() {
 fn validate_update_rejects_unknown_target_kernel_tree() {
     let (env, _home) = default_env();
     let state = state_with_trees(&env);
-    let err = validate_update(
+    let err = ConfigService::validate_update(
         ConfigUpdateDraft {
             target_kernel_tree: Some("missing".into()),
             ..Default::default()
@@ -707,7 +753,7 @@ fn validate_update_rejects_unknown_target_kernel_tree() {
         &os_fs(),
         &state,
     )
-    .unwrap_err();
+    .expect_err("unknown kernel tree rejects");
     assert!(matches!(
         err,
         ConfigError::InvalidTargetKernelTree { ref key, .. } if key == "missing"
@@ -744,8 +790,8 @@ fn apply_update_sets_and_unsets_target_kernel_tree() {
 fn validate_update_rejects_cache_dir_that_is_existing_file() {
     let root = unique_test_dir("not-a-dir");
     let blocking = root.join("blocking-file");
-    fs::write(&blocking, b"x").unwrap();
-    let err = validate_update(
+    fs::write(&blocking, b"x").expect("file writes");
+    let err = ConfigService::validate_update(
         ConfigUpdateDraft {
             cache_dir: Some(blocking.to_string_lossy().into_owned()),
             ..Default::default()
@@ -753,7 +799,7 @@ fn validate_update_rejects_cache_dir_that_is_existing_file() {
         &os_fs(),
         &ConfigState::default(),
     )
-    .unwrap_err();
+    .expect_err("cache path rejects");
     assert!(matches!(err, ConfigError::InvalidDirectory(_)));
 }
 
@@ -768,18 +814,20 @@ fn json_config_repository_save_creates_parent_and_leaves_no_tmp_stale() {
     let mut mock = MockEnvTrait::new();
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .times(1)
         .returning(move |_| Ok(cfg_s.clone()));
     mock.expect_var()
         .withf(|key| key == "HOME")
+        .times(1)
         .returning(move |_| Ok(home_s.clone()));
 
     let repo = JsonConfigRepository::new(&mock, os_fs());
     let state = ConfigState::new_with_defaults(&mock);
-    repo.save(&state).unwrap();
+    repo.save(&state).expect("config saves");
 
     assert!(cfg_path.is_file());
-    let parent = cfg_path.parent().unwrap();
-    let tmp_left = fs::read_dir(parent).unwrap().any(|e| {
+    let parent = cfg_path.parent().expect("path has a parent");
+    let tmp_left = fs::read_dir(parent).expect("dir reads").any(|e| {
         e.ok()
             .is_some_and(|x| x.file_name().to_string_lossy().ends_with(".tmp"))
     });
@@ -792,7 +840,7 @@ fn json_config_repository_save_creates_parent_and_leaves_no_tmp_stale() {
 #[tokio::test]
 async fn validate_and_apply_persists_to_config_file() {
     let (env, home) = default_env();
-    let (state, repo) = bootstrap_parts(&env, os_fs()).unwrap();
+    let (state, repo) = ConfigService::bootstrap_parts(&env, os_fs()).expect("config bootstraps");
     let handle = ConfigActor::spawn(state, repo);
     let cfg_path = home.join(DEFAULT_CONFIG_PATH_SUFFIX);
 
@@ -802,11 +850,11 @@ async fn validate_and_apply_persists_to_config_file() {
             ..Default::default()
         })
         .await
-        .unwrap();
+        .expect("update applies");
 
     assert_eq!(snapshot.page_size(), 77);
-    let raw = fs::read_to_string(&cfg_path).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let raw = fs::read_to_string(&cfg_path).expect("file reads");
+    let parsed: serde_json::Value = serde_json::from_str(&raw).expect("config parses");
     assert_eq!(parsed["page_size"], 77);
     handle.shutdown().await;
 }
@@ -814,7 +862,8 @@ async fn validate_and_apply_persists_to_config_file() {
 #[tokio::test]
 async fn validate_and_apply_persists_target_kernel_tree() {
     let (env, home) = default_env();
-    let (mut state, repo) = bootstrap_parts(&env, os_fs()).unwrap();
+    let (mut state, repo) =
+        ConfigService::bootstrap_parts(&env, os_fs()).expect("config bootstraps");
     state.kernel_trees.insert(
         "linux".into(),
         sample_kernel_tree("/home/user/linux", "master"),
@@ -828,11 +877,11 @@ async fn validate_and_apply_persists_target_kernel_tree() {
             ..Default::default()
         })
         .await
-        .unwrap();
+        .expect("update applies");
     assert_eq!(Some("linux"), snapshot.target_kernel_tree().as_deref());
 
-    let raw = fs::read_to_string(&cfg_path).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let raw = fs::read_to_string(&cfg_path).expect("file reads");
+    let parsed: serde_json::Value = serde_json::from_str(&raw).expect("config parses");
     assert_eq!(parsed["target_kernel_tree"], "linux");
 
     handle
@@ -841,9 +890,9 @@ async fn validate_and_apply_persists_target_kernel_tree() {
             ..Default::default()
         })
         .await
-        .unwrap();
-    let raw = fs::read_to_string(&cfg_path).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        .expect("update applies");
+    let raw = fs::read_to_string(&cfg_path).expect("file reads");
+    let parsed: serde_json::Value = serde_json::from_str(&raw).expect("config parses");
     assert!(parsed["target_kernel_tree"].is_null());
     handle.shutdown().await;
 }
@@ -851,7 +900,8 @@ async fn validate_and_apply_persists_target_kernel_tree() {
 #[tokio::test]
 async fn invalid_target_kernel_tree_keeps_existing_state() {
     let (env, _home) = default_env();
-    let (mut state, repo) = bootstrap_parts(&env, os_fs()).unwrap();
+    let (mut state, repo) =
+        ConfigService::bootstrap_parts(&env, os_fs()).expect("config bootstraps");
     state.kernel_trees.insert(
         "linux".into(),
         sample_kernel_tree("/home/user/linux", "master"),
@@ -865,7 +915,7 @@ async fn invalid_target_kernel_tree_keeps_existing_state() {
             ..Default::default()
         })
         .await
-        .unwrap_err();
+        .expect_err("invalid kernel tree rejects");
     assert!(matches!(
         err,
         ConfigError::InvalidTargetKernelTree { ref key, .. } if key == "missing"
@@ -875,7 +925,7 @@ async fn invalid_target_kernel_tree_keeps_existing_state() {
         handle
             .get_snapshot()
             .await
-            .unwrap()
+            .expect("snapshot loads")
             .target_kernel_tree()
             .as_deref()
     );

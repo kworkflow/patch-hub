@@ -7,14 +7,14 @@ use std::{
     time::Duration,
 };
 
-use color_eyre::{eyre::eyre, Report, Result};
+use color_eyre::Result;
 use tokio::{
     runtime::Handle,
     spawn,
     task::{block_in_place, JoinHandle},
 };
 
-use crate::terminal::{handle::TerminalHandle, messages::TerminalFrame, TerminalError};
+use crate::terminal::{handle::TerminalHandle, messages::TerminalFrame};
 
 pub(crate) const LOADING_FRAME_INTERVAL: Duration = Duration::from_millis(200);
 
@@ -84,10 +84,6 @@ impl LoadingIndicator for TerminalLoadingIndicator {
     }
 }
 
-pub(crate) fn terminal_error(error: TerminalError) -> Report {
-    eyre!("{error}")
-}
-
 #[cfg(test)]
 mod tests {
     use crate::terminal::{
@@ -109,6 +105,6 @@ mod tests {
 
         loading.start("Fetching mailing lists".to_string());
         thread::sleep(LOADING_FRAME_INTERVAL);
-        loading.stop().unwrap();
+        loading.stop().expect("actor stops");
     }
 }

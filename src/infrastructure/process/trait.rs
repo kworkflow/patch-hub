@@ -35,15 +35,10 @@ pub trait RunningProcess: Send {
     async fn wait(&mut self) -> Result<ExitStatus, ProcessError>;
 
     /// Send SIGTERM to the whole process group, not just the direct child.
-    /// Idempotent: an already-gone group (ESRCH) is reported as success.
-    /// Signaling a leaderless group is intentional — it is how grandchildren
-    /// that outlive the leader get cleaned up — but in the narrow window where
-    /// the kernel has recycled the pgid, the signal could land on an unrelated
-    /// process group.
-    ///
-    /// Both methods take `&mut self`: a consumer that waits while staying able
-    /// to cancel should `tokio::select!` between `wait()` and its cancel
-    /// signal, then call `kill()`.
+    /// An already-gone group (ESRCH) is success. A leaderless group is
+    /// signaled on purpose so grandchildren die, but a recycled pgid can
+    /// hit an unrelated group. Both methods take `&mut self`: `select!`
+    /// between `wait()` and cancel, then `kill()`.
     fn kill(&mut self) -> Result<(), ProcessError>;
 
     /// Send SIGKILL to the whole process group. The escalation rung for a

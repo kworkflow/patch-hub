@@ -39,7 +39,7 @@ mod tests {
         let expected_mailing_list = MailingList::new("list-name", "List Description");
         let serialized_mailing_list = r#"{"name":"list-name","description":"List Description"}"#;
         let deserialized_mailing_list: MailingList =
-            serde_json::from_str(serialized_mailing_list).unwrap();
+            serde_json::from_str(serialized_mailing_list).expect("config parses");
 
         assert_eq!(
             expected_mailing_list, deserialized_mailing_list,
@@ -52,7 +52,8 @@ mod tests {
         let expected_serialized_mailing_list =
             r#"{"name":"list-name","description":"List Description"}"#;
         let mailing_list = MailingList::new("list-name", "List Description");
-        let serialized_mailing_list = serde_json::to_string(&mailing_list).unwrap();
+        let serialized_mailing_list =
+            serde_json::to_string(&mailing_list).expect("config serializes");
 
         assert_eq!(
             expected_serialized_mailing_list, serialized_mailing_list,

@@ -1,4 +1,7 @@
-use crate::{app::popup::AppPopup, app::App, input::context::InputContext};
+use crate::{
+    app::{models::popup::AppPopup, App},
+    input::context::InputContext,
+};
 
 impl App {
     /// Projects App state into the context needed by the input mapper.

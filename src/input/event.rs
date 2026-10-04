@@ -15,24 +15,13 @@ pub struct KeyInput {
     pub kind: KeyEventKind,
 }
 
-impl KeyInput {
-    #[cfg(test)]
-    pub fn new(code: KeyCode, modifiers: KeyModifiers, kind: KeyEventKind) -> Self {
+impl Default for KeyInput {
+    fn default() -> Self {
         Self {
-            code,
-            modifiers,
-            kind,
+            code: KeyCode::Null,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
         }
-    }
-
-    #[cfg(test)]
-    pub fn press(code: KeyCode) -> Self {
-        Self::new(code, KeyModifiers::NONE, KeyEventKind::Press)
-    }
-
-    #[cfg(test)]
-    pub fn modified_press(code: KeyCode, modifiers: KeyModifiers) -> Self {
-        Self::new(code, modifiers, KeyEventKind::Press)
     }
 }
 

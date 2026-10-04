@@ -9,8 +9,11 @@ use std::{
 };
 
 use tracing::{event, Level};
-use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
-use tracing_subscriber::{reload::Handle, Layer, Registry};
+use tracing_appender::{
+    non_blocking::{NonBlocking, WorkerGuard},
+    rolling,
+};
+use tracing_subscriber::{fmt, reload::Handle, Layer, Registry};
 
 use crate::config::ConfigSnapshot;
 
@@ -94,7 +97,9 @@ impl MultiLogFileWriter {
 
         new_guards
     }
+}
 
+impl MultiLogFileWriter {
     fn copy_old_logs_to_new_path(old_log_file_path: String, new_log_file_path: String) {
         let Ok(mut old_log_file_content) = File::open(&old_log_file_path) else {
             event!(
@@ -153,11 +158,11 @@ impl Write for MultiLogFileWriter {
 }
 
 pub fn get_fmt_layer(writer: MultiLogFileWriter) -> Box<dyn Layer<Registry> + Send + Sync> {
-    tracing_subscriber::fmt::layer()
+    fmt::layer()
         .with_writer(move || writer.clone())
         .with_file(true)
         .with_line_number(true)
-        .with_timer(tracing_subscriber::fmt::time::SystemTime)
+        .with_timer(fmt::time::SystemTime)
         .json()
         .boxed()
 }
@@ -168,6 +173,6 @@ pub fn create_non_blocking_writer(directory: &str, file_name: &str) -> (NonBlock
     let log_path = Path::new(directory).join(file_name);
     let _ = File::create(&log_path);
 
-    let file_appender = tracing_appender::rolling::never(directory, file_name);
+    let file_appender = rolling::never(directory, file_name);
     tracing_appender::non_blocking(file_appender)
 }

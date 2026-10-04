@@ -54,16 +54,21 @@ targets = ["x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl"]
 # Publish jobs to run in CI
 pr-run-mode = "plan"
 
-# Linter configurations
-[lints.rust]
-warnings = "deny"
-unconditional_recursion = "deny"
-
-[lints.clippy]
-too-many-arguments = "allow"
-map_unwrap_or = "deny"
+[lints]
+workspace = true
 
 [workspace]
 members = [
     "patch_hub_proc_macros",
 ]
+
+[workspace.lints.rust]
+warnings = "deny"
+unconditional_recursion = "deny"
+
+[workspace.lints.clippy]
+map_unwrap_or = "deny"
+unwrap_used = "deny"
+allow_attributes = "deny"
+redundant_type_annotations = "warn"
+match_wildcard_for_single_variants = "warn"

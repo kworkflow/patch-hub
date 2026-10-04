@@ -7,10 +7,11 @@ pub use r#trait::{FileSystemError, FileSystemTrait};
 #[cfg(test)]
 pub use r#trait::MockFileSystemTrait;
 
+use std::path::PathBuf;
 use std::{
     fs::{self, File},
     io::{self, BufReader, Read, Seek, SeekFrom},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 use color_eyre::{eyre::bail, Result};
 
 use crate::lore::{
-    application::{cache::CacheMode, handle::LoreApiHandle},
+    application::{handle::LoreApiHandle, models::cache::CacheMode},
     domain::mailing_list::MailingList,
 };
 
@@ -50,18 +50,6 @@ impl MailingListSelectionState {
         self.process_possible_mailing_lists();
     }
 
-    fn process_possible_mailing_lists(&mut self) {
-        let possible_mailing_lists = self
-            .mailing_lists
-            .iter()
-            .filter(|mailing_list| mailing_list.name().starts_with(&self.target_list))
-            .cloned()
-            .collect::<Vec<_>>();
-
-        self.possible_mailing_lists = possible_mailing_lists;
-        self.highlighted_list_index = 0;
-    }
-
     pub fn highlight_below_list(&mut self) {
         if self.highlighted_list_index + 1 < self.possible_mailing_lists.len() {
             self.highlighted_list_index += 1;
@@ -80,6 +68,20 @@ impl MailingListSelectionState {
             return true;
         }
         false
+    }
+}
+
+impl MailingListSelectionState {
+    fn process_possible_mailing_lists(&mut self) {
+        let possible_mailing_lists = self
+            .mailing_lists
+            .iter()
+            .filter(|mailing_list| mailing_list.name().starts_with(&self.target_list))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        self.possible_mailing_lists = possible_mailing_lists;
+        self.highlighted_list_index = 0;
     }
 }
 

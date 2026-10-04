@@ -1,78 +1,62 @@
-use std::{
-    io,
-    os::unix::process::ExitStatusExt,
-    path::{Path, PathBuf},
-    process::ExitStatus,
-    time::{Duration, Instant},
-};
+use std::{fs, io, os::unix::process::ExitStatusExt, process::ExitStatus, time::Duration};
 
-use nix::{errno::Errno, sys::signal::kill, unistd::Pid};
+use tokio::time;
 
 use super::{
     FakeProcess, MockProcessTrait, MockRunningProcess, OsProcess, ProcessError, ProcessTrait,
     RunningProcess,
 };
 use crate::infrastructure::shell::ShellCommand;
+use crate::test_support::TempDir;
 
-struct TempDir(PathBuf);
+mod helpers {
 
-impl TempDir {
-    fn new(test_name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "patch_hub_process_test_{}_{test_name}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        Self(dir)
-    }
+    use nix::{
+        errno::Errno,
+        sys::signal::{kill, Signal},
+        unistd::Pid,
+    };
+    use std::{
+        fs,
+        path::Path,
+        time::{Duration, Instant},
+    };
+    use tokio::time;
 
-    fn path(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
-async fn wait_for(mut cond: impl FnMut() -> bool, timeout: Duration) -> bool {
-    let start = Instant::now();
-    while !cond() {
-        if start.elapsed() > timeout {
-            return false;
+    pub async fn wait_for(mut cond: impl FnMut() -> bool, timeout: Duration) -> bool {
+        let start = Instant::now();
+        while !cond() {
+            if start.elapsed() > timeout {
+                return false;
+            }
+            time::sleep(Duration::from_millis(25)).await;
         }
-        tokio::time::sleep(Duration::from_millis(25)).await;
+        true
     }
-    true
-}
 
-fn pid_is_gone(pid: i32) -> bool {
-    matches!(
-        kill(Pid::from_raw(pid), None::<nix::sys::signal::Signal>),
-        Err(Errno::ESRCH)
-    )
-}
+    pub fn pid_is_gone(pid: i32) -> bool {
+        matches!(kill(Pid::from_raw(pid), None::<Signal>), Err(Errno::ESRCH))
+    }
 
-// The shell redirection creates the sidecar file before `echo $!` writes into
-// it, so polling for existence can observe an empty file; poll for parseable
-// content instead.
-async fn await_sidecar_pid(path: &Path) -> i32 {
-    let mut pid = None;
-    wait_for(
-        || {
-            pid = std::fs::read_to_string(path)
-                .ok()
-                .and_then(|contents| contents.trim().parse::<i32>().ok());
-            pid.is_some()
-        },
-        Duration::from_secs(2),
-    )
-    .await;
-    pid.expect("sidecar never received a grandchild pid")
+    // The shell redirection creates the sidecar file before `echo $!` writes into
+    // it, so polling for existence can observe an empty file; poll for parseable
+    // content instead.
+    pub async fn await_sidecar_pid(path: &Path) -> i32 {
+        let mut pid = None;
+        wait_for(
+            || {
+                pid = fs::read_to_string(path)
+                    .ok()
+                    .and_then(|contents| contents.trim().parse::<i32>().ok());
+                pid.is_some()
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+        pid.expect("sidecar never received a grandchild pid")
+    }
 }
+pub use helpers::*;
 
 #[tokio::test]
 async fn spawn_returns_while_process_still_running() {
@@ -80,15 +64,17 @@ async fn spawn_returns_while_process_still_running() {
     let log = dir.path().join("job.log");
     let cmd = ShellCommand::new("sh").args(["-c", "sleep 0.5; echo done"]);
 
-    let mut process = OsProcess.spawn(&cmd, dir.path(), &log).unwrap();
+    let mut process = OsProcess
+        .spawn(&cmd, dir.path(), &log)
+        .expect("process spawns");
 
     // spawn returned while the child was still inside its sleep
-    let early_log = std::fs::read_to_string(&log).unwrap();
+    let early_log = fs::read_to_string(&log).expect("file reads");
     assert!(!early_log.contains("done"));
 
-    let status = process.wait().await.unwrap();
+    let status = process.wait().await.expect("process exits");
     assert!(status.success());
-    let final_log = std::fs::read_to_string(&log).unwrap();
+    let final_log = fs::read_to_string(&log).expect("file reads");
     assert!(final_log.contains("done"));
 }
 
@@ -98,8 +84,10 @@ async fn wait_returns_exit_code() {
     let log = dir.path().join("job.log");
     let cmd = ShellCommand::new("sh").args(["-c", "exit 42"]);
 
-    let mut process = OsProcess.spawn(&cmd, dir.path(), &log).unwrap();
-    let status = process.wait().await.unwrap();
+    let mut process = OsProcess
+        .spawn(&cmd, dir.path(), &log)
+        .expect("process spawns");
+    let status = process.wait().await.expect("process exits");
 
     assert!(!status.success());
     assert_eq!(status.code(), Some(42));
@@ -112,12 +100,14 @@ async fn log_file_grows_incrementally_with_stdout_and_stderr() {
     let cmd =
         ShellCommand::new("sh").args(["-c", "echo first; echo errline >&2; sleep 1; echo second"]);
 
-    let mut process = OsProcess.spawn(&cmd, dir.path(), &log).unwrap();
+    let mut process = OsProcess
+        .spawn(&cmd, dir.path(), &log)
+        .expect("process spawns");
 
     // output reaches the file while the process is still running, not at exit
     let saw_partial_log = wait_for(
         || {
-            let contents = std::fs::read_to_string(&log).unwrap();
+            let contents = fs::read_to_string(&log).expect("file reads");
             contents.contains("first")
                 && contents.contains("errline")
                 && !contents.contains("second")
@@ -127,9 +117,9 @@ async fn log_file_grows_incrementally_with_stdout_and_stderr() {
     .await;
     assert!(saw_partial_log);
 
-    let status = process.wait().await.unwrap();
+    let status = process.wait().await.expect("process exits");
     assert!(status.success());
-    let contents = std::fs::read_to_string(&log).unwrap();
+    let contents = fs::read_to_string(&log).expect("file reads");
     assert!(contents.contains("first"));
     assert!(contents.contains("errline"));
     assert!(contents.contains("second"));
@@ -141,12 +131,14 @@ async fn spawn_runs_in_given_cwd() {
     let log = dir.path().join("job.log");
     let cmd = ShellCommand::new("pwd");
 
-    let mut process = OsProcess.spawn(&cmd, dir.path(), &log).unwrap();
-    let status = process.wait().await.unwrap();
+    let mut process = OsProcess
+        .spawn(&cmd, dir.path(), &log)
+        .expect("process spawns");
+    let status = process.wait().await.expect("process exits");
 
     assert!(status.success());
-    let out = std::fs::read_to_string(&log).unwrap();
-    let expected = dir.path().canonicalize().unwrap();
+    let out = fs::read_to_string(&log).expect("file reads");
+    let expected = dir.path().canonicalize().expect("path canonicalizes");
     assert_eq!(out.trim(), expected.to_string_lossy());
 }
 
@@ -158,15 +150,17 @@ async fn kill_terminates_process_group() {
     let script = format!("sleep 60 & echo $! > \"{}\"; wait", sidecar.display());
     let cmd = ShellCommand::new("sh").args(["-c", &script]);
 
-    let mut process = OsProcess.spawn(&cmd, dir.path(), &log).unwrap();
+    let mut process = OsProcess
+        .spawn(&cmd, dir.path(), &log)
+        .expect("process spawns");
 
     let grandchild_pid = await_sidecar_pid(&sidecar).await;
 
-    process.kill().unwrap();
-    let status = tokio::time::timeout(Duration::from_secs(2), process.wait())
+    process.kill().expect("process kills");
+    let status = time::timeout(Duration::from_secs(2), process.wait())
         .await
         .expect("wait must complete shortly after kill")
-        .unwrap();
+        .expect("process exits");
     // Signal death vs. exit code 128+SIGTERM is shell-dependent; what matters
     // is the job did not succeed.
     assert!(!status.success());
@@ -181,11 +175,13 @@ async fn kill_after_successful_exit_is_ok() {
     let log = dir.path().join("job.log");
     let cmd = ShellCommand::new("sh").args(["-c", "exit 0"]);
 
-    let mut process = OsProcess.spawn(&cmd, dir.path(), &log).unwrap();
-    process.wait().await.unwrap();
+    let mut process = OsProcess
+        .spawn(&cmd, dir.path(), &log)
+        .expect("process spawns");
+    process.wait().await.expect("process exits");
 
-    process.kill().unwrap();
-    process.kill().unwrap();
+    process.kill().expect("process kills");
+    process.kill().expect("process kills");
 }
 
 #[tokio::test]
@@ -208,7 +204,9 @@ async fn dropped_unreaped_process_group_is_killed() {
     let script = format!("sleep 60 & echo $! > \"{}\"; wait", sidecar.display());
     let cmd = ShellCommand::new("sh").args(["-c", &script]);
 
-    let process = OsProcess.spawn(&cmd, dir.path(), &log).unwrap();
+    let process = OsProcess
+        .spawn(&cmd, dir.path(), &log)
+        .expect("process spawns");
 
     let grandchild_pid = await_sidecar_pid(&sidecar).await;
 
@@ -222,12 +220,18 @@ async fn dropped_unreaped_process_group_is_killed() {
 #[tokio::test]
 async fn running_process_is_dyn_compatible_and_mockable() {
     let mut mock = MockRunningProcess::new();
-    mock.expect_wait().returning(|| Ok(ExitStatus::from_raw(0)));
-    mock.expect_kill().returning(|| Ok(()));
+    mock.expect_wait()
+        .withf(|| true)
+        .times(1)
+        .returning(|| Ok(ExitStatus::from_raw(0)));
+    mock.expect_kill()
+        .withf(|| true)
+        .times(1)
+        .returning(|| Ok(()));
 
     let mut process: Box<dyn RunningProcess> = Box::new(mock);
-    process.kill().unwrap();
-    let status = process.wait().await.unwrap();
+    process.kill().expect("process kills");
+    let status = process.wait().await.expect("process exits");
     assert!(status.success());
 }
 
@@ -238,7 +242,7 @@ async fn fake_process_records_spawn_and_simulates_run() {
     let fake = FakeProcess::new();
     let cmd = ShellCommand::new("kw").args(["build", "--alert=n"]);
 
-    let mut process = fake.spawn(&cmd, dir.path(), &log).unwrap();
+    let mut process = fake.spawn(&cmd, dir.path(), &log).expect("process spawns");
 
     assert_eq!(fake.spawned().len(), 1);
     let record = &fake.spawned()[0];
@@ -251,14 +255,14 @@ async fn fake_process_records_spawn_and_simulates_run() {
     control.write_log(b"partial output\n");
 
     // still running: wait must not resolve before finish() is called
-    let early_wait = tokio::time::timeout(Duration::from_millis(50), process.wait()).await;
+    let early_wait = time::timeout(Duration::from_millis(50), process.wait()).await;
     assert!(early_wait.is_err());
 
-    let log_so_far = std::fs::read_to_string(&log).unwrap();
+    let log_so_far = fs::read_to_string(&log).expect("file reads");
     assert_eq!(log_so_far, "partial output\n");
 
     control.finish(0);
-    let status = process.wait().await.unwrap();
+    let status = process.wait().await.expect("process exits");
     assert!(status.success());
 }
 
@@ -269,10 +273,10 @@ async fn fake_finish_with_nonzero_code_yields_that_code() {
     let fake = FakeProcess::new();
     let cmd = ShellCommand::new("kw").arg("build");
 
-    let mut process = fake.spawn(&cmd, dir.path(), &log).unwrap();
+    let mut process = fake.spawn(&cmd, dir.path(), &log).expect("process spawns");
     fake.last_child().finish(42);
 
-    let status = process.wait().await.unwrap();
+    let status = process.wait().await.expect("process exits");
     assert!(!status.success());
     assert_eq!(status.code(), Some(42));
 }
@@ -284,12 +288,12 @@ async fn fake_kill_makes_wait_return_signal_status() {
     let fake = FakeProcess::new();
     let cmd = ShellCommand::new("kw").arg("build");
 
-    let mut process = fake.spawn(&cmd, dir.path(), &log).unwrap();
+    let mut process = fake.spawn(&cmd, dir.path(), &log).expect("process spawns");
 
-    process.kill().unwrap();
+    process.kill().expect("process kills");
 
     assert!(fake.last_child().was_killed());
-    let status = process.wait().await.unwrap();
+    let status = process.wait().await.expect("process exits");
     assert!(status.code().is_none());
 }
 
@@ -300,13 +304,13 @@ async fn fake_finish_after_kill_keeps_signal_status() {
     let fake = FakeProcess::new();
     let cmd = ShellCommand::new("kw").arg("build");
 
-    let mut process = fake.spawn(&cmd, dir.path(), &log).unwrap();
+    let mut process = fake.spawn(&cmd, dir.path(), &log).expect("process spawns");
 
-    process.kill().unwrap();
+    process.kill().expect("process kills");
     // a killed process cannot exit 0 later; finish() must not resurrect it
     fake.last_child().finish(0);
 
-    let status = process.wait().await.unwrap();
+    let status = process.wait().await.expect("process exits");
     assert!(status.code().is_none());
     assert!(fake.last_child().was_killed());
 }
@@ -318,13 +322,13 @@ async fn fake_kill_after_finish_is_a_no_op_success() {
     let fake = FakeProcess::new();
     let cmd = ShellCommand::new("kw").arg("build");
 
-    let mut process = fake.spawn(&cmd, dir.path(), &log).unwrap();
+    let mut process = fake.spawn(&cmd, dir.path(), &log).expect("process spawns");
     fake.last_child().finish(0);
 
-    process.kill().unwrap();
+    process.kill().expect("process kills");
 
     assert!(!fake.last_child().was_killed());
-    let status = process.wait().await.unwrap();
+    let status = process.wait().await.expect("process exits");
     assert!(status.success());
 }
 
@@ -350,12 +354,20 @@ async fn mock_process_trait_can_simulate_spawn_failure() {
     let cmd = ShellCommand::new("kw").arg("build");
 
     let mut mock = MockProcessTrait::new();
-    mock.expect_spawn().return_once(|_, _, _| {
-        Err(ProcessError::IoError(io::Error::new(
-            io::ErrorKind::NotFound,
-            "kw not found",
-        )))
-    });
+    mock.expect_spawn()
+        .withf(|cmd, cwd, log_path| {
+            cmd.program == "kw"
+                && cmd.args == ["build"]
+                && cwd.starts_with(std::env::temp_dir())
+                && log_path.starts_with(std::env::temp_dir())
+        })
+        .times(1)
+        .return_once(|_, _, _| {
+            Err(ProcessError::IoError(io::Error::new(
+                io::ErrorKind::NotFound,
+                "kw not found",
+            )))
+        });
 
     let result = mock.spawn(&cmd, dir.path(), &log);
 

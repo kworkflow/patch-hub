@@ -6,7 +6,7 @@ use std::{
     env,
 };
 
-use crate::config::update::ValidatedConfigUpdate;
+use crate::config::ValidatedConfigUpdate;
 use crate::infrastructure::env::EnvTrait;
 use crate::render_prefs::{CoverRenderer, PatchRenderer};
 
@@ -64,6 +64,59 @@ impl ConfigState {
         Self::defaults_from_home(&home)
     }
 
+    /// Merges validated field updates from the edit-config flow.
+    pub fn apply_update(&mut self, u: &ValidatedConfigUpdate) {
+        if let Some(page_size) = u.page_size {
+            self.set_page_size(page_size);
+        }
+        if let Some(ref cache_dir) = u.cache_dir {
+            self.set_cache_dir(cache_dir.clone());
+        }
+        if let Some(ref data_dir) = u.data_dir {
+            self.set_data_dir(data_dir.clone());
+        }
+        if let Some(ref git_send_email_options) = u.git_send_email_option {
+            self.set_git_send_email_option(git_send_email_options.clone());
+        }
+        if let Some(ref git_am_options) = u.git_am_option {
+            self.set_git_am_option(git_am_options.clone());
+        }
+        if let Some(patch_renderer) = u.patch_renderer {
+            self.set_patch_renderer(patch_renderer);
+        }
+        if let Some(cover_renderer) = u.cover_renderer {
+            self.set_cover_renderer(cover_renderer);
+        }
+        if let Some(max_log_age) = u.max_log_age {
+            self.set_max_log_age(max_log_age);
+        }
+        if let Some(stay_on_applied_branch) = u.stay_on_applied_branch {
+            self.set_stay_on_applied_branch(stay_on_applied_branch);
+        }
+        if let Some(kw_reboot_after_deploy) = u.kw_reboot_after_deploy {
+            self.set_kw_reboot_after_deploy(kw_reboot_after_deploy);
+        }
+        if let Some(kw_deploy_force) = u.kw_deploy_force {
+            self.set_kw_deploy_force(kw_deploy_force);
+        }
+        if let Some(ref target_kernel_tree) = u.target_kernel_tree {
+            self.set_target_kernel_tree(target_kernel_tree.clone());
+        }
+    }
+
+    /// Recomputes derived path fields from `cache_dir` and `data_dir`.
+    pub fn normalize_derived_paths(&mut self) {
+        let cache_dir = self.cache_dir.clone();
+        self.patchsets_cache_dir = format!("{cache_dir}/patchsets");
+        let data_dir = self.data_dir.clone();
+        self.bookmarked_patchsets_path = format!("{data_dir}/bookmarked_patchsets.json");
+        self.mailing_lists_path = format!("{data_dir}/mailing_lists.json");
+        self.reviewed_patchsets_path = format!("{data_dir}/reviewed_patchsets.json");
+        self.logs_path = format!("{data_dir}/logs");
+    }
+}
+
+impl ConfigState {
     fn defaults_from_home(home: &str) -> Self {
         let cache_dir = format!("{home}/.cache/patch_hub");
         let data_dir = format!("{home}/.local/share/patch_hub");
@@ -88,11 +141,6 @@ impl ConfigState {
             kw_reboot_after_deploy: false,
             kw_deploy_force: true,
         }
-    }
-
-    #[cfg(test)]
-    pub fn page_size(&self) -> usize {
-        self.page_size
     }
 
     fn set_page_size(&mut self, page_size: usize) {
@@ -147,61 +195,6 @@ impl ConfigState {
     fn set_target_kernel_tree(&mut self, target_kernel_tree: Option<String>) {
         self.target_kernel_tree = target_kernel_tree;
     }
-
-    /// Merges validated field updates from the edit-config flow.
-    pub fn apply_update(&mut self, u: &ValidatedConfigUpdate) {
-        if let Some(page_size) = u.page_size {
-            self.set_page_size(page_size);
-        }
-        if let Some(ref cache_dir) = u.cache_dir {
-            self.set_cache_dir(cache_dir.clone());
-        }
-        if let Some(ref data_dir) = u.data_dir {
-            self.set_data_dir(data_dir.clone());
-        }
-        if let Some(ref git_send_email_options) = u.git_send_email_option {
-            self.set_git_send_email_option(git_send_email_options.clone());
-        }
-        if let Some(ref git_am_options) = u.git_am_option {
-            self.set_git_am_option(git_am_options.clone());
-        }
-        if let Some(patch_renderer) = u.patch_renderer {
-            self.set_patch_renderer(patch_renderer);
-        }
-        if let Some(cover_renderer) = u.cover_renderer {
-            self.set_cover_renderer(cover_renderer);
-        }
-        if let Some(max_log_age) = u.max_log_age {
-            self.set_max_log_age(max_log_age);
-        }
-        if let Some(stay_on_applied_branch) = u.stay_on_applied_branch {
-            self.set_stay_on_applied_branch(stay_on_applied_branch);
-        }
-        if let Some(kw_reboot_after_deploy) = u.kw_reboot_after_deploy {
-            self.set_kw_reboot_after_deploy(kw_reboot_after_deploy);
-        }
-        if let Some(kw_deploy_force) = u.kw_deploy_force {
-            self.set_kw_deploy_force(kw_deploy_force);
-        }
-        if let Some(ref target_kernel_tree) = u.target_kernel_tree {
-            self.set_target_kernel_tree(target_kernel_tree.clone());
-        }
-    }
-
-    pub fn to_snapshot(&self) -> ConfigSnapshot {
-        ConfigSnapshot::from_state(self)
-    }
-}
-
-/// Recomputes derived path fields from `cache_dir` and `data_dir`.
-pub fn normalize_derived_paths(state: &mut ConfigState) {
-    let cache_dir = state.cache_dir.clone();
-    state.patchsets_cache_dir = format!("{cache_dir}/patchsets");
-    let data_dir = state.data_dir.clone();
-    state.bookmarked_patchsets_path = format!("{data_dir}/bookmarked_patchsets.json");
-    state.mailing_lists_path = format!("{data_dir}/mailing_lists.json");
-    state.reviewed_patchsets_path = format!("{data_dir}/reviewed_patchsets.json");
-    state.logs_path = format!("{data_dir}/logs");
 }
 
 /// Immutable view of configuration for the rest of the application (read-only).
@@ -230,31 +223,33 @@ pub struct ConfigSnapshot {
     kw_deploy_force: bool,
 }
 
-impl ConfigSnapshot {
-    pub(crate) fn from_state(s: &ConfigState) -> Self {
+impl From<&ConfigState> for ConfigSnapshot {
+    fn from(state: &ConfigState) -> Self {
         Self {
-            page_size: s.page_size,
-            patchsets_cache_dir: s.patchsets_cache_dir.clone(),
-            bookmarked_patchsets_path: s.bookmarked_patchsets_path.clone(),
-            mailing_lists_path: s.mailing_lists_path.clone(),
-            reviewed_patchsets_path: s.reviewed_patchsets_path.clone(),
-            logs_path: s.logs_path.clone(),
-            git_send_email_options: s.git_send_email_options.clone(),
-            cache_dir: s.cache_dir.clone(),
-            data_dir: s.data_dir.clone(),
-            patch_renderer: s.patch_renderer,
-            cover_renderer: s.cover_renderer,
-            max_log_age: s.max_log_age,
-            kernel_trees: s.kernel_trees.clone(),
-            target_kernel_tree: s.target_kernel_tree.clone(),
-            git_am_options: s.git_am_options.clone(),
-            git_am_branch_prefix: s.git_am_branch_prefix.clone(),
-            stay_on_applied_branch: s.stay_on_applied_branch,
-            kw_reboot_after_deploy: s.kw_reboot_after_deploy,
-            kw_deploy_force: s.kw_deploy_force,
+            page_size: state.page_size,
+            patchsets_cache_dir: state.patchsets_cache_dir.clone(),
+            bookmarked_patchsets_path: state.bookmarked_patchsets_path.clone(),
+            mailing_lists_path: state.mailing_lists_path.clone(),
+            reviewed_patchsets_path: state.reviewed_patchsets_path.clone(),
+            logs_path: state.logs_path.clone(),
+            git_send_email_options: state.git_send_email_options.clone(),
+            cache_dir: state.cache_dir.clone(),
+            data_dir: state.data_dir.clone(),
+            patch_renderer: state.patch_renderer,
+            cover_renderer: state.cover_renderer,
+            max_log_age: state.max_log_age,
+            kernel_trees: state.kernel_trees.clone(),
+            target_kernel_tree: state.target_kernel_tree.clone(),
+            git_am_options: state.git_am_options.clone(),
+            git_am_branch_prefix: state.git_am_branch_prefix.clone(),
+            stay_on_applied_branch: state.stay_on_applied_branch,
+            kw_reboot_after_deploy: state.kw_reboot_after_deploy,
+            kw_deploy_force: state.kw_deploy_force,
         }
     }
+}
 
+impl ConfigSnapshot {
     pub fn page_size(&self) -> usize {
         self.page_size
     }

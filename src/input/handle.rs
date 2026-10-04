@@ -41,7 +41,9 @@ impl InputHandle {
     pub async fn shutdown(&self) -> Result<(), InputError> {
         self.send(InputMessage::Shutdown).await
     }
+}
 
+impl InputHandle {
     async fn send(&self, message: InputMessage) -> Result<(), InputError> {
         self.tx.send(message).await.map_err(|_| InputError::Closed)
     }

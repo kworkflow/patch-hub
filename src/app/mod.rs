@@ -1,14 +1,8 @@
-//! Application orchestration: state, screen flows, view-model projection, and the
-//! central [`AppActor`](crate::app::actor::AppActor) run loop.
+//! Application orchestration: state, screen flows, and the `AppActor` loop.
 //!
-//! [`App`] holds [`AppState`] (navigation, lore UI state, user data, config
-//! snapshot) and [`AppServices`] (typed handles to
-//! [`LoreApiHandle`](crate::lore::application::handle::LoreApiHandle),
-//! [`RenderHandle`](crate::render::handle::RenderHandle), plus injected
-//! infrastructure traits). Screen-specific input is dispatched from
-//! [`AppActor`](crate::app::actor::AppActor) into [`crate::app::flows`];
-//! presentation data crosses the UI boundary only through [`AppViewModel`] via
-//! [`App::present`].
+//! `App` holds `AppState` and `AppServices`. Screen input goes from
+//! `AppActor` into `flows`. Presentation crosses the UI boundary only as
+//! `AppViewModel` via `App::present`.
 pub(crate) mod actions;
 pub mod actor;
 pub(crate) mod dependencies;
@@ -17,6 +11,7 @@ pub(crate) mod flows;
 pub mod handle;
 pub mod input;
 pub(crate) mod loading;
+pub(crate) mod models;
 pub mod popup;
 pub mod screens;
 pub mod state;
@@ -32,7 +27,7 @@ use color_eyre::{
 };
 use tracing::{debug, event, info, warn, Level};
 
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use chrono::{SecondsFormat, Utc};
 
@@ -42,26 +37,26 @@ use crate::{
         reviewed_reply::ReviewedReplyRequest,
         PatchsetActionService,
     },
-    config::{ConfigHandle, ConfigSnapshot},
+    config::{ConfigHandle, ConfigSnapshot, ConfigUpdateDraft},
     infrastructure::{
         file_system::FileSystemTrait, monitoring::logging::garbage_collector::collect_garbage,
         shell::ShellTrait,
     },
     kw::{
-        handle::KwHandle,
-        history::{KwApplyRecord, KwHistoryStore},
+        handle::KwHandle, history::KwHistoryStore, models::history::KwApplyRecord,
         status::KwJobStatus,
     },
     lore::{
         application::{
-            cache::{BootstrapLoreData, CacheMode},
             errors::LoreError,
             handle::LoreApiHandle,
+            models::cache::{BootstrapLoreData, CacheMode},
         },
         domain::patch::Patch,
     },
     render::{handle::RenderHandle, RenderPatchsetRequest},
 };
+use models::{popup::AppPopup, view_model::AppViewModel};
 use screens::{
     bookmarked::BookmarkedPatchsetsState,
     details_actions::{PatchsetAction, PatchsetDetailsState},
@@ -71,7 +66,6 @@ use screens::{
     CurrentScreen,
 };
 pub use state::{AppState, ConfigUiState, LoreUiState, NavigationState, UserLoreState};
-pub use view_model::AppViewModel;
 
 /// Injected capabilities used by `App` orchestration (not screen state).
 pub struct AppServices {
@@ -80,11 +74,10 @@ pub struct AppServices {
     pub shell: Box<dyn ShellTrait>,
     pub fs: Arc<dyn FileSystemTrait>,
     pub config: ConfigHandle,
-    /// Direct access to the store, for the non-unix fallback below.
+    /// Apply and build history. Writes go here when no KwActor is attached.
     pub kw_history: Arc<dyn KwHistoryStore>,
-    /// `None` on non-unix builds, where ProcessTrait (and thus KwActor)
-    /// does not exist; apply-history writes then go to `kw_history`
-    /// directly, as they did before the actor landed.
+    /// `None` when no KwActor is attached; apply-history writes then go
+    /// to `kw_history` directly.
     pub kw: Option<KwHandle>,
 }
 
@@ -101,14 +94,9 @@ pub struct App {
 }
 
 impl App {
-    /// Creates a new instance of `App`.
-    ///
-    /// Configuration starts from the already-bootstrapped snapshot owned by the
-    /// Config actor. Lore bootstrap uses already-warmed cache from `lore_service`.
-    ///
-    /// # Returns
-    ///
-    /// `App` instance with loading configurations and app data.
+    /// Creates an `App` from the Config actor's snapshot and the warmed lore
+    /// cache.
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         config: ConfigSnapshot,
         config_handle: ConfigHandle,
@@ -296,7 +284,7 @@ impl App {
             .map_err(|e| eyre!("{e}"))?;
 
         debug!(msg_id, "patchset details loaded");
-        self.state.lore.details = Some(PatchsetDetailsState::from_rendered_preview(
+        self.state.lore.details = Some(PatchsetDetailsState::build_from_rendered_preview(
             representative_patch,
             details,
             rendered_preview,
@@ -326,6 +314,46 @@ impl App {
         Ok(())
     }
 
+    /// Opens the edit-config screen from the current configuration snapshot.
+    pub fn init_edit_config(&mut self) {
+        self.state.config_state.edit_config = Some(EditConfigState::new(&self.state.config));
+    }
+
+    pub fn reset_edit_config(&mut self) {
+        self.state.config_state.edit_config = None;
+    }
+
+    /// Applies edited values from [`ConfigUiState::edit_config`] into [`AppState::config`].
+    pub async fn consolidate_edit_config(&mut self) -> Result<()> {
+        if let Some(edit_config) = &self.state.config_state.edit_config {
+            debug!("validating and applying config update");
+            let draft = ConfigUpdateDraft::from(edit_config);
+            let snapshot = self
+                .services
+                .config
+                .validate_and_apply(draft)
+                .await
+                .map_err(|e| eyre!("{e:#?}"))?;
+            self.state.config = snapshot;
+            info!("configuration updated and persisted");
+        }
+        Ok(())
+    }
+
+    pub fn set_current_screen(&mut self, new_current_screen: CurrentScreen) {
+        self.state.navigation.current_screen = new_current_screen;
+    }
+
+    /// Projects the current [`AppState`] into an owned [`AppViewModel`].
+    ///
+    /// This is the primary way for the orchestration layer to hand off
+    /// presentation data to the UI actor without exposing raw `AppState`.
+    pub fn present(&self) -> AppViewModel {
+        AppViewModel::from(&self.state)
+    }
+}
+
+impl App {
     async fn sync_patchset_bookmark(&mut self) -> Result<()> {
         let details = self
             .state
@@ -373,7 +401,7 @@ impl App {
             .details
             .as_ref()
             .expect("invariant: details must be loaded before executing reviewed reply");
-        if patchset_action_selected(details, &PatchsetAction::ReplyWithReviewedBy) {
+        if Self::is_patchset_action_selected(details, &PatchsetAction::ReplyWithReviewedBy) {
             let message_id = details.representative_patch.message_id().href.clone();
             debug!(msg_id = message_id, "executing reviewed-by reply");
             let successful_indexes = self
@@ -382,7 +410,7 @@ impl App {
                 .reviewed_patchsets
                 .remove(&message_id)
                 .unwrap_or_default();
-            let request = reviewed_reply_request(
+            let request = Self::build_reviewed_reply_request(
                 details,
                 successful_indexes,
                 self.state.config.git_send_email_options().to_string(),
@@ -397,7 +425,7 @@ impl App {
             self.state
                 .user_state
                 .reviewed_patchsets
-                .insert(message_id.clone(), result.into_successful_indexes());
+                .insert(message_id.clone(), result.collect_successful_indexes());
 
             self.services
                 .lore_api
@@ -427,7 +455,7 @@ impl App {
             .as_ref()
             .expect("invariant: details must be loaded before executing apply patchset");
 
-        if patchset_action_selected(details, &PatchsetAction::Apply) {
+        if Self::is_patchset_action_selected(details, &PatchsetAction::Apply) {
             debug!("applying patchset via git-am");
             // A running kw job owns the tree; applying would rewrite the
             // branch it is building. AppActor serializes this with Start,
@@ -451,23 +479,27 @@ impl App {
     /// The popup blocking an apply while a kw job runs, if a job is in
     /// fact running. An unreachable actor cannot be running a job, so a
     /// status-query failure lets the apply proceed.
-    async fn kw_job_running_popup(&self) -> Option<popup::AppPopup> {
+    async fn kw_job_running_popup(&self) -> Option<AppPopup> {
         let kw = self.services.kw.as_ref()?;
         match kw.get_status().await {
-            Ok(snapshot) if matches!(snapshot.job, KwJobStatus::Running { .. }) => {
-                Some(popup::AppPopup::info(
+            Ok(snapshot) => match snapshot.job {
+                KwJobStatus::Running { .. } => Some(AppPopup::info(
                     "Patchset Apply Blocked",
                     " A kw job is running on the kernel tree.\n\nApplying a patchset now would rewrite the branch the job is building under it.\n\nWait for the job to finish, then apply again.",
-                ))
-            }
-            _ => None,
+                )),
+                KwJobStatus::Idle
+                | KwJobStatus::Succeeded { .. }
+                | KwJobStatus::Failed { .. }
+                | KwJobStatus::Cancelled { .. } => None,
+            },
+            Err(_) => None,
         }
     }
 
     /// Runs the git-am apply and maps the outcome to the result popup,
     /// recording the apply in the kw history on success.
-    async fn apply_patchset_popup(&self, details: &PatchsetDetailsState) -> popup::AppPopup {
-        let request = apply_patchset_request(details);
+    async fn apply_patchset_popup(&self, details: &PatchsetDetailsState) -> AppPopup {
+        let request = Self::build_apply_patchset_request(details);
         let action_service = PatchsetActionService::new(
             &*self.services.fs,
             &*self.services.shell,
@@ -475,7 +507,11 @@ impl App {
         );
         match action_service.apply_patchset(&request, &self.state.config) {
             Ok(applied) => {
-                let popup_body = match kw_apply_record(details, &self.state.config, &applied) {
+                let popup_body = match Self::build_kw_apply_record(
+                    details,
+                    &self.state.config,
+                    &applied,
+                ) {
                     // Defensive: the apply itself resolved this tree from
                     // the same snapshot, so this is unreachable unless the
                     // config changed mid-apply.
@@ -491,7 +527,7 @@ impl App {
                     Some(record) => {
                         // History writes go through KwActor so apply
                         // recording serializes with job state; without an
-                        // actor (non-unix), write the store directly.
+                        // actor, write the store directly.
                         let recorded = match &self.services.kw {
                             Some(kw) => kw.record_apply(record).await.map_err(|e| e.to_string()),
                             None => self
@@ -514,104 +550,69 @@ impl App {
                         }
                     }
                 };
-                popup::AppPopup::info("Patchset Apply Success", popup_body)
+                AppPopup::info("Patchset Apply Success", popup_body)
             }
-            Err(msg) => popup::AppPopup::info("Patchset Apply Fail", msg),
+            Err(msg) => AppPopup::info("Patchset Apply Fail", msg),
         }
     }
 
-    /// Opens the edit-config screen from the current configuration snapshot.
-    pub fn init_edit_config(&mut self) {
-        self.state.config_state.edit_config = Some(EditConfigState::new(&self.state.config));
+    fn is_patchset_action_selected(
+        details: &PatchsetDetailsState,
+        action: &PatchsetAction,
+    ) -> bool {
+        matches!(details.patchset_actions.get(action), Some(true))
     }
 
-    pub fn reset_edit_config(&mut self) {
-        self.state.config_state.edit_config = None;
-    }
-
-    /// Applies edited values from [`ConfigUiState::edit_config`] into [`AppState::config`].
-    pub async fn consolidate_edit_config(&mut self) -> Result<()> {
-        if let Some(edit_config) = &self.state.config_state.edit_config {
-            debug!("validating and applying config update");
-            let draft = edit_config.to_update_draft();
-            let snapshot = self
-                .services
-                .config
-                .validate_and_apply(draft)
-                .await
-                .map_err(|e| eyre!("{e:#?}"))?;
-            self.state.config = snapshot;
-            info!("configuration updated and persisted");
+    fn build_reviewed_reply_request(
+        details: &PatchsetDetailsState,
+        successful_indexes: HashSet<usize>,
+        git_send_email_options: String,
+    ) -> ReviewedReplyRequest {
+        ReviewedReplyRequest {
+            raw_patches: details.raw_patches.clone(),
+            patches_to_reply: details.patches_to_reply.clone(),
+            successful_indexes,
+            git_send_email_options,
         }
-        Ok(())
     }
 
-    pub fn set_current_screen(&mut self, new_current_screen: CurrentScreen) {
-        self.state.navigation.current_screen = new_current_screen;
+    fn build_apply_patchset_request(details: &PatchsetDetailsState) -> ApplyPatchsetRequest {
+        ApplyPatchsetRequest {
+            patch_title: details.representative_patch.title().clone(),
+            patchset_path: details.patchset_path.clone(),
+        }
     }
 
-    /// Projects the current [`AppState`] into an owned [`AppViewModel`].
-    ///
-    /// This is the primary way for the orchestration layer to hand off
-    /// presentation data to the UI actor without exposing raw `AppState`.
-    pub fn present(&self) -> AppViewModel {
-        view_model::project_state(&self.state)
+    fn build_kw_apply_record(
+        details: &PatchsetDetailsState,
+        config: &ConfigSnapshot,
+        applied: &AppliedPatchset,
+    ) -> Option<KwApplyRecord> {
+        let kernel_tree_id = config.target_kernel_tree().as_ref()?;
+        let kernel_tree = config.get_kernel_tree(kernel_tree_id)?;
+
+        Some(KwApplyRecord {
+            message_id: details.representative_patch.message_id().href.clone(),
+            kernel_tree_id: kernel_tree_id.clone(),
+            tree_path: kernel_tree.path().clone(),
+            applied_branch: applied.applied_branch.clone(),
+            base_branch: kernel_tree.branch().clone(),
+            applied_at: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+        })
     }
-}
-
-fn patchset_action_selected(details: &PatchsetDetailsState, action: &PatchsetAction) -> bool {
-    matches!(details.patchset_actions.get(action), Some(true))
-}
-
-fn reviewed_reply_request(
-    details: &PatchsetDetailsState,
-    successful_indexes: std::collections::HashSet<usize>,
-    git_send_email_options: String,
-) -> ReviewedReplyRequest {
-    ReviewedReplyRequest {
-        raw_patches: details.raw_patches.clone(),
-        patches_to_reply: details.patches_to_reply.clone(),
-        successful_indexes,
-        git_send_email_options,
-    }
-}
-
-fn apply_patchset_request(details: &PatchsetDetailsState) -> ApplyPatchsetRequest {
-    ApplyPatchsetRequest {
-        patch_title: details.representative_patch.title().clone(),
-        patchset_path: details.patchset_path.clone(),
-    }
-}
-
-fn kw_apply_record(
-    details: &PatchsetDetailsState,
-    config: &ConfigSnapshot,
-    applied: &AppliedPatchset,
-) -> Option<KwApplyRecord> {
-    let kernel_tree_id = config.target_kernel_tree().as_ref()?;
-    let kernel_tree = config.get_kernel_tree(kernel_tree_id)?;
-
-    Some(KwApplyRecord {
-        message_id: details.representative_patch.message_id().href.clone(),
-        kernel_tree_id: kernel_tree_id.clone(),
-        tree_path: kernel_tree.path().clone(),
-        applied_branch: applied.applied_branch.clone(),
-        base_branch: kernel_tree.branch().clone(),
-        applied_at: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
-    })
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
 
-    use serde_xml_rs::from_str;
+    mod helpers {
+        use super::super::*;
+        use serde_xml_rs::from_str;
+        use std::collections::{HashMap, HashSet};
 
-    use super::*;
-
-    fn test_patch() -> Patch {
-        from_str(
-            r#"
+        pub(super) fn test_patch() -> Patch {
+            from_str(
+                r#"
             <entry xmlns:thr="http://purl.org/syndication/thread/1.0">
                 <author>
                     <name>Foo Bar</name>
@@ -624,40 +625,48 @@ mod tests {
                 <content></content>
             </entry>
         "#,
-        )
-        .expect("test patch XML should deserialize")
-    }
+            )
+            .expect("test patch XML should deserialize")
+        }
 
-    fn details_state() -> PatchsetDetailsState {
-        PatchsetDetailsState {
-            representative_patch: test_patch(),
-            raw_patches: vec!["raw patch 0".to_string(), "raw patch 1".to_string()],
-            patches_preview: vec!["preview 0".to_string(), "preview 1".to_string()],
-            has_cover_letter: false,
-            patches_to_reply: vec![false, true],
-            patchset_path: "/tmp/patchset.mbx".to_string(),
-            preview_index: 0,
-            preview_scroll_offset: 0,
-            preview_pan: 0,
-            preview_fullscreen: false,
-            patchset_actions: HashMap::from([
-                (PatchsetAction::Bookmark, false),
-                (PatchsetAction::ReplyWithReviewedBy, true),
-                (PatchsetAction::Apply, true),
-            ]),
-            reviewed_by: vec![HashSet::new(), HashSet::new()],
-            tested_by: vec![HashSet::new(), HashSet::new()],
-            acked_by: vec![HashSet::new(), HashSet::new()],
-            last_screen: CurrentScreen::LatestPatchsets,
+        pub(super) fn details_state() -> PatchsetDetailsState {
+            PatchsetDetailsState {
+                representative_patch: test_patch(),
+                raw_patches: vec!["raw patch 0".to_string(), "raw patch 1".to_string()],
+                patches_preview: vec!["preview 0".to_string(), "preview 1".to_string()],
+                has_cover_letter: false,
+                patches_to_reply: vec![false, true],
+                patchset_path: "/tmp/patchset.mbx".to_string(),
+                preview_index: 0,
+                preview_scroll_offset: 0,
+                preview_pan: 0,
+                preview_fullscreen: false,
+                patchset_actions: HashMap::from([
+                    (PatchsetAction::Bookmark, false),
+                    (PatchsetAction::ReplyWithReviewedBy, true),
+                    (PatchsetAction::Apply, true),
+                ]),
+                reviewed_by: vec![HashSet::new(), HashSet::new()],
+                tested_by: vec![HashSet::new(), HashSet::new()],
+                acked_by: vec![HashSet::new(), HashSet::new()],
+                last_screen: CurrentScreen::LatestPatchsets,
+            }
         }
     }
+    use helpers::*;
+    use std::collections::HashSet;
+
+    use super::*;
 
     #[test]
     fn patchset_action_selected_reads_action_map() {
         let mut details = details_state();
 
-        assert!(patchset_action_selected(&details, &PatchsetAction::Apply));
-        assert!(patchset_action_selected(
+        assert!(App::is_patchset_action_selected(
+            &details,
+            &PatchsetAction::Apply
+        ));
+        assert!(App::is_patchset_action_selected(
             &details,
             &PatchsetAction::ReplyWithReviewedBy
         ));
@@ -666,13 +675,16 @@ mod tests {
             .patchset_actions
             .insert(PatchsetAction::Apply, false);
 
-        assert!(!patchset_action_selected(&details, &PatchsetAction::Apply));
+        assert!(!App::is_patchset_action_selected(
+            &details,
+            &PatchsetAction::Apply
+        ));
     }
 
     #[test]
     fn reviewed_reply_request_copies_reply_inputs() {
         let details = details_state();
-        let request = reviewed_reply_request(
+        let request = App::build_reviewed_reply_request(
             &details,
             HashSet::from([4usize]),
             "--dry-run --suppress-cc=all".to_string(),
@@ -690,7 +702,7 @@ mod tests {
     #[test]
     fn apply_patchset_request_copies_apply_inputs() {
         let details = details_state();
-        let request = apply_patchset_request(&details);
+        let request = App::build_apply_patchset_request(&details);
 
         assert_eq!("[PATCH 1/1] test patch", request.patch_title);
         assert_eq!("/tmp/patchset.mbx", request.patchset_path);

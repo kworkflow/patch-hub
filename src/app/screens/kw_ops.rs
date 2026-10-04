@@ -1,50 +1,6 @@
-use crate::{config::KernelTree, kw::readiness::KwReadiness};
+use crate::{config::KernelTree, kw::models::readiness::KwReadiness};
 
-/// Which editable KwOps field is focused.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum KwOpsFocus {
-    #[default]
-    Branch,
-    ExtraArgs,
-}
-
-/// Which deploy start was interrupted by the boot-once confirm popup.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DeployStartKind {
-    Deploy,
-    BuildThenDeploy,
-}
-
-/// Form state on the KwOps screen. Job status lives in [`crate::app::state::KwUiState::status`].
-#[derive(Clone, Debug)]
-pub struct KwOpsState {
-    pub patchset_title: String,
-    pub message_id: String,
-    pub kernel_tree_id: String,
-    pub tree: KernelTree,
-    pub branch: String,
-    pub extra_args: String,
-    pub focus: KwOpsFocus,
-    pub editing: bool,
-    pub edit_buffer: String,
-    pub readiness: KwReadiness,
-    /// True when readiness could not name HEAD; Start stays disabled until
-    /// the user types a branch (we never guess from `KernelTree.branch`).
-    pub head_unreadable: bool,
-    /// Bounded tail of the job log, refreshed by AppActor while KwOps is
-    /// visible and a job is running.
-    pub log_tail: String,
-    pub cancel_requested: bool,
-    /// Optimistic lock so a second Start before the watch snapshot
-    /// arrives is ignored instead of refused with an error popup.
-    pub start_requested: bool,
-    /// True after the user confirmed boot-into-new-kernel-once for this
-    /// KwOps visit. Preserved across `reenter` so a later Start does not
-    /// re-prompt in the same session.
-    pub boot_once_acknowledged: bool,
-    /// Deploy start waiting on the boot-once confirm popup.
-    pub pending_deploy: Option<DeployStartKind>,
-}
+use crate::app::models::kw_ops::{KwOpsFocus, KwOpsState};
 
 impl KwOpsState {
     pub fn new(
@@ -76,13 +32,11 @@ impl KwOpsState {
         }
     }
 
-    /// Re-open KwOps for the same patchset/tree without dropping extras,
-    /// an in-flight cancel/start indication, or a boot-once acknowledgement.
+    /// Re-open KwOps for the same patchset and tree without dropping extras,
+    /// an in-flight cancel or start, or a boot-once acknowledgement.
     ///
-    /// Branch and `head_unreadable` stay as the user last edited them.
-    /// An external HEAD change while away is not applied, so a stale
-    /// detached-HEAD flag can survive a tree that has since become
-    /// readable.
+    /// Branch and `head_unreadable` stay as last edited. A HEAD change while
+    /// away is not applied, so a stale detached-HEAD flag can survive.
     pub fn reenter(&mut self, patchset_title: String, tree: KernelTree, readiness: KwReadiness) {
         self.patchset_title = patchset_title;
         self.tree = tree;
@@ -92,7 +46,7 @@ impl KwOpsState {
     }
 
     pub fn extra_arg_tokens(&self) -> Vec<String> {
-        split_extra_args(&self.extra_args)
+        Self::split_extra_args(&self.extra_args)
     }
 
     /// Extra args shown in the command preview, including in-progress
@@ -103,7 +57,7 @@ impl KwOpsState {
         } else {
             self.extra_args.as_str()
         };
-        split_extra_args(raw)
+        Self::split_extra_args(raw)
     }
 
     pub fn highlight_prev(&mut self) {
@@ -145,47 +99,53 @@ impl KwOpsState {
     }
 }
 
-fn split_extra_args(raw: &str) -> Vec<String> {
-    raw.split_whitespace().map(str::to_string).collect()
+impl KwOpsState {
+    fn split_extra_args(raw: &str) -> Vec<String> {
+        raw.split_whitespace().map(str::to_string).collect()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::kw::readiness::{
-        BootOnceState, DeployAloneRefusal, KwBinaryProbe, KwReadiness, KwVersionCheck,
-        TreeReadiness,
-    };
-    use crate::kw::remote::RemoteRefusal;
 
-    fn sample_tree() -> KernelTree {
-        serde_json::from_value(serde_json::json!({
-            "path": "/kernel",
-            "branch": "main"
-        }))
-        .expect("kernel tree should deserialize")
-    }
+    mod helpers {
+        use super::super::*;
 
-    fn readiness(branch: Option<&str>) -> KwReadiness {
-        KwReadiness {
-            kw_binary: KwBinaryProbe {
-                available: true,
-                version_line: Some("kw, version 0.10.0".to_string()),
-                check: KwVersionCheck::Meets,
-            },
-            tree: TreeReadiness::Ready {
-                arch: Some("x86_64".to_string()),
-            },
-            output_dir: None,
-            kernel_image: None,
-            build_record: None,
-            latest_build: None,
-            deploy_alone: Err(DeployAloneRefusal::NoBuildRecord),
-            current_branch: branch.map(str::to_string),
-            deploy_remote: Err(RemoteRefusal::NoRemotesConfigured),
-            boot_once: BootOnceState::Unknown,
+        use crate::kw::models::readiness::{
+            BootOnceState, DeployAloneRefusal, KwBinaryProbe, KwReadiness, KwVersionCheck,
+            TreeReadiness,
+        };
+        use crate::kw::models::remote::RemoteRefusal;
+
+        pub(super) fn sample_tree() -> KernelTree {
+            serde_json::from_value(serde_json::json!({
+                "path": "/kernel",
+                "branch": "main"
+            }))
+            .expect("kernel tree should deserialize")
+        }
+
+        pub(super) fn readiness(branch: Option<&str>) -> KwReadiness {
+            KwReadiness {
+                kw_binary: KwBinaryProbe {
+                    available: true,
+                    version_line: Some("kw, version 0.10.0".to_string()),
+                    check: KwVersionCheck::Meets,
+                },
+                tree: TreeReadiness::Ready {
+                    arch: Some("x86_64".to_string()),
+                },
+                output_dir: None,
+                deploy_alone: Err(DeployAloneRefusal::NoBuildRecord),
+                current_branch: branch.map(str::to_string),
+                deploy_remote: Err(RemoteRefusal::NoRemotesConfigured),
+                boot_once: BootOnceState::Unknown,
+            }
         }
     }
+    use super::*;
+    use crate::app::models::kw_ops::DeployStartKind;
+    use helpers::*;
 
     #[test]
     fn prefills_branch_from_readiness_not_from_tree_config() {

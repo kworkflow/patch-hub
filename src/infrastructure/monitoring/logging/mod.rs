@@ -6,7 +6,7 @@ use std::{
 use chrono::Local;
 use multi_log_file_writer::{create_non_blocking_writer, get_fmt_layer, MultiLogFileWriter};
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{reload::Handle, Layer, Registry};
+use tracing_subscriber::{reload, reload::Handle, Layer, Registry};
 
 pub mod garbage_collector;
 pub mod multi_log_file_writer;
@@ -33,7 +33,7 @@ pub fn init_logging_layer() -> InitLoggingLayerProduct {
 
     let fmt_layer = get_fmt_layer(multi_log_file_writer.clone());
 
-    let (reload_layer, reload_handle) = tracing_subscriber::reload::Layer::new(fmt_layer);
+    let (reload_layer, reload_handle) = reload::Layer::new(fmt_layer);
 
     InitLoggingLayerProduct {
         logging_layer: Box::new(reload_layer),

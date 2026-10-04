@@ -1,23 +1,21 @@
-//! Lore domain actor: serializes access to [`LoreService`] on a dedicated task.
+//! Lore actor: serializes `LoreService` on a dedicated task.
 //!
-//! All lore I/O (mailing lists, feed pages, patchset details, bookmarks,
-//! reviewed state, git reply preparation) goes through
-//! [`LoreApiHandle`](crate::lore::application::handle::LoreApiHandle) as typed
-//! request/reply messages. Heavy work runs on a blocking thread pool via
-//! [`LoreApiActor::with_core`]; callers never touch [`LoreService`] directly.
+//! Mailing lists, feeds, patchset details, bookmarks, reviewed state, and
+//! git reply preparation go through `LoreApiHandle`. Heavy work runs on a
+//! blocking pool via `LoreApiActor::with_core`.
 use std::ops::ControlFlow;
 
-use tokio::{
-    spawn,
-    sync::{mpsc, oneshot},
-    task,
-};
+use tokio::{spawn, sync::mpsc, task};
 
+use crate::infrastructure::actor_reply::ActorReplyService;
 use crate::lore::application::{
     errors::LoreError, handle::LoreApiHandle, messages::LoreApiMessage, service::LoreService,
 };
 
 pub const DEFAULT_LORE_API_CHANNEL_SIZE: usize = 32;
+
+const REQUEST_FAILED_LOG: &str = "lore api request failed";
+const REPLY_DROPPED_LOG: &str = "lore api reply receiver dropped before response";
 
 pub struct LoreApiActor {
     core: Option<LoreService>,
@@ -51,7 +49,9 @@ impl LoreApiActor {
         }
         tracing::info!("lore api actor stopped");
     }
+}
 
+impl LoreApiActor {
     async fn handle_message(&mut self, message: LoreApiMessage) -> ControlFlow<()> {
         let message_name = message.name();
         tracing::debug!(message = message_name, "lore api request received");
@@ -63,7 +63,13 @@ impl LoreApiActor {
                     .with_core(|core| core.warm_bootstrap_cache())
                     .await
                     .and_then(|result| result);
-                send_lore_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
+                    reply,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             LoreApiMessage::FetchAvailableLists { cache_mode, reply } => {
@@ -72,7 +78,13 @@ impl LoreApiActor {
                     .with_core(move |core| core.fetch_available_lists(cache_mode))
                     .await
                     .and_then(|result| result);
-                send_lore_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
+                    reply,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             LoreApiMessage::FetchFeedPage {
@@ -95,7 +107,13 @@ impl LoreApiActor {
                     })
                     .await
                     .and_then(|result| result);
-                send_lore_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
+                    reply,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             LoreApiMessage::FetchPatchsetDetails {
@@ -114,7 +132,13 @@ impl LoreApiActor {
                     })
                     .await
                     .and_then(|result| result);
-                send_lore_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
+                    reply,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             LoreApiMessage::SaveBookmarks { bookmarks, reply } => {
@@ -123,7 +147,13 @@ impl LoreApiActor {
                     .with_core(move |core| core.save_bookmarked_patchsets(&bookmarks))
                     .await
                     .and_then(|result| result);
-                send_lore_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
+                    reply,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             LoreApiMessage::SaveReviewed { reviewed, reply } => {
@@ -132,7 +162,13 @@ impl LoreApiActor {
                     .with_core(move |core| core.save_reviewed_patchsets(&reviewed))
                     .await
                     .and_then(|result| result);
-                send_lore_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
+                    reply,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             LoreApiMessage::GetGitSignature {
@@ -143,7 +179,13 @@ impl LoreApiActor {
                 let result = self
                     .with_core(move |core| core.get_git_signature(&git_repo_path))
                     .await;
-                send_lore_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
+                    reply,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             LoreApiMessage::PrepareReplyCommands {
@@ -174,7 +216,13 @@ impl LoreApiActor {
                     })
                     .await
                     .and_then(|result| result);
-                send_lore_reply(message_name, reply, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
+                    reply,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             LoreApiMessage::Shutdown => {
@@ -204,93 +252,83 @@ impl LoreApiActor {
     }
 }
 
-fn send_lore_reply<T>(
-    message_name: &'static str,
-    reply: oneshot::Sender<Result<T, LoreError>>,
-    result: Result<T, LoreError>,
-) {
-    if let Err(error) = &result {
-        tracing::warn!(
-            message = message_name,
-            error = %error,
-            "lore api request failed"
-        );
-    }
-
-    if reply.send(result).is_err() {
-        tracing::warn!(
-            message = message_name,
-            "lore api reply receiver dropped before response"
-        );
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Arc};
 
-    use crate::{
-        infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
-        lore::{
-            application::{
-                cache::{CacheMode, CacheTtl},
-                handle::LoreApiHandle,
+    mod helpers {
+        use super::super::*;
+        use crate::{
+            infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
+            lore::{
+                application::{handle::LoreApiHandle, models::cache::CacheTtl},
+                infrastructure::{
+                    http_lore_client::{MockFeedGateway, MockListsGateway, MockPatchHtmlGateway},
+                    patchset_fetcher::MockPatchsetFetcher,
+                    patchset_parser::MockPatchsetParser,
+                    persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
+                },
             },
-            domain::mailing_list::MailingList,
-            infrastructure::{
-                http_lore_client::{MockFeedGateway, MockListsGateway, MockPatchHtmlGateway},
-                patchset_fetcher::MockPatchsetFetcher,
-                patchset_parser::MockPatchsetParser,
-                persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
-            },
-        },
+        };
+        use std::sync::Arc;
+
+        pub(super) fn make_service(
+            lists_store: MockMailingListsCacheStore,
+            user_state: MockUserLoreStateStore,
+        ) -> LoreService {
+            LoreService::new(
+                Arc::new(MockListsGateway::new()),
+                Arc::new(MockFeedGateway::new()),
+                Arc::new(MockPatchHtmlGateway::new()),
+                Arc::new(lists_store),
+                Arc::new(user_state),
+                Arc::new(MockPatchsetFetcher::new()),
+                Arc::new(MockPatchsetParser::new()),
+                Arc::new(MockFileSystemTrait::new()),
+                Arc::new(MockShellTrait::new()),
+                CacheTtl::default(),
+            )
+        }
+
+        pub(super) fn spawn_test_actor(core: LoreService) -> LoreApiHandle {
+            LoreApiActor::spawn(core)
+        }
+    }
+    use helpers::*;
+    use std::collections::HashMap;
+
+    use crate::lore::{
+        application::models::cache::CacheMode,
+        domain::mailing_list::MailingList,
+        infrastructure::persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
     };
-
-    use super::*;
-
-    fn make_service(
-        lists_store: MockMailingListsCacheStore,
-        user_state: MockUserLoreStateStore,
-    ) -> LoreService {
-        LoreService::new(
-            Arc::new(MockListsGateway::new()),
-            Arc::new(MockFeedGateway::new()),
-            Arc::new(MockPatchHtmlGateway::new()),
-            Arc::new(lists_store),
-            Arc::new(user_state),
-            Arc::new(MockPatchsetFetcher::new()),
-            Arc::new(MockPatchsetParser::new()),
-            Arc::new(MockFileSystemTrait::new()),
-            Arc::new(MockShellTrait::new()),
-            CacheTtl::default(),
-        )
-    }
-
-    fn spawn_test_actor(core: LoreService) -> LoreApiHandle {
-        LoreApiActor::spawn(core)
-    }
 
     #[tokio::test]
     async fn handle_returns_bootstrap_data_from_actor() {
         let mut lists_store = MockMailingListsCacheStore::new();
         lists_store
             .expect_load_available_lists()
+            .withf(|| true)
             .times(1)
             .returning(|| Ok(vec![MailingList::new("linux-mm", "")]));
 
         let mut user_state = MockUserLoreStateStore::new();
         user_state
             .expect_load_bookmarked_patchsets()
+            .withf(|| true)
             .times(1)
             .returning(|| Ok(vec![]));
         user_state
             .expect_load_reviewed_patchsets()
+            .withf(|| true)
             .times(1)
             .returning(|| Ok(HashMap::new()));
 
         let handle = spawn_test_actor(make_service(lists_store, user_state));
 
-        let data = handle.get_bootstrap_data().await.unwrap();
+        let data = handle
+            .get_bootstrap_data()
+            .await
+            .expect("bootstrap data loads");
 
         assert_eq!(1, data.mailing_lists.len());
         assert_eq!("linux-mm", data.mailing_lists[0].name());
@@ -303,6 +341,7 @@ mod tests {
         let mut lists_store = MockMailingListsCacheStore::new();
         lists_store
             .expect_load_available_lists()
+            .withf(|| true)
             .times(1)
             .returning(|| Ok(vec![MailingList::new("cached-list", "")]));
 
@@ -311,11 +350,11 @@ mod tests {
         let first = handle
             .fetch_available_lists(CacheMode::UseCache)
             .await
-            .unwrap();
+            .expect("available lists fetches");
         let second = handle
             .fetch_available_lists(CacheMode::UseCache)
             .await
-            .unwrap();
+            .expect("available lists fetches");
 
         assert_eq!("cached-list", first[0].name());
         assert_eq!("cached-list", second[0].name());

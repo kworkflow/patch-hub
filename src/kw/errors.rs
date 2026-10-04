@@ -1,13 +1,9 @@
-// The actor that constructs/reads these is unix-only.
-#![cfg_attr(not(unix), allow(dead_code))]
-
 use thiserror::Error;
 
-#[cfg(unix)]
 use crate::infrastructure::process::ProcessError;
 use crate::{
     infrastructure::{file_system::FileSystemError, shell::ShellError},
-    kw::{
+    kw::models::{
         readiness::{DeployAloneRefusal, KwReadinessError, TreeReadiness},
         remote::RemoteRefusal,
     },
@@ -66,8 +62,6 @@ pub enum KwStartError {
     BootOnceNotAcknowledged,
     #[error("{0}")]
     DeployAloneRefused(DeployAloneRefusal),
-    // Spawning a process is unix-only (ProcessTrait is cfg(unix)).
-    #[cfg(unix)]
     #[error("failed to spawn the kw process: {0}")]
     Spawn(#[from] ProcessError),
     #[error("filesystem error: {0}")]

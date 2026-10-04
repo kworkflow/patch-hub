@@ -35,14 +35,14 @@ impl Cli {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::ConfigState;
+    use crate::config::{ConfigSnapshot, ConfigState};
 
     #[test]
     fn resolve_continues_when_no_early_cli_action_is_requested() {
         let cli = Cli {
             show_configs: false,
         };
-        let config = ConfigState::default().to_snapshot();
+        let config = ConfigSnapshot::from(&ConfigState::default());
 
         let result = cli.resolve(&config);
 
@@ -52,7 +52,7 @@ mod tests {
     #[test]
     fn resolve_finishes_after_printing_configs() {
         let cli = Cli { show_configs: true };
-        let config = ConfigState::default().to_snapshot();
+        let config = ConfigSnapshot::from(&ConfigState::default());
 
         let result = cli.resolve(&config);
 

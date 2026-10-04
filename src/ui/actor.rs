@@ -1,27 +1,19 @@
-//! UI presentation actor: builds [`UiScene`](crate::ui::scene::UiScene) values
-//! from [`AppViewModel`](crate::app::view_model::AppViewModel) on a dedicated task.
+//! UI presentation actor: builds `UiScene` values from `AppViewModel`.
 //!
-//! [`AppActor`](crate::app::actor::AppActor) calls
-//! [`UiHandle::build_scene`](crate::ui::handle::UiHandle::build_scene) each frame;
-//! this actor runs [`UiCore::build_scene`](crate::ui::core::UiCore::build_scene)
-//! and returns an owned scene for the terminal draw path. Presentation logic stays
-//! out of [`AppState`](crate::app::state::AppState): the app layer projects domain
-//! state into [`AppViewModel`](crate::app::view_model::AppViewModel) before
-//! crossing this boundary.
+//! `AppActor` calls `UiHandle::build_scene` each frame; this actor runs
+//! `UiCore::build_scene`. Presentation stays out of `AppState`: the app
+//! projects domain state into `AppViewModel` before crossing this boundary.
 use std::{mem, ops::ControlFlow};
 
-use tokio::{
-    spawn,
-    sync::{mpsc, oneshot},
-};
+use tokio::{spawn, sync::mpsc};
 
-use crate::ui::{
-    core::UiCore,
-    handle::UiHandle,
-    messages::{UiMessage, UiResult},
-};
+use crate::infrastructure::actor_reply::ActorReplyService;
+use crate::ui::{core::UiCore, handle::UiHandle, messages::UiMessage};
 
 pub const DEFAULT_UI_CHANNEL_SIZE: usize = 32;
+
+const REQUEST_FAILED_LOG: &str = "ui request failed";
+const REPLY_DROPPED_LOG: &str = "ui reply receiver dropped before response";
 
 pub struct UiActor {
     core: UiCore,
@@ -52,7 +44,9 @@ impl UiActor {
         }
         tracing::info!("ui actor stopped");
     }
+}
 
+impl UiActor {
     fn handle_message(&self, message: UiMessage) -> ControlFlow<()> {
         let message_name = message.name();
         tracing::debug!(message = message_name, "ui request received");
@@ -66,7 +60,13 @@ impl UiActor {
                 );
                 let result = self.core.build_scene(&app_view);
                 tracing::debug!(ok = result.is_ok(), "ui scene built");
-                send_ui_reply(message_name, reply_to, result);
+                ActorReplyService::send_actor_reply(
+                    message_name,
+                    REQUEST_FAILED_LOG,
+                    REPLY_DROPPED_LOG,
+                    reply_to,
+                    result,
+                );
                 ControlFlow::Continue(())
             }
             UiMessage::Shutdown => {
@@ -77,56 +77,42 @@ impl UiActor {
     }
 }
 
-fn send_ui_reply<T>(
-    message_name: &'static str,
-    reply: oneshot::Sender<UiResult<T>>,
-    result: UiResult<T>,
-) {
-    if let Err(error) = &result {
-        tracing::warn!(
-            message = message_name,
-            error = %error,
-            "ui request failed"
-        );
-    }
-
-    if reply.send(result).is_err() {
-        tracing::warn!(
-            message = message_name,
-            "ui reply receiver dropped before response"
-        );
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use tokio::sync::mpsc;
 
-    use crate::{
-        app::view_model::{
-            AppViewModel, MailingListSelectionViewModel, ScreenViewModel, TargetListStatus,
-        },
-        ui::{errors::UiError, handle::UiHandle},
-    };
+    mod helpers {
 
-    use super::{UiActor, DEFAULT_UI_CHANNEL_SIZE};
+        use super::super::UiActor;
+        use crate::{
+            app::models::view_model::{
+                AppViewModel, MailingListSelectionViewModel, ScreenViewModel, TargetListStatus,
+            },
+            ui::handle::UiHandle,
+        };
 
-    fn minimal_vm() -> AppViewModel {
-        AppViewModel {
-            screen: ScreenViewModel::MailingListSelection(MailingListSelectionViewModel {
-                entries: vec![],
-                highlighted_index: 0,
-                target_list: String::new(),
-                target_list_status: TargetListStatus::Empty,
-            }),
-            popup: None,
-            kw_running: None,
+        pub(super) fn minimal_vm() -> AppViewModel {
+            AppViewModel {
+                screen: ScreenViewModel::MailingListSelection(MailingListSelectionViewModel {
+                    entries: vec![],
+                    highlighted_index: 0,
+                    target_list: String::new(),
+                    target_list_status: TargetListStatus::Empty,
+                }),
+                popup: None,
+                kw_running: None,
+            }
+        }
+
+        pub(super) fn spawn_test_actor() -> UiHandle {
+            UiActor::spawn()
         }
     }
+    use helpers::*;
+    use tokio::sync::mpsc;
 
-    fn spawn_test_actor() -> UiHandle {
-        UiActor::spawn()
-    }
+    use crate::ui::{errors::UiError, handle::UiHandle};
+
+    use super::DEFAULT_UI_CHANNEL_SIZE;
 
     #[tokio::test]
     async fn build_scene_returns_ok_for_valid_view_model() {

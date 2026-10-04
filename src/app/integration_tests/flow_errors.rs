@@ -1,16 +1,6 @@
 use std::ops::ControlFlow;
 
-use crate::{
-    app::{
-        flows::{
-            bookmarked::handle_bookmarked_patchsets, latest::handle_latest_patchsets,
-            mail_list::handle_mailing_list_selection,
-        },
-        popup::AppPopup,
-        screens::CurrentScreen,
-    },
-    input::event::InputEvent,
-};
+use crate::{app::screens::CurrentScreen, input::event::InputEvent};
 
 use super::helpers::{
     app_harness::AppHarness,
@@ -27,22 +17,18 @@ async fn latest_render_failure_shows_popup_and_stays_on_latest() {
     );
     let mut loading = FakeLoadingIndicator::default();
 
-    let result = handle_mailing_list_selection(
-        &mut harness.app,
-        InputEvent::OpenLatestPatchsets,
-        &mut loading,
-    )
-    .await
-    .unwrap();
+    let result = harness
+        .app
+        .handle_mailing_list_selection(InputEvent::OpenLatestPatchsets, &mut loading)
+        .await
+        .expect("mailing list selection handles");
     assert_eq!(ControlFlow::Continue(()), result);
 
-    handle_latest_patchsets(
-        &mut harness.app,
-        InputEvent::OpenPatchsetDetails,
-        &mut loading,
-    )
-    .await
-    .unwrap();
+    harness
+        .app
+        .handle_latest_patchsets(InputEvent::OpenPatchsetDetails, &mut loading)
+        .await
+        .expect("latest patchsets handles");
 
     assert_eq!(
         CurrentScreen::LatestPatchsets,
@@ -67,22 +53,18 @@ async fn bookmarked_lore_failure_shows_popup_and_stays_on_bookmarks() {
     );
     let mut loading = FakeLoadingIndicator::default();
 
-    let result = handle_mailing_list_selection(
-        &mut harness.app,
-        InputEvent::OpenBookmarkedPatchsets,
-        &mut loading,
-    )
-    .await
-    .unwrap();
+    let result = harness
+        .app
+        .handle_mailing_list_selection(InputEvent::OpenBookmarkedPatchsets, &mut loading)
+        .await
+        .expect("mailing list selection handles");
     assert_eq!(ControlFlow::Continue(()), result);
 
-    handle_bookmarked_patchsets(
-        &mut harness.app,
-        InputEvent::OpenPatchsetDetails,
-        &mut loading,
-    )
-    .await
-    .unwrap();
+    harness
+        .app
+        .handle_bookmarked_patchsets(InputEvent::OpenPatchsetDetails, &mut loading)
+        .await
+        .expect("bookmarked patchsets handles");
 
     assert_eq!(
         CurrentScreen::BookmarkedPatchsets,
@@ -98,17 +80,26 @@ async fn bookmarked_lore_failure_shows_popup_and_stays_on_bookmarks() {
         ],
     );
 }
+mod helpers {
 
-fn assert_info_popup_contains(popup: Option<&AppPopup>, expected_title: &str, expected: &[&str]) {
-    let Some(AppPopup::Info { title, body, .. }) = popup else {
-        panic!("expected info popup");
-    };
+    use crate::app::models::popup::AppPopup;
 
-    assert_eq!(expected_title, title);
-    for fragment in expected {
-        assert!(
-            body.contains(fragment),
-            "expected popup body to contain {fragment:?}, got {body:?}"
-        );
+    pub fn assert_info_popup_contains(
+        popup: Option<&AppPopup>,
+        expected_title: &str,
+        expected: &[&str],
+    ) {
+        let Some(AppPopup::Info { title, body, .. }) = popup else {
+            panic!("expected info popup");
+        };
+
+        assert_eq!(expected_title, title);
+        for fragment in expected {
+            assert!(
+                body.contains(fragment),
+                "expected popup body to contain {fragment:?}, got {body:?}"
+            );
+        }
     }
 }
+pub use helpers::*;

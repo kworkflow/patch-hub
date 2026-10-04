@@ -11,15 +11,17 @@ mod render_prefs;
 mod terminal;
 mod ui;
 
-use app::{actor::AppActor, dependencies::check_external_deps, App};
+#[cfg(test)]
+mod test_support;
+
+use app::{actor::AppActor, dependencies::DependencyService, App};
 use clap::Parser;
 use cli::Cli;
 use color_eyre::{eyre::eyre, Result};
-use config::{bootstrap_parts, ConfigActor};
-#[cfg(unix)]
-use infrastructure::process::OsProcess;
+use config::{ConfigActor, ConfigService, ConfigSnapshot};
 use infrastructure::{
     env::OsEnv,
+    errors::{install_hooks, TerminalRestoreGuard},
     file_system::{FileSystemTrait, OsFileSystem},
     monitoring::{init_monitoring, InitMonitoringProduct},
     net::UreqNetClient,
@@ -27,11 +29,9 @@ use infrastructure::{
     terminal::init,
 };
 use input::{actor::InputActor, event::InputEvent};
-#[cfg(unix)]
-use kw::actor::KwActor;
 use kw::history::{FileKwHistoryStore, KwHistoryStore};
 use lore::{
-    application::{actor::LoreApiActor, cache::CacheTtl, service::LoreService},
+    application::{actor::LoreApiActor, models::cache::CacheTtl, service::LoreService},
     infrastructure::{
         http_lore_client::HttpLoreGateway,
         patchset_fetcher::B4PatchsetFetcher,
@@ -40,11 +40,12 @@ use lore::{
     },
 };
 use render::{actor::RenderActor, ShellRenderService};
-use std::{ops::ControlFlow, path::Path, sync::Arc};
+use std::{ops::ControlFlow, sync::Arc};
 use terminal::{actor::TerminalActor, session::CrosstermTerminalSession};
 use tokio::sync::mpsc;
 use tracing::{event, Level};
 use ui::actor::UiActor;
+use {infrastructure::process::OsProcess, kw::actor::KwActor, std::path::Path};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -58,11 +59,12 @@ async fn main() -> Result<()> {
 
     let args = Cli::parse();
 
-    infrastructure::errors::install_hooks()?;
+    install_hooks()?;
 
     let env = OsEnv;
-    let (config_state, config_repo) = bootstrap_parts(&env, OsFileSystem).map_err(|e| eyre!(e))?;
-    let config = config_state.to_snapshot();
+    let (config_state, config_repo) =
+        ConfigService::bootstrap_parts(&env, OsFileSystem).map_err(|e| eyre!(e))?;
+    let config = ConfigSnapshot::from(&config_state);
 
     // with the config we can update log directory
     let _guards = multi_log_file_writer.update_log_writer_with_config(
@@ -76,128 +78,124 @@ async fn main() -> Result<()> {
         ControlFlow::Continue(()) => {}
     }
 
-    check_external_deps(&env, &OsShell, &config)?;
+    DependencyService::check_external_deps(&env, &OsShell, &config)?;
 
     let config_handle = ConfigActor::spawn(config_state, config_repo);
     let terminal_handle = TerminalActor::spawn(Box::new(CrosstermTerminalSession::new(init()?)));
-    let ui_handle = UiActor::spawn();
+    // Later `?` returns skip terminal shutdown. Restore before the runtime
+    // prints that report, after `main` returns.
+    let result = async {
+        let ui_handle = UiActor::spawn();
 
-    // Build shared infrastructure dependencies for LoreService
-    let net = Arc::new(UreqNetClient::new());
-    let fs_arc: Arc<dyn FileSystemTrait> = Arc::new(OsFileSystem);
-    let shell_arc: Arc<dyn ShellTrait> = Arc::new(OsShell);
+        // Build shared infrastructure dependencies for LoreService
+        let net = Arc::new(UreqNetClient::new());
+        let fs_arc: Arc<dyn FileSystemTrait> = Arc::new(OsFileSystem);
+        let shell_arc: Arc<dyn ShellTrait> = Arc::new(OsShell);
 
-    let gateway = Arc::new(HttpLoreGateway::new(net));
-    let persistence = Arc::new(FileLorePersistence::new(
-        fs_arc.clone(),
-        config.mailing_lists_path().to_string(),
-        config.bookmarked_patchsets_path().to_string(),
-        config.reviewed_patchsets_path().to_string(),
-    ));
-    let fetcher = Arc::new(B4PatchsetFetcher::new(
-        shell_arc.clone(),
-        fs_arc.clone(),
-        config.patchsets_cache_dir().to_string(),
-    ));
-    let parser = Arc::new(MboxPatchsetParser::new(fs_arc.clone()));
-    let kw_history: Arc<dyn KwHistoryStore> = Arc::new(FileKwHistoryStore::new(
-        fs_arc.clone(),
-        config.data_dir().to_string(),
-    ));
+        let gateway = Arc::new(HttpLoreGateway::new(net));
+        let persistence = Arc::new(FileLorePersistence::new(
+            fs_arc.clone(),
+            config.mailing_lists_path().to_string(),
+            config.bookmarked_patchsets_path().to_string(),
+            config.reviewed_patchsets_path().to_string(),
+        ));
+        let fetcher = Arc::new(B4PatchsetFetcher::new(
+            shell_arc.clone(),
+            fs_arc.clone(),
+            config.patchsets_cache_dir().to_string(),
+        ));
+        let parser = Arc::new(MboxPatchsetParser::new(fs_arc.clone()));
+        let kw_history: Arc<dyn KwHistoryStore> = Arc::new(FileKwHistoryStore::new(
+            fs_arc.clone(),
+            config.data_dir().to_string(),
+        ));
 
-    // The kw actor is unix-only because ProcessTrait (process-group kill)
-    // is; everywhere else there is no handle and App falls back to writing
-    // apply history directly.
-    #[cfg(unix)]
-    let kw_handle = Some(KwActor::spawn(
-        kw_history.clone(),
-        Arc::new(OsProcess),
-        shell_arc.clone(),
-        fs_arc.clone(),
-        Arc::new(OsEnv),
-        Path::new(config.cache_dir()).join("kw_logs"),
-    ));
-    #[cfg(not(unix))]
-    let kw_handle = None;
+        let kw_handle = KwActor::spawn(
+            kw_history.clone(),
+            Arc::new(OsProcess),
+            shell_arc.clone(),
+            fs_arc.clone(),
+            Arc::new(OsEnv),
+            Path::new(config.cache_dir()).join("kw_logs"),
+        );
 
-    let render = RenderActor::spawn(Box::new(ShellRenderService::new(shell_arc.clone())));
+        let render = RenderActor::spawn(Box::new(ShellRenderService::new(shell_arc.clone())));
 
-    let lore_api = LoreApiActor::spawn(LoreService::new(
-        gateway.clone(),
-        gateway.clone(),
-        gateway.clone(),
-        persistence.clone() as Arc<dyn MailingListsCacheStore>,
-        persistence.clone() as Arc<dyn UserLoreStateStore>,
-        fetcher.clone(),
-        parser.clone(),
-        fs_arc.clone(),
-        shell_arc.clone(),
-        CacheTtl::default(),
-    ));
-    let bootstrap = lore_api
-        .get_bootstrap_data()
-        .await
-        .map_err(|error| eyre!("failed to bootstrap Lore data: {error}"))?;
-
-    let app = App::new(
-        config_handle
-            .get_snapshot()
+        let lore_api = LoreApiActor::spawn(LoreService::new(
+            gateway.clone(),
+            gateway.clone(),
+            gateway.clone(),
+            persistence.clone() as Arc<dyn MailingListsCacheStore>,
+            persistence.clone() as Arc<dyn UserLoreStateStore>,
+            fetcher.clone(),
+            parser.clone(),
+            fs_arc.clone(),
+            shell_arc.clone(),
+            CacheTtl::default(),
+        ));
+        let bootstrap = lore_api
+            .get_bootstrap_data()
             .await
-            .map_err(|error| eyre!("{error}"))?,
-        config_handle.clone(),
-        bootstrap,
-        fs_arc.clone(),
-        Box::new(OsShell),
-        lore_api.clone(),
-        render.clone(),
-        kw_history.clone(),
-        kw_handle.clone(),
-    )?;
-    let (app_input_tx, app_input_rx) = mpsc::channel::<InputEvent>(64);
-    let input_handle = InputActor::spawn(terminal_handle.clone(), app.input_context());
-    input_handle
-        .subscribe_app(app_input_tx)
-        .await
-        .map_err(|e| eyre!("{e}"))?;
-    let input_shutdown_handle = input_handle.clone();
+            .map_err(|error| eyre!("failed to bootstrap Lore data: {error}"))?;
 
-    // Shutdown ordering:
-    //  1. AppActor — exits when the user quits (input channel closes)
-    //  2. InputActor — no further terminal input is needed once App is gone
-    //  3. KwActor — no further kw requests once App is gone; kills any
-    //     running job's process group before stopping
-    //  4. ConfigActor — no further configuration requests once App is gone
-    //  5. LoreApiActor — no further requests once App is gone
-    //  6. RenderActor  — no further requests once App is gone
-    //  7. UiActor      — no further scene builds once App is gone
-    //  8. TerminalActor — restores the terminal last so the screen stays usable
-    //                     during the steps above
-    AppActor::spawn(
-        app,
-        terminal_handle.clone(),
-        ui_handle.clone(),
-        input_handle,
-        app_input_rx,
-    )
-    .run_until_done()
-    .await?;
-    input_shutdown_handle
-        .shutdown()
-        .await
-        .map_err(|e| eyre!("{e}"))?;
-    if let Some(kw_handle) = kw_handle {
+        let app = App::new(
+            config_handle
+                .get_snapshot()
+                .await
+                .map_err(|error| eyre!("{error}"))?,
+            config_handle.clone(),
+            bootstrap,
+            fs_arc.clone(),
+            Box::new(OsShell),
+            lore_api.clone(),
+            render.clone(),
+            kw_history.clone(),
+            Some(kw_handle.clone()),
+        )?;
+        let (app_input_tx, app_input_rx) = mpsc::channel::<InputEvent>(64);
+        let input_handle = InputActor::spawn(terminal_handle.clone(), app.input_context());
+        input_handle
+            .subscribe_app(app_input_tx)
+            .await
+            .map_err(|e| eyre!("{e}"))?;
+        let input_shutdown_handle = input_handle.clone();
+
+        // Shutdown order: AppActor (quit closes input), InputActor, KwActor
+        // (kills the job's process group), ConfigActor, LoreApiActor,
+        // RenderActor, UiActor, then TerminalActor last so the screen stays
+        // usable until the others have stopped.
+        AppActor::spawn(
+            app,
+            terminal_handle.clone(),
+            ui_handle.clone(),
+            input_handle,
+            app_input_rx,
+        )
+        .run_until_done()
+        .await?;
+        input_shutdown_handle
+            .shutdown()
+            .await
+            .map_err(|e| eyre!("{e}"))?;
         kw_handle.shutdown().await;
-    }
-    config_handle.shutdown().await;
-    lore_api.shutdown().await;
-    render.shutdown().await;
-    ui_handle.shutdown().await;
-    terminal_handle
-        .shutdown()
-        .await
-        .map_err(|error| eyre!("{error}"))?;
+        config_handle.shutdown().await;
+        lore_api.shutdown().await;
+        render.shutdown().await;
+        ui_handle.shutdown().await;
+        terminal_handle
+            .shutdown()
+            .await
+            .map_err(|error| eyre!("{error}"))?;
 
-    event!(Level::INFO, "patch-hub finished");
+        event!(Level::INFO, "patch-hub finished");
+
+        Ok(())
+    }
+    .await;
+    if let Err(error) = result {
+        TerminalRestoreGuard::restore_once();
+        return Err(error);
+    }
 
     Ok(())
 }

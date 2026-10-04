@@ -4,9 +4,8 @@ use crate::{
     config::KernelTree,
     kw::{
         errors::{KwError, KwStartError},
-        history::KwApplyRecord,
         messages::{KwMessage, StartRequest},
-        readiness::KwReadiness,
+        models::{history::KwApplyRecord, readiness::KwReadiness},
         status::KwStatusSnapshot,
     },
 };
@@ -16,7 +15,6 @@ pub struct KwHandle {
     tx: mpsc::Sender<KwMessage>,
 }
 
-#[allow(dead_code)]
 impl KwHandle {
     pub fn new(tx: mpsc::Sender<KwMessage>) -> Self {
         Self { tx }
@@ -87,7 +85,9 @@ impl KwHandle {
             rx.await.ok();
         }
     }
+}
 
+impl KwHandle {
     async fn request_result<T>(
         &self,
         build_message: impl FnOnce(oneshot::Sender<Result<T, KwError>>) -> KwMessage,

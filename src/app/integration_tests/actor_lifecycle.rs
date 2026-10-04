@@ -25,14 +25,22 @@ async fn main_like_lifecycle_shuts_input_down_before_terminal() {
         .withf(|frame| matches!(frame, TerminalFrame::Main(_)))
         .times(1..)
         .returning(|_| Ok(()));
-    session.expect_poll_event().returning(|_| Ok(None));
-    session.expect_shutdown().times(1).returning(move || {
-        assert!(
-            input_shutdown_complete_for_terminal.load(Ordering::SeqCst),
-            "terminal shutdown should happen after input shutdown"
-        );
-        Ok(())
-    });
+    session
+        .expect_poll_event()
+        .withf(|timeout| *timeout == std::time::Duration::from_millis(50))
+        .times(4)
+        .returning(|_| Ok(None));
+    session
+        .expect_shutdown()
+        .withf(|| true)
+        .times(1)
+        .returning(move || {
+            assert!(
+                input_shutdown_complete_for_terminal.load(Ordering::SeqCst),
+                "terminal shutdown should happen after input shutdown"
+            );
+            Ok(())
+        });
 
     let terminal_handle = TerminalActor::spawn(Box::new(session));
     let ui_handle = UiActor::spawn();
@@ -45,7 +53,7 @@ async fn main_like_lifecycle_shuts_input_down_before_terminal() {
     input_handle
         .subscribe_app(app_input_tx.clone())
         .await
-        .unwrap();
+        .expect("app subscribes");
 
     let app_handle = AppActor::spawn(
         app,
@@ -55,12 +63,18 @@ async fn main_like_lifecycle_shuts_input_down_before_terminal() {
         app_input_rx,
     );
 
-    app_input_tx.send(InputEvent::Quit).await.unwrap();
-    app_handle.run_until_done().await.unwrap();
+    app_input_tx
+        .send(InputEvent::Quit)
+        .await
+        .expect("quit sends");
+    app_handle.run_until_done().await.expect("actor finishes");
 
-    input_shutdown_handle.shutdown().await.unwrap();
+    input_shutdown_handle
+        .shutdown()
+        .await
+        .expect("actor shuts down");
     input_shutdown_complete.store(true, Ordering::SeqCst);
 
     ui_handle.shutdown().await;
-    terminal_handle.shutdown().await.unwrap();
+    terminal_handle.shutdown().await.expect("actor shuts down");
 }
