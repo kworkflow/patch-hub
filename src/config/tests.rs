@@ -55,10 +55,7 @@ fn unique_test_dir(prefix: &str) -> PathBuf {
 }
 
 fn bootstrap_snapshot(env: &dyn EnvTrait) -> ConfigSnapshot {
-    ConfigService::bootstrap_parts(env, os_fs())
-        .unwrap()
-        .0
-        .to_snapshot()
+    ConfigSnapshot::from(&ConfigService::bootstrap_parts(env, os_fs()).unwrap().0)
 }
 
 /// Writable `HOME` and mock env: no `PATCH_HUB_CONFIG_PATH` (uses `HOME/.config/...`).

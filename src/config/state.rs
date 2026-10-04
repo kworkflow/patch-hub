@@ -104,10 +104,6 @@ impl ConfigState {
         }
     }
 
-    pub fn to_snapshot(&self) -> ConfigSnapshot {
-        ConfigSnapshot::from_state(self)
-    }
-
     /// Recomputes derived path fields from `cache_dir` and `data_dir`.
     pub fn normalize_derived_paths(&mut self) {
         let cache_dir = self.cache_dir.clone();
@@ -227,31 +223,33 @@ pub struct ConfigSnapshot {
     kw_deploy_force: bool,
 }
 
-impl ConfigSnapshot {
-    pub(crate) fn from_state(s: &ConfigState) -> Self {
+impl From<&ConfigState> for ConfigSnapshot {
+    fn from(state: &ConfigState) -> Self {
         Self {
-            page_size: s.page_size,
-            patchsets_cache_dir: s.patchsets_cache_dir.clone(),
-            bookmarked_patchsets_path: s.bookmarked_patchsets_path.clone(),
-            mailing_lists_path: s.mailing_lists_path.clone(),
-            reviewed_patchsets_path: s.reviewed_patchsets_path.clone(),
-            logs_path: s.logs_path.clone(),
-            git_send_email_options: s.git_send_email_options.clone(),
-            cache_dir: s.cache_dir.clone(),
-            data_dir: s.data_dir.clone(),
-            patch_renderer: s.patch_renderer,
-            cover_renderer: s.cover_renderer,
-            max_log_age: s.max_log_age,
-            kernel_trees: s.kernel_trees.clone(),
-            target_kernel_tree: s.target_kernel_tree.clone(),
-            git_am_options: s.git_am_options.clone(),
-            git_am_branch_prefix: s.git_am_branch_prefix.clone(),
-            stay_on_applied_branch: s.stay_on_applied_branch,
-            kw_reboot_after_deploy: s.kw_reboot_after_deploy,
-            kw_deploy_force: s.kw_deploy_force,
+            page_size: state.page_size,
+            patchsets_cache_dir: state.patchsets_cache_dir.clone(),
+            bookmarked_patchsets_path: state.bookmarked_patchsets_path.clone(),
+            mailing_lists_path: state.mailing_lists_path.clone(),
+            reviewed_patchsets_path: state.reviewed_patchsets_path.clone(),
+            logs_path: state.logs_path.clone(),
+            git_send_email_options: state.git_send_email_options.clone(),
+            cache_dir: state.cache_dir.clone(),
+            data_dir: state.data_dir.clone(),
+            patch_renderer: state.patch_renderer,
+            cover_renderer: state.cover_renderer,
+            max_log_age: state.max_log_age,
+            kernel_trees: state.kernel_trees.clone(),
+            target_kernel_tree: state.target_kernel_tree.clone(),
+            git_am_options: state.git_am_options.clone(),
+            git_am_branch_prefix: state.git_am_branch_prefix.clone(),
+            stay_on_applied_branch: state.stay_on_applied_branch,
+            kw_reboot_after_deploy: state.kw_reboot_after_deploy,
+            kw_deploy_force: state.kw_deploy_force,
         }
     }
+}
 
+impl ConfigSnapshot {
     pub fn page_size(&self) -> usize {
         self.page_size
     }

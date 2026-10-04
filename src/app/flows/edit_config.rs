@@ -117,7 +117,9 @@ mod tests {
             state::{AppState, ConfigUiState, LoreUiState, NavigationState, UserLoreState},
             App, AppServices,
         },
-        config::{ConfigActor, ConfigHandle, ConfigService, DEFAULT_CONFIG_PATH_SUFFIX},
+        config::{
+            ConfigActor, ConfigHandle, ConfigService, ConfigSnapshot, DEFAULT_CONFIG_PATH_SUFFIX,
+        },
         infrastructure::{
             env::MockEnvTrait, file_system::MockFileSystemTrait, file_system::OsFileSystem,
             shell::MockShellTrait,
@@ -180,7 +182,7 @@ mod tests {
             );
         }
         state.target_kernel_tree = target.map(str::to_string);
-        let snapshot = state.to_snapshot();
+        let snapshot = ConfigSnapshot::from(&state);
         let config = ConfigActor::spawn(state, repo);
 
         let dummy_list = MailingList::new("test-list", "Test list");

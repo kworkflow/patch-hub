@@ -15,7 +15,7 @@ use app::{actor::AppActor, dependencies::DependencyService, App};
 use clap::Parser;
 use cli::Cli;
 use color_eyre::{eyre::eyre, Result};
-use config::{ConfigActor, ConfigService};
+use config::{ConfigActor, ConfigService, ConfigSnapshot};
 use infrastructure::{
     env::OsEnv,
     file_system::{FileSystemTrait, OsFileSystem},
@@ -60,7 +60,7 @@ async fn main() -> Result<()> {
     let env = OsEnv;
     let (config_state, config_repo) =
         ConfigService::bootstrap_parts(&env, OsFileSystem).map_err(|e| eyre!(e))?;
-    let config = config_state.to_snapshot();
+    let config = ConfigSnapshot::from(&config_state);
 
     // with the config we can update log directory
     let _guards = multi_log_file_writer.update_log_writer_with_config(

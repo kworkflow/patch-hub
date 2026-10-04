@@ -618,7 +618,7 @@ mod tests {
                 AppState, ConfigUiState, KwUiState, LoreUiState, NavigationState, UserLoreState,
             },
         },
-        config::ConfigState,
+        config::{ConfigSnapshot, ConfigState},
         kw::status::{KwJobKind, KwJobStatus, KwPhase, KwStatusSnapshot},
         lore::domain::mailing_list::MailingList,
     };
@@ -649,7 +649,7 @@ mod tests {
                 reviewed_patchsets: HashMap::new(),
             },
             config_state: ConfigUiState { edit_config: None },
-            config: ConfigState::default().to_snapshot(),
+            config: ConfigSnapshot::from(&ConfigState::default()),
             popup: None,
             kw: KwUiState { status, ops: None },
         }
@@ -704,7 +704,7 @@ mod tests {
             }))
             .unwrap(),
         );
-        state.config = config.to_snapshot();
+        state.config = ConfigSnapshot::from(&config);
         let mut edit = crate::app::screens::edit_config::EditConfigState::new(&state.config);
         while edit.highlighted() != 11 {
             edit.highlight_next();
@@ -964,12 +964,11 @@ mod tests {
     fn deploy_command_follows_reboot_and_force_config() {
         let mut state = app_state_with_kw(None);
         state.navigation.current_screen = CurrentScreen::KwOps;
-        state.config = ConfigState {
+        state.config = ConfigSnapshot::from(&ConfigState {
             kw_reboot_after_deploy: true,
             kw_deploy_force: false,
             ..Default::default()
-        }
-        .to_snapshot();
+        });
         let mut ops = sample_kw_ops(Some("feature"));
         ops.readiness.deploy_remote = Ok(sample_remote());
         state.kw.ops = Some(ops);

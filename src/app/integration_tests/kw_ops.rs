@@ -909,17 +909,18 @@ mod unix {
     }
 
     fn apply_config() -> ConfigSnapshot {
-        serde_json::from_value::<ConfigState>(serde_json::json!({
-            "kernel_trees": {
-                "linux": {
-                    "path": "/kernel",
-                    "branch": "main"
-                }
-            },
-            "target_kernel_tree": "linux"
-        }))
-        .expect("test config should deserialize")
-        .to_snapshot()
+        ConfigSnapshot::from(
+            &serde_json::from_value::<ConfigState>(serde_json::json!({
+                "kernel_trees": {
+                    "linux": {
+                        "path": "/kernel",
+                        "branch": "main"
+                    }
+                },
+                "target_kernel_tree": "linux"
+            }))
+            .expect("test config should deserialize"),
+        )
     }
 
     async fn shutdown_kw(app: &App) {

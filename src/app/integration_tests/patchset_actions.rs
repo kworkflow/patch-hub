@@ -608,36 +608,38 @@ fn history_store_allowing_writes() -> MockKwHistoryStore {
 }
 
 fn apply_config() -> ConfigSnapshot {
-    serde_json::from_value::<ConfigState>(serde_json::json!({
-        "kernel_trees": {
-            "linux": {
-                "path": KERNEL_TREE_PATH,
-                "branch": BASE_BRANCH
-            }
-        },
-        "target_kernel_tree": "linux",
-        "git_am_options": "--signoff --3way",
-        "git_am_branch_prefix": "patchset-"
-    }))
-    .expect("test config should deserialize")
-    .to_snapshot()
+    ConfigSnapshot::from(
+        &serde_json::from_value::<ConfigState>(serde_json::json!({
+            "kernel_trees": {
+                "linux": {
+                    "path": KERNEL_TREE_PATH,
+                    "branch": BASE_BRANCH
+                }
+            },
+            "target_kernel_tree": "linux",
+            "git_am_options": "--signoff --3way",
+            "git_am_branch_prefix": "patchset-"
+        }))
+        .expect("test config should deserialize"),
+    )
 }
 
 fn apply_config_stay_disabled() -> ConfigSnapshot {
-    serde_json::from_value::<ConfigState>(serde_json::json!({
-        "kernel_trees": {
-            "linux": {
-                "path": KERNEL_TREE_PATH,
-                "branch": BASE_BRANCH
-            }
-        },
-        "target_kernel_tree": "linux",
-        "git_am_options": "--signoff --3way",
-        "git_am_branch_prefix": "patchset-",
-        "stay_on_applied_branch": false
-    }))
-    .expect("test config should deserialize")
-    .to_snapshot()
+    ConfigSnapshot::from(
+        &serde_json::from_value::<ConfigState>(serde_json::json!({
+            "kernel_trees": {
+                "linux": {
+                    "path": KERNEL_TREE_PATH,
+                    "branch": BASE_BRANCH
+                }
+            },
+            "target_kernel_tree": "linux",
+            "git_am_options": "--signoff --3way",
+            "git_am_branch_prefix": "patchset-",
+            "stay_on_applied_branch": false
+        }))
+        .expect("test config should deserialize"),
+    )
 }
 
 fn clean_fs() -> MockFileSystemTrait {

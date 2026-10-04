@@ -372,17 +372,18 @@ fn start_request() -> StartRequest {
 }
 
 fn apply_config() -> ConfigSnapshot {
-    serde_json::from_value::<ConfigState>(serde_json::json!({
-        "kernel_trees": {
-            "linux": {
-                "path": KERNEL_TREE_PATH,
-                "branch": "main"
-            }
-        },
-        "target_kernel_tree": "linux"
-    }))
-    .expect("test config should deserialize")
-    .to_snapshot()
+    ConfigSnapshot::from(
+        &serde_json::from_value::<ConfigState>(serde_json::json!({
+            "kernel_trees": {
+                "linux": {
+                    "path": KERNEL_TREE_PATH,
+                    "branch": "main"
+                }
+            },
+            "target_kernel_tree": "linux"
+        }))
+        .expect("test config should deserialize"),
+    )
 }
 
 fn kw_actor_shell() -> MockShellTrait {

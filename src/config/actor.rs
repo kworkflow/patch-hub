@@ -76,7 +76,7 @@ where
                     message_name,
                     REPLY_DROPPED_LOG,
                     reply,
-                    self.state.to_snapshot(),
+                    ConfigSnapshot::from(&self.state),
                 );
                 ControlFlow::Continue(())
             }
@@ -104,7 +104,7 @@ where
         self.state.normalize_derived_paths();
         ConfigService::ensure_directories(&self.state, self.repo.fs())?;
         self.repo.save(&self.state)?;
-        Ok(self.state.to_snapshot())
+        Ok(ConfigSnapshot::from(&self.state))
     }
 }
 

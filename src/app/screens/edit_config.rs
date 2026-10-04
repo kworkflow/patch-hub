@@ -197,40 +197,42 @@ impl EditConfigState {
                 .insert(editable_config, mem::take(&mut self.curr_edit));
         }
     }
+}
 
-    /// Raw form values for config validation.
-    pub fn to_update_draft(&self) -> ConfigUpdateDraft {
-        ConfigUpdateDraft {
-            page_size: self.config_buffer.get(&EditableConfig::PageSize).cloned(),
-            cache_dir: self.config_buffer.get(&EditableConfig::CacheDir).cloned(),
-            data_dir: self.config_buffer.get(&EditableConfig::DataDir).cloned(),
-            git_send_email_option: self
+/// Raw form values for config validation.
+impl From<&EditConfigState> for ConfigUpdateDraft {
+    fn from(state: &EditConfigState) -> Self {
+        Self {
+            page_size: state.config_buffer.get(&EditableConfig::PageSize).cloned(),
+            cache_dir: state.config_buffer.get(&EditableConfig::CacheDir).cloned(),
+            data_dir: state.config_buffer.get(&EditableConfig::DataDir).cloned(),
+            git_send_email_option: state
                 .config_buffer
                 .get(&EditableConfig::GitSendEmailOpt)
                 .cloned(),
-            git_am_option: self.config_buffer.get(&EditableConfig::GitAmOpt).cloned(),
-            patch_renderer: self
+            git_am_option: state.config_buffer.get(&EditableConfig::GitAmOpt).cloned(),
+            patch_renderer: state
                 .config_buffer
                 .get(&EditableConfig::PatchRenderer)
                 .cloned(),
-            cover_renderer: self
+            cover_renderer: state
                 .config_buffer
                 .get(&EditableConfig::CoverRenderer)
                 .cloned(),
-            max_log_age: self.config_buffer.get(&EditableConfig::MaxLogAge).cloned(),
-            stay_on_applied_branch: self
+            max_log_age: state.config_buffer.get(&EditableConfig::MaxLogAge).cloned(),
+            stay_on_applied_branch: state
                 .config_buffer
                 .get(&EditableConfig::StayOnAppliedBranch)
                 .cloned(),
-            kw_reboot_after_deploy: self
+            kw_reboot_after_deploy: state
                 .config_buffer
                 .get(&EditableConfig::KwRebootAfterDeploy)
                 .cloned(),
-            kw_deploy_force: self
+            kw_deploy_force: state
                 .config_buffer
                 .get(&EditableConfig::KwDeployForce)
                 .cloned(),
-            target_kernel_tree: self
+            target_kernel_tree: state
                 .config_buffer
                 .get(&EditableConfig::TargetKernelTree)
                 .cloned(),
@@ -325,7 +327,7 @@ mod tests {
             );
         }
         state.target_kernel_tree = target.map(str::to_string);
-        state.to_snapshot()
+        ConfigSnapshot::from(&state)
     }
 
     fn tree_row(edit: &mut EditConfigState) {
@@ -336,9 +338,9 @@ mod tests {
 
     #[test]
     fn draft_includes_deploy_knobs_with_compiled_in_defaults() {
-        let snapshot = ConfigState::default().to_snapshot();
+        let snapshot = ConfigSnapshot::from(&ConfigState::default());
         let edit = EditConfigState::new(&snapshot);
-        let draft = edit.to_update_draft();
+        let draft = ConfigUpdateDraft::from(&edit);
 
         assert_eq!(Some("false".to_string()), draft.kw_reboot_after_deploy);
         assert_eq!(Some("true".to_string()), draft.kw_deploy_force);
@@ -432,7 +434,7 @@ mod tests {
         edit.toggle_editing();
         assert_eq!(
             Some("zebra".to_string()),
-            edit.to_update_draft().target_kernel_tree
+            ConfigUpdateDraft::from(&edit).target_kernel_tree
         );
 
         tree_row(&mut edit);
@@ -442,7 +444,7 @@ mod tests {
         edit.toggle_editing();
         assert_eq!(
             Some(String::new()),
-            edit.to_update_draft().target_kernel_tree
+            ConfigUpdateDraft::from(&edit).target_kernel_tree
         );
         assert_eq!(
             Some((
@@ -457,7 +459,7 @@ mod tests {
     fn dangling_target_is_seeded_as_unset() {
         let snapshot = snapshot_with_trees(&["zebra"], Some("linux"));
         let edit = EditConfigState::new(&snapshot);
-        let draft = edit.to_update_draft();
+        let draft = ConfigUpdateDraft::from(&edit);
 
         assert_eq!(Some(String::new()), draft.target_kernel_tree);
         assert_eq!(
@@ -475,7 +477,7 @@ mod tests {
         let edit = EditConfigState::new(&snapshot);
         assert_eq!(
             Some("linux".to_string()),
-            edit.to_update_draft().target_kernel_tree
+            ConfigUpdateDraft::from(&edit).target_kernel_tree
         );
     }
 }

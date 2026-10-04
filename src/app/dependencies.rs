@@ -125,7 +125,7 @@ mod tests {
         let err = DependencyService::check_external_deps(
             &env,
             &shell,
-            &ConfigState::default().to_snapshot(),
+            &ConfigSnapshot::from(&ConfigState::default()),
         )
         .unwrap_err();
 
@@ -142,7 +142,7 @@ mod tests {
         let result = DependencyService::check_external_deps(
             &env,
             &shell,
-            &ConfigState::default().to_snapshot(),
+            &ConfigSnapshot::from(&ConfigState::default()),
         );
 
         assert!(result.is_ok());
@@ -161,7 +161,8 @@ mod tests {
             .withf(|name| name == "bat")
             .returning(|_| false);
 
-        let result = DependencyService::check_external_deps(&env, &shell, &state.to_snapshot());
+        let result =
+            DependencyService::check_external_deps(&env, &shell, &ConfigSnapshot::from(&state));
 
         assert!(result.is_ok());
     }
@@ -178,7 +179,7 @@ mod tests {
         let result = DependencyService::check_external_deps(
             &env,
             &shell,
-            &ConfigState::default().to_snapshot(),
+            &ConfigSnapshot::from(&ConfigState::default()),
         );
 
         assert!(result.is_ok());
@@ -200,7 +201,7 @@ mod tests {
         let result = DependencyService::check_external_deps(
             &env,
             &shell,
-            &ConfigState::default().to_snapshot(),
+            &ConfigSnapshot::from(&ConfigState::default()),
         );
 
         assert!(result.is_ok());

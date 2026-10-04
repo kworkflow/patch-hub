@@ -372,7 +372,7 @@ mod tests {
             state::{AppState, ConfigUiState, LoreUiState, NavigationState, UserLoreState},
             AppServices,
         },
-        config::{ConfigHandle, ConfigState},
+        config::{ConfigHandle, ConfigSnapshot, ConfigState},
         infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
         input::{event::InputEvent, handle::InputHandle, messages::InputMessage},
         kw::history::MockKwHistoryStore,
@@ -432,7 +432,7 @@ mod tests {
                     reviewed_patchsets: HashMap::new(),
                 },
                 config_state: ConfigUiState { edit_config: None },
-                config: ConfigState::default().to_snapshot(),
+                config: ConfigSnapshot::from(&ConfigState::default()),
                 popup: None,
                 kw: Default::default(),
             },
@@ -538,7 +538,7 @@ mod tests {
         let ui_handle = UiActor::spawn();
 
         let app = App::new(
-            ConfigState::default().to_snapshot(),
+            ConfigSnapshot::from(&ConfigState::default()),
             dummy_config_handle(),
             bootstrap,
             Arc::new(MockFileSystemTrait::new()),

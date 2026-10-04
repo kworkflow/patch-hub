@@ -43,7 +43,7 @@ use crate::{
         reviewed_reply::ReviewedReplyRequest,
         PatchsetActionService,
     },
-    config::{ConfigHandle, ConfigSnapshot},
+    config::{ConfigHandle, ConfigSnapshot, ConfigUpdateDraft},
     infrastructure::{
         file_system::FileSystemTrait, monitoring::logging::garbage_collector::collect_garbage,
         shell::ShellTrait,
@@ -339,7 +339,7 @@ impl App {
     pub async fn consolidate_edit_config(&mut self) -> Result<()> {
         if let Some(edit_config) = &self.state.config_state.edit_config {
             debug!("validating and applying config update");
-            let draft = edit_config.to_update_draft();
+            let draft = ConfigUpdateDraft::from(edit_config);
             let snapshot = self
                 .services
                 .config
