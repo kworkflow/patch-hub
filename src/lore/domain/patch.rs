@@ -180,7 +180,7 @@ mod tests {
                 updated,
             }
         };
-        let serialized_patch: &str = r#"
+        let serialized_patch = r#"
             <entry xmlns:thr="http://purl.org/syndication/thread/1.0">
                 <author>
                     <name>Foo Bar</name>
@@ -230,7 +230,7 @@ mod tests {
                 updated,
             }
         };
-        let serialized_patch: &str = r#"
+        let serialized_patch = r#"
             <entry xmlns:thr="http://purl.org/syndication/thread/1.0">
                 <author>
                     <name>Foo Bar</name>
@@ -258,7 +258,7 @@ mod tests {
 
     #[test]
     fn test_update_patch_metadata() {
-        let patch_regex: PatchRegex = PatchRegex::new();
+        let patch_regex = PatchRegex::new();
         let mut patch: Patch = {
             let title =
                 "[RESEND][v7 PATCH 3/42] hitchhiker/guide: Life, the Universe and Everything"

@@ -564,7 +564,7 @@ fn validate_update_rejects_invalid_page_size() {
         &os_fs(),
         &ConfigState::default(),
     )
-    .unwrap_err();
+    .expect_err("invalid page size rejects");
     assert!(matches!(err, ConfigError::InvalidPageSize(ref s) if s == "xyz"));
 }
 
@@ -578,7 +578,7 @@ fn validate_update_rejects_invalid_patch_renderer() {
         &os_fs(),
         &ConfigState::default(),
     )
-    .unwrap_err();
+    .expect_err("invalid patch renderer rejects");
     assert!(matches!(
         err,
         ConfigError::InvalidPatchRenderer(ref s) if s == "nope"
@@ -595,7 +595,7 @@ fn validate_update_rejects_invalid_cover_renderer() {
         &os_fs(),
         &ConfigState::default(),
     )
-    .unwrap_err();
+    .expect_err("invalid cover renderer rejects");
     assert!(matches!(
         err,
         ConfigError::InvalidCoverRenderer(ref s) if s == "delta"
@@ -612,7 +612,7 @@ fn validate_update_rejects_invalid_max_log_age() {
         &os_fs(),
         &ConfigState::default(),
     )
-    .unwrap_err();
+    .expect_err("invalid max log age rejects");
     assert!(matches!(
         err,
         ConfigError::InvalidMaxLogAge(ref s) if s == "not-a-number"
@@ -630,7 +630,7 @@ fn validate_update_rejects_invalid_stay_on_applied_branch() {
             &os_fs(),
             &ConfigState::default(),
         )
-        .unwrap_err();
+        .expect_err("invalid stay-on flag rejects");
         assert!(matches!(
             err,
             ConfigError::InvalidStayOnAppliedBranch(ref s) if s == raw
@@ -672,7 +672,7 @@ fn validate_update_rejects_invalid_kw_deploy_bools() {
             &os_fs(),
             &ConfigState::default(),
         )
-        .unwrap_err();
+        .expect_err("invalid deploy flag rejects");
         if expect_reboot_err {
             let raw = reboot.expect("reboot value is set");
             assert!(
@@ -754,7 +754,7 @@ fn validate_update_rejects_unknown_target_kernel_tree() {
         &os_fs(),
         &state,
     )
-    .unwrap_err();
+    .expect_err("unknown kernel tree rejects");
     assert!(matches!(
         err,
         ConfigError::InvalidTargetKernelTree { ref key, .. } if key == "missing"
@@ -800,7 +800,7 @@ fn validate_update_rejects_cache_dir_that_is_existing_file() {
         &os_fs(),
         &ConfigState::default(),
     )
-    .unwrap_err();
+    .expect_err("cache path rejects");
     assert!(matches!(err, ConfigError::InvalidDirectory(_)));
 }
 
@@ -916,7 +916,7 @@ async fn invalid_target_kernel_tree_keeps_existing_state() {
             ..Default::default()
         })
         .await
-        .unwrap_err();
+        .expect_err("invalid kernel tree rejects");
     assert!(matches!(
         err,
         ConfigError::InvalidTargetKernelTree { ref key, .. } if key == "missing"

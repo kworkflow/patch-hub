@@ -516,7 +516,7 @@ mod tests {
 
         let err = store
             .apply_record_for_branch("mainline", "patchset-x")
-            .unwrap_err();
+            .expect_err("corrupt history errors");
         // Errors name the file so the warning popup can point at it.
         assert!(err.to_string().contains(APPLY_HISTORY_FILENAME));
         assert!(store
@@ -762,7 +762,9 @@ mod tests {
         let store = store_at(&dir);
         fs::write(dir.join(BUILD_HISTORY_FILENAME), b"not json").expect("file writes");
 
-        let err = store.build_records("mainline", "for-next").unwrap_err();
+        let err = store
+            .build_records("mainline", "for-next")
+            .expect_err("corrupt build history errors");
         assert!(err.to_string().contains(BUILD_HISTORY_FILENAME));
         assert!(store
             .record_build(build("mainline", "for-next", "2026-08-01T18:10:00Z"))

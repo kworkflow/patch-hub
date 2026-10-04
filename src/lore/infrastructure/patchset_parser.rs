@@ -113,7 +113,7 @@ impl PatchsetTextService {
     /// cover with an empty diff slice.
     pub fn split_cover(patch: &str) -> (&str, &str) {
         let mut cover: &str = patch;
-        let mut diff: &str = "";
+        let mut diff = "";
 
         if let Some(cover_end) = patch.find("\n---\n") {
             cover = &patch[..cover_end + 1];

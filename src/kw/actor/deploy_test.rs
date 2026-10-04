@@ -197,7 +197,10 @@ async fn start_deploy_refused_without_a_build_record() {
     let (handle, process, log_dir) =
         spawn_deploy_actor("deploy-no-record", deploy_history(None), deploy_ready_fs());
 
-    let err = handle.start_deploy(deploy_request()).await.unwrap_err();
+    let err = handle
+        .start_deploy(deploy_request())
+        .await
+        .expect_err("deploy refused without a build");
 
     assert!(matches!(
         err,
@@ -223,7 +226,10 @@ async fn start_deploy_refused_when_last_build_failed() {
         deploy_ready_fs(),
     );
 
-    let err = handle.start_deploy(deploy_request()).await.unwrap_err();
+    let err = handle
+        .start_deploy(deploy_request())
+        .await
+        .expect_err("failed build refuses deploy");
 
     assert!(matches!(
         err,
@@ -245,7 +251,10 @@ async fn start_deploy_refused_on_tree_path_drift() {
         deploy_ready_fs(),
     );
 
-    let err = handle.start_deploy(deploy_request()).await.unwrap_err();
+    let err = handle
+        .start_deploy(deploy_request())
+        .await
+        .expect_err("tree drift refuses deploy");
 
     assert!(matches!(
         err,
@@ -267,7 +276,10 @@ async fn start_deploy_refused_on_output_dir_mismatch() {
         deploy_ready_fs(),
     );
 
-    let err = handle.start_deploy(deploy_request()).await.unwrap_err();
+    let err = handle
+        .start_deploy(deploy_request())
+        .await
+        .expect_err("output dir mismatch refuses deploy");
 
     assert!(matches!(
         err,
@@ -287,7 +299,10 @@ async fn start_deploy_refused_when_image_is_missing() {
         deploy_fs(DEPLOY_REMOTE_CONFIG, DEPLOY_BOOT_ONCE_OFF, false),
     );
 
-    let err = handle.start_deploy(deploy_request()).await.unwrap_err();
+    let err = handle
+        .start_deploy(deploy_request())
+        .await
+        .expect_err("missing image refuses deploy");
 
     assert!(matches!(
         err,
@@ -307,7 +322,10 @@ async fn start_deploy_refused_when_remote_is_unresolved() {
         deploy_fs("", DEPLOY_BOOT_ONCE_OFF, true),
     );
 
-    let err = handle.start_deploy(deploy_request()).await.unwrap_err();
+    let err = handle
+        .start_deploy(deploy_request())
+        .await
+        .expect_err("unresolved remote refuses deploy");
 
     assert!(matches!(
         err,
@@ -327,7 +345,10 @@ async fn start_deploy_refused_when_boot_once_is_on_and_unacked() {
         deploy_fs(DEPLOY_REMOTE_CONFIG, DEPLOY_BOOT_ONCE_ON, true),
     );
 
-    let err = handle.start_deploy(deploy_request()).await.unwrap_err();
+    let err = handle
+        .start_deploy(deploy_request())
+        .await
+        .expect_err("unacked boot-once refuses deploy");
 
     assert!(matches!(err, KwStartError::BootOnceNotAcknowledged));
     assert!(process.spawned().is_empty());
@@ -350,7 +371,10 @@ async fn start_deploy_refused_when_latest_build_is_on_another_branch() {
     let (handle, process, log_dir) =
         spawn_deploy_actor("deploy-head-mismatch", history, deploy_ready_fs());
 
-    let err = handle.start_deploy(deploy_request()).await.unwrap_err();
+    let err = handle
+        .start_deploy(deploy_request())
+        .await
+        .expect_err("other branch refuses deploy");
 
     assert!(matches!(
         err,
@@ -391,7 +415,10 @@ async fn start_deploy_post_switch_refusal_rolls_the_switch_back() {
         env_with_kw(),
     );
 
-    let err = handle.start_deploy(deploy_request()).await.unwrap_err();
+    let err = handle
+        .start_deploy(deploy_request())
+        .await
+        .expect_err("post-switch refusal rolls back");
 
     assert!(matches!(
         err,
@@ -690,7 +717,7 @@ async fn start_build_then_deploy_refused_when_remote_is_unresolved() {
     let err = handle
         .start_build_then_deploy(deploy_request())
         .await
-        .unwrap_err();
+        .expect_err("unresolved remote refuses chain");
 
     assert!(matches!(
         err,

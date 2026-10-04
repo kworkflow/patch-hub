@@ -61,6 +61,10 @@ unconditional_recursion = "deny"
 
 [lints.clippy]
 map_unwrap_or = "deny"
+unwrap_used = "deny"
+allow_attributes = "deny"
+redundant_type_annotations = "warn"
+match_wildcard_for_single_variants = "warn"
 
 [workspace]
 members = [

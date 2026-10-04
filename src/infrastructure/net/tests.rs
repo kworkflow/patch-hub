@@ -28,7 +28,7 @@ fn mock_net_client_can_return_http_status_error() {
 
     let result = mock.request(HttpMethod::Get, "https://example.com/missing");
     assert!(result.is_err());
-    let err = result.unwrap_err();
+    let err = result.expect_err("request fails");
     assert!(err.to_string().contains("404"));
 }
 

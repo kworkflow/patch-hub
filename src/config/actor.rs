@@ -238,7 +238,7 @@ mod tests {
                 ..Default::default()
             })
             .await
-            .unwrap_err();
+            .expect_err("invalid update rejects");
 
         assert!(matches!(err, ConfigError::InvalidPageSize(ref s) if s == "not-a-number"));
         assert_eq!(
@@ -257,7 +257,7 @@ mod tests {
         let (handle, _home) = spawn_test_actor();
 
         handle.shutdown().await;
-        let err = handle.get_snapshot().await.unwrap_err();
+        let err = handle.get_snapshot().await.expect_err("actor has stopped");
 
         assert!(matches!(err, ConfigError::ActorUnavailable(_)));
     }

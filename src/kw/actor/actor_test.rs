@@ -838,7 +838,10 @@ async fn record_apply_surfaces_store_errors() {
         MockEnvTrait::new(),
     );
 
-    let err = handle.record_apply(apply_record()).await.unwrap_err();
+    let err = handle
+        .record_apply(apply_record())
+        .await
+        .expect_err("apply record fails");
 
     assert!(matches!(err, KwError::History(_)));
     handle.shutdown().await;
@@ -1216,7 +1219,10 @@ async fn spawn_failure_refuses_start_and_stays_idle() {
     let (handle, process, log_dir) = spawn_job_actor("spawn-fail");
     process.refuse_spawns(true);
 
-    let err = handle.start_build(start_request()).await.unwrap_err();
+    let err = handle
+        .start_build(start_request())
+        .await
+        .expect_err("spawn fails");
 
     assert!(matches!(err, KwStartError::Spawn(_)));
     assert_eq!(
@@ -1255,7 +1261,10 @@ async fn start_build_refused_when_kw_binary_missing() {
         log_dir.clone(),
     );
 
-    let err = handle.start_build(start_request()).await.unwrap_err();
+    let err = handle
+        .start_build(start_request())
+        .await
+        .expect_err("missing kw refuses build");
 
     assert!(matches!(err, KwStartError::KwBinaryMissing));
     assert_eq!(
@@ -1333,7 +1342,10 @@ async fn start_build_refused_when_tree_not_ready() {
         log_dir.clone(),
     );
 
-    let err = handle.start_build(start_request()).await.unwrap_err();
+    let err = handle
+        .start_build(start_request())
+        .await
+        .expect_err("unreadiness refuses build");
 
     assert!(matches!(
         err,
@@ -1437,7 +1449,10 @@ async fn start_build_refused_when_worktree_is_dirty() {
     expect_ready_tree(&mut fs);
     let (handle, process, log_dir) = spawn_job_actor_with_mocks("dirty", shell, fs);
 
-    let err = handle.start_build(start_request()).await.unwrap_err();
+    let err = handle
+        .start_build(start_request())
+        .await
+        .expect_err("dirty worktree refuses build");
 
     assert!(matches!(err, KwStartError::DirtyWorktree));
     assert_eq!(
@@ -1467,7 +1482,10 @@ async fn start_build_refused_when_git_state_is_unverifiable() {
     expect_ready_tree(&mut fs);
     let (handle, process, log_dir) = spawn_job_actor_with_mocks("git-probe-fail", shell, fs);
 
-    let err = handle.start_build(start_request()).await.unwrap_err();
+    let err = handle
+        .start_build(start_request())
+        .await
+        .expect_err("unverifiable git refuses build");
 
     assert!(matches!(err, KwStartError::GitStateProbe(_)));
     assert!(err.to_string().contains("not a git repository"));
@@ -1493,7 +1511,10 @@ async fn start_build_refused_when_branch_switch_fails() {
     );
     let (handle, process, log_dir) = spawn_job_actor_with_mocks("switch-fail", shell, ready_fs());
 
-    let err = handle.start_build(start_request()).await.unwrap_err();
+    let err = handle
+        .start_build(start_request())
+        .await
+        .expect_err("branch switch refuses build");
 
     assert!(matches!(err, KwStartError::CheckoutFailed(_)));
     assert!(err.to_string().contains("did not match"));
@@ -1579,7 +1600,10 @@ async fn restore_switches_back_to_pre_job_branch_and_is_consumed() {
 
     // A successful restore consumes the context: a second restore has
     // nothing to do.
-    let err = handle.restore_previous_branch().await.unwrap_err();
+    let err = handle
+        .restore_previous_branch()
+        .await
+        .expect_err("second restore has no branch");
     assert!(matches!(err, KwError::NoRecordedBranch));
 
     handle.shutdown().await;
@@ -1596,7 +1620,10 @@ async fn restore_refused_while_job_is_running() {
         .start_build(start_request())
         .await
         .expect("build starts");
-    let err = handle.restore_previous_branch().await.unwrap_err();
+    let err = handle
+        .restore_previous_branch()
+        .await
+        .expect_err("restore refused while running");
     assert!(matches!(err, KwError::JobRunning));
 
     // The context survives the refusal: restore works once the job
@@ -1629,7 +1656,10 @@ async fn restore_refused_when_worktree_is_dirty() {
     let _ = wait_for_terminal_status(&mut watch).await;
 
     git.set_dirty(true);
-    let err = handle.restore_previous_branch().await.unwrap_err();
+    let err = handle
+        .restore_previous_branch()
+        .await
+        .expect_err("dirty worktree refuses restore");
     assert!(matches!(err, KwError::DirtyWorktree));
     // The refused restore did not touch the tree.
     assert_eq!(git.head(), "patchset-2026-08-01-17-30-00");
@@ -1670,7 +1700,10 @@ async fn restore_failure_keeps_the_context_for_a_retry() {
     let _ = wait_for_terminal_status(&mut watch).await;
 
     git.fail_switches_to(Some("master"));
-    let err = handle.restore_previous_branch().await.unwrap_err();
+    let err = handle
+        .restore_previous_branch()
+        .await
+        .expect_err("restore fails");
     assert!(matches!(err, KwError::CheckoutFailed(_)));
     assert!(err.to_string().contains("resolve your current index"));
 
@@ -1706,7 +1739,10 @@ async fn refused_start_does_not_clobber_the_restore_context() {
     process.refuse_spawns(true);
     let mut second = start_request();
     second.branch = "patchset-two".to_string();
-    let err = handle.start_build(second).await.unwrap_err();
+    let err = handle
+        .start_build(second)
+        .await
+        .expect_err("refused start stays refused");
     assert!(matches!(err, KwStartError::Spawn(_)));
     assert_eq!(git.head(), "patchset-2026-08-01-17-30-00");
 
@@ -1731,7 +1767,7 @@ async fn shutdown_stops_actor() {
     );
 
     handle.shutdown().await;
-    let err = handle.get_status().await.unwrap_err();
+    let err = handle.get_status().await.expect_err("actor has stopped");
 
     assert!(matches!(err, KwError::ActorUnavailable(_)));
 }
@@ -1751,7 +1787,10 @@ async fn log_dir_creation_failure_refuses_start_and_stays_idle() {
         });
     let (handle, process, log_dir) = spawn_job_actor_with_mocks("log-dir-fail", git.shell(), fs);
 
-    let err = handle.start_build(start_request()).await.unwrap_err();
+    let err = handle
+        .start_build(start_request())
+        .await
+        .expect_err("log dir failure refuses start");
 
     assert!(matches!(err, KwStartError::Fs(_)));
     assert_eq!(
@@ -1780,7 +1819,10 @@ async fn rollback_failure_keeps_the_spawn_refusal() {
         spawn_job_actor_with_mocks("rollback-fails", git.shell(), ready_fs());
     process.refuse_spawns(true);
 
-    let err = handle.start_build(start_request()).await.unwrap_err();
+    let err = handle
+        .start_build(start_request())
+        .await
+        .expect_err("spawn stays refused");
 
     assert!(matches!(err, KwStartError::Spawn(_)));
     // The rollback failure is logged, not reported: the caller keeps

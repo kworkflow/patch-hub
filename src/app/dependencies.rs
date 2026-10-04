@@ -60,7 +60,7 @@ impl DependencyService {
                     );
                 }
             }
-            _ => {}
+            PatchRenderer::Default => {}
         }
 
         let kw = ReadinessService::probe_kw_binary(env, shell);
@@ -145,7 +145,7 @@ mod tests {
             &shell,
             &ConfigSnapshot::from(&ConfigState::default()),
         )
-        .unwrap_err();
+        .expect_err("missing b4 errors");
 
         assert!(matches!(err, AppError::Dependencies(_)));
     }

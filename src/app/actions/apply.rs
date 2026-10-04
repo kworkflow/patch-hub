@@ -578,8 +578,8 @@ mod tests {
         let fs = clean_fs();
         let (shell, calls) = shell_with_outputs(vec![output(" M file.rs\n", "", true)]);
 
-        let result =
-            ApplyPatchsetService::apply_patchset(&request(), &fs, &shell, &config()).unwrap_err();
+        let result = ApplyPatchsetService::apply_patchset(&request(), &fs, &shell, &config())
+            .expect_err("dirty worktree rejects");
 
         assert!(result.contains("there are staged and/or unstaged changes"));
         assert_eq!(1, calls.lock().expect("calls locks").len());
@@ -595,7 +595,7 @@ mod tests {
 
         let result =
             ApplyPatchsetService::apply_patchset(&request(), &fs, &shell, &config_without_target())
-                .unwrap_err();
+                .expect_err("missing tree rejects");
 
         assert_eq!("target kernel tree unset", result);
     }
@@ -608,8 +608,8 @@ mod tests {
             output("", "missing branch", false),
         ]);
 
-        let result =
-            ApplyPatchsetService::apply_patchset(&request(), &fs, &shell, &config()).unwrap_err();
+        let result = ApplyPatchsetService::apply_patchset(&request(), &fs, &shell, &config())
+            .expect_err("invalid branch rejects");
 
         assert!(result.contains("invalid branch 'main'"));
         assert_eq!(2, calls.lock().expect("calls locks").len());
@@ -631,8 +631,8 @@ mod tests {
                 output("", "", true),
             ]);
 
-            let result =
-                ApplyPatchsetService::apply_patchset(&request(), &fs, &shell, &config).unwrap_err();
+            let result = ApplyPatchsetService::apply_patchset(&request(), &fs, &shell, &config)
+                .expect_err("git am fails");
 
             assert!(result.starts_with(" `git am` failed (back on branch 'feature')\napply failed"));
             assert!(!result.contains("could not delete"));
@@ -669,8 +669,8 @@ mod tests {
             output("", "error: branch is locked\n", false),
         ]);
 
-        let result =
-            ApplyPatchsetService::apply_patchset(&request(), &fs, &shell, &config()).unwrap_err();
+        let result = ApplyPatchsetService::apply_patchset(&request(), &fs, &shell, &config())
+            .expect_err("git am fails");
 
         assert!(result.starts_with(" `git am` failed (back on branch 'feature')\napply failed"));
         assert!(result.contains("could not delete 'patchset-"));
