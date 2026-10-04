@@ -12,8 +12,21 @@ use color_eyre::{
 
 use super::terminal::restore;
 
-struct TerminalRestoreGuard {
+pub(crate) struct TerminalRestoreGuard {
     started: AtomicBool,
+}
+
+static TERMINAL_RESTORE: TerminalRestoreGuard = TerminalRestoreGuard::new();
+
+impl TerminalRestoreGuard {
+    /// Restores the terminal at most once in this process.
+    ///
+    /// The panic hook and `main`'s fatal-error return both call this. A panic in a
+    /// spawned task runs the hook and then comes back to `main` as a join error,
+    /// so those two calls would otherwise restore twice.
+    pub(crate) fn restore_once() {
+        TERMINAL_RESTORE.call(restore);
+    }
 }
 
 impl TerminalRestoreGuard {
@@ -33,28 +46,31 @@ impl TerminalRestoreGuard {
     }
 }
 
-static TERMINAL_RESTORE: TerminalRestoreGuard = TerminalRestoreGuard::new();
-
-/// This replaces the standard color_eyre panic and error hooks with hooks that
-/// restore the terminal before printing the panic or error.
+/// Installs the process panic and eyre hooks.
 ///
-/// Normal application shutdown restores the terminal through
-/// [`crate::terminal::handle::TerminalHandle::shutdown`]. These hooks keep a
-/// direct [`super::terminal::restore`] fallback for panics and fatal errors.
+/// The panic hook restores the terminal, then color_eyre prints the panic.
+/// The eyre hook only forwards to color_eyre. eyre runs that hook for every
+/// report construction, including errors the application handles and keeps
+/// running after, so it must not restore the terminal.
+///
+/// `main` returns [`color_eyre::eyre::Result`], and the runtime prints a fatal
+/// report after `main` returns. [`TerminalRestoreGuard::restore_once`] runs on
+/// that path first.
+/// Normal shutdown restores through
+/// [`crate::terminal::handle::TerminalHandle::shutdown`].
 pub fn install_hooks() -> Result<()> {
     let (panic_hook, eyre_hook) = HookBuilder::default().into_hooks();
 
     // convert from a color_eyre PanicHook to a standard panic hook
     let panic_hook = panic_hook.into_panic_hook();
     panic::set_hook(Box::new(move |panic_info| {
-        TERMINAL_RESTORE.call(restore);
+        TerminalRestoreGuard::restore_once();
         panic_hook(panic_info);
     }));
 
     // convert from a color_eyre EyreHook to a eyre ErrorHook
     let eyre_hook = eyre_hook.into_eyre_hook();
     set_hook(Box::new(move |error: &(dyn Error + 'static)| {
-        TERMINAL_RESTORE.call(restore);
         eyre_hook(error)
     }))?;
 

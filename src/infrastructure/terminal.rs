@@ -2,8 +2,8 @@
 //! emergency restore hooks.
 //!
 //! Normal runtime startup uses [`init`] from `main`, session operations go
-//! through [`crate::terminal::session::CrosstermTerminalSession`], and fatal
-//! error hooks call [`restore`] directly.
+//! through [`crate::terminal::session::CrosstermTerminalSession`], and the
+//! panic hook plus `main`'s fatal-error path call [`restore`] directly.
 
 use ratatui::{
     crossterm::{
@@ -21,11 +21,24 @@ use std::io::{self, stdout, Stdout};
 /// A type alias for the terminal type used in this application
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
 
-/// Initialize the terminal
+/// Initialize the terminal.
+///
+/// A failure after the alternate screen is entered leaves that mode before
+/// returning, so the caller's error can be printed on the normal terminal.
 pub fn init() -> io::Result<Tui> {
     execute!(stdout(), EnterAlternateScreen)?;
-    enable_raw_mode()?;
-    Terminal::new(CrosstermBackend::new(stdout()))
+    if let Err(error) = enable_raw_mode() {
+        let _ = execute!(stdout(), LeaveAlternateScreen);
+        return Err(error);
+    }
+
+    match Terminal::new(CrosstermBackend::new(stdout())) {
+        Ok(terminal) => Ok(terminal),
+        Err(error) => {
+            let _ = restore();
+            Err(error)
+        }
+    }
 }
 
 /// Restore the terminal to its original state
