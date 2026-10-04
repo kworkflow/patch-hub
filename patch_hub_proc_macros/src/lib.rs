@@ -1,7 +1,7 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, Data, DeriveInput};
+use syn::{Data, DeriveInput, Fields};
 
 /// This procedural macro create default deserealization functions for each
 /// structure attribute based on std::Default impl.
@@ -36,19 +36,40 @@ use syn::{parse_macro_input, Data, DeriveInput};
 ///     "test_1": 500,
 ///     "test_2": 100
 /// });
-/// let example_struct_1: Example = serde_json::from_value(json_data_1).unwrap();
+/// let example_struct_1: Example = serde_json::from_value(json_data_1)
+///     .expect("example json deserializes");
 /// assert_eq!(example_struct_1.test_1, 500);
 /// assert_eq!(example_struct_1.test_2, 100);
 /// assert_eq!(example_struct_1.test_3, "a".to_string());
 /// ```
 #[proc_macro_attribute]
 pub fn serde_individual_default(_attr: TokenStream, input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
+    match expand_serde_individual_default(input) {
+        Ok(tokens) => tokens,
+        Err(error) => error.to_compile_error().into(),
+    }
+}
+
+fn expand_serde_individual_default(input: TokenStream) -> syn::Result<TokenStream> {
+    let input = syn::parse::<DeriveInput>(input)?;
     let struct_name = &input.ident;
     let struct_generics = &input.generics;
     let struct_fields = match &input.data {
-        Data::Struct(s) => &s.fields,
-        _ => panic!("SerdeIndividualDefault can only be used with structs"),
+        Data::Struct(data) => match &data.fields {
+            Fields::Named(fields) => fields,
+            Fields::Unnamed(_) | Fields::Unit => {
+                return Err(syn::Error::new_spanned(
+                    struct_name,
+                    "SerdeIndividualDefault can only be used with structs that have named fields",
+                ));
+            }
+        },
+        Data::Enum(_) | Data::Union(_) => {
+            return Err(syn::Error::new_spanned(
+                struct_name,
+                "SerdeIndividualDefault can only be used with structs",
+            ));
+        }
     };
     let struct_attrs = &input.attrs;
     let struct_visibility = &input.vis;
@@ -69,36 +90,37 @@ pub fn serde_individual_default(_attr: TokenStream, input: TokenStream) -> Token
     };
 
     // build struct attributes with #[serde(default = "")] and build the default function itself
-    let (all_field_attrs, default_deserialize_function_definitions) = struct_fields.iter().fold(
-        (vec![], vec![]),
-        |(mut all_field_attrs, mut default_deserialize_function_definitions), field| {
-            let field_name = &field.ident;
-            let field_type = &field.ty;
-            let field_vis = &field.vis;
-            let field_attrs = &field.attrs;
-            let field_name_str = field_name.as_ref().unwrap().to_string();
+    let mut all_field_attrs = Vec::new();
+    let mut default_deserialize_function_definitions = Vec::new();
+    for field in &struct_fields.named {
+        let field_name = field.ident.as_ref().ok_or_else(|| {
+            syn::Error::new_spanned(
+                field,
+                "SerdeIndividualDefault requires every field to be named",
+            )
+        })?;
+        let field_type = &field.ty;
+        let field_vis = &field.vis;
+        let field_attrs = &field.attrs;
+        let field_name_str = field_name.to_string();
 
-            // default function name will be named default_{struct_name}_{field_name}
-            let default_deserialize_function_name =
-                format_ident!("default_{}_{}", struct_name_str, field_name_str);
+        // default function name will be named default_{struct_name}_{field_name}
+        let default_deserialize_function_name =
+            format_ident!("default_{}_{}", struct_name_str, field_name_str);
 
-            let default_deserialize_function_name_str =
-                default_deserialize_function_name.to_string();
+        let default_deserialize_function_name_str = default_deserialize_function_name.to_string();
 
-            all_field_attrs.push(quote! {
-                #(#field_attrs)*
-                #[serde(default = #default_deserialize_function_name_str)]
-                #field_vis #field_name: #field_type,
-            });
-            default_deserialize_function_definitions.push(quote! {
-                fn #default_deserialize_function_name() -> #field_type {
-                    #default_config_struct_name.#field_name.clone()
-                }
-            });
-
-            (all_field_attrs, default_deserialize_function_definitions)
-        },
-    );
+        all_field_attrs.push(quote! {
+            #(#field_attrs)*
+            #[serde(default = #default_deserialize_function_name_str)]
+            #field_vis #field_name: #field_type,
+        });
+        default_deserialize_function_definitions.push(quote! {
+            fn #default_deserialize_function_name() -> #field_type {
+                #default_config_struct_name.#field_name.clone()
+            }
+        });
+    }
 
     // build final struct.
     //We have to explicitly derive Deserialize here so the serde attribute works
@@ -113,5 +135,5 @@ pub fn serde_individual_default(_attr: TokenStream, input: TokenStream) -> Token
 
         #(#default_deserialize_function_definitions)*
     };
-    TokenStream::from(expanded_token_stream)
+    Ok(TokenStream::from(expanded_token_stream))
 }

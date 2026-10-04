@@ -62,7 +62,8 @@ fn should_have_default_serialization() {
         "test_2": 100
     });
 
-    let example_struct_1: Example = serde_json::from_value(json_data_1).unwrap();
+    let example_struct_1: Example =
+        serde_json::from_value(json_data_1).expect("example with a missing field deserializes");
 
     // Assert that`test_1` and `test_2` are set to the custom value
     assert_eq!(example_struct_1.test_1, 500);
@@ -79,7 +80,8 @@ fn should_have_default_serialization() {
         "test_3": "test".to_string()
     });
 
-    let example_struct_2: Example = serde_json::from_value(json_data_2).unwrap();
+    let example_struct_2: Example = serde_json::from_value(json_data_2)
+        .expect("example with another missing field deserializes");
 
     // Assert that`test_1` and `test_3` are set to the custom value
     assert_eq!(example_struct_2.test_1, 999);
@@ -98,7 +100,8 @@ fn should_preserve_other_attributes() {
         "test_3": "b".to_string()
     });
 
-    let example_struct: Example = serde_json::from_value(json_data).unwrap();
+    let example_struct: Example =
+        serde_json::from_value(json_data).expect("fully populated example deserializes");
 
     // Assert that`test_2` and `test_3` have getters
     assert_eq!(example_struct.test_1, 500);
@@ -113,7 +116,7 @@ fn test_struct_without_serialize() {
     });
 
     let example_without_serialize: ExampleWithoutSerialize =
-        serde_json::from_value(json_data).unwrap();
+        serde_json::from_value(json_data).expect("struct without Serialize deserializes");
 
     assert_eq!(example_without_serialize.test_1, 765);
     assert_eq!(example_without_serialize.test_2, 123);
@@ -125,7 +128,8 @@ fn test_public_struct() {
         "test_1": 345,
     });
 
-    let example_public: ExamplePublic = serde_json::from_value(json_data).unwrap();
+    let example_public: ExamplePublic =
+        serde_json::from_value(json_data).expect("public struct deserializes");
 
     assert_eq!(example_public.test_1, 345);
     assert_eq!(example_public.test_2, 403);
