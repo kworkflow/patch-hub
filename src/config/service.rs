@@ -52,45 +52,43 @@ impl ConfigService {
         fs: &dyn FileSystemTrait,
         current: &ConfigState,
     ) -> Result<ValidatedConfigUpdate, ConfigError> {
-        let page_size = match &draft.page_size {
-            None => None,
-            Some(s) if s.trim().is_empty() => {
-                return Err(ConfigError::InvalidPageSize(s.clone()));
-            }
-            Some(s) => Some(
-                s.trim()
+        let page_size = Self::parse_non_empty(
+            &draft.page_size,
+            |raw| Err(ConfigError::InvalidPageSize(raw.to_string())),
+            |raw| {
+                raw.trim()
                     .parse::<usize>()
-                    .map_err(|_| ConfigError::InvalidPageSize(s.clone()))?,
-            ),
-        };
+                    .map_err(|_| ConfigError::InvalidPageSize(raw.to_string()))
+            },
+        )?;
 
-        let cache_dir = match &draft.cache_dir {
-            None => None,
-            Some(s) if s.trim().is_empty() => {
-                return Err(ConfigError::InvalidDirectory(
+        let cache_dir = Self::parse_non_empty(
+            &draft.cache_dir,
+            |_| {
+                Err(ConfigError::InvalidDirectory(
                     "cache directory is empty".into(),
-                ));
-            }
-            Some(s) => {
-                let t = s.trim();
-                Self::validate_dir(fs, t)?;
-                Some(t.to_string())
-            }
-        };
+                ))
+            },
+            |raw| {
+                let trimmed = raw.trim();
+                Self::validate_dir(fs, trimmed)?;
+                Ok(trimmed.to_string())
+            },
+        )?;
 
-        let data_dir = match &draft.data_dir {
-            None => None,
-            Some(s) if s.trim().is_empty() => {
-                return Err(ConfigError::InvalidDirectory(
+        let data_dir = Self::parse_non_empty(
+            &draft.data_dir,
+            |_| {
+                Err(ConfigError::InvalidDirectory(
                     "data directory is empty".into(),
-                ));
-            }
-            Some(s) => {
-                let t = s.trim();
-                Self::validate_dir(fs, t)?;
-                Some(t.to_string())
-            }
-        };
+                ))
+            },
+            |raw| {
+                let trimmed = raw.trim();
+                Self::validate_dir(fs, trimmed)?;
+                Ok(trimmed.to_string())
+            },
+        )?;
 
         let git_send_email_option = draft.git_send_email_option.clone();
         let git_am_option = draft.git_am_option.clone();
@@ -105,66 +103,58 @@ impl ConfigService {
             Some(s) => Some(ConfigParsingService::parse_cover_renderer(s)?),
         };
 
-        let max_log_age = match &draft.max_log_age {
-            None => None,
-            Some(s) if s.trim().is_empty() => {
-                return Err(ConfigError::InvalidMaxLogAge(s.clone()));
-            }
-            Some(s) => Some(
-                s.trim()
+        let max_log_age = Self::parse_non_empty(
+            &draft.max_log_age,
+            |raw| Err(ConfigError::InvalidMaxLogAge(raw.to_string())),
+            |raw| {
+                raw.trim()
                     .parse::<usize>()
-                    .map_err(|_| ConfigError::InvalidMaxLogAge(s.clone()))?,
-            ),
-        };
+                    .map_err(|_| ConfigError::InvalidMaxLogAge(raw.to_string()))
+            },
+        )?;
 
-        let stay_on_applied_branch = match &draft.stay_on_applied_branch {
-            None => None,
-            Some(s) if s.trim().is_empty() => {
-                return Err(ConfigError::InvalidStayOnAppliedBranch(s.clone()));
-            }
-            Some(s) => Some(
-                s.trim()
+        let stay_on_applied_branch = Self::parse_non_empty(
+            &draft.stay_on_applied_branch,
+            |raw| Err(ConfigError::InvalidStayOnAppliedBranch(raw.to_string())),
+            |raw| {
+                raw.trim()
                     .parse::<bool>()
-                    .map_err(|_| ConfigError::InvalidStayOnAppliedBranch(s.clone()))?,
-            ),
-        };
+                    .map_err(|_| ConfigError::InvalidStayOnAppliedBranch(raw.to_string()))
+            },
+        )?;
 
-        let kw_reboot_after_deploy = match &draft.kw_reboot_after_deploy {
-            None => None,
-            Some(s) if s.trim().is_empty() => {
-                return Err(ConfigError::InvalidKwRebootAfterDeploy(s.clone()));
-            }
-            Some(s) => Some(
-                s.trim()
+        let kw_reboot_after_deploy = Self::parse_non_empty(
+            &draft.kw_reboot_after_deploy,
+            |raw| Err(ConfigError::InvalidKwRebootAfterDeploy(raw.to_string())),
+            |raw| {
+                raw.trim()
                     .parse::<bool>()
-                    .map_err(|_| ConfigError::InvalidKwRebootAfterDeploy(s.clone()))?,
-            ),
-        };
+                    .map_err(|_| ConfigError::InvalidKwRebootAfterDeploy(raw.to_string()))
+            },
+        )?;
 
-        let kw_deploy_force = match &draft.kw_deploy_force {
-            None => None,
-            Some(s) if s.trim().is_empty() => {
-                return Err(ConfigError::InvalidKwDeployForce(s.clone()));
-            }
-            Some(s) => Some(
-                s.trim()
+        let kw_deploy_force = Self::parse_non_empty(
+            &draft.kw_deploy_force,
+            |raw| Err(ConfigError::InvalidKwDeployForce(raw.to_string())),
+            |raw| {
+                raw.trim()
                     .parse::<bool>()
-                    .map_err(|_| ConfigError::InvalidKwDeployForce(s.clone()))?,
-            ),
-        };
+                    .map_err(|_| ConfigError::InvalidKwDeployForce(raw.to_string()))
+            },
+        )?;
 
-        let target_kernel_tree = match &draft.target_kernel_tree {
-            None => None,
-            Some(s) if s.trim().is_empty() => Some(None),
-            Some(s) => {
-                let key = s.trim();
+        let target_kernel_tree = Self::parse_non_empty(
+            &draft.target_kernel_tree,
+            |_| Ok(Some(None)),
+            |raw| {
+                let key = raw.trim();
                 if current.kernel_trees.contains_key(key) {
-                    Some(Some(key.to_string()))
+                    Ok(Some(key.to_string()))
                 } else {
-                    return Err(Self::reject_unknown_kernel_tree(s, current));
+                    Err(Self::reject_unknown_kernel_tree(raw, current))
                 }
-            }
-        };
+            },
+        )?;
 
         Ok(ValidatedConfigUpdate {
             page_size,
@@ -219,6 +209,22 @@ impl ConfigService {
         ConfigError::InvalidTargetKernelTree {
             key: raw.to_string(),
             hint,
+        }
+    }
+
+    fn parse_non_empty<T>(
+        value: &Option<String>,
+        on_blank: impl FnOnce(&str) -> Result<Option<T>, ConfigError>,
+        on_value: impl FnOnce(&str) -> Result<T, ConfigError>,
+    ) -> Result<Option<T>, ConfigError> {
+        if let Some(raw) = value {
+            if raw.trim().is_empty() {
+                on_blank(raw)
+            } else {
+                on_value(raw).map(Some)
+            }
+        } else {
+            Ok(None)
         }
     }
 
