@@ -38,7 +38,9 @@ impl UiCore {
             ScreenViewModel::EditConfig(ec_vm) => {
                 UiBody::EditConfig(screens::edit_config::build_scene(ec_vm))
             }
-            ScreenViewModel::KwOps(kw_vm) => UiBody::KwOps(screens::kw_ops::build_scene(kw_vm)),
+            ScreenViewModel::KwOps(kw_vm) => {
+                UiBody::KwOps(Box::new(screens::kw_ops::build_scene(kw_vm)))
+            }
         };
 
         let navigation = self.build_navigation(&vm.screen, vm.kw_running.as_deref());

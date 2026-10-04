@@ -267,7 +267,7 @@ fn reserved_short_cluster<'a>(
 fn exact_short<'a>(reserved: &'a [ReservedOption], spelling: &str) -> Option<&'a ReservedOption> {
     reserved
         .iter()
-        .find(|option| option.spellings.iter().any(|s| *s == spelling))
+        .find(|option| option.spellings.contains(&spelling))
 }
 
 fn value_is_attached(token: &str, option: &ReservedOption) -> bool {

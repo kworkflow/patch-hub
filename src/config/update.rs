@@ -14,6 +14,8 @@ pub struct ConfigUpdateDraft {
     pub stay_on_applied_branch: Option<String>,
     pub kw_reboot_after_deploy: Option<String>,
     pub kw_deploy_force: Option<String>,
+    /// Raw `kernel_trees` key. `None` omits the field; empty string unsets.
+    pub target_kernel_tree: Option<String>,
 }
 
 /// Parsed and validated update ready to merge into [`crate::config::ConfigState`](super::state::ConfigState).
@@ -30,4 +32,7 @@ pub struct ValidatedConfigUpdate {
     pub stay_on_applied_branch: Option<bool>,
     pub kw_reboot_after_deploy: Option<bool>,
     pub kw_deploy_force: Option<bool>,
+    /// `None` leaves the current target unchanged; `Some(None)` unsets it;
+    /// `Some(Some(key))` selects an existing `kernel_trees` key.
+    pub target_kernel_tree: Option<Option<String>>,
 }

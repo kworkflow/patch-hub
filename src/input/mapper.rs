@@ -124,6 +124,8 @@ impl InputMapper {
             return match key.code {
                 KeyCode::Esc => Some(InputEvent::CancelConfigEdit),
                 KeyCode::Backspace => Some(InputEvent::Backspace),
+                KeyCode::Left => Some(InputEvent::NavigateLeft),
+                KeyCode::Right => Some(InputEvent::NavigateRight),
                 KeyCode::Char(ch) => Some(InputEvent::TextInput(ch)),
                 KeyCode::Enter => Some(InputEvent::StageConfigEdit),
                 _ => None,
@@ -350,6 +352,39 @@ mod tests {
         let event = mapper.map_terminal_event(key(KeyCode::Enter), &context);
 
         assert_eq!(event, Some(InputEvent::EditConfigField));
+    }
+
+    #[test]
+    fn maps_arrows_to_navigate_while_editing_config_and_keeps_hl_as_text() {
+        let mut mapper = InputMapper::default();
+        let editing = context(CurrentScreen::EditConfig).with_edit_config_editing(true);
+
+        assert_eq!(
+            mapper.map_terminal_event(key(KeyCode::Left), &editing),
+            Some(InputEvent::NavigateLeft)
+        );
+        assert_eq!(
+            mapper.map_terminal_event(key(KeyCode::Right), &editing),
+            Some(InputEvent::NavigateRight)
+        );
+        assert_eq!(
+            mapper.map_terminal_event(key(KeyCode::Char('h')), &editing),
+            Some(InputEvent::TextInput('h'))
+        );
+        assert_eq!(
+            mapper.map_terminal_event(key(KeyCode::Char('l')), &editing),
+            Some(InputEvent::TextInput('l'))
+        );
+
+        let browsing = context(CurrentScreen::EditConfig);
+        assert_eq!(
+            mapper.map_terminal_event(key(KeyCode::Left), &browsing),
+            None
+        );
+        assert_eq!(
+            mapper.map_terminal_event(key(KeyCode::Right), &browsing),
+            None
+        );
     }
 
     #[test]

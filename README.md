@@ -87,6 +87,7 @@ alt="patch-hub-demo-v0.1.0">
   - **Apply patch(set)** to your local kernel tree.
   - **Bookmark** important patches
   - **Reply with `Reviewed-by` tags** to the series.
+  - **KwOps** (`w`) — build and remotely deploy the applied tree with `kw`.
 
 - **Bookmarking System** — Bookmark patchsets for easy reference
   later.
@@ -98,12 +99,25 @@ alt="patch-hub-demo-v0.1.0">
   visualization or use the built-in vanilla renderer (`default`) for a
   dependency-free experience.
 
-### More Features Coming!
+### KwOps (build and deploy with kw)
 
-Future updates will introduce deeper integration with kw, including:
+From a patchset's Details screen, press `w` to open **Kw operations** and
+build or remotely deploy the applied tree with `kw`.
 
-- Seamlessly compile and deploy patchset versions of the kernel to target
-  machines.
+- **Build** (`b`), **Deploy** (`d`), and **Build then deploy** (`D`).
+- Live logs while a job runs — you can leave the screen without freezing the
+  TUI.
+- **Cancel** (`c`) a running job, or **Restore previous branch** (`r`) after
+  a job switched `HEAD`. Press `?` for in-screen help.
+
+KwOps uses your existing `kw` setup: [`kw`](https://github.com/kworkflow/kworkflow/)
+0.10 or newer on `PATH`, a `.kw/` directory in the kernel tree (`kw init` /
+`kw env`), and for deploy a remote plus `kw deploy --setup`. Local deploy is
+not available from the UI. Extra `kw` arguments can be typed per run; they
+are not saved.
+
+Related settings in Edit Config / `config.json`: `stay_on_applied_branch`,
+`kw_reboot_after_deploy`, and `kw_deploy_force`.
 
 ## :package: How To Install
 

@@ -62,6 +62,10 @@ pub enum TreeReadiness {
     /// No `.config` at the build root (the tree itself, or the kw env's
     /// output dir when one is active).
     MissingKernelConfig,
+    /// A kw env is active but the source tree still holds an in-tree
+    /// `.config` or `include/config/`: kbuild refuses an `O=` build of an
+    /// unclean source tree, so every build fails within seconds.
+    InTreeBuildArtifacts,
 }
 
 /// Parses kw's `key=value` config format (`.kw/build.config`,
@@ -130,6 +134,12 @@ pub fn probe_tree(
     }
     if !fs.is_dir(&tree_path.join(".kw")) {
         return TreeReadiness::MissingKwDir;
+    }
+    if output_dir.is_some()
+        && (fs.is_file(&tree_path.join(".config"))
+            || fs.is_dir(&tree_path.join("include").join("config")))
+    {
+        return TreeReadiness::InTreeBuildArtifacts;
     }
     let build_root = output_dir.unwrap_or(tree_path);
     if !fs.is_file(&build_root.join(".config")) {
@@ -405,6 +415,11 @@ impl std::fmt::Display for TreeReadiness {
                     "no .config at the build root (the tree, or the kw env's O=)"
                 )
             }
+            TreeReadiness::InTreeBuildArtifacts => write!(
+                f,
+                "in-tree .config / include/config block kw env (O=) builds; run \
+                 `make mrproper` in the tree (the env's O= is untouched)"
+            ),
         }
     }
 }
@@ -904,6 +919,43 @@ last_line_without_newline=yes";
             probe_tree(&OsFileSystem, dir.path(), Some(out.path())),
             TreeReadiness::Ready { .. }
         ));
+    }
+
+    #[test]
+    fn probe_tree_with_active_env_refuses_in_tree_config() {
+        let dir = make_ready_tree("probe-env-in-tree-config");
+        let out = TempDir::new("probe-env-in-tree-config-output");
+        fs::write(out.path().join(".config"), "").unwrap();
+
+        assert_eq!(
+            TreeReadiness::InTreeBuildArtifacts,
+            probe_tree(&OsFileSystem, dir.path(), Some(out.path()))
+        );
+    }
+
+    #[test]
+    fn probe_tree_with_active_env_refuses_in_tree_include_config() {
+        let dir = make_ready_tree("probe-env-in-tree-include-config");
+        fs::remove_file(dir.path().join(".config")).unwrap();
+        fs::create_dir(dir.path().join("include/config")).unwrap();
+        let out = TempDir::new("probe-env-in-tree-include-config-output");
+        fs::write(out.path().join(".config"), "").unwrap();
+
+        assert_eq!(
+            TreeReadiness::InTreeBuildArtifacts,
+            probe_tree(&OsFileSystem, dir.path(), Some(out.path()))
+        );
+    }
+
+    #[test]
+    fn probe_tree_without_env_accepts_in_tree_build_artifacts() {
+        let dir = make_ready_tree("probe-no-env-in-tree-artifacts");
+        fs::create_dir(dir.path().join("include/config")).unwrap();
+
+        assert_eq!(
+            TreeReadiness::Ready { arch: None },
+            probe_tree(&OsFileSystem, dir.path(), None)
+        );
     }
 
     #[test]

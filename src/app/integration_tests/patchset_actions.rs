@@ -121,6 +121,7 @@ async fn apply_failure_sets_failure_popup_and_resets_apply_action() {
         output("", "apply failed", false),
         output("", "", true),
         output("", "", true),
+        output("", "", true),
     ]);
     let mut app = app_with_apply_details(clean_fs(), shell);
 
@@ -130,13 +131,17 @@ async fn apply_failure_sets_failure_popup_and_resets_apply_action() {
     assert_info_popup_contains(
         app.state.popup.as_ref(),
         "Patchset Apply Fail",
-        &["`git am` failed", "feature", "apply failed"],
+        &["`git am` failed (back on branch 'feature')", "apply failed"],
     );
     {
         let calls = calls.lock().unwrap();
         assert_eq!(
             command(&["git", "-C", KERNEL_TREE_PATH, "am", "--abort"]),
             calls[6]
+        );
+        assert_eq!(
+            &calls[8][..5],
+            command(&["git", "-C", KERNEL_TREE_PATH, "branch", "-D"])
         );
     }
     shutdown_kw(&app).await;
@@ -233,6 +238,7 @@ async fn apply_failure_does_not_record_history() {
         output("", "", true),
         output("", "", true),
         output("", "apply failed", false),
+        output("", "", true),
         output("", "", true),
         output("", "", true),
     ]);

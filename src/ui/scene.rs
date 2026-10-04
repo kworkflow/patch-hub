@@ -94,6 +94,9 @@ pub struct KwOpsScene {
     pub deploy_label: String,
     pub build_deploy_label: String,
     pub branch_guidance: Option<String>,
+    pub warnings: Option<String>,
+    pub first_error: Option<String>,
+    pub log_path: Option<String>,
     pub log_tail: String,
 }
 
@@ -105,7 +108,9 @@ pub enum UiBody {
     Latest(LatestScene),
     PatchsetDetails(PatchsetDetailsScene),
     EditConfig(EditConfigScene),
-    KwOps(KwOpsScene),
+    // Boxed to keep the enum small (clippy::large_enum_variant): KwOps
+    // carries one owned string per dashboard row.
+    KwOps(Box<KwOpsScene>),
 }
 
 /// Pre-computed navigation-bar content.
