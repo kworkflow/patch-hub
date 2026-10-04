@@ -11,7 +11,6 @@ pub struct KwRemote {
 
 /// Why a deploy remote could not be resolved. Each variant's message is
 /// the actionable explanation.
-#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum RemoteRefusal {
     #[error(
@@ -33,7 +32,6 @@ pub enum RemoteRefusal {
 
 /// Parsed contents of a `remote.config` file. Incomplete Host stanzas
 /// (no Hostname, or an unparseable Port) are dropped rather than guessed.
-#[cfg(unix)]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ParsedRemoteConfig {
     pub default: Option<String>,

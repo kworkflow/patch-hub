@@ -11,7 +11,6 @@ use crate::{
 
 /// Deploy knobs the actor injects onto `kw deploy`. Build-only starts
 /// leave [`StartRequest::deploy`] unset.
-#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Clone)]
 pub struct DeployOptions {
     pub reboot: bool,
@@ -24,7 +23,6 @@ pub struct DeployOptions {
 /// Everything the actor needs to start a job. The tree context is resolved
 /// by the caller from its config snapshot, keeping KwActor decoupled from
 /// ConfigActor.
-#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Clone)]
 pub struct StartRequest {
     pub kernel_tree_id: String,
@@ -42,7 +40,6 @@ pub struct StartRequest {
     pub deploy: Option<DeployOptions>,
 }
 
-#[cfg_attr(not(unix), expect(dead_code))]
 pub enum KwMessage {
     RecordApply {
         record: KwApplyRecord,
@@ -91,7 +88,6 @@ pub enum KwMessage {
     Shutdown { reply: oneshot::Sender<()> },
 }
 
-#[cfg(unix)]
 impl KwMessage {
     pub fn name(&self) -> &'static str {
         match self {

@@ -56,7 +56,6 @@ fn assert_info_popup(popup: Option<&AppPopup>, expected_title: &str, fragment: &
     );
 }
 
-#[cfg(unix)]
 mod unix {
     use std::{
         path::PathBuf,

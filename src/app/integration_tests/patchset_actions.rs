@@ -278,7 +278,7 @@ async fn apply_is_blocked_while_a_kw_job_runs() {
         log_dir.clone(),
     );
 
-    let kw = app.services.kw.as_ref().expect("tests run on unix");
+    let kw = app.services.kw.as_ref().expect("kw handle is available");
     kw.start_build(kw_start_request()).await.unwrap();
 
     app.consolidate_patchset_actions().await.unwrap();
@@ -327,7 +327,12 @@ async fn apply_is_allowed_again_after_the_job_finishes() {
         log_dir.clone(),
     );
 
-    let kw = app.services.kw.as_ref().expect("tests run on unix").clone();
+    let kw = app
+        .services
+        .kw
+        .as_ref()
+        .expect("kw handle is available")
+        .clone();
     kw.start_build(kw_start_request()).await.unwrap();
 
     // While the job runs, the apply is blocked.

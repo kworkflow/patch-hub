@@ -5,7 +5,6 @@
 
 use std::path::PathBuf;
 
-#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KwJobKind {
     Build,
@@ -14,14 +13,12 @@ pub enum KwJobKind {
 }
 
 /// Running phase of a job. `BuildThenDeploy` jobs pass through both.
-#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KwPhase {
     Building,
     Deploying,
 }
 
-#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KwJobStatus {
     Idle,
@@ -67,7 +64,6 @@ pub struct KwStatusSnapshot {
 }
 
 impl KwStatusSnapshot {
-    #[cfg(unix)]
     pub fn idle() -> Self {
         Self {
             job: KwJobStatus::Idle,

@@ -80,11 +80,10 @@ pub struct AppServices {
     pub shell: Box<dyn ShellTrait>,
     pub fs: Arc<dyn FileSystemTrait>,
     pub config: ConfigHandle,
-    /// Direct access to the store, for the non-unix fallback below.
+    /// Apply and build history. Writes go here when no KwActor is attached.
     pub kw_history: Arc<dyn KwHistoryStore>,
-    /// `None` on non-unix builds, where ProcessTrait (and thus KwActor)
-    /// does not exist; apply-history writes then go to `kw_history`
-    /// directly, as they did before the actor landed.
+    /// `None` when no KwActor is attached; apply-history writes then go
+    /// to `kw_history` directly.
     pub kw: Option<KwHandle>,
 }
 
@@ -539,7 +538,7 @@ impl App {
                     Some(record) => {
                         // History writes go through KwActor so apply
                         // recording serializes with job state; without an
-                        // actor (non-unix), write the store directly.
+                        // actor, write the store directly.
                         let recorded = match &self.services.kw {
                             Some(kw) => kw.record_apply(record).await.map_err(|e| e.to_string()),
                             None => self

@@ -41,7 +41,6 @@ use terminal::{actor::TerminalActor, session::CrosstermTerminalSession};
 use tokio::sync::mpsc;
 use tracing::{event, Level};
 use ui::actor::UiActor;
-#[cfg(unix)]
 use {infrastructure::process::OsProcess, kw::actor::KwActor, std::path::Path};
 
 #[tokio::main]
@@ -104,10 +103,6 @@ async fn main() -> Result<()> {
         config.data_dir().to_string(),
     ));
 
-    // The kw actor is unix-only because ProcessTrait (process-group kill)
-    // is; everywhere else there is no handle and App falls back to writing
-    // apply history directly.
-    #[cfg(unix)]
     let kw_handle = Some(KwActor::spawn(
         kw_history.clone(),
         Arc::new(OsProcess),
@@ -116,8 +111,6 @@ async fn main() -> Result<()> {
         Arc::new(OsEnv),
         Path::new(config.cache_dir()).join("kw_logs"),
     ));
-    #[cfg(not(unix))]
-    let kw_handle = None;
 
     let render = RenderActor::spawn(Box::new(ShellRenderService::new(shell_arc.clone())));
 

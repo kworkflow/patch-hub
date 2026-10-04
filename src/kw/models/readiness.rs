@@ -18,7 +18,6 @@ pub enum KwReadinessError {
 }
 
 /// Readiness of a configured kernel tree for kw operations.
-#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TreeReadiness {
     /// Kernel root, kw-initialized, with a `.config`. `arch` is the literal
@@ -96,7 +95,6 @@ impl std::fmt::Display for TreeReadiness {
 
 /// Why a deploy-without-build was refused. Each variant's message is the
 /// actionable explanation.
-#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum DeployAloneRefusal {
     #[error("the kernel tree is not ready: {0}")]
@@ -135,7 +133,6 @@ pub enum DeployAloneRefusal {
 /// value, including a missing key, leaves the option on. [`Unknown`] is
 /// therefore a confirm-to-proceed gate, same as [`On`]: patch-hub cannot
 /// pass a CLI off-switch.
-#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BootOnceState {
     Off,

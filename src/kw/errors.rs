@@ -1,6 +1,5 @@
 use thiserror::Error;
 
-#[cfg(unix)]
 use crate::infrastructure::process::ProcessError;
 use crate::{
     infrastructure::{file_system::FileSystemError, shell::ShellError},
@@ -10,7 +9,6 @@ use crate::{
     },
 };
 
-#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Error)]
 pub enum KwError {
     #[error("kw actor unavailable: {0}")]
@@ -38,7 +36,6 @@ pub enum KwError {
 /// Accept/refuse verdict for `Start*` messages. The reply is always
 /// immediate: an accepted job keeps running inside the actor after the
 /// caller has been answered.
-#[cfg_attr(not(unix), expect(dead_code))]
 #[derive(Debug, Error)]
 pub enum KwStartError {
     #[error("kw actor unavailable: {0}")]
@@ -65,8 +62,6 @@ pub enum KwStartError {
     BootOnceNotAcknowledged,
     #[error("{0}")]
     DeployAloneRefused(DeployAloneRefusal),
-    // Spawning a process is unix-only (ProcessTrait is cfg(unix)).
-    #[cfg(unix)]
     #[error("failed to spawn the kw process: {0}")]
     Spawn(#[from] ProcessError),
     #[error("filesystem error: {0}")]
@@ -75,7 +70,6 @@ pub enum KwStartError {
 
 /// Shared git-state refusal for the start and restore paths, converted
 /// into the public error each path reports.
-#[cfg(unix)]
 #[derive(Debug)]
 pub(crate) enum TreeGitError {
     DirtyWorktree,
@@ -83,7 +77,6 @@ pub(crate) enum TreeGitError {
     Switch(String),
 }
 
-#[cfg(unix)]
 impl From<TreeGitError> for KwStartError {
     fn from(error: TreeGitError) -> Self {
         match error {
@@ -94,7 +87,6 @@ impl From<TreeGitError> for KwStartError {
     }
 }
 
-#[cfg(unix)]
 impl From<TreeGitError> for KwError {
     fn from(error: TreeGitError) -> Self {
         match error {
