@@ -16,8 +16,6 @@ use clap::Parser;
 use cli::Cli;
 use color_eyre::{eyre::eyre, Result};
 use config::{ConfigActor, ConfigService};
-#[cfg(unix)]
-use infrastructure::process::OsProcess;
 use infrastructure::{
     env::OsEnv,
     file_system::{FileSystemTrait, OsFileSystem},
@@ -27,8 +25,6 @@ use infrastructure::{
     terminal::init,
 };
 use input::{actor::InputActor, event::InputEvent};
-#[cfg(unix)]
-use kw::actor::KwActor;
 use kw::history::{FileKwHistoryStore, KwHistoryStore};
 use lore::{
     application::{actor::LoreApiActor, cache::CacheTtl, service::LoreService},
@@ -40,13 +36,13 @@ use lore::{
     },
 };
 use render::{actor::RenderActor, ShellRenderService};
-#[cfg(unix)]
-use std::path::Path;
 use std::{ops::ControlFlow, sync::Arc};
 use terminal::{actor::TerminalActor, session::CrosstermTerminalSession};
 use tokio::sync::mpsc;
 use tracing::{event, Level};
 use ui::actor::UiActor;
+#[cfg(unix)]
+use {infrastructure::process::OsProcess, kw::actor::KwActor, std::path::Path};
 
 #[tokio::main]
 async fn main() -> Result<()> {

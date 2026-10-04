@@ -92,8 +92,8 @@ pub enum KwMessage {
     Shutdown { reply: oneshot::Sender<()> },
 }
 
+#[cfg(unix)]
 impl KwMessage {
-    #[cfg(unix)]
     pub fn name(&self) -> &'static str {
         match self {
             KwMessage::RecordApply { .. } => "RecordApply",
