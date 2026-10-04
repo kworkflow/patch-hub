@@ -377,6 +377,7 @@ impl App {
             self.state.popup = Some(AppPopup::info(kind.title(), body));
             return Ok(());
         }
+
         // Record/tree refusals before the boot-once confirm so a deploy
         // without a build does not ask the user to proceed, then refuse.
         match kind {
@@ -478,6 +479,7 @@ impl App {
                 Some(trimmed.to_string())
             }
         };
+
         match kw
             .get_readiness(&kernel_tree_id, &tree, for_branch.as_deref())
             .await

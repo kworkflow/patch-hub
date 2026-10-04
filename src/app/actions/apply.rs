@@ -437,6 +437,7 @@ mod tests {
         assert!(applied
             .message
             .contains(&format!("Current branch: '{}'", applied.applied_branch)));
+
         let calls = calls.lock().unwrap();
         assert_eq!(6, calls.len());
         assert_eq!(
@@ -578,6 +579,7 @@ mod tests {
 
             assert!(result.starts_with(" `git am` failed (back on branch 'feature')\napply failed"));
             assert!(!result.contains("could not delete"));
+
             let calls = calls.lock().unwrap();
             assert_eq!(9, calls.len());
             assert_eq!(

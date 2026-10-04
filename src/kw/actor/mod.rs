@@ -388,6 +388,7 @@ impl KwActor {
                 "kw build job started"
             ),
         }
+
         // Recorded only on accept. Refused starts never reach here, and —
         // with their switch rolled back — can neither clobber a previous
         // job's restore target nor strand the tree on a branch the user
@@ -586,6 +587,7 @@ impl KwActor {
                     ControlFlow::Break(()) => return,
                     ControlFlow::Continue(job) => job,
                 };
+
                 // The record is written before the status flips: watchers
                 // that react to the terminal status find the history
                 // already durable.
@@ -663,6 +665,7 @@ impl KwActor {
                         }
                     }
                 };
+
                 self.set_status(status);
             }
         }
@@ -690,6 +693,7 @@ impl KwActor {
         {
             return ControlFlow::Continue(job);
         }
+
         // Durable before the phase flips: a deploy spawn failure must not
         // lose the successful build, and KwOps watching Deploying must
         // already see the record.
@@ -706,6 +710,7 @@ impl KwActor {
             return ControlFlow::Break(());
         };
         deploy.kernelrelease = kernelrelease;
+
         match self.spawn_deploy_process(&job.tree_path, &deploy) {
             Ok((process, log_path)) => {
                 let (cancel_tx, cancel_rx) = oneshot::channel();
@@ -786,6 +791,7 @@ impl KwActor {
         } else {
             (None, None)
         };
+
         let message_id = match self
             .history
             .apply_record_for_branch(&job.kernel_tree_id, &job.branch)
@@ -817,6 +823,7 @@ impl KwActor {
             built_at: Utc::now().to_rfc3339(),
             success,
         };
+
         if let Err(error) = self.history.record_build(record) {
             tracing::warn!(%error, branch = job.branch, "failed to record kw build history");
         }
@@ -954,6 +961,7 @@ impl KwActor {
         });
         let remote = remote::RemoteConfigService::resolve_deploy_remote(fs, env, tree_path)
             .map_err(KwStartError::RemoteUnresolved)?;
+
         let mut kernelrelease = None;
         if kind == KwJobKind::Deploy {
             let (record, latest) =
