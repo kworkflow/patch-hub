@@ -541,7 +541,7 @@ fn app_with_details_and_kw(
 }
 
 fn apply_details_state() -> PatchsetDetailsState {
-    let mut details = PatchsetDetailsState::from_rendered_preview(
+    let mut details = PatchsetDetailsState::build_from_rendered_preview(
         sample_patch(),
         sample_patchset_details(),
         sample_rendered_preview(),
@@ -553,7 +553,7 @@ fn apply_details_state() -> PatchsetDetailsState {
 }
 
 fn reviewed_reply_details_state() -> PatchsetDetailsState {
-    let mut details = PatchsetDetailsState::from_rendered_preview(
+    let mut details = PatchsetDetailsState::build_from_rendered_preview(
         sample_patch(),
         sample_patchset_details(),
         sample_rendered_preview(),

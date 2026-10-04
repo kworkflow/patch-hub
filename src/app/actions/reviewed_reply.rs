@@ -21,7 +21,7 @@ pub(crate) enum ReviewedReplyResult {
 }
 
 impl ReviewedReplyResult {
-    pub(crate) fn into_successful_indexes(self) -> HashSet<usize> {
+    pub(crate) fn collect_successful_indexes(self) -> HashSet<usize> {
         match self {
             ReviewedReplyResult::NoAction { successful_indexes }
             | ReviewedReplyResult::MissingGitIdentity { successful_indexes }
@@ -213,11 +213,11 @@ mod tests {
             successful_indexes: HashSet::from([3]),
         };
 
-        assert_eq!(HashSet::from([1]), no_action.into_successful_indexes());
+        assert_eq!(HashSet::from([1]), no_action.collect_successful_indexes());
         assert_eq!(
             HashSet::from([2]),
-            missing_identity.into_successful_indexes()
+            missing_identity.collect_successful_indexes()
         );
-        assert_eq!(HashSet::from([3]), completed.into_successful_indexes());
+        assert_eq!(HashSet::from([3]), completed.collect_successful_indexes());
     }
 }

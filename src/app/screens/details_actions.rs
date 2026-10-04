@@ -52,7 +52,7 @@ pub enum PatchsetAction {
 }
 
 impl PatchsetDetailsState {
-    pub fn from_rendered_preview(
+    pub fn build_from_rendered_preview(
         representative_patch: Patch,
         details: PatchsetDetails,
         rendered_preview: RenderedPatchsetPreview,

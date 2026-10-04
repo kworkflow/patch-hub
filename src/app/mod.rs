@@ -296,7 +296,7 @@ impl App {
             .map_err(|e| eyre!("{e}"))?;
 
         debug!(msg_id, "patchset details loaded");
-        self.state.lore.details = Some(PatchsetDetailsState::from_rendered_preview(
+        self.state.lore.details = Some(PatchsetDetailsState::build_from_rendered_preview(
             representative_patch,
             details,
             rendered_preview,
@@ -437,7 +437,7 @@ impl App {
             self.state
                 .user_state
                 .reviewed_patchsets
-                .insert(message_id.clone(), result.into_successful_indexes());
+                .insert(message_id.clone(), result.collect_successful_indexes());
 
             self.services
                 .lore_api

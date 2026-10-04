@@ -256,7 +256,7 @@ impl LoreService {
         representative_patch: &Patch,
         mode: CacheMode,
     ) -> Result<PatchsetDetails, LoreError> {
-        let key = PatchsetCacheKey::from_patch(representative_patch);
+        let key = PatchsetCacheKey::from(representative_patch);
 
         match mode {
             CacheMode::Refresh => {
@@ -842,7 +842,7 @@ mod tests {
             MockPatchsetParser::new(),  // no expectations
         );
 
-        let key = PatchsetCacheKey::from_patch(&patch);
+        let key = PatchsetCacheKey::from(&patch);
         svc.cache.patchsets.insert(
             key,
             PatchsetCacheEntry::new(
@@ -891,7 +891,7 @@ mod tests {
             .unwrap();
         assert_eq!("/tmp/new.mbx", details.patchset_path);
         // The result should now be in cache.
-        let key = PatchsetCacheKey::from_patch(&patch);
+        let key = PatchsetCacheKey::from(&patch);
         assert!(svc.cache.patchsets.contains_key(&key));
     }
 
@@ -923,7 +923,7 @@ mod tests {
         );
 
         // Pre-populate the cache.
-        let key = PatchsetCacheKey::from_patch(&patch);
+        let key = PatchsetCacheKey::from(&patch);
         svc.cache.patchsets.insert(
             key.clone(),
             PatchsetCacheEntry::new("/tmp/old.mbx".to_string(), vec![], vec![]),

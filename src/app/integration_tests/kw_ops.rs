@@ -36,7 +36,7 @@ async fn open_kw_ops_without_actor_stays_on_details() {
 }
 
 fn details_state() -> PatchsetDetailsState {
-    PatchsetDetailsState::from_rendered_preview(
+    PatchsetDetailsState::build_from_rendered_preview(
         sample_patch(),
         sample_patchset_details(),
         sample_rendered_preview(),

@@ -5,11 +5,11 @@ use std::{
 
 use crate::lore::{
     application::dto::PatchTagSummary,
-    domain::{mailing_list::MailingList, patch::Patch, patchset::PatchFeedIndex},
+    domain::{mailing_list::MailingList, patchset::PatchFeedIndex},
 };
 
 use crate::lore::application::models::cache::{
-    FeedCacheEntry, LoreCache, MailingListsCacheEntry, PatchsetCacheEntry, PatchsetCacheKey,
+    FeedCacheEntry, LoreCache, MailingListsCacheEntry, PatchsetCacheEntry,
 };
 
 // ── Mailing lists cache ───────────────────────────────────────────────────────
@@ -43,15 +43,6 @@ impl FeedCacheEntry {
 }
 
 // ── Patchset cache ────────────────────────────────────────────────────────────
-
-impl PatchsetCacheKey {
-    pub fn from_patch(patch: &Patch) -> Self {
-        PatchsetCacheKey {
-            message_id: patch.message_id().href.clone(),
-            version: patch.version(),
-        }
-    }
-}
 
 impl PatchsetCacheEntry {
     pub fn new(

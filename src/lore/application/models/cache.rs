@@ -67,6 +67,15 @@ pub struct PatchsetCacheKey {
     pub version: usize,
 }
 
+impl From<&Patch> for PatchsetCacheKey {
+    fn from(patch: &Patch) -> Self {
+        Self {
+            message_id: patch.message_id().href.clone(),
+            version: patch.version(),
+        }
+    }
+}
+
 pub struct PatchsetCacheEntry {
     pub patchset_path: String,
     pub raw_patches: Vec<String>,
