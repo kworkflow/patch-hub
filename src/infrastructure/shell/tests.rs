@@ -4,9 +4,14 @@ use super::{OsShell, ShellCommand, ShellTrait};
 fn execute_captures_stdout() {
     let shell = OsShell;
     let cmd = ShellCommand::new("echo").arg("hello shell");
-    let out = shell.execute(&cmd).unwrap();
+    let out = shell.execute(&cmd).expect("terminal executes");
     assert!(out.success);
-    assert_eq!(String::from_utf8(out.stdout).unwrap().trim(), "hello shell");
+    assert_eq!(
+        String::from_utf8(out.stdout)
+            .expect("bytes are utf-8")
+            .trim(),
+        "hello shell"
+    );
 }
 
 #[test]
@@ -14,7 +19,7 @@ fn execute_captures_stderr() {
     let shell = OsShell;
     // `ls` on a nonexistent path writes to stderr and exits nonzero
     let cmd = ShellCommand::new("ls").arg("/nonexistent_path_patch_hub_test");
-    let out = shell.execute(&cmd).unwrap();
+    let out = shell.execute(&cmd).expect("terminal executes");
     assert!(!out.success);
     assert!(!out.stderr.is_empty());
 }
@@ -23,7 +28,9 @@ fn execute_captures_stderr() {
 fn execute_with_stdin_pipes_input() {
     let shell = OsShell;
     let cmd = ShellCommand::new("cat");
-    let out = shell.execute_with_stdin(&cmd, b"piped input").unwrap();
+    let out = shell
+        .execute_with_stdin(&cmd, b"piped input")
+        .expect("command runs");
     assert!(out.success);
     assert_eq!(out.stdout, b"piped input");
 }
@@ -32,7 +39,7 @@ fn execute_with_stdin_pipes_input() {
 fn execute_with_stdin_on_failing_command_returns_error() {
     let shell = OsShell;
     let cmd = ShellCommand::new("false");
-    let out = shell.execute_with_stdin(&cmd, b"").unwrap();
+    let out = shell.execute_with_stdin(&cmd, b"").expect("command runs");
     assert!(!out.success);
 }
 

@@ -530,7 +530,9 @@ mod tests {
             MockPatchsetParser::new(),
         );
 
-        let result = svc.fetch_available_lists(CacheMode::UseCache).unwrap();
+        let result = svc
+            .fetch_available_lists(CacheMode::UseCache)
+            .expect("available lists fetches");
         assert_eq!(1, result.len());
         assert_eq!("linux-mm", result[0].name());
     }
@@ -554,7 +556,9 @@ mod tests {
             "in memory",
         )]));
 
-        let result = svc.fetch_available_lists(CacheMode::UseCache).unwrap();
+        let result = svc
+            .fetch_available_lists(CacheMode::UseCache)
+            .expect("available lists fetches");
         assert_eq!(1, result.len());
         assert_eq!("cached-list", result[0].name());
     }
@@ -570,7 +574,7 @@ mod tests {
                 Ok(fs::read_to_string(
                     "test_samples/lore_session/process_available_lists/available_lists_response-1.html",
                 )
-                .unwrap())
+                .expect("file reads"))
             });
         lists_gateway
             .expect_fetch_available_lists_page()
@@ -580,7 +584,7 @@ mod tests {
                 Ok(fs::read_to_string(
                     "test_samples/lore_session/process_available_lists/available_lists_response-2.html",
                 )
-                .unwrap())
+                .expect("file reads"))
             });
         lists_gateway
             .expect_fetch_available_lists_page()
@@ -590,7 +594,7 @@ mod tests {
                 Ok(fs::read_to_string(
                     "test_samples/lore_session/process_available_lists/available_lists_response-3.html",
                 )
-                .unwrap())
+                .expect("file reads"))
             });
 
         let mut lists_store = MockMailingListsCacheStore::new();
@@ -609,7 +613,9 @@ mod tests {
             MockPatchsetParser::new(),
         );
 
-        let lists = svc.fetch_available_lists(CacheMode::Refresh).unwrap();
+        let lists = svc
+            .fetch_available_lists(CacheMode::Refresh)
+            .expect("available lists fetches");
         assert_eq!(320, lists.len());
         assert_eq!("accel-config", lists[0].name());
         assert_eq!("yocto-toaster", lists[319].name());
@@ -646,7 +652,9 @@ mod tests {
             "",
         )]));
 
-        let result = svc.fetch_available_lists(CacheMode::Refresh).unwrap();
+        let result = svc
+            .fetch_available_lists(CacheMode::Refresh)
+            .expect("available lists fetches");
         // Network returned an empty page, so result is empty.
         assert!(result.is_empty());
         // In-memory cache was updated (cleared then set to empty result).
@@ -681,7 +689,7 @@ mod tests {
             MockPatchsetParser::new(),
         );
 
-        let data = svc.warm_bootstrap_cache().unwrap();
+        let data = svc.warm_bootstrap_cache().expect("bootstrap cache warms");
         assert_eq!(1, data.mailing_lists.len());
         assert_eq!("linux-mm", data.mailing_lists[0].name());
         assert!(data.bookmarks.is_empty());
@@ -700,7 +708,7 @@ mod tests {
             .expect_fetch_patch_feed_page()
             .withf(move |list, offset| list == target && *offset == 0)
             .times(1)
-            .returning(move |_, _| Ok(fs::read_to_string(src).unwrap()));
+            .returning(move |_, _| Ok(fs::read_to_string(src).expect("file reads")));
 
         let mut svc = make_service(
             MockListsGateway::new(),
@@ -714,7 +722,7 @@ mod tests {
 
         let patches = svc
             .fetch_next_patch_page(target, 1, 1, CacheMode::UseCache)
-            .unwrap();
+            .expect("next patch page fetches");
         assert_eq!(1, patches.len());
         assert!(patches[0]
             .message_id()
@@ -761,8 +769,8 @@ mod tests {
         );
 
         let feed = {
-            let xml = fs::read_to_string(src).unwrap();
-            LoreParserService::parse_patch_feed(&xml).unwrap()
+            let xml = fs::read_to_string(src).expect("file reads");
+            LoreParserService::parse_patch_feed(&xml).expect("patch feed parses")
         };
         let mut index = PatchFeedIndex::new();
         index.process_feed_page(feed);
@@ -772,7 +780,7 @@ mod tests {
 
         let patches = svc
             .fetch_next_patch_page(target, 1, 1, CacheMode::UseCache)
-            .unwrap();
+            .expect("next patch page fetches");
         assert_eq!(1, patches.len());
     }
 
@@ -786,7 +794,7 @@ mod tests {
         feed_gateway
             .expect_fetch_patch_feed_page()
             .times(1)
-            .returning(move |_, _| Ok(fs::read_to_string(src).unwrap()));
+            .returning(move |_, _| Ok(fs::read_to_string(src).expect("file reads")));
 
         let mut svc = make_service(
             MockListsGateway::new(),
@@ -800,8 +808,8 @@ mod tests {
 
         // Pre-populate the cache.
         let feed = {
-            let xml = fs::read_to_string(src).unwrap();
-            LoreParserService::parse_patch_feed(&xml).unwrap()
+            let xml = fs::read_to_string(src).expect("file reads");
+            LoreParserService::parse_patch_feed(&xml).expect("patch feed parses")
         };
         let mut index = PatchFeedIndex::new();
         index.process_feed_page(feed);
@@ -811,7 +819,7 @@ mod tests {
 
         let patches = svc
             .fetch_next_patch_page(target, 1, 1, CacheMode::Refresh)
-            .unwrap();
+            .expect("next patch page fetches");
         assert_eq!(1, patches.len());
     }
 
@@ -824,7 +832,7 @@ mod tests {
             "link": { "@href": msg_id },
             "updated": "2023-01-01"
         }))
-        .unwrap()
+        .expect("json parses")
     }
 
     #[test]
@@ -854,7 +862,7 @@ mod tests {
 
         let details = svc
             .fetch_patchset_details(&patch, CacheMode::UseCache)
-            .unwrap();
+            .expect("patchset details fetches");
         assert_eq!("/tmp/cached.mbx", details.patchset_path);
         assert_eq!(1, details.raw_patches.len());
     }
@@ -888,7 +896,7 @@ mod tests {
 
         let details = svc
             .fetch_patchset_details(&patch, CacheMode::UseCache)
-            .unwrap();
+            .expect("patchset details fetches");
         assert_eq!("/tmp/new.mbx", details.patchset_path);
         // The result should now be in cache.
         let key = PatchsetCacheKey::from(&patch);
@@ -931,7 +939,7 @@ mod tests {
 
         let details = svc
             .fetch_patchset_details(&patch, CacheMode::Refresh)
-            .unwrap();
+            .expect("patchset details fetches");
         assert_eq!("/tmp/refreshed.mbx", details.patchset_path);
         // Cache is updated with the fresh entry.
         assert_eq!(

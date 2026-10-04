@@ -42,7 +42,7 @@ fn fake_loading_indicator_records_start_and_stop() {
     let mut loading = FakeLoadingIndicator::default();
 
     loading.start("Loading patchset".to_string());
-    loading.stop().unwrap();
+    loading.stop().expect("actor stops");
 
     assert_eq!(vec!["Loading patchset"], loading.starts);
     assert_eq!(1, loading.stop_count);

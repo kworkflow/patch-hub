@@ -576,7 +576,7 @@ mod tests {
                 "path": "/kernel",
                 "branch": "main"
             }))
-            .unwrap(),
+            .expect("json parses"),
             KwReadiness {
                 kw_binary: KwBinaryProbe {
                     available: true,
@@ -605,9 +605,9 @@ mod tests {
 
         let flow = AppActor::apply_confirm_action(&mut app, ConfirmAction::ProceedWithBootOnce)
             .await
-            .unwrap();
+            .expect("confirm action applies");
         assert_eq!(ControlFlow::Continue(()), flow);
-        let ops = app.state.kw.ops.as_ref().unwrap();
+        let ops = app.state.kw.ops.as_ref().expect("ops is set");
         assert!(ops.boot_once_acknowledged);
         assert_eq!(None, ops.pending_deploy);
         let Some(AppPopup::Info { title, body, .. }) = &app.state.popup else {
@@ -630,10 +630,10 @@ mod tests {
 
         let flow = AppActor::apply_confirm_action(&mut app, ConfirmAction::BackOut)
             .await
-            .unwrap();
+            .expect("confirm action applies");
         assert_eq!(ControlFlow::Continue(()), flow);
         assert!(app.state.popup.is_none());
-        let ops = app.state.kw.ops.as_ref().unwrap();
+        let ops = app.state.kw.ops.as_ref().expect("ops is set");
         assert!(!ops.boot_once_acknowledged);
         assert_eq!(None, ops.pending_deploy);
     }
@@ -648,8 +648,23 @@ mod tests {
 
         AppActor::dismiss_open_popup(&mut app);
         assert!(app.state.popup.is_none());
-        assert_eq!(None, app.state.kw.ops.as_ref().unwrap().pending_deploy);
-        assert!(!app.state.kw.ops.as_ref().unwrap().boot_once_acknowledged);
+        assert_eq!(
+            None,
+            app.state
+                .kw
+                .ops
+                .as_ref()
+                .expect("ops is set")
+                .pending_deploy
+        );
+        assert!(
+            !app.state
+                .kw
+                .ops
+                .as_ref()
+                .expect("ops is set")
+                .boot_once_acknowledged
+        );
     }
 
     #[test]
@@ -664,7 +679,12 @@ mod tests {
         assert!(app.state.popup.is_none());
         assert_eq!(
             Some(DeployStartKind::Deploy),
-            app.state.kw.ops.as_ref().unwrap().pending_deploy
+            app.state
+                .kw
+                .ops
+                .as_ref()
+                .expect("ops is set")
+                .pending_deploy
         );
     }
 }

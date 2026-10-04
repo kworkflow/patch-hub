@@ -45,7 +45,7 @@ async fn main_like_lifecycle_shuts_input_down_before_terminal() {
     input_handle
         .subscribe_app(app_input_tx.clone())
         .await
-        .unwrap();
+        .expect("app subscribes");
 
     let app_handle = AppActor::spawn(
         app,
@@ -55,12 +55,18 @@ async fn main_like_lifecycle_shuts_input_down_before_terminal() {
         app_input_rx,
     );
 
-    app_input_tx.send(InputEvent::Quit).await.unwrap();
-    app_handle.run_until_done().await.unwrap();
+    app_input_tx
+        .send(InputEvent::Quit)
+        .await
+        .expect("quit sends");
+    app_handle.run_until_done().await.expect("actor finishes");
 
-    input_shutdown_handle.shutdown().await.unwrap();
+    input_shutdown_handle
+        .shutdown()
+        .await
+        .expect("actor shuts down");
     input_shutdown_complete.store(true, Ordering::SeqCst);
 
     ui_handle.shutdown().await;
-    terminal_handle.shutdown().await.unwrap();
+    terminal_handle.shutdown().await.expect("actor shuts down");
 }

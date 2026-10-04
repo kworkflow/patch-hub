@@ -62,7 +62,9 @@ async fn apply_success_sets_success_popup_and_resets_apply_action() {
     ]);
     let mut app = app_with_apply_details(clean_fs(), shell);
 
-    app.consolidate_patchset_actions().await.unwrap();
+    app.consolidate_patchset_actions()
+        .await
+        .expect("patchset actions consolidate");
 
     assert_apply_action(&app, false);
     assert_info_popup_contains(
@@ -98,7 +100,9 @@ async fn apply_success_switches_back_when_stay_disabled() {
         history_store_allowing_writes(),
     );
 
-    app.consolidate_patchset_actions().await.unwrap();
+    app.consolidate_patchset_actions()
+        .await
+        .expect("patchset actions consolidate");
 
     assert_apply_action(&app, false);
     assert_info_popup_contains(
@@ -107,7 +111,7 @@ async fn apply_success_switches_back_when_stay_disabled() {
         &["Current branch: 'feature'"],
     );
     {
-        let calls = calls.lock().unwrap();
+        let calls = calls.lock().expect("calls locks");
         assert_eq!(
             command(&["git", "-C", KERNEL_TREE_PATH, "switch", "feature"]),
             calls[6]
@@ -131,7 +135,9 @@ async fn apply_failure_sets_failure_popup_and_resets_apply_action() {
     ]);
     let mut app = app_with_apply_details(clean_fs(), shell);
 
-    app.consolidate_patchset_actions().await.unwrap();
+    app.consolidate_patchset_actions()
+        .await
+        .expect("patchset actions consolidate");
 
     assert_apply_action(&app, false);
     assert_info_popup_contains(
@@ -140,7 +146,7 @@ async fn apply_failure_sets_failure_popup_and_resets_apply_action() {
         &["`git am` failed (back on branch 'feature')", "apply failed"],
     );
     {
-        let calls = calls.lock().unwrap();
+        let calls = calls.lock().expect("calls locks");
         assert_eq!(
             command(&["git", "-C", KERNEL_TREE_PATH, "am", "--abort"]),
             calls[6]
@@ -185,7 +191,9 @@ async fn apply_success_records_apply_history() {
         kw_history,
     );
 
-    app.consolidate_patchset_actions().await.unwrap();
+    app.consolidate_patchset_actions()
+        .await
+        .expect("patchset actions consolidate");
 
     assert_info_popup_contains(
         app.state.popup.as_ref(),
@@ -219,7 +227,9 @@ async fn apply_success_with_history_write_failure_keeps_success_popup() {
         kw_history,
     );
 
-    app.consolidate_patchset_actions().await.unwrap();
+    app.consolidate_patchset_actions()
+        .await
+        .expect("patchset actions consolidate");
 
     assert_apply_action(&app, false);
     assert_info_popup_contains(
@@ -259,7 +269,9 @@ async fn apply_failure_does_not_record_history() {
         kw_history,
     );
 
-    app.consolidate_patchset_actions().await.unwrap();
+    app.consolidate_patchset_actions()
+        .await
+        .expect("patchset actions consolidate");
 
     assert_info_popup_contains(app.state.popup.as_ref(), "Patchset Apply Fail", &[]);
     shutdown_kw(&app).await;
@@ -285,9 +297,13 @@ async fn apply_is_blocked_while_a_kw_job_runs() {
     );
 
     let kw = app.services.kw.as_ref().expect("kw handle is available");
-    kw.start_build(kw_start_request()).await.unwrap();
+    kw.start_build(kw_start_request())
+        .await
+        .expect("build starts");
 
-    app.consolidate_patchset_actions().await.unwrap();
+    app.consolidate_patchset_actions()
+        .await
+        .expect("patchset actions consolidate");
 
     assert_apply_action(&app, false);
     assert_info_popup_contains(
@@ -295,10 +311,10 @@ async fn apply_is_blocked_while_a_kw_job_runs() {
         "Patchset Apply Blocked",
         &["kw job is running", "Wait for the job to finish"],
     );
-    assert!(calls.lock().unwrap().is_empty());
+    assert!(calls.lock().expect("calls locks").is_empty());
 
     shutdown_kw(&app).await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -339,22 +355,26 @@ async fn apply_is_allowed_again_after_the_job_finishes() {
         .as_ref()
         .expect("kw handle is available")
         .clone();
-    kw.start_build(kw_start_request()).await.unwrap();
+    kw.start_build(kw_start_request())
+        .await
+        .expect("build starts");
 
     // While the job runs, the apply is blocked.
-    app.consolidate_patchset_actions().await.unwrap();
+    app.consolidate_patchset_actions()
+        .await
+        .expect("patchset actions consolidate");
     assert_info_popup_contains(app.state.popup.as_ref(), "Patchset Apply Blocked", &[]);
-    assert!(calls.lock().unwrap().is_empty());
+    assert!(calls.lock().expect("calls locks").is_empty());
 
     // Once the job finishes, the same apply goes through.
     process.last_child().finish(0);
-    let mut watch = kw.watch_status().await.unwrap();
+    let mut watch = kw.watch_status().await.expect("status watch opens");
     time::timeout(Duration::from_secs(10), async {
         loop {
             if matches!(watch.borrow().job, KwJobStatus::Succeeded { .. }) {
                 break;
             }
-            watch.changed().await.unwrap();
+            watch.changed().await.expect("watch notifies");
         }
     })
     .await
@@ -367,7 +387,9 @@ async fn apply_is_allowed_again_after_the_job_finishes() {
         .as_mut()
         .expect("details should remain loaded");
     details.toggle_apply_action();
-    app.consolidate_patchset_actions().await.unwrap();
+    app.consolidate_patchset_actions()
+        .await
+        .expect("patchset actions consolidate");
 
     assert_apply_action(&app, false);
     assert_info_popup_contains(
@@ -375,10 +397,10 @@ async fn apply_is_allowed_again_after_the_job_finishes() {
         "Patchset Apply Success",
         &["applied successfully"],
     );
-    assert_eq!(6, calls.lock().unwrap().len());
+    assert_eq!(6, calls.lock().expect("calls locks").len());
 
     shutdown_kw(&app).await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -398,7 +420,9 @@ async fn reviewed_reply_success_records_persists_and_resets_reply_action() {
     let mut app = app_with_reviewed_reply_details(shell, lore_api);
     let message_id = selected_message_id(&app);
 
-    app.consolidate_patchset_actions().await.unwrap();
+    app.consolidate_patchset_actions()
+        .await
+        .expect("patchset actions consolidate");
 
     assert_reply_action_reset(&app);
     assert_eq!(
@@ -407,7 +431,7 @@ async fn reviewed_reply_success_records_persists_and_resets_reply_action() {
     );
     let saved = saved_reviewed
         .lock()
-        .unwrap()
+        .expect("saved reviewed locks")
         .clone()
         .expect("reviewed state should be persisted");
     assert_eq!(HashSet::from([0]), saved[&message_id]);
@@ -431,13 +455,15 @@ async fn reviewed_reply_failure_does_not_record_failed_index() {
     let mut app = app_with_reviewed_reply_details(shell, lore_api);
     let message_id = selected_message_id(&app);
 
-    app.consolidate_patchset_actions().await.unwrap();
+    app.consolidate_patchset_actions()
+        .await
+        .expect("patchset actions consolidate");
 
     assert_reply_action_reset(&app);
     assert!(app.state.user_state.reviewed_patchsets[&message_id].is_empty());
     let saved = saved_reviewed
         .lock()
-        .unwrap()
+        .expect("saved reviewed locks")
         .clone()
         .expect("reviewed state should be persisted");
     assert!(saved[&message_id].is_empty());
@@ -594,7 +620,7 @@ fn reviewed_reply_lore_handle(saved_reviewed: SharedReviewedState) -> LoreApiHan
                         .ok();
                 }
                 LoreApiMessage::SaveReviewed { reviewed, reply } => {
-                    *saved_reviewed.lock().unwrap() = Some(reviewed);
+                    *saved_reviewed.lock().expect("saved reviewed locks") = Some(reviewed);
                     reply.send(Ok(())).ok();
                 }
                 LoreApiMessage::Shutdown => break,
@@ -663,10 +689,13 @@ fn shell_with_outputs(outputs: Vec<ShellOutput>) -> (MockShellTrait, Arc<Mutex<V
     let calls_for_execute = Arc::clone(&calls);
     let outputs_for_execute = Arc::clone(&outputs);
     shell.expect_execute().returning(move |cmd| {
-        calls_for_execute.lock().unwrap().push(command_parts(cmd));
+        calls_for_execute
+            .lock()
+            .expect("calls for execute locks")
+            .push(command_parts(cmd));
         Ok(outputs_for_execute
             .lock()
-            .unwrap()
+            .expect("outputs for execute locks")
             .pop_front()
             .expect("test should provide one output per shell command"))
     });
@@ -744,7 +773,7 @@ fn kw_log_dir(test_name: &str) -> PathBuf {
         process::id()
     ));
     let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
+    fs::create_dir_all(&dir).expect("dir creates");
     dir
 }
 

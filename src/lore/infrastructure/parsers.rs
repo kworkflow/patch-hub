@@ -70,7 +70,7 @@ mod tests {
         let html = fs::read_to_string(
             "test_samples/lore_session/process_available_lists/available_lists_response-1.html",
         )
-        .unwrap();
+        .expect("file reads");
 
         let lists = LoreParserService::parse_available_lists(&html);
 
@@ -89,11 +89,11 @@ mod tests {
         let xml = fs::read_to_string(
             "test_samples/lore_session/process_representative_patch/patch_feed_sample_1.xml",
         )
-        .unwrap();
+        .expect("file reads");
 
         let feed = LoreParserService::parse_patch_feed(&xml);
         assert!(feed.is_ok(), "Should parse a valid feed XML");
-        assert!(!feed.unwrap().patches().is_empty());
+        assert!(!feed.expect("feed loads").patches().is_empty());
     }
 
     #[test]

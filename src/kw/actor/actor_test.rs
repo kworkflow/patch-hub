@@ -46,16 +46,16 @@ fn tmp_log_dir(test_name: &str) -> PathBuf {
         process::id()
     ));
     let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
+    fs::create_dir_all(&dir).expect("dir creates");
     dir
 }
 
 fn kernel_tree(path: &Path) -> KernelTree {
     serde_json::from_value(serde_json::json!({
-        "path": path.to_str().unwrap(),
+        "path": path.to_str().expect("path is utf-8"),
         "branch": "master"
     }))
-    .unwrap()
+    .expect("json parses")
 }
 
 fn start_request() -> StartRequest {
@@ -120,7 +120,10 @@ fn recording_shell(
     let calls_in_shell = Arc::clone(&calls);
     let mut shell = MockShellTrait::new();
     shell.expect_execute().returning(move |cmd| {
-        calls_in_shell.lock().unwrap().push(command_parts(cmd));
+        calls_in_shell
+            .lock()
+            .expect("calls in shell locks")
+            .push(command_parts(cmd));
         let output = |stdout: &[u8], stderr: &[u8], success: bool| ShellOutput {
             stdout: stdout.to_vec(),
             stderr: stderr.to_vec(),
@@ -161,7 +164,7 @@ impl GitStub {
     }
 
     pub(super) fn head(&self) -> String {
-        self.head.lock().unwrap().clone()
+        self.head.lock().expect("head locks").clone()
     }
 
     pub(super) fn shell(&self) -> MockShellTrait {
@@ -187,18 +190,23 @@ impl GitStub {
                 return Ok(output(stdout));
             }
             if cmd.args.iter().any(|arg| arg == "switch") {
-                let branch = cmd.args.last().unwrap().clone();
-                if fail_switch_to.lock().unwrap().as_deref() == Some(branch.as_str()) {
+                let branch = cmd.args.last().expect("iterator yields last").clone();
+                if fail_switch_to
+                    .lock()
+                    .expect("fail switch to locks")
+                    .as_deref()
+                    == Some(branch.as_str())
+                {
                     return Ok(ShellOutput {
                         stdout: Vec::new(),
                         stderr: b"error: you need to resolve your current index first\n".to_vec(),
                         success: false,
                     });
                 }
-                *head.lock().unwrap() = branch;
+                *head.lock().expect("head locks") = branch;
                 return Ok(output(b""));
             }
-            let current = format!("{}\n", head.lock().unwrap());
+            let current = format!("{}\n", head.lock().expect("head locks"));
             Ok(output(current.as_bytes()))
         });
         shell
@@ -211,7 +219,7 @@ impl GitStub {
     }
 
     fn fail_switches_to(&self, branch: Option<&str>) {
-        *self.fail_switch_to.lock().unwrap() = branch.map(str::to_string);
+        *self.fail_switch_to.lock().expect("fail switch to locks") = branch.map(str::to_string);
     }
 }
 
@@ -434,7 +442,10 @@ pub(super) fn recording_history(
         .expect_apply_record_for_branch()
         .returning(move |_, _| Ok(apply_record.clone()));
     history.expect_record_build().returning(move |record| {
-        builds_in_store.lock().unwrap().push(record);
+        builds_in_store
+            .lock()
+            .expect("builds in store locks")
+            .push(record);
         Ok(())
     });
     (history, builds)
@@ -509,7 +520,10 @@ async fn record_apply_writes_through_history_store() {
         MockEnvTrait::new(),
     );
 
-    handle.record_apply(apply_record()).await.unwrap();
+    handle
+        .record_apply(apply_record())
+        .await
+        .expect("apply records");
     handle.shutdown().await;
 }
 
@@ -544,7 +558,7 @@ async fn get_status_reports_idle_before_any_job() {
         MockEnvTrait::new(),
     );
 
-    let snapshot = handle.get_status().await.unwrap();
+    let snapshot = handle.get_status().await.expect("status loads");
 
     assert_eq!(KwJobStatus::Idle, snapshot.job);
     assert_eq!(None, snapshot.restore_branch);
@@ -561,7 +575,7 @@ async fn watch_status_receiver_sees_current_snapshot() {
         MockEnvTrait::new(),
     );
 
-    let receiver = handle.watch_status().await.unwrap();
+    let receiver = handle.watch_status().await.expect("status watch opens");
 
     assert_eq!(KwJobStatus::Idle, receiver.borrow().job);
     handle.shutdown().await;
@@ -609,7 +623,10 @@ async fn get_readiness_composes_probes_and_head_branch() {
         });
     let handle = spawn_test_actor("readiness", history, shell, fs, env);
 
-    let readiness = handle.get_readiness("mainline", &tree, None).await.unwrap();
+    let readiness = handle
+        .get_readiness("mainline", &tree, None)
+        .await
+        .expect("readiness loads");
 
     assert!(!readiness.kw_binary.available);
     assert_eq!(TreeReadiness::Missing, readiness.tree);
@@ -671,7 +688,7 @@ async fn get_readiness_for_branch_looks_up_that_branch_not_head() {
     let readiness = handle
         .get_readiness("mainline", &tree, Some("patchset-x"))
         .await
-        .unwrap();
+        .expect("readiness loads");
 
     assert_eq!(Some("master".to_string()), readiness.current_branch);
     handle.shutdown().await;
@@ -691,7 +708,7 @@ pub(super) async fn wait_for_terminal_status(
             if !matches!(status, KwJobStatus::Idle | KwJobStatus::Running { .. }) {
                 return status;
             }
-            watch.changed().await.unwrap();
+            watch.changed().await.expect("watch notifies");
         }
     })
     .await
@@ -711,7 +728,7 @@ pub(super) async fn wait_for_running_phase(
             ) {
                 return status;
             }
-            watch.changed().await.unwrap();
+            watch.changed().await.expect("watch notifies");
         }
     })
     .await
@@ -727,7 +744,7 @@ async fn start_build_replies_immediately_and_runs_in_background() {
     let result = time::timeout(Duration::from_secs(1), handle.start_build(start_request()))
         .await
         .expect("start_build must reply immediately");
-    result.unwrap();
+    result.expect("build starts");
 
     let spawned = process.spawned();
     assert_eq!(1, spawned.len());
@@ -736,7 +753,7 @@ async fn start_build_replies_immediately_and_runs_in_background() {
     assert_eq!(Path::new("/home/user/linux"), spawned[0].cwd);
     assert!(spawned[0].log_path.starts_with(&log_dir));
 
-    let snapshot = handle.get_status().await.unwrap();
+    let snapshot = handle.get_status().await.expect("status loads");
     assert!(
         matches!(
             snapshot.job,
@@ -751,7 +768,7 @@ async fn start_build_replies_immediately_and_runs_in_background() {
     );
 
     process.last_child().finish(0);
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
     let status = wait_for_terminal_status(&mut watch).await;
     assert!(
         matches!(
@@ -765,7 +782,7 @@ async fn start_build_replies_immediately_and_runs_in_background() {
     );
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -783,7 +800,7 @@ async fn start_build_merges_extra_args_into_the_spawned_argv() {
     .into_iter()
     .map(String::from)
     .collect();
-    handle.start_build(request).await.unwrap();
+    handle.start_build(request).await.expect("build starts");
 
     let spawned = process.spawned();
     // Reserved options are stripped: the user's --alert and --save-log-to
@@ -795,29 +812,35 @@ async fn start_build_merges_extra_args_into_the_spawned_argv() {
 
     process.last_child().finish(0);
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
 async fn second_start_while_running_is_refused() {
     let (handle, process, log_dir) = spawn_job_actor("busy");
 
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
     let second = handle.start_build(start_request()).await;
 
     assert!(matches!(second, Err(KwStartError::JobAlreadyRunning)));
 
     process.last_child().finish(0);
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
 async fn failed_build_reports_exit_code_and_log_path() {
     let (handle, process, log_dir) = spawn_job_actor("failed");
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
     process.last_child().write_log(
         b"  CC      init/main.o\n\
           init/main.c:1691:2: error: #error broken\n\
@@ -848,21 +871,24 @@ async fn failed_build_reports_exit_code_and_log_path() {
     }
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
 async fn cancel_kills_process_group_and_reports_cancelled() {
     let (handle, process, log_dir) = spawn_job_actor("cancel");
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
     // The ack is immediate: process death is observed via the status,
     // not the reply.
     time::timeout(Duration::from_secs(1), handle.cancel())
         .await
         .expect("cancel must ack immediately")
-        .unwrap();
+        .expect("job cancels");
 
     assert!(process.last_child().was_killed());
     let status = wait_for_terminal_status(&mut watch).await;
@@ -880,19 +906,22 @@ async fn cancel_kills_process_group_and_reports_cancelled() {
     }
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
 async fn shutdown_kills_running_job() {
     let (handle, process, log_dir) = spawn_job_actor("shutdown-kill");
 
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
     // shutdown() returns only after the kill escalation has completed.
     handle.shutdown().await;
 
     assert!(process.last_child().was_killed());
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -903,14 +932,20 @@ async fn spawn_failure_refuses_start_and_stays_idle() {
     let err = handle.start_build(start_request()).await.unwrap_err();
 
     assert!(matches!(err, KwStartError::Spawn(_)));
-    assert_eq!(KwJobStatus::Idle, handle.get_status().await.unwrap().job);
+    assert_eq!(
+        KwJobStatus::Idle,
+        handle.get_status().await.expect("status loads").job
+    );
     // A refused start must leave the actor able to accept a later one.
     process.refuse_spawns(false);
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
 
     process.last_child().finish(0);
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -933,11 +968,14 @@ async fn start_build_refused_when_kw_binary_missing() {
     let err = handle.start_build(start_request()).await.unwrap_err();
 
     assert!(matches!(err, KwStartError::KwBinaryMissing));
-    assert_eq!(KwJobStatus::Idle, handle.get_status().await.unwrap().job);
+    assert_eq!(
+        KwJobStatus::Idle,
+        handle.get_status().await.expect("status loads").job
+    );
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -977,11 +1015,14 @@ async fn start_build_refused_when_tree_not_ready() {
         err,
         KwStartError::TreeNotReady(TreeReadiness::MissingKwDir)
     ));
-    assert_eq!(KwJobStatus::Idle, handle.get_status().await.unwrap().job);
+    assert_eq!(
+        KwJobStatus::Idle,
+        handle.get_status().await.expect("status loads").job
+    );
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -991,12 +1032,15 @@ async fn start_build_allowed_when_kw_version_below_floor() {
     let (shell, _calls) = recording_shell(b"kw, version beta-0.9\n", CLEAN_STATUS, SWITCH_OK);
     let (handle, process, log_dir) = spawn_job_actor_with_mocks("version-below", shell, ready_fs());
 
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
     assert_eq!(1, process.spawned().len());
 
     process.last_child().finish(0);
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -1005,10 +1049,13 @@ async fn start_build_switches_to_requested_branch_before_spawning() {
     let (handle, process, log_dir) =
         spawn_job_actor_with_mocks("checkout-order", shell, ready_fs());
 
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
 
     {
-        let calls = calls.lock().unwrap();
+        let calls = calls.lock().expect("calls locks");
         let git_position = |subcommand: &str| {
             calls
                 .iter()
@@ -1056,7 +1103,7 @@ async fn start_build_switches_to_requested_branch_before_spawning() {
 
     process.last_child().finish(0);
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -1069,17 +1116,20 @@ async fn start_build_refused_when_worktree_is_dirty() {
     let err = handle.start_build(start_request()).await.unwrap_err();
 
     assert!(matches!(err, KwStartError::DirtyWorktree));
-    assert_eq!(KwJobStatus::Idle, handle.get_status().await.unwrap().job);
+    assert_eq!(
+        KwJobStatus::Idle,
+        handle.get_status().await.expect("status loads").job
+    );
     assert!(process.spawned().is_empty());
     // The refusal happens before any branch mutation.
     assert!(!calls
         .lock()
-        .unwrap()
+        .expect("calls locks")
         .iter()
         .any(|call| call.iter().any(|part| part == "switch")));
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -1097,11 +1147,14 @@ async fn start_build_refused_when_git_state_is_unverifiable() {
 
     assert!(matches!(err, KwStartError::GitStateProbe(_)));
     assert!(err.to_string().contains("not a git repository"));
-    assert_eq!(KwJobStatus::Idle, handle.get_status().await.unwrap().job);
+    assert_eq!(
+        KwJobStatus::Idle,
+        handle.get_status().await.expect("status loads").job
+    );
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -1120,11 +1173,14 @@ async fn start_build_refused_when_branch_switch_fails() {
 
     assert!(matches!(err, KwStartError::CheckoutFailed(_)));
     assert!(err.to_string().contains("did not match"));
-    assert_eq!(KwJobStatus::Idle, handle.get_status().await.unwrap().job);
+    assert_eq!(
+        KwJobStatus::Idle,
+        handle.get_status().await.expect("status loads").job
+    );
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -1153,26 +1209,49 @@ async fn cancel_and_restore_without_job_are_immediate_errors() {
 async fn restore_switches_back_to_pre_job_branch_and_is_consumed() {
     let git = GitStub::on_branch("master");
     let (handle, process, log_dir) = spawn_job_actor_with_mocks("restore", git.shell(), ready_fs());
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
     // The checkout policy left HEAD on the build branch.
     assert_eq!(git.head(), "patchset-2026-08-01-17-30-00");
     assert_eq!(
         Some("master"),
-        handle.get_status().await.unwrap().restore_branch.as_deref()
+        handle
+            .get_status()
+            .await
+            .expect("status loads")
+            .restore_branch
+            .as_deref()
     );
     process.last_child().finish(0);
     let status = wait_for_terminal_status(&mut watch).await;
     assert!(matches!(status, KwJobStatus::Succeeded { .. }));
     assert_eq!(
         Some("master"),
-        handle.get_status().await.unwrap().restore_branch.as_deref()
+        handle
+            .get_status()
+            .await
+            .expect("status loads")
+            .restore_branch
+            .as_deref()
     );
 
-    handle.restore_previous_branch().await.unwrap();
+    handle
+        .restore_previous_branch()
+        .await
+        .expect("previous branch restores");
     assert_eq!(git.head(), "master");
-    assert_eq!(None, handle.get_status().await.unwrap().restore_branch);
+    assert_eq!(
+        None,
+        handle
+            .get_status()
+            .await
+            .expect("status loads")
+            .restore_branch
+    );
 
     // A successful restore consumes the context: a second restore has
     // nothing to do.
@@ -1180,7 +1259,7 @@ async fn restore_switches_back_to_pre_job_branch_and_is_consumed() {
     assert!(matches!(err, KwError::NoRecordedBranch));
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -1189,20 +1268,26 @@ async fn restore_refused_while_job_is_running() {
     let (handle, process, log_dir) =
         spawn_job_actor_with_mocks("restore-running", git.shell(), ready_fs());
 
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
     let err = handle.restore_previous_branch().await.unwrap_err();
     assert!(matches!(err, KwError::JobRunning));
 
     // The context survives the refusal: restore works once the job
     // ends.
     process.last_child().finish(0);
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
     let _ = wait_for_terminal_status(&mut watch).await;
-    handle.restore_previous_branch().await.unwrap();
+    handle
+        .restore_previous_branch()
+        .await
+        .expect("previous branch restores");
     assert_eq!(git.head(), "master");
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -1210,9 +1295,12 @@ async fn restore_refused_when_worktree_is_dirty() {
     let git = GitStub::on_branch("master");
     let (handle, process, log_dir) =
         spawn_job_actor_with_mocks("restore-dirty", git.shell(), ready_fs());
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
     process.last_child().finish(0);
     let _ = wait_for_terminal_status(&mut watch).await;
 
@@ -1223,16 +1311,24 @@ async fn restore_refused_when_worktree_is_dirty() {
     assert_eq!(git.head(), "patchset-2026-08-01-17-30-00");
     assert_eq!(
         Some("master"),
-        handle.get_status().await.unwrap().restore_branch.as_deref()
+        handle
+            .get_status()
+            .await
+            .expect("status loads")
+            .restore_branch
+            .as_deref()
     );
 
     // The context survives: clean the tree and retry.
     git.set_dirty(false);
-    handle.restore_previous_branch().await.unwrap();
+    handle
+        .restore_previous_branch()
+        .await
+        .expect("previous branch restores");
     assert_eq!(git.head(), "master");
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -1240,9 +1336,12 @@ async fn restore_failure_keeps_the_context_for_a_retry() {
     let git = GitStub::on_branch("master");
     let (handle, process, log_dir) =
         spawn_job_actor_with_mocks("restore-fail", git.shell(), ready_fs());
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
     process.last_child().finish(0);
     let _ = wait_for_terminal_status(&mut watch).await;
 
@@ -1252,11 +1351,14 @@ async fn restore_failure_keeps_the_context_for_a_retry() {
     assert!(err.to_string().contains("resolve your current index"));
 
     git.fail_switches_to(None);
-    handle.restore_previous_branch().await.unwrap();
+    handle
+        .restore_previous_branch()
+        .await
+        .expect("previous branch restores");
     assert_eq!(git.head(), "master");
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -1264,9 +1366,12 @@ async fn refused_start_does_not_clobber_the_restore_context() {
     let git = GitStub::on_branch("master");
     let (handle, process, log_dir) =
         spawn_job_actor_with_mocks("restore-clobber", git.shell(), ready_fs());
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
     process.last_child().finish(0);
     let _ = wait_for_terminal_status(&mut watch).await;
     assert_eq!(git.head(), "patchset-2026-08-01-17-30-00");
@@ -1281,11 +1386,14 @@ async fn refused_start_does_not_clobber_the_restore_context() {
     assert!(matches!(err, KwStartError::Spawn(_)));
     assert_eq!(git.head(), "patchset-2026-08-01-17-30-00");
 
-    handle.restore_previous_branch().await.unwrap();
+    handle
+        .restore_previous_branch()
+        .await
+        .expect("previous branch restores");
     assert_eq!(git.head(), "master");
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -1319,7 +1427,10 @@ async fn log_dir_creation_failure_refuses_start_and_stays_idle() {
     let err = handle.start_build(start_request()).await.unwrap_err();
 
     assert!(matches!(err, KwStartError::Fs(_)));
-    assert_eq!(KwJobStatus::Idle, handle.get_status().await.unwrap().job);
+    assert_eq!(
+        KwJobStatus::Idle,
+        handle.get_status().await.expect("status loads").job
+    );
     assert!(process.spawned().is_empty());
     // The switch happened and was rolled back: the tree is back on the
     // user's branch, and no restore target was recorded.
@@ -1330,7 +1441,7 @@ async fn log_dir_creation_failure_refuses_start_and_stays_idle() {
     ));
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -1355,15 +1466,18 @@ async fn rollback_failure_keeps_the_spawn_refusal() {
     ));
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
 async fn cancel_racing_a_successful_exit_reports_success() {
     let (handle, process, log_dir) = spawn_job_actor("cancel-race");
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
     process.last_child().finish(0);
     // Whether the actor processes the exit or the cancel first is
     // timing-dependent, but the terminal status must be Succeeded
@@ -1379,15 +1493,18 @@ async fn cancel_racing_a_successful_exit_reports_success() {
     assert!(!process.last_child().was_killed());
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
 async fn cancel_racing_a_failed_exit_reports_failure() {
     let (handle, process, log_dir) = spawn_job_actor("cancel-race-fail");
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
     process.last_child().finish(2);
     // Whether the actor processes the exit or the cancel first is
     // timing-dependent, but a plain exit (not signal-terminated) means
@@ -1409,7 +1526,7 @@ async fn cancel_racing_a_failed_exit_reports_failure() {
     );
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 // Paused time: the runtime auto-advances through the grace-period
@@ -1418,10 +1535,13 @@ async fn cancel_racing_a_failed_exit_reports_failure() {
 async fn cancel_escalates_to_sigkill_when_sigterm_is_ignored() {
     let (handle, process, log_dir) = spawn_job_actor("sigkill-escalation");
     process.ignore_sigterm(true);
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
-    handle.start_build(start_request()).await.unwrap();
-    handle.cancel().await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
+    handle.cancel().await.expect("job cancels");
 
     let status = wait_for_terminal_status(&mut watch).await;
     assert!(
@@ -1433,7 +1553,7 @@ async fn cancel_escalates_to_sigkill_when_sigterm_is_ignored() {
     assert!(child.was_force_killed());
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -1446,15 +1566,18 @@ async fn successful_build_writes_a_full_build_record() {
             env.expect_which().returning(|_| true);
             env
         });
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
     process.last_child().finish(0);
     let status = wait_for_terminal_status(&mut watch).await;
     assert!(matches!(status, KwJobStatus::Succeeded { .. }));
 
     {
-        let builds = builds.lock().unwrap();
+        let builds = builds.lock().expect("builds locks");
         assert_eq!(1, builds.len());
         let record = &builds[0];
         assert_eq!("mainline", record.kernel_tree_id);
@@ -1468,14 +1591,16 @@ async fn successful_build_writes_a_full_build_record() {
         );
         assert_eq!(None, record.output_dir);
         assert_eq!(Some("6.17.0"), record.kernelrelease.as_deref());
-        assert!(record.log_path.starts_with(log_dir.to_str().unwrap()));
+        assert!(record
+            .log_path
+            .starts_with(log_dir.to_str().expect("path is utf-8")));
         assert!(record.success);
         // The readiness latest-lookup parses built_at as RFC3339.
         assert!(DateTime::parse_from_rfc3339(&record.built_at).is_ok());
     }
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -1488,9 +1613,12 @@ async fn failed_build_writes_a_failure_record() {
             env.expect_which().returning(|_| true);
             env
         });
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
     process.last_child().finish(2);
     let status = wait_for_terminal_status(&mut watch).await;
     assert!(matches!(
@@ -1502,7 +1630,7 @@ async fn failed_build_writes_a_failure_record() {
     ));
 
     {
-        let builds = builds.lock().unwrap();
+        let builds = builds.lock().expect("builds locks");
         assert_eq!(1, builds.len());
         let record = &builds[0];
         assert!(!record.success);
@@ -1516,7 +1644,7 @@ async fn failed_build_writes_a_failure_record() {
     }
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -1529,17 +1657,20 @@ async fn cancelled_build_writes_no_record() {
             env.expect_which().returning(|_| true);
             env
         });
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
-    handle.start_build(start_request()).await.unwrap();
-    handle.cancel().await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
+    handle.cancel().await.expect("job cancels");
     let status = wait_for_terminal_status(&mut watch).await;
 
     assert!(matches!(status, KwJobStatus::Cancelled { .. }));
-    assert!(builds.lock().unwrap().is_empty());
+    assert!(builds.lock().expect("builds locks").is_empty());
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -1552,10 +1683,13 @@ async fn lost_exit_status_records_a_failed_build() {
             env.expect_which().returning(|_| true);
             env
         });
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
     process.fail_waits(true);
 
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
     process.last_child().finish(0);
     let status = wait_for_terminal_status(&mut watch).await;
 
@@ -1569,13 +1703,13 @@ async fn lost_exit_status_records_a_failed_build() {
         }
     ));
     {
-        let builds = builds.lock().unwrap();
+        let builds = builds.lock().expect("builds locks");
         assert_eq!(1, builds.len());
         assert!(!builds[0].success);
     }
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -1594,9 +1728,12 @@ async fn build_record_write_failure_keeps_the_terminal_status() {
             env.expect_which().returning(|_| true);
             env
         });
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
     process.last_child().finish(0);
     let status = wait_for_terminal_status(&mut watch).await;
 
@@ -1605,7 +1742,7 @@ async fn build_record_write_failure_keeps_the_terminal_status() {
     assert!(matches!(status, KwJobStatus::Succeeded { .. }));
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -1619,7 +1756,10 @@ async fn build_record_keeps_no_patchset_link_when_apply_lookup_fails() {
         )))
     });
     history.expect_record_build().returning(move |record| {
-        builds_in_store.lock().unwrap().push(record);
+        builds_in_store
+            .lock()
+            .expect("builds in store locks")
+            .push(record);
         Ok(())
     });
     let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
@@ -1629,22 +1769,25 @@ async fn build_record_keeps_no_patchset_link_when_apply_lookup_fails() {
             env.expect_which().returning(|_| true);
             env
         });
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
     process.last_child().finish(0);
     let _ = wait_for_terminal_status(&mut watch).await;
 
     // The lookup error must not drop the record, only the link.
     {
-        let builds = builds.lock().unwrap();
+        let builds = builds.lock().expect("builds locks");
         assert_eq!(1, builds.len());
         assert_eq!(None, builds[0].message_id);
         assert!(builds[0].success);
     }
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -1699,15 +1842,18 @@ async fn successful_build_with_active_env_records_the_output_dir() {
     let (history, builds) = recording_history(None);
     let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
     let (handle, process, log_dir) = spawn_full_actor("env-build", history, shell, fs, env);
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
-    handle.start_build(start_request()).await.unwrap();
+    handle
+        .start_build(start_request())
+        .await
+        .expect("build starts");
     process.last_child().finish(0);
     let status = wait_for_terminal_status(&mut watch).await;
     assert!(matches!(status, KwJobStatus::Succeeded { .. }));
 
     {
-        let builds = builds.lock().unwrap();
+        let builds = builds.lock().expect("builds locks");
         assert_eq!(1, builds.len());
         let record = &builds[0];
         let output_dir = record
@@ -1732,5 +1878,5 @@ async fn successful_build_with_active_env_records_the_output_dir() {
     assert_eq!(1, env_current_reads.load(Ordering::SeqCst));
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }

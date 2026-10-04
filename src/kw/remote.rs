@@ -273,13 +273,15 @@ Host ph-dut
         );
         assert_eq!(
             "abc@arch-tm:22",
-            choose(SAMPLE_REMOTE_CONFIG).unwrap().endpoint()
+            choose(SAMPLE_REMOTE_CONFIG)
+                .expect("candidate resolves")
+                .endpoint()
         );
     }
 
     #[test]
     fn lab_fixture_ignores_identity_file() {
-        let chosen = choose(LAB_FIXTURE).unwrap();
+        let chosen = choose(LAB_FIXTURE).expect("candidate resolves");
         assert_eq!(
             remote("ph-dut", "lima-ph-dut.internal", 22, Some("root")),
             chosen
@@ -294,7 +296,7 @@ Host dut
   Hostname 192.0.2.10
   User root
 ";
-        let chosen = choose(content).unwrap();
+        let chosen = choose(content).expect("candidate resolves");
         assert_eq!(remote("dut", "192.0.2.10", 22, Some("root")), chosen);
         assert_eq!("root@192.0.2.10:22", chosen.endpoint());
     }
@@ -305,7 +307,7 @@ Host dut
 Host dut
  Hostname box
 ";
-        let chosen = choose(content).unwrap();
+        let chosen = choose(content).expect("candidate resolves");
         assert_eq!(22, chosen.port);
         assert_eq!(None, chosen.user);
         assert_eq!("box:22", chosen.endpoint());
@@ -362,7 +364,7 @@ Host other
   Port 22
   User other
 ";
-        let chosen = choose(content).unwrap();
+        let chosen = choose(content).expect("candidate resolves");
         assert_eq!(remote("origin", "192.0.2.1", 2222, Some("root")), chosen);
     }
 
@@ -376,7 +378,7 @@ Host dut
 ";
         assert_eq!(
             remote("dut", "Box", 2222, Some("Root")),
-            choose(content).unwrap()
+            choose(content).expect("candidate resolves")
         );
     }
 
@@ -442,7 +444,7 @@ Host ok
         let content = "Host dut\n  Hostname box\n  User root";
         assert_eq!(
             remote("dut", "box", 22, Some("root")),
-            choose(content).unwrap()
+            choose(content).expect("candidate resolves")
         );
     }
 
@@ -453,7 +455,7 @@ Host ok
 Host dut extra
   Hostname box
 ";
-        assert_eq!("dut", choose(content).unwrap().name);
+        assert_eq!("dut", choose(content).expect("candidate resolves").name);
     }
 
     #[test]
@@ -515,7 +517,7 @@ Host dut extra
 
         let chosen =
             RemoteConfigService::resolve_deploy_remote(&fs, &env, Path::new("/home/user/linux"))
-                .unwrap();
+                .expect("deploy remote resolves");
         assert_eq!("ph-dut", chosen.name);
     }
 
@@ -529,7 +531,7 @@ Host dut extra
 
         let chosen =
             RemoteConfigService::resolve_deploy_remote(&fs, &env, Path::new("/home/user/linux"))
-                .unwrap();
+                .expect("deploy remote resolves");
         assert_eq!("root@box:22", chosen.endpoint());
     }
 
@@ -541,8 +543,8 @@ Host dut extra
         )]);
         let env = env_with(Some(""), Some("/home/user"));
 
-        let chosen =
-            RemoteConfigService::resolve_deploy_remote(&fs, &env, Path::new("/kernel")).unwrap();
+        let chosen = RemoteConfigService::resolve_deploy_remote(&fs, &env, Path::new("/kernel"))
+            .expect("deploy remote resolves");
         assert_eq!("box:22", chosen.endpoint());
     }
 

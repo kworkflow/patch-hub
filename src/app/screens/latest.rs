@@ -135,7 +135,7 @@ mod tests {
             "link": { "@href": msg_id },
             "updated": "2023-01-01"
         }))
-        .unwrap()
+        .expect("json parses")
     }
 
     fn make_handle(feed_gateway: MockFeedGateway) -> LoreApiHandle {

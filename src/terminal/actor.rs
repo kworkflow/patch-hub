@@ -214,8 +214,11 @@ mod tests {
         session.expect_size().times(1).returning(|| Ok((120, 40)));
         let handle = spawn_test_actor(session);
 
-        handle.draw(TerminalFrame::Empty).await.unwrap();
-        let size = handle.size().await.unwrap();
+        handle
+            .draw(TerminalFrame::Empty)
+            .await
+            .expect("terminal draws");
+        let size = handle.size().await.expect("terminal size reads");
 
         assert_eq!(size, (120, 40));
     }
@@ -233,7 +236,7 @@ mod tests {
         let pressed = handle
             .wait_for_key_press(KeyCode::Enter, Duration::from_millis(50))
             .await
-            .unwrap();
+            .expect("key press completes");
 
         assert!(pressed);
     }
@@ -244,7 +247,7 @@ mod tests {
         session.expect_setup_user_io().times(1).returning(|| Ok(()));
         let handle = spawn_test_actor(session);
 
-        handle.setup_user_io().await.unwrap();
+        handle.setup_user_io().await.expect("user io sets up");
     }
 
     #[tokio::test]
@@ -256,7 +259,7 @@ mod tests {
             .returning(|| Ok(()));
         let handle = spawn_test_actor(session);
 
-        handle.teardown_user_io().await.unwrap();
+        handle.teardown_user_io().await.expect("user io tears down");
     }
 
     #[tokio::test]
@@ -265,8 +268,8 @@ mod tests {
         session.expect_shutdown().times(2).returning(|| Ok(()));
         let handle = spawn_test_actor(session);
 
-        handle.shutdown().await.unwrap();
-        handle.shutdown().await.unwrap();
+        handle.shutdown().await.expect("actor shuts down");
+        handle.shutdown().await.expect("actor shuts down");
     }
 
     #[tokio::test]

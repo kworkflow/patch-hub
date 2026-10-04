@@ -761,7 +761,7 @@ mod tests {
                 "path": "/linux",
                 "branch": "master"
             }))
-            .unwrap(),
+            .expect("json parses"),
         );
         state.config = ConfigSnapshot::from(&config);
         let mut edit = EditConfigState::new(&state.config);
@@ -808,7 +808,7 @@ mod tests {
                 "path": "/kernel",
                 "branch": "main"
             }))
-            .unwrap(),
+            .expect("json parses"),
             KwReadiness {
                 kw_binary: KwBinaryProbe {
                     available: true,
@@ -853,7 +853,7 @@ mod tests {
                 "path": "/kernel",
                 "branch": "main"
             }))
-            .unwrap(),
+            .expect("json parses"),
             KwReadiness {
                 kw_binary: KwBinaryProbe {
                     available: true,

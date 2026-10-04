@@ -195,7 +195,7 @@ mod tests {
             </entry>
         "#;
 
-        let actual_patch: Patch = from_str(serialized_patch).unwrap();
+        let actual_patch: Patch = from_str(serialized_patch).expect("patch parses");
 
         assert_eq!(
             expected_patch, actual_patch,
@@ -248,7 +248,7 @@ mod tests {
             </entry>
         "#;
 
-        let actual_patch: Patch = from_str(serialized_patch).unwrap();
+        let actual_patch: Patch = from_str(serialized_patch).expect("patch parses");
 
         assert_eq!(
             expected_patch, actual_patch,

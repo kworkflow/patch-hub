@@ -28,7 +28,7 @@ impl TempDir {
             process::id()
         ));
         let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+        fs::create_dir_all(&dir).expect("dir creates");
         Self(dir)
     }
 
@@ -82,15 +82,17 @@ async fn spawn_returns_while_process_still_running() {
     let log = dir.path().join("job.log");
     let cmd = ShellCommand::new("sh").args(["-c", "sleep 0.5; echo done"]);
 
-    let mut process = OsProcess.spawn(&cmd, dir.path(), &log).unwrap();
+    let mut process = OsProcess
+        .spawn(&cmd, dir.path(), &log)
+        .expect("process spawns");
 
     // spawn returned while the child was still inside its sleep
-    let early_log = fs::read_to_string(&log).unwrap();
+    let early_log = fs::read_to_string(&log).expect("file reads");
     assert!(!early_log.contains("done"));
 
-    let status = process.wait().await.unwrap();
+    let status = process.wait().await.expect("process exits");
     assert!(status.success());
-    let final_log = fs::read_to_string(&log).unwrap();
+    let final_log = fs::read_to_string(&log).expect("file reads");
     assert!(final_log.contains("done"));
 }
 
@@ -100,8 +102,10 @@ async fn wait_returns_exit_code() {
     let log = dir.path().join("job.log");
     let cmd = ShellCommand::new("sh").args(["-c", "exit 42"]);
 
-    let mut process = OsProcess.spawn(&cmd, dir.path(), &log).unwrap();
-    let status = process.wait().await.unwrap();
+    let mut process = OsProcess
+        .spawn(&cmd, dir.path(), &log)
+        .expect("process spawns");
+    let status = process.wait().await.expect("process exits");
 
     assert!(!status.success());
     assert_eq!(status.code(), Some(42));
@@ -114,12 +118,14 @@ async fn log_file_grows_incrementally_with_stdout_and_stderr() {
     let cmd =
         ShellCommand::new("sh").args(["-c", "echo first; echo errline >&2; sleep 1; echo second"]);
 
-    let mut process = OsProcess.spawn(&cmd, dir.path(), &log).unwrap();
+    let mut process = OsProcess
+        .spawn(&cmd, dir.path(), &log)
+        .expect("process spawns");
 
     // output reaches the file while the process is still running, not at exit
     let saw_partial_log = wait_for(
         || {
-            let contents = fs::read_to_string(&log).unwrap();
+            let contents = fs::read_to_string(&log).expect("file reads");
             contents.contains("first")
                 && contents.contains("errline")
                 && !contents.contains("second")
@@ -129,9 +135,9 @@ async fn log_file_grows_incrementally_with_stdout_and_stderr() {
     .await;
     assert!(saw_partial_log);
 
-    let status = process.wait().await.unwrap();
+    let status = process.wait().await.expect("process exits");
     assert!(status.success());
-    let contents = fs::read_to_string(&log).unwrap();
+    let contents = fs::read_to_string(&log).expect("file reads");
     assert!(contents.contains("first"));
     assert!(contents.contains("errline"));
     assert!(contents.contains("second"));
@@ -143,12 +149,14 @@ async fn spawn_runs_in_given_cwd() {
     let log = dir.path().join("job.log");
     let cmd = ShellCommand::new("pwd");
 
-    let mut process = OsProcess.spawn(&cmd, dir.path(), &log).unwrap();
-    let status = process.wait().await.unwrap();
+    let mut process = OsProcess
+        .spawn(&cmd, dir.path(), &log)
+        .expect("process spawns");
+    let status = process.wait().await.expect("process exits");
 
     assert!(status.success());
-    let out = fs::read_to_string(&log).unwrap();
-    let expected = dir.path().canonicalize().unwrap();
+    let out = fs::read_to_string(&log).expect("file reads");
+    let expected = dir.path().canonicalize().expect("path canonicalizes");
     assert_eq!(out.trim(), expected.to_string_lossy());
 }
 
@@ -160,15 +168,17 @@ async fn kill_terminates_process_group() {
     let script = format!("sleep 60 & echo $! > \"{}\"; wait", sidecar.display());
     let cmd = ShellCommand::new("sh").args(["-c", &script]);
 
-    let mut process = OsProcess.spawn(&cmd, dir.path(), &log).unwrap();
+    let mut process = OsProcess
+        .spawn(&cmd, dir.path(), &log)
+        .expect("process spawns");
 
     let grandchild_pid = await_sidecar_pid(&sidecar).await;
 
-    process.kill().unwrap();
+    process.kill().expect("process kills");
     let status = time::timeout(Duration::from_secs(2), process.wait())
         .await
         .expect("wait must complete shortly after kill")
-        .unwrap();
+        .expect("process exits");
     // Signal death vs. exit code 128+SIGTERM is shell-dependent; what matters
     // is the job did not succeed.
     assert!(!status.success());
@@ -183,11 +193,13 @@ async fn kill_after_successful_exit_is_ok() {
     let log = dir.path().join("job.log");
     let cmd = ShellCommand::new("sh").args(["-c", "exit 0"]);
 
-    let mut process = OsProcess.spawn(&cmd, dir.path(), &log).unwrap();
-    process.wait().await.unwrap();
+    let mut process = OsProcess
+        .spawn(&cmd, dir.path(), &log)
+        .expect("process spawns");
+    process.wait().await.expect("process exits");
 
-    process.kill().unwrap();
-    process.kill().unwrap();
+    process.kill().expect("process kills");
+    process.kill().expect("process kills");
 }
 
 #[tokio::test]
@@ -210,7 +222,9 @@ async fn dropped_unreaped_process_group_is_killed() {
     let script = format!("sleep 60 & echo $! > \"{}\"; wait", sidecar.display());
     let cmd = ShellCommand::new("sh").args(["-c", &script]);
 
-    let process = OsProcess.spawn(&cmd, dir.path(), &log).unwrap();
+    let process = OsProcess
+        .spawn(&cmd, dir.path(), &log)
+        .expect("process spawns");
 
     let grandchild_pid = await_sidecar_pid(&sidecar).await;
 
@@ -228,8 +242,8 @@ async fn running_process_is_dyn_compatible_and_mockable() {
     mock.expect_kill().returning(|| Ok(()));
 
     let mut process: Box<dyn RunningProcess> = Box::new(mock);
-    process.kill().unwrap();
-    let status = process.wait().await.unwrap();
+    process.kill().expect("process kills");
+    let status = process.wait().await.expect("process exits");
     assert!(status.success());
 }
 
@@ -240,7 +254,7 @@ async fn fake_process_records_spawn_and_simulates_run() {
     let fake = FakeProcess::new();
     let cmd = ShellCommand::new("kw").args(["build", "--alert=n"]);
 
-    let mut process = fake.spawn(&cmd, dir.path(), &log).unwrap();
+    let mut process = fake.spawn(&cmd, dir.path(), &log).expect("process spawns");
 
     assert_eq!(fake.spawned().len(), 1);
     let record = &fake.spawned()[0];
@@ -256,11 +270,11 @@ async fn fake_process_records_spawn_and_simulates_run() {
     let early_wait = time::timeout(Duration::from_millis(50), process.wait()).await;
     assert!(early_wait.is_err());
 
-    let log_so_far = fs::read_to_string(&log).unwrap();
+    let log_so_far = fs::read_to_string(&log).expect("file reads");
     assert_eq!(log_so_far, "partial output\n");
 
     control.finish(0);
-    let status = process.wait().await.unwrap();
+    let status = process.wait().await.expect("process exits");
     assert!(status.success());
 }
 
@@ -271,10 +285,10 @@ async fn fake_finish_with_nonzero_code_yields_that_code() {
     let fake = FakeProcess::new();
     let cmd = ShellCommand::new("kw").arg("build");
 
-    let mut process = fake.spawn(&cmd, dir.path(), &log).unwrap();
+    let mut process = fake.spawn(&cmd, dir.path(), &log).expect("process spawns");
     fake.last_child().finish(42);
 
-    let status = process.wait().await.unwrap();
+    let status = process.wait().await.expect("process exits");
     assert!(!status.success());
     assert_eq!(status.code(), Some(42));
 }
@@ -286,12 +300,12 @@ async fn fake_kill_makes_wait_return_signal_status() {
     let fake = FakeProcess::new();
     let cmd = ShellCommand::new("kw").arg("build");
 
-    let mut process = fake.spawn(&cmd, dir.path(), &log).unwrap();
+    let mut process = fake.spawn(&cmd, dir.path(), &log).expect("process spawns");
 
-    process.kill().unwrap();
+    process.kill().expect("process kills");
 
     assert!(fake.last_child().was_killed());
-    let status = process.wait().await.unwrap();
+    let status = process.wait().await.expect("process exits");
     assert!(status.code().is_none());
 }
 
@@ -302,13 +316,13 @@ async fn fake_finish_after_kill_keeps_signal_status() {
     let fake = FakeProcess::new();
     let cmd = ShellCommand::new("kw").arg("build");
 
-    let mut process = fake.spawn(&cmd, dir.path(), &log).unwrap();
+    let mut process = fake.spawn(&cmd, dir.path(), &log).expect("process spawns");
 
-    process.kill().unwrap();
+    process.kill().expect("process kills");
     // a killed process cannot exit 0 later; finish() must not resurrect it
     fake.last_child().finish(0);
 
-    let status = process.wait().await.unwrap();
+    let status = process.wait().await.expect("process exits");
     assert!(status.code().is_none());
     assert!(fake.last_child().was_killed());
 }
@@ -320,13 +334,13 @@ async fn fake_kill_after_finish_is_a_no_op_success() {
     let fake = FakeProcess::new();
     let cmd = ShellCommand::new("kw").arg("build");
 
-    let mut process = fake.spawn(&cmd, dir.path(), &log).unwrap();
+    let mut process = fake.spawn(&cmd, dir.path(), &log).expect("process spawns");
     fake.last_child().finish(0);
 
-    process.kill().unwrap();
+    process.kill().expect("process kills");
 
     assert!(!fake.last_child().was_killed());
-    let status = process.wait().await.unwrap();
+    let status = process.wait().await.expect("process exits");
     assert!(status.success());
 }
 

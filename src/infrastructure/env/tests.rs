@@ -6,7 +6,7 @@ fn var_returns_existing_variable() {
     // PATH is universally set
     let result = env.var("PATH");
     assert!(result.is_ok(), "PATH should be set");
-    assert!(!result.unwrap().is_empty());
+    assert!(!result.expect("env var reads").is_empty());
 }
 
 #[test]

@@ -22,7 +22,7 @@ async fn start_deploy_replies_immediately_and_runs_in_background() {
     )
     .await
     .expect("start_deploy must reply immediately");
-    result.unwrap();
+    result.expect("deploy starts");
 
     let spawned = process.spawned();
     assert_eq!(1, spawned.len());
@@ -43,11 +43,11 @@ async fn start_deploy_replies_immediately_and_runs_in_background() {
     assert!(spawned[0]
         .log_path
         .file_name()
-        .unwrap()
+        .expect("path has a file name")
         .to_string_lossy()
         .starts_with("deploy-"));
 
-    let snapshot = handle.get_status().await.unwrap();
+    let snapshot = handle.get_status().await.expect("status loads");
     assert!(
         matches!(
             snapshot.job,
@@ -62,7 +62,7 @@ async fn start_deploy_replies_immediately_and_runs_in_background() {
     );
 
     process.last_child().finish(0);
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
     let status = wait_for_terminal_status(&mut watch).await;
     assert!(
         matches!(
@@ -76,7 +76,7 @@ async fn start_deploy_replies_immediately_and_runs_in_background() {
     );
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -86,9 +86,12 @@ async fn deploy_exit_zero_with_initramfs_failure_succeeds_with_warnings() {
         deploy_history(Some(matching_build_record())),
         deploy_ready_fs(),
     );
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
-    handle.start_deploy(deploy_request()).await.unwrap();
+    handle
+        .start_deploy(deploy_request())
+        .await
+        .expect("deploy starts");
     process.last_child().write_log(
         b"update-initramfs: Generating /boot/initrd.img-6.17.0\n\
           E: gzip compression (CONFIG_RD_GZIP) not supported by kernel\n\
@@ -114,19 +117,19 @@ async fn deploy_exit_zero_with_initramfs_failure_succeeds_with_warnings() {
     }
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
 async fn build_then_deploy_checks_grub_for_the_release_it_just_built() {
     let (handle, process, log_dir) =
         spawn_deploy_actor("chain-warnings", quiet_history(), deploy_ready_fs());
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
     handle
         .start_build_then_deploy(deploy_request())
         .await
-        .unwrap();
+        .expect("build then deploy starts");
     process.last_child().finish(0);
     wait_for_running_phase(&mut watch, KwPhase::Deploying).await;
     process.last_child().write_log(
@@ -148,7 +151,7 @@ async fn build_then_deploy_checks_grub_for_the_release_it_just_built() {
     }
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -176,7 +179,7 @@ async fn start_deploy_merges_extras_and_follows_reboot_force_options() {
     .into_iter()
     .map(String::from)
     .collect();
-    handle.start_deploy(request).await.unwrap();
+    handle.start_deploy(request).await.expect("deploy starts");
 
     let spawned = process.spawned();
     assert_eq!(
@@ -186,7 +189,7 @@ async fn start_deploy_merges_extras_and_follows_reboot_force_options() {
 
     process.last_child().finish(0);
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -200,11 +203,14 @@ async fn start_deploy_refused_without_a_build_record() {
         err,
         KwStartError::DeployAloneRefused(DeployAloneRefusal::NoBuildRecord)
     ));
-    assert_eq!(KwJobStatus::Idle, handle.get_status().await.unwrap().job);
+    assert_eq!(
+        KwJobStatus::Idle,
+        handle.get_status().await.expect("status loads").job
+    );
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -226,7 +232,7 @@ async fn start_deploy_refused_when_last_build_failed() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -248,7 +254,7 @@ async fn start_deploy_refused_on_tree_path_drift() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -270,7 +276,7 @@ async fn start_deploy_refused_on_output_dir_mismatch() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -290,7 +296,7 @@ async fn start_deploy_refused_when_image_is_missing() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -310,7 +316,7 @@ async fn start_deploy_refused_when_remote_is_unresolved() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -327,7 +333,7 @@ async fn start_deploy_refused_when_boot_once_is_on_and_unacked() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -351,7 +357,7 @@ async fn start_deploy_refused_when_latest_build_is_on_another_branch() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -364,12 +370,12 @@ async fn start_deploy_proceeds_when_boot_once_is_on_and_acked() {
 
     let mut request = deploy_request();
     request.deploy = Some(deploy_options(true));
-    handle.start_deploy(request).await.unwrap();
+    handle.start_deploy(request).await.expect("deploy starts");
     assert_eq!(1, process.spawned().len());
 
     process.last_child().finish(0);
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -397,7 +403,7 @@ async fn start_deploy_post_switch_refusal_rolls_the_switch_back() {
     ));
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -405,7 +411,7 @@ async fn start_build_then_deploy_chains_deploy_after_a_successful_build() {
     let (history, builds) = recording_history(None);
     let (handle, process, log_dir) =
         spawn_deploy_actor("chain-success", history, deploy_ready_fs());
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
     let mut request = deploy_request();
     request.extra_args = ["--verbose", "--ccache", "--alert=n"]
@@ -418,7 +424,7 @@ async fn start_build_then_deploy_chains_deploy_after_a_successful_build() {
     )
     .await
     .expect("start_build_then_deploy must reply immediately")
-    .unwrap();
+    .expect("build then deploy starts");
 
     assert_eq!(1, process.spawned().len());
     assert_eq!(
@@ -427,7 +433,7 @@ async fn start_build_then_deploy_chains_deploy_after_a_successful_build() {
     );
     assert!(
         matches!(
-            handle.get_status().await.unwrap().job,
+            handle.get_status().await.expect("status loads").job,
             KwJobStatus::Running {
                 kind: KwJobKind::BuildThenDeploy,
                 phase: KwPhase::Building,
@@ -435,7 +441,7 @@ async fn start_build_then_deploy_chains_deploy_after_a_successful_build() {
             }
         ),
         "unexpected status: {:?}",
-        handle.get_status().await.unwrap().job
+        handle.get_status().await.expect("status loads").job
     );
 
     let build = process.last_child();
@@ -452,7 +458,7 @@ async fn start_build_then_deploy_chains_deploy_after_a_successful_build() {
             assert_eq!(KwPhase::Deploying, phase);
             assert!(log_path
                 .file_name()
-                .unwrap()
+                .expect("path has a file name")
                 .to_string_lossy()
                 .starts_with("deploy-"));
         }
@@ -475,7 +481,7 @@ async fn start_build_then_deploy_chains_deploy_after_a_successful_build() {
     );
     assert_eq!(Path::new("/home/user/linux"), spawned[1].cwd);
     {
-        let builds = builds.lock().unwrap();
+        let builds = builds.lock().expect("builds locks");
         assert_eq!(1, builds.len());
         assert!(builds[0].success);
     }
@@ -492,10 +498,10 @@ async fn start_build_then_deploy_chains_deploy_after_a_successful_build() {
         ),
         "unexpected status: {status:?}"
     );
-    assert_eq!(1, builds.lock().unwrap().len());
+    assert_eq!(1, builds.lock().expect("builds locks").len());
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -503,12 +509,12 @@ async fn start_build_then_deploy_skips_deploy_when_the_build_fails() {
     let (history, builds) = recording_history(None);
     let (handle, process, log_dir) =
         spawn_deploy_actor("chain-build-fail", history, deploy_ready_fs());
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
     handle
         .start_build_then_deploy(deploy_request())
         .await
-        .unwrap();
+        .expect("build then deploy starts");
     process.last_child().finish(2);
 
     let status = wait_for_terminal_status(&mut watch).await;
@@ -527,13 +533,13 @@ async fn start_build_then_deploy_skips_deploy_when_the_build_fails() {
     }
     assert_eq!(1, process.spawned().len());
     {
-        let builds = builds.lock().unwrap();
+        let builds = builds.lock().expect("builds locks");
         assert_eq!(1, builds.len());
         assert!(!builds[0].success);
     }
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -541,13 +547,13 @@ async fn start_build_then_deploy_cancel_in_building_skips_deploy_and_record() {
     let (history, builds) = recording_history(None);
     let (handle, process, log_dir) =
         spawn_deploy_actor("chain-cancel-build", history, deploy_ready_fs());
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
     handle
         .start_build_then_deploy(deploy_request())
         .await
-        .unwrap();
-    handle.cancel().await.unwrap();
+        .expect("build then deploy starts");
+    handle.cancel().await.expect("job cancels");
 
     let status = wait_for_terminal_status(&mut watch).await;
     match status {
@@ -559,10 +565,10 @@ async fn start_build_then_deploy_cancel_in_building_skips_deploy_and_record() {
     }
     assert_eq!(1, process.spawned().len());
     assert!(process.last_child().was_killed());
-    assert!(builds.lock().unwrap().is_empty());
+    assert!(builds.lock().expect("builds locks").is_empty());
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -570,14 +576,14 @@ async fn start_build_then_deploy_cancel_then_exit_zero_skips_deploy() {
     let (history, builds) = recording_history(None);
     let (handle, process, log_dir) =
         spawn_deploy_actor("chain-cancel-exit-zero", history, deploy_ready_fs());
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
     process.ignore_sigterm(true);
     handle
         .start_build_then_deploy(deploy_request())
         .await
-        .unwrap();
-    handle.cancel().await.unwrap();
+        .expect("build then deploy starts");
+    handle.cancel().await.expect("job cancels");
     process.last_child().finish(0);
 
     let status = wait_for_terminal_status(&mut watch).await;
@@ -589,10 +595,10 @@ async fn start_build_then_deploy_cancel_then_exit_zero_skips_deploy() {
         other => panic!("expected Cancelled Building, got {other:?}"),
     }
     assert_eq!(1, process.spawned().len());
-    assert!(builds.lock().unwrap().is_empty());
+    assert!(builds.lock().expect("builds locks").is_empty());
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -600,17 +606,17 @@ async fn start_build_then_deploy_cancel_in_deploying_keeps_the_build_record() {
     let (history, builds) = recording_history(None);
     let (handle, process, log_dir) =
         spawn_deploy_actor("chain-cancel-deploy", history, deploy_ready_fs());
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
     handle
         .start_build_then_deploy(deploy_request())
         .await
-        .unwrap();
+        .expect("build then deploy starts");
     process.last_child().finish(0);
     let _ = wait_for_running_phase(&mut watch, KwPhase::Deploying).await;
-    assert_eq!(1, builds.lock().unwrap().len());
+    assert_eq!(1, builds.lock().expect("builds locks").len());
 
-    handle.cancel().await.unwrap();
+    handle.cancel().await.expect("job cancels");
     let status = wait_for_terminal_status(&mut watch).await;
     match status {
         KwJobStatus::Cancelled { kind, phase, .. } => {
@@ -622,13 +628,13 @@ async fn start_build_then_deploy_cancel_in_deploying_keeps_the_build_record() {
     assert_eq!(2, process.spawned().len());
     assert!(process.last_child().was_killed());
     {
-        let builds = builds.lock().unwrap();
+        let builds = builds.lock().expect("builds locks");
         assert_eq!(1, builds.len());
         assert!(builds[0].success);
     }
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -636,12 +642,12 @@ async fn start_build_then_deploy_spawn_failure_at_boundary_keeps_the_build_recor
     let (history, builds) = recording_history(None);
     let (handle, process, log_dir) =
         spawn_deploy_actor("chain-spawn-fail", history, deploy_ready_fs());
-    let mut watch = handle.watch_status().await.unwrap();
+    let mut watch = handle.watch_status().await.expect("status watch opens");
 
     handle
         .start_build_then_deploy(deploy_request())
         .await
-        .unwrap();
+        .expect("build then deploy starts");
     let build = process.last_child();
     process.refuse_spawns(true);
     build.finish(0);
@@ -662,13 +668,13 @@ async fn start_build_then_deploy_spawn_failure_at_boundary_keeps_the_build_recor
     }
     assert_eq!(1, process.spawned().len());
     {
-        let builds = builds.lock().unwrap();
+        let builds = builds.lock().expect("builds locks");
         assert_eq!(1, builds.len());
         assert!(builds[0].success);
     }
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test]
@@ -691,5 +697,5 @@ async fn start_build_then_deploy_refused_when_remote_is_unresolved() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }

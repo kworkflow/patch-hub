@@ -105,6 +105,6 @@ mod tests {
 
         loading.start("Fetching mailing lists".to_string());
         thread::sleep(LOADING_FRAME_INTERVAL);
-        loading.stop().unwrap();
+        loading.stop().expect("actor stops");
     }
 }

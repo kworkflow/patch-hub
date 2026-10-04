@@ -596,7 +596,7 @@ mod tests {
                 "path": "/kernel",
                 "branch": "main"
             }))
-            .unwrap(),
+            .expect("json parses"),
             KwReadiness {
                 kw_binary: KwBinaryProbe {
                     available: true,

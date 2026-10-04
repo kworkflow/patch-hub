@@ -135,7 +135,7 @@ mod tests {
     fn nav_text(vm: AppViewModel) -> String {
         UiCore::new()
             .build_scene(&vm)
-            .unwrap()
+            .expect("scene builds")
             .navigation
             .mode_spans
             .into_iter()

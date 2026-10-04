@@ -253,7 +253,7 @@ make: *** [Makefile:248: __sub-make] Error 2
     #[test]
     fn first_error_caps_long_lines() {
         let line = format!("drivers/x.c:1:1: error: {}", "y".repeat(400));
-        let found = LogScanService::find_first_error(&line).unwrap();
+        let found = LogScanService::find_first_error(&line).expect("first error finds");
         assert_eq!(MAX_LINE_CHARS + 1, found.chars().count());
         assert!(found.ends_with('…'));
     }

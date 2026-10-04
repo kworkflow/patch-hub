@@ -394,10 +394,13 @@ mod tests {
         let calls_for_execute = Arc::clone(&calls);
         let outputs_for_execute = Arc::clone(&outputs);
         shell.expect_execute().returning(move |cmd| {
-            calls_for_execute.lock().unwrap().push(command_parts(cmd));
+            calls_for_execute
+                .lock()
+                .expect("calls for execute locks")
+                .push(command_parts(cmd));
             Ok(outputs_for_execute
                 .lock()
-                .unwrap()
+                .expect("outputs for execute locks")
                 .pop_front()
                 .expect("test should provide one output per shell command"))
         });
@@ -426,8 +429,8 @@ mod tests {
             output("", "", true),
         ]);
 
-        let applied =
-            ApplyPatchsetService::apply_patchset(&request(), &fs, &shell, &config()).unwrap();
+        let applied = ApplyPatchsetService::apply_patchset(&request(), &fs, &shell, &config())
+            .expect("patchset applies");
 
         assert!(applied.applied_branch.starts_with("patchset-"));
         assert!(applied
@@ -438,7 +441,7 @@ mod tests {
             .message
             .contains(&format!("Current branch: '{}'", applied.applied_branch)));
 
-        let calls = calls.lock().unwrap();
+        let calls = calls.lock().expect("calls locks");
         assert_eq!(6, calls.len());
         assert_eq!(
             &calls[0],
@@ -505,10 +508,10 @@ mod tests {
 
         let applied =
             ApplyPatchsetService::apply_patchset(&request(), &fs, &shell, &config_stay_disabled())
-                .unwrap();
+                .expect("patchset applies");
 
         assert!(applied.message.contains("Current branch: 'feature'"));
-        let calls = calls.lock().unwrap();
+        let calls = calls.lock().expect("calls locks");
         assert_eq!(7, calls.len());
         assert_eq!(
             &calls[6],
@@ -525,7 +528,7 @@ mod tests {
             ApplyPatchsetService::apply_patchset(&request(), &fs, &shell, &config()).unwrap_err();
 
         assert!(result.contains("there are staged and/or unstaged changes"));
-        assert_eq!(1, calls.lock().unwrap().len());
+        assert_eq!(1, calls.lock().expect("calls locks").len());
     }
 
     #[test]
@@ -555,7 +558,7 @@ mod tests {
             ApplyPatchsetService::apply_patchset(&request(), &fs, &shell, &config()).unwrap_err();
 
         assert!(result.contains("invalid branch 'main'"));
-        assert_eq!(2, calls.lock().unwrap().len());
+        assert_eq!(2, calls.lock().expect("calls locks").len());
     }
 
     #[test]
@@ -580,7 +583,7 @@ mod tests {
             assert!(result.starts_with(" `git am` failed (back on branch 'feature')\napply failed"));
             assert!(!result.contains("could not delete"));
 
-            let calls = calls.lock().unwrap();
+            let calls = calls.lock().expect("calls locks");
             assert_eq!(9, calls.len());
             assert_eq!(
                 &calls[6],

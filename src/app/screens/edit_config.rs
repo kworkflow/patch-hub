@@ -327,7 +327,7 @@ mod tests {
                     "path": format!("/{key}"),
                     "branch": "master"
                 }))
-                .unwrap(),
+                .expect("json parses"),
             );
         }
         state.target_kernel_tree = target.map(str::to_string);

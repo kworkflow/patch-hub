@@ -33,7 +33,7 @@ fn sample_kernel_tree(path: &str, branch: &str) -> KernelTree {
         "path": path,
         "branch": branch
     }))
-    .unwrap()
+    .expect("json parses")
 }
 
 fn state_with_trees(env: &dyn EnvTrait) -> ConfigState {
@@ -52,12 +52,16 @@ fn state_with_trees(env: &dyn EnvTrait) -> ConfigState {
 fn unique_test_dir(prefix: &str) -> PathBuf {
     let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
     let p = env::temp_dir().join(format!("patch-hub-{prefix}-{}-{}", process::id(), n));
-    fs::create_dir_all(&p).unwrap();
+    fs::create_dir_all(&p).expect("dir creates");
     p
 }
 
 fn bootstrap_snapshot(env: &dyn EnvTrait) -> ConfigSnapshot {
-    ConfigSnapshot::from(&ConfigService::bootstrap_parts(env, os_fs()).unwrap().0)
+    ConfigSnapshot::from(
+        &ConfigService::bootstrap_parts(env, os_fs())
+            .expect("config bootstraps")
+            .0,
+    )
 }
 
 /// Writable `HOME` and mock env: no `PATCH_HUB_CONFIG_PATH` (uses `HOME/.config/...`).
@@ -127,7 +131,7 @@ fn config_fixture_json(root: &Path) -> String {
       "git_am_branch_prefix": "really-creative-prefix-",
       "stay_on_applied_branch": false
     });
-    serde_json::to_string_pretty(&v).unwrap()
+    serde_json::to_string_pretty(&v).expect("config serializes")
 }
 
 #[test]
@@ -175,7 +179,7 @@ fn bootstrap_with_default_values() {
 fn bootstrap_with_config_file() {
     let fixture_root = unique_test_dir("fixture");
     let tmp_path = fixture_root.join("config.json");
-    fs::write(&tmp_path, config_fixture_json(&fixture_root)).unwrap();
+    fs::write(&tmp_path, config_fixture_json(&fixture_root)).expect("file writes");
     let tmp_path_s = tmp_path.to_string_lossy().into_owned();
 
     let home = unique_test_dir("home-cfg");
@@ -238,13 +242,17 @@ fn bootstrap_with_config_file() {
         HashSet::from([&"linux".to_string(), &"amd-gfx".to_string()]),
         config.kernel_trees()
     );
-    let linux = config.get_kernel_tree("linux").unwrap();
+    let linux = config.get_kernel_tree("linux").expect("kernel tree loads");
     assert_eq!(linux.path().as_str(), "/home/user/linux");
     assert_eq!(linux.branch().as_str(), "master");
     assert!(config.get_kernel_tree("invalid-id").is_none());
     assert_eq!(
         "linux",
-        config.target_kernel_tree().as_ref().unwrap().as_str()
+        config
+            .target_kernel_tree()
+            .as_ref()
+            .expect("target kernel tree is set")
+            .as_str()
     );
     assert_eq!(
         "--foo-bar foobar -s -n -o -r -l -a -x",
@@ -328,7 +336,7 @@ fn bootstrap_config_precedence() {
 
     let fixture_root = unique_test_dir("prec");
     let tmp_path = fixture_root.join("config.json");
-    fs::write(&tmp_path, config_fixture_json(&fixture_root)).unwrap();
+    fs::write(&tmp_path, config_fixture_json(&fixture_root)).expect("file writes");
     let tmp_path_s = tmp_path.to_string_lossy().into_owned();
 
     let home_s = home.to_string_lossy().into_owned();
@@ -396,7 +404,7 @@ fn deserialize_config_state_with_missing_field() {
         "max_log_age": 500
     });
 
-    let state: ConfigState = serde_json::from_value(json_data).unwrap();
+    let state: ConfigState = serde_json::from_value(json_data).expect("json parses");
 
     assert_eq!(state.page_size, 30);
     assert_eq!(state.max_log_age(), 500);
@@ -629,13 +637,13 @@ fn validate_update_rejects_invalid_kw_deploy_bools() {
         )
         .unwrap_err();
         if expect_reboot_err {
-            let raw = reboot.unwrap();
+            let raw = reboot.expect("reboot value is set");
             assert!(
                 matches!(err, ConfigError::InvalidKwRebootAfterDeploy(ref s) if s == raw),
                 "unexpected error for reboot={reboot:?}: {err:?}"
             );
         } else {
-            let raw = force.unwrap();
+            let raw = force.expect("force value is set");
             assert!(
                 matches!(err, ConfigError::InvalidKwDeployForce(ref s) if s == raw),
                 "unexpected error for force={force:?}: {err:?}"
@@ -677,7 +685,7 @@ fn validate_update_accepts_existing_target_kernel_tree() {
         &os_fs(),
         &state,
     )
-    .unwrap();
+    .expect("update validates");
     assert_eq!(Some(Some("linux".to_string())), update.target_kernel_tree);
 }
 
@@ -693,7 +701,7 @@ fn validate_update_unsets_target_kernel_tree_on_empty_string() {
         &os_fs(),
         &state,
     )
-    .unwrap();
+    .expect("update validates");
     assert_eq!(Some(None), update.target_kernel_tree);
 }
 
@@ -746,7 +754,7 @@ fn apply_update_sets_and_unsets_target_kernel_tree() {
 fn validate_update_rejects_cache_dir_that_is_existing_file() {
     let root = unique_test_dir("not-a-dir");
     let blocking = root.join("blocking-file");
-    fs::write(&blocking, b"x").unwrap();
+    fs::write(&blocking, b"x").expect("file writes");
     let err = ConfigService::validate_update(
         ConfigUpdateDraft {
             cache_dir: Some(blocking.to_string_lossy().into_owned()),
@@ -777,11 +785,11 @@ fn json_config_repository_save_creates_parent_and_leaves_no_tmp_stale() {
 
     let repo = JsonConfigRepository::new(&mock, os_fs());
     let state = ConfigState::new_with_defaults(&mock);
-    repo.save(&state).unwrap();
+    repo.save(&state).expect("config saves");
 
     assert!(cfg_path.is_file());
-    let parent = cfg_path.parent().unwrap();
-    let tmp_left = fs::read_dir(parent).unwrap().any(|e| {
+    let parent = cfg_path.parent().expect("path has a parent");
+    let tmp_left = fs::read_dir(parent).expect("dir reads").any(|e| {
         e.ok()
             .is_some_and(|x| x.file_name().to_string_lossy().ends_with(".tmp"))
     });
@@ -794,7 +802,7 @@ fn json_config_repository_save_creates_parent_and_leaves_no_tmp_stale() {
 #[tokio::test]
 async fn validate_and_apply_persists_to_config_file() {
     let (env, home) = default_env();
-    let (state, repo) = ConfigService::bootstrap_parts(&env, os_fs()).unwrap();
+    let (state, repo) = ConfigService::bootstrap_parts(&env, os_fs()).expect("config bootstraps");
     let handle = ConfigActor::spawn(state, repo);
     let cfg_path = home.join(DEFAULT_CONFIG_PATH_SUFFIX);
 
@@ -804,11 +812,11 @@ async fn validate_and_apply_persists_to_config_file() {
             ..Default::default()
         })
         .await
-        .unwrap();
+        .expect("update applies");
 
     assert_eq!(snapshot.page_size(), 77);
-    let raw = fs::read_to_string(&cfg_path).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let raw = fs::read_to_string(&cfg_path).expect("file reads");
+    let parsed: serde_json::Value = serde_json::from_str(&raw).expect("config parses");
     assert_eq!(parsed["page_size"], 77);
     handle.shutdown().await;
 }
@@ -816,7 +824,8 @@ async fn validate_and_apply_persists_to_config_file() {
 #[tokio::test]
 async fn validate_and_apply_persists_target_kernel_tree() {
     let (env, home) = default_env();
-    let (mut state, repo) = ConfigService::bootstrap_parts(&env, os_fs()).unwrap();
+    let (mut state, repo) =
+        ConfigService::bootstrap_parts(&env, os_fs()).expect("config bootstraps");
     state.kernel_trees.insert(
         "linux".into(),
         sample_kernel_tree("/home/user/linux", "master"),
@@ -830,11 +839,11 @@ async fn validate_and_apply_persists_target_kernel_tree() {
             ..Default::default()
         })
         .await
-        .unwrap();
+        .expect("update applies");
     assert_eq!(Some("linux"), snapshot.target_kernel_tree().as_deref());
 
-    let raw = fs::read_to_string(&cfg_path).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let raw = fs::read_to_string(&cfg_path).expect("file reads");
+    let parsed: serde_json::Value = serde_json::from_str(&raw).expect("config parses");
     assert_eq!(parsed["target_kernel_tree"], "linux");
 
     handle
@@ -843,9 +852,9 @@ async fn validate_and_apply_persists_target_kernel_tree() {
             ..Default::default()
         })
         .await
-        .unwrap();
-    let raw = fs::read_to_string(&cfg_path).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        .expect("update applies");
+    let raw = fs::read_to_string(&cfg_path).expect("file reads");
+    let parsed: serde_json::Value = serde_json::from_str(&raw).expect("config parses");
     assert!(parsed["target_kernel_tree"].is_null());
     handle.shutdown().await;
 }
@@ -853,7 +862,8 @@ async fn validate_and_apply_persists_target_kernel_tree() {
 #[tokio::test]
 async fn invalid_target_kernel_tree_keeps_existing_state() {
     let (env, _home) = default_env();
-    let (mut state, repo) = ConfigService::bootstrap_parts(&env, os_fs()).unwrap();
+    let (mut state, repo) =
+        ConfigService::bootstrap_parts(&env, os_fs()).expect("config bootstraps");
     state.kernel_trees.insert(
         "linux".into(),
         sample_kernel_tree("/home/user/linux", "master"),
@@ -877,7 +887,7 @@ async fn invalid_target_kernel_tree_keeps_existing_state() {
         handle
             .get_snapshot()
             .await
-            .unwrap()
+            .expect("snapshot loads")
             .target_kernel_tree()
             .as_deref()
     );

@@ -132,7 +132,10 @@ mod tests {
                 </entry>
             </feed>"#,
         );
-        LoreParserService::parse_patch_feed(&xml).unwrap().patches()[0].clone()
+        LoreParserService::parse_patch_feed(&xml)
+            .expect("patch feed parses")
+            .patches()[0]
+            .clone()
     }
 
     #[test]

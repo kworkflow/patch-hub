@@ -141,7 +141,7 @@ mod tests {
             "patch-hub-edit-config-{prefix}-{}-{n}",
             process::id()
         ));
-        fs::create_dir_all(&p).unwrap();
+        fs::create_dir_all(&p).expect("dir creates");
         p
     }
 
@@ -172,7 +172,8 @@ mod tests {
 
     fn app_with_kernel_trees(keys: &[&str], target: Option<&str>) -> (App, ConfigHandle, PathBuf) {
         let (env, home) = default_env();
-        let (mut state, repo) = ConfigService::bootstrap_parts(&env, OsFileSystem).unwrap();
+        let (mut state, repo) =
+            ConfigService::bootstrap_parts(&env, OsFileSystem).expect("config bootstraps");
         for key in keys {
             state.kernel_trees.insert(
                 (*key).to_string(),
@@ -180,7 +181,7 @@ mod tests {
                     "path": format!("/{key}"),
                     "branch": "master"
                 }))
-                .unwrap(),
+                .expect("json parses"),
             );
         }
         state.target_kernel_tree = target.map(str::to_string);
@@ -257,20 +258,20 @@ mod tests {
         for _ in 0..11 {
             app.handle_edit_config(InputEvent::NavigateDown)
                 .await
-                .unwrap();
+                .expect("edit config handles");
         }
         app.handle_edit_config(InputEvent::EditConfigField)
             .await
-            .unwrap();
+            .expect("edit config handles");
         app.handle_edit_config(InputEvent::NavigateRight)
             .await
-            .unwrap();
+            .expect("edit config handles");
         app.handle_edit_config(InputEvent::StageConfigEdit)
             .await
-            .unwrap();
+            .expect("edit config handles");
         app.handle_edit_config(InputEvent::SaveConfig)
             .await
-            .unwrap();
+            .expect("edit config handles");
 
         assert_eq!(
             Some("linux"),
@@ -282,8 +283,8 @@ mod tests {
             app.state.navigation.current_screen
         );
 
-        let raw = fs::read_to_string(home.join(DEFAULT_CONFIG_PATH_SUFFIX)).unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let raw = fs::read_to_string(home.join(DEFAULT_CONFIG_PATH_SUFFIX)).expect("file reads");
+        let parsed: serde_json::Value = serde_json::from_str(&raw).expect("config parses");
         assert_eq!(parsed["target_kernel_tree"], "linux");
         config.shutdown().await;
     }
@@ -299,11 +300,11 @@ mod tests {
 
         app.handle_edit_config(InputEvent::SaveConfig)
             .await
-            .unwrap();
+            .expect("edit config handles");
 
         assert!(app.state.config.target_kernel_tree().is_none());
-        let raw = fs::read_to_string(home.join(DEFAULT_CONFIG_PATH_SUFFIX)).unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let raw = fs::read_to_string(home.join(DEFAULT_CONFIG_PATH_SUFFIX)).expect("file reads");
+        let parsed: serde_json::Value = serde_json::from_str(&raw).expect("config parses");
         assert!(parsed["target_kernel_tree"].is_null());
         config.shutdown().await;
     }

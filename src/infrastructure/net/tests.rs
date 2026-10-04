@@ -8,7 +8,7 @@ fn mock_net_client_returns_configured_response() {
 
     let result = mock.request(HttpMethod::Get, "https://example.com");
     assert!(result.is_ok());
-    assert_eq!("<html>response</html>", result.unwrap());
+    assert_eq!("<html>response</html>", result.expect("request completes"));
 }
 
 #[test]

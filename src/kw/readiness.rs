@@ -544,7 +544,7 @@ mod tests {
             ));
             // A leftover from a failed previous run must not poison this one.
             let _ = fs::remove_dir_all(&dir);
-            fs::create_dir_all(&dir).unwrap();
+            fs::create_dir_all(&dir).expect("dir creates");
             Self(dir)
         }
 
@@ -583,10 +583,10 @@ mod tests {
     /// Creates the exact file/dir set kw's `is_kernel_root` expects.
     fn make_kernel_root(dir: &Path) {
         for file in KERNEL_ROOT_FILES {
-            fs::write(dir.join(file), "").unwrap();
+            fs::write(dir.join(file), "").expect("file writes");
         }
         for sub in KERNEL_ROOT_DIRS {
-            fs::create_dir(dir.join(sub)).unwrap();
+            fs::create_dir(dir.join(sub)).expect("dir creates");
         }
     }
 
@@ -595,8 +595,8 @@ mod tests {
     fn make_ready_tree(test_name: &str) -> TempDir {
         let dir = TempDir::new(test_name);
         make_kernel_root(dir.path());
-        fs::create_dir(dir.path().join(".kw")).unwrap();
-        fs::write(dir.path().join(".config"), "").unwrap();
+        fs::create_dir(dir.path().join(".kw")).expect("dir creates");
+        fs::write(dir.path().join(".config"), "").expect("file writes");
         dir
     }
 
@@ -648,7 +648,7 @@ last_line_without_newline=yes";
             make_kernel_root(dir.path());
             fs::remove_dir_all(dir.path().join(member))
                 .or_else(|_| fs::remove_file(dir.path().join(member)))
-                .unwrap();
+                .expect("kernel member removes");
 
             assert!(
                 !ReadinessService::is_kernel_root(&OsFileSystem, dir.path()),
@@ -692,7 +692,7 @@ last_line_without_newline=yes";
     fn probe_tree_reports_missing_kernel_config() {
         let dir = TempDir::new("probe-no-config");
         make_kernel_root(dir.path());
-        fs::create_dir(dir.path().join(".kw")).unwrap();
+        fs::create_dir(dir.path().join(".kw")).expect("dir creates");
 
         assert_eq!(
             TreeReadiness::MissingKernelConfig,
@@ -713,7 +713,7 @@ last_line_without_newline=yes";
     #[test]
     fn probe_tree_ready_reads_arch_from_build_config() {
         let dir = make_ready_tree("probe-ready-arch");
-        fs::write(dir.path().join(".kw/build.config"), "arch=arm64\n").unwrap();
+        fs::write(dir.path().join(".kw/build.config"), "arch=arm64\n").expect("file writes");
 
         assert_eq!(
             TreeReadiness::Ready {
@@ -728,14 +728,14 @@ last_line_without_newline=yes";
         let dir = make_ready_tree("probe-env");
         let out = TempDir::new("probe-env-output");
         // With a kw env active, kw moves the .config into the env's O= dir.
-        fs::remove_file(dir.path().join(".config")).unwrap();
+        fs::remove_file(dir.path().join(".config")).expect("file removes");
 
         assert_eq!(
             TreeReadiness::MissingKernelConfig,
             ReadinessService::probe_tree(&OsFileSystem, dir.path(), Some(out.path()))
         );
 
-        fs::write(out.path().join(".config"), "").unwrap();
+        fs::write(out.path().join(".config"), "").expect("file writes");
         assert!(matches!(
             ReadinessService::probe_tree(&OsFileSystem, dir.path(), Some(out.path())),
             TreeReadiness::Ready { .. }
@@ -746,7 +746,7 @@ last_line_without_newline=yes";
     fn probe_tree_with_active_env_refuses_in_tree_config() {
         let dir = make_ready_tree("probe-env-in-tree-config");
         let out = TempDir::new("probe-env-in-tree-config-output");
-        fs::write(out.path().join(".config"), "").unwrap();
+        fs::write(out.path().join(".config"), "").expect("file writes");
 
         assert_eq!(
             TreeReadiness::InTreeBuildArtifacts,
@@ -757,10 +757,10 @@ last_line_without_newline=yes";
     #[test]
     fn probe_tree_with_active_env_refuses_in_tree_include_config() {
         let dir = make_ready_tree("probe-env-in-tree-include-config");
-        fs::remove_file(dir.path().join(".config")).unwrap();
-        fs::create_dir(dir.path().join("include/config")).unwrap();
+        fs::remove_file(dir.path().join(".config")).expect("file removes");
+        fs::create_dir(dir.path().join("include/config")).expect("dir creates");
         let out = TempDir::new("probe-env-in-tree-include-config-output");
-        fs::write(out.path().join(".config"), "").unwrap();
+        fs::write(out.path().join(".config"), "").expect("file writes");
 
         assert_eq!(
             TreeReadiness::InTreeBuildArtifacts,
@@ -771,7 +771,7 @@ last_line_without_newline=yes";
     #[test]
     fn probe_tree_without_env_accepts_in_tree_build_artifacts() {
         let dir = make_ready_tree("probe-no-env-in-tree-artifacts");
-        fs::create_dir(dir.path().join("include/config")).unwrap();
+        fs::create_dir(dir.path().join("include/config")).expect("dir creates");
 
         assert_eq!(
             TreeReadiness::Ready { arch: None },
@@ -782,7 +782,7 @@ last_line_without_newline=yes";
     #[test]
     fn read_build_arch_reads_literal_value() {
         let dir = make_ready_tree("arch-literal");
-        fs::write(dir.path().join(".kw/build.config"), "arch=x86\n").unwrap();
+        fs::write(dir.path().join(".kw/build.config"), "arch=x86\n").expect("file writes");
 
         assert_eq!(
             Some("x86".to_string()),
@@ -805,21 +805,21 @@ last_line_without_newline=yes";
             no_key.path().join(".kw/build.config"),
             "cpu_scaling_factor=100\n",
         )
-        .unwrap();
+        .expect("file writes");
         assert_eq!(
             None,
             ReadinessService::read_build_arch(&OsFileSystem, no_key.path())
         );
 
         let commented = make_ready_tree("arch-commented");
-        fs::write(commented.path().join(".kw/build.config"), "#arch=riscv\n").unwrap();
+        fs::write(commented.path().join(".kw/build.config"), "#arch=riscv\n").expect("file writes");
         assert_eq!(
             None,
             ReadinessService::read_build_arch(&OsFileSystem, commented.path())
         );
 
         let empty = make_ready_tree("arch-empty");
-        fs::write(empty.path().join(".kw/build.config"), "arch=\n").unwrap();
+        fs::write(empty.path().join(".kw/build.config"), "arch=\n").expect("file writes");
         assert_eq!(
             None,
             ReadinessService::read_build_arch(&OsFileSystem, empty.path())
@@ -829,12 +829,12 @@ last_line_without_newline=yes";
     /// Creates a file whose mtime is `mtime_secs` seconds after the epoch,
     /// so newest-wins ordering is fully deterministic.
     fn write_file_with_mtime(path: &Path, mtime_secs: u64) {
-        let file = fs::File::create(path).unwrap();
+        let file = fs::File::create(path).expect("file creates");
         file.set_times(
             fs::FileTimes::new()
                 .set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(mtime_secs)),
         )
-        .unwrap();
+        .expect("mtime sets");
     }
 
     #[test]
@@ -844,7 +844,8 @@ last_line_without_newline=yes";
 
         assert_eq!(
             None,
-            ReadinessService::resolve_output_dir(&OsFileSystem, &env, dir.path()).unwrap()
+            ReadinessService::resolve_output_dir(&OsFileSystem, &env, dir.path())
+                .expect("output dir resolves")
         );
     }
 
@@ -862,7 +863,8 @@ last_line_without_newline=yes";
             .returning(|_| Ok("/xdg".to_string()));
 
         let resolved =
-            ReadinessService::resolve_output_dir(&fs, &env, Path::new("/home/user/linux")).unwrap();
+            ReadinessService::resolve_output_dir(&fs, &env, Path::new("/home/user/linux"))
+                .expect("output dir resolves");
 
         assert_eq!(
             Some(PathBuf::from("/xdg/kw/envs/L2hvbWUvdXNlci9saW51eA==/minix")),
@@ -884,8 +886,8 @@ last_line_without_newline=yes";
             .withf(|key| key == "HOME")
             .returning(|_| Ok("/home/user".to_string()));
 
-        let resolved =
-            ReadinessService::resolve_output_dir(&fs, &env, Path::new("/kernel")).unwrap();
+        let resolved = ReadinessService::resolve_output_dir(&fs, &env, Path::new("/kernel"))
+            .expect("output dir resolves");
 
         assert_eq!(
             Some(
@@ -913,8 +915,8 @@ last_line_without_newline=yes";
             .withf(|key| key == "HOME")
             .returning(|_| Ok("/home/user".to_string()));
 
-        let resolved =
-            ReadinessService::resolve_output_dir(&fs, &env, Path::new("/kernel")).unwrap();
+        let resolved = ReadinessService::resolve_output_dir(&fs, &env, Path::new("/kernel"))
+            .expect("output dir resolves");
 
         assert_eq!(
             Some(
@@ -941,7 +943,7 @@ last_line_without_newline=yes";
 
         let resolved =
             ReadinessService::resolve_output_dir(&fs, &env, Path::new("/home/user/linux/"))
-                .unwrap();
+                .expect("output dir resolves");
 
         assert_eq!(
             Some(PathBuf::from("/xdg/kw/envs/L2hvbWUvdXNlci9saW51eA==/minix")),
@@ -959,7 +961,8 @@ last_line_without_newline=yes";
 
         assert_eq!(
             None,
-            ReadinessService::resolve_output_dir(&fs, &env, Path::new("/kernel")).unwrap()
+            ReadinessService::resolve_output_dir(&fs, &env, Path::new("/kernel"))
+                .expect("output dir resolves")
         );
     }
 
@@ -991,7 +994,7 @@ last_line_without_newline=yes";
     fn find_image_with_arch_picks_newest_image_only() {
         let dir = make_ready_tree("image-arch");
         let boot = dir.path().join("arch/x86/boot");
-        fs::create_dir_all(&boot).unwrap();
+        fs::create_dir_all(&boot).expect("dir creates");
         write_file_with_mtime(&boot.join("bzImage"), 100);
         write_file_with_mtime(&boot.join("Image"), 200);
         // Neither name matches find's case-sensitive `*Image`.
@@ -1011,8 +1014,8 @@ last_line_without_newline=yes";
         let dir = make_ready_tree("image-glob");
         let x86_boot = dir.path().join("arch/x86/boot");
         let arm64_boot = dir.path().join("arch/arm64/boot");
-        fs::create_dir_all(&x86_boot).unwrap();
-        fs::create_dir_all(&arm64_boot).unwrap();
+        fs::create_dir_all(&x86_boot).expect("dir creates");
+        fs::create_dir_all(&arm64_boot).expect("dir creates");
         write_file_with_mtime(&x86_boot.join("bzImage"), 100);
         write_file_with_mtime(&arm64_boot.join("Image"), 200);
 
@@ -1028,7 +1031,7 @@ last_line_without_newline=yes";
         // lexicographically larger path.
         let dir = make_ready_tree("image-tie");
         let boot = dir.path().join("arch/x86/boot");
-        fs::create_dir_all(&boot).unwrap();
+        fs::create_dir_all(&boot).expect("dir creates");
         write_file_with_mtime(&boot.join("bzImage"), 100);
         write_file_with_mtime(&boot.join("zImage"), 100);
 
@@ -1052,7 +1055,7 @@ last_line_without_newline=yes";
         );
 
         let boot = dir.path().join("arch/x86/boot");
-        fs::create_dir_all(&boot).unwrap();
+        fs::create_dir_all(&boot).expect("dir creates");
         write_file_with_mtime(&boot.join("image"), 100); // lowercase: no match
         write_file_with_mtime(&boot.join("Image.gz"), 200); // suffix: no match
 
@@ -1070,8 +1073,8 @@ last_line_without_newline=yes";
     fn kernelrelease_reads_and_trims_the_release_file() {
         let dir = make_ready_tree("kernelrelease");
         let config_dir = dir.path().join("include").join("config");
-        fs::create_dir_all(&config_dir).unwrap();
-        fs::write(config_dir.join("kernel.release"), "6.17.0-rc1\n").unwrap();
+        fs::create_dir_all(&config_dir).expect("dir creates");
+        fs::write(config_dir.join("kernel.release"), "6.17.0-rc1\n").expect("file writes");
 
         assert_eq!(
             Some("6.17.0-rc1".to_string()),
@@ -1089,8 +1092,8 @@ last_line_without_newline=yes";
         );
 
         let config_dir = dir.path().join("include").join("config");
-        fs::create_dir_all(&config_dir).unwrap();
-        fs::write(config_dir.join("kernel.release"), "\n").unwrap();
+        fs::create_dir_all(&config_dir).expect("dir creates");
+        fs::write(config_dir.join("kernel.release"), "\n").expect("file writes");
         assert_eq!(
             None,
             ReadinessService::read_kernelrelease(&OsFileSystem, dir.path())
@@ -1107,16 +1110,16 @@ last_line_without_newline=yes";
 
     fn kernel_tree(path: &Path) -> KernelTree {
         serde_json::from_value(serde_json::json!({
-            "path": path.to_str().unwrap(),
+            "path": path.to_str().expect("path is utf-8"),
             "branch": "master"
         }))
-        .unwrap()
+        .expect("json parses")
     }
 
     fn built_record(tree: &Path, branch: &str) -> KwBuildRecord {
         KwBuildRecord {
             kernel_tree_id: "mainline".to_string(),
-            tree_path: tree.to_str().unwrap().to_string(),
+            tree_path: tree.to_str().expect("path is utf-8").to_string(),
             message_id: None,
             branch: branch.to_string(),
             arch: Some("x86".to_string()),
@@ -1166,7 +1169,12 @@ last_line_without_newline=yes";
             shell
                 .expect_execute()
                 .withf(|cmd| cmd.program == "kw" && cmd.args == ["--version"])
-                .returning(move |_| Ok(shell_output(str::from_utf8(&stdout_bytes).unwrap(), true)));
+                .returning(move |_| {
+                    Ok(shell_output(
+                        str::from_utf8(&stdout_bytes).expect("bytes are utf-8"),
+                        true,
+                    ))
+                });
 
             let probe = ReadinessService::probe_kw_binary(&env, &shell);
 
@@ -1300,7 +1308,7 @@ last_line_without_newline=yes";
         let moved_tree = kernel_tree(Path::new("/elsewhere/linux"));
         assert_eq!(
             Err(DeployAloneRefusal::TreePathDrift {
-                recorded: dir.path().to_str().unwrap().to_string(),
+                recorded: dir.path().to_str().expect("path is utf-8").to_string(),
                 current: "/elsewhere/linux".to_string(),
             }),
             ReadinessService::check_deploy_alone(
@@ -1353,7 +1361,7 @@ last_line_without_newline=yes";
 
         // A trailing-slash-only difference is the same tree, not drift.
         let mut slashed = built_record(dir.path(), "patchset-x");
-        slashed.tree_path = format!("{}/", dir.path().to_str().unwrap());
+        slashed.tree_path = format!("{}/", dir.path().to_str().expect("path is utf-8"));
         assert_eq!(
             Ok(()),
             ReadinessService::check_deploy_alone(
@@ -1383,29 +1391,29 @@ last_line_without_newline=yes";
     #[test]
     fn evaluate_readiness_composes_all_probes() {
         let dir = make_ready_tree("evaluate");
-        fs::write(dir.path().join(".kw/build.config"), "arch=x86\n").unwrap();
+        fs::write(dir.path().join(".kw/build.config"), "arch=x86\n").expect("file writes");
         fs::write(
             dir.path().join(".kw/deploy.config"),
             "boot_into_new_kernel_once=no\n",
         )
-        .unwrap();
+        .expect("file writes");
         fs::write(
             dir.path().join(".kw/remote.config"),
             "#kw-default=dut\nHost dut\n  Hostname box\n  Port 22\n  User root\n",
         )
-        .unwrap();
+        .expect("file writes");
         let boot = dir.path().join("arch/x86/boot");
-        fs::create_dir_all(&boot).unwrap();
+        fs::create_dir_all(&boot).expect("dir creates");
         write_file_with_mtime(&boot.join("bzImage"), 100);
 
         let data = TempDir::new("evaluate-data");
         let history = FileKwHistoryStore::new(
             Arc::new(OsFileSystem),
-            data.path().to_str().unwrap().to_string(),
+            data.path().to_str().expect("path is utf-8").to_string(),
         );
         history
             .record_build(built_record(dir.path(), "patchset-x"))
-            .unwrap();
+            .expect("build records");
 
         let mut env = MockEnvTrait::new();
         env.expect_which().returning(|_| true);
@@ -1425,7 +1433,7 @@ last_line_without_newline=yes";
             "patchset-x",
             None,
         )
-        .unwrap();
+        .expect("readiness evaluates");
 
         assert_eq!(
             TreeReadiness::Ready {
@@ -1440,7 +1448,13 @@ last_line_without_newline=yes";
         assert!(readiness.kw_binary.available);
         assert_eq!(KwVersionCheck::Meets, readiness.kw_binary.check);
         assert_eq!(Some("patchset-x".to_string()), readiness.current_branch);
-        assert_eq!("root@box:22", readiness.deploy_remote.unwrap().endpoint());
+        assert_eq!(
+            "root@box:22",
+            readiness
+                .deploy_remote
+                .expect("deploy remote is set")
+                .endpoint()
+        );
         assert_eq!(BootOnceState::Off, readiness.boot_once);
     }
 
@@ -1451,7 +1465,7 @@ last_line_without_newline=yes";
         let data = TempDir::new("evaluate-missing-data");
         let history = FileKwHistoryStore::new(
             Arc::new(OsFileSystem),
-            data.path().to_str().unwrap().to_string(),
+            data.path().to_str().expect("path is utf-8").to_string(),
         );
 
         let mut env = MockEnvTrait::new();
@@ -1472,7 +1486,7 @@ last_line_without_newline=yes";
             "patchset-x",
             None,
         )
-        .unwrap();
+        .expect("readiness evaluates");
 
         assert_eq!(TreeReadiness::Missing, readiness.tree);
         // Tree readiness is conjoined into the deploy-alone verdict, so
@@ -1494,7 +1508,7 @@ last_line_without_newline=yes";
         let data = TempDir::new("evaluate-nobuild-data");
         let history = FileKwHistoryStore::new(
             Arc::new(OsFileSystem),
-            data.path().to_str().unwrap().to_string(),
+            data.path().to_str().expect("path is utf-8").to_string(),
         );
 
         let mut env = MockEnvTrait::new();
@@ -1515,7 +1529,7 @@ last_line_without_newline=yes";
             "patchset-x",
             None,
         )
-        .unwrap();
+        .expect("readiness evaluates");
 
         // No build.config: arch stays None (glob fallback); no images exist.
         assert_eq!(TreeReadiness::Ready { arch: None }, readiness.tree);
@@ -1534,7 +1548,7 @@ last_line_without_newline=yes";
         let data = TempDir::new("evaluate-detached-data");
         let history = FileKwHistoryStore::new(
             Arc::new(OsFileSystem),
-            data.path().to_str().unwrap().to_string(),
+            data.path().to_str().expect("path is utf-8").to_string(),
         );
         let mut env = MockEnvTrait::new();
         env.expect_which().returning(|_| false);
@@ -1553,7 +1567,7 @@ last_line_without_newline=yes";
             "",
             None,
         )
-        .unwrap();
+        .expect("readiness evaluates");
         assert_eq!(None, readiness.current_branch);
     }
 
@@ -1563,15 +1577,15 @@ last_line_without_newline=yes";
         let data = TempDir::new("evaluate-for-branch-data");
         let history = FileKwHistoryStore::new(
             Arc::new(OsFileSystem),
-            data.path().to_str().unwrap().to_string(),
+            data.path().to_str().expect("path is utf-8").to_string(),
         );
         history
             .record_build(built_record(dir.path(), "patchset-x"))
-            .unwrap();
+            .expect("build records");
         let boot = dir.path().join("arch/x86/boot");
-        fs::create_dir_all(&boot).unwrap();
+        fs::create_dir_all(&boot).expect("dir creates");
         write_file_with_mtime(&boot.join("bzImage"), 100);
-        fs::write(dir.path().join(".kw/build.config"), "arch=x86\n").unwrap();
+        fs::write(dir.path().join(".kw/build.config"), "arch=x86\n").expect("file writes");
 
         let mut env = MockEnvTrait::new();
         env.expect_which().returning(|_| false);
@@ -1591,7 +1605,7 @@ last_line_without_newline=yes";
             "master",
             None,
         )
-        .unwrap();
+        .expect("readiness evaluates");
         assert_eq!(Some("master".to_string()), on_head.current_branch);
         assert_eq!(
             Err(DeployAloneRefusal::HeadMismatch {
@@ -1611,7 +1625,7 @@ last_line_without_newline=yes";
             "master",
             Some("patchset-x"),
         )
-        .unwrap();
+        .expect("readiness evaluates");
         // HEAD is still master; deploy-alone is judged against the typed branch.
         assert_eq!(Some("master".to_string()), for_typed.current_branch);
         assert_eq!(Ok(()), for_typed.deploy_alone);
@@ -1624,7 +1638,7 @@ last_line_without_newline=yes";
             off.path().join(".kw/deploy.config"),
             "boot_into_new_kernel_once=no\n",
         )
-        .unwrap();
+        .expect("file writes");
         let env = MockEnvTrait::new();
         assert_eq!(
             BootOnceState::Off,
@@ -1636,7 +1650,7 @@ last_line_without_newline=yes";
             on.path().join(".kw/deploy.config"),
             "boot_into_new_kernel_once=yes\n",
         )
-        .unwrap();
+        .expect("file writes");
         assert_eq!(
             BootOnceState::On,
             ReadinessService::probe_boot_once(&OsFileSystem, &env, on.path())
@@ -1659,7 +1673,7 @@ last_line_without_newline=yes";
             weird.path().join(".kw/deploy.config"),
             "boot_into_new_kernel_once=true\n",
         )
-        .unwrap();
+        .expect("file writes");
         assert_eq!(
             BootOnceState::Unknown,
             ReadinessService::probe_boot_once(&OsFileSystem, &MockEnvTrait::new(), weird.path())

@@ -22,7 +22,7 @@ async fn open_kw_ops_without_actor_stays_on_details() {
         .app
         .handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
         .await
-        .unwrap();
+        .expect("patchset details handles");
 
     assert_eq!(
         CurrentScreen::PatchsetDetails,
@@ -118,7 +118,7 @@ mod unix {
 
         app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
-            .unwrap();
+            .expect("patchset details handles");
 
         assert_eq!(CurrentScreen::KwOps, app.state.navigation.current_screen);
         let ops = app.state.kw.ops.as_ref().expect("KwOps state");
@@ -127,7 +127,7 @@ mod unix {
         assert!(!ops.head_unreadable);
 
         shutdown_kw(&app).await;
-        fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).expect("temp dir removes");
     }
 
     #[tokio::test]
@@ -136,7 +136,7 @@ mod unix {
         let mut app = app_with_details_and_kw(&log_dir, head_branch_shell(""));
         app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
-            .unwrap();
+            .expect("patchset details handles");
         assert!(app
             .state
             .kw
@@ -144,7 +144,9 @@ mod unix {
             .as_ref()
             .is_some_and(|ops| ops.branch.is_empty()));
 
-        app.handle_kw_ops(InputEvent::StartKwBuild).await.unwrap();
+        app.handle_kw_ops(InputEvent::StartKwBuild)
+            .await
+            .expect("kw ops handles");
         assert_info_popup(
             app.state.popup.as_ref(),
             "Cannot start build",
@@ -152,7 +154,7 @@ mod unix {
         );
 
         shutdown_kw(&app).await;
-        fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).expect("temp dir removes");
     }
 
     #[tokio::test]
@@ -167,23 +169,27 @@ mod unix {
         );
         app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
-            .unwrap();
+            .expect("patchset details handles");
 
-        app.handle_kw_ops(InputEvent::StartKwBuild).await.unwrap();
+        app.handle_kw_ops(InputEvent::StartKwBuild)
+            .await
+            .expect("kw ops handles");
         assert!(app.state.popup.is_none());
         let spawned = process.spawned();
         assert_eq!(1, spawned.len());
         assert_eq!(vec!["build"], spawned[0].args);
 
-        let kw = app.services.kw.as_ref().unwrap().clone();
-        let status = kw.get_status().await.unwrap();
+        let kw = app.services.kw.as_ref().expect("kw is set").clone();
+        let status = kw.get_status().await.expect("status loads");
         app.state.kw.status = Some(status);
         assert!(matches!(
             app.state.kw.status.as_ref().map(|s| &s.job),
             Some(KwJobStatus::Running { .. })
         ));
 
-        app.handle_kw_ops(InputEvent::CancelKwJob).await.unwrap();
+        app.handle_kw_ops(InputEvent::CancelKwJob)
+            .await
+            .expect("kw ops handles");
         assert!(app
             .state
             .kw
@@ -193,7 +199,7 @@ mod unix {
 
         process.last_child().finish(0);
         shutdown_kw(&app).await;
-        fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).expect("temp dir removes");
     }
 
     #[tokio::test]
@@ -208,9 +214,11 @@ mod unix {
         );
         app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
-            .unwrap();
+            .expect("patchset details handles");
 
-        app.handle_kw_ops(InputEvent::StartKwBuild).await.unwrap();
+        app.handle_kw_ops(InputEvent::StartKwBuild)
+            .await
+            .expect("kw ops handles");
         assert!(app.state.popup.is_none());
         assert!(matches!(
             app.state.kw.status.as_ref().map(|s| &s.job),
@@ -223,13 +231,15 @@ mod unix {
             .as_ref()
             .is_some_and(|ops| ops.start_requested));
 
-        app.handle_kw_ops(InputEvent::StartKwBuild).await.unwrap();
+        app.handle_kw_ops(InputEvent::StartKwBuild)
+            .await
+            .expect("kw ops handles");
         assert!(app.state.popup.is_none());
         assert_eq!(1, process.spawned().len());
 
         process.last_child().finish(0);
         shutdown_kw(&app).await;
-        fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).expect("temp dir removes");
     }
 
     #[tokio::test]
@@ -244,8 +254,10 @@ mod unix {
         );
         app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
-            .unwrap();
-        app.handle_kw_ops(InputEvent::StartKwBuild).await.unwrap();
+            .expect("patchset details handles");
+        app.handle_kw_ops(InputEvent::StartKwBuild)
+            .await
+            .expect("kw ops handles");
         app.state.kw.status = None;
 
         app.fallback_kw_status().await;
@@ -256,7 +268,7 @@ mod unix {
 
         process.last_child().finish(0);
         shutdown_kw(&app).await;
-        fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).expect("temp dir removes");
     }
 
     #[tokio::test]
@@ -274,7 +286,7 @@ mod unix {
         );
         app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
-            .unwrap();
+            .expect("patchset details handles");
         app.state.kw.status = Some(KwStatusSnapshot {
             job: KwJobStatus::Running {
                 kind: KwJobKind::Build,
@@ -295,7 +307,7 @@ mod unix {
             .is_some_and(|ops| ops.log_tail.contains("from mock")));
 
         shutdown_kw(&app).await;
-        fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).expect("temp dir removes");
     }
 
     #[tokio::test]
@@ -304,19 +316,24 @@ mod unix {
         let mut app = app_with_details_and_kw(&log_dir, head_branch_shell("feature"));
         app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
-            .unwrap();
-        app.state.kw.ops.as_mut().unwrap().extra_args = "--verbose".to_string();
+            .expect("patchset details handles");
+        app.state.kw.ops.as_mut().expect("ops is set").extra_args = "--verbose".to_string();
 
-        app.handle_kw_ops(InputEvent::Back).await.unwrap();
+        app.handle_kw_ops(InputEvent::Back)
+            .await
+            .expect("kw ops handles");
         app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
-            .unwrap();
+            .expect("patchset details handles");
 
-        assert_eq!("--verbose", app.state.kw.ops.as_ref().unwrap().extra_args);
+        assert_eq!(
+            "--verbose",
+            app.state.kw.ops.as_ref().expect("ops is set").extra_args
+        );
         assert_eq!(CurrentScreen::KwOps, app.state.navigation.current_screen);
 
         shutdown_kw(&app).await;
-        fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).expect("temp dir removes");
     }
 
     #[tokio::test]
@@ -325,8 +342,10 @@ mod unix {
         let mut app = app_with_details_and_kw(&log_dir, head_branch_shell("feature"));
         app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
-            .unwrap();
-        app.handle_kw_ops(InputEvent::Back).await.unwrap();
+            .expect("patchset details handles");
+        app.handle_kw_ops(InputEvent::Back)
+            .await
+            .expect("kw ops handles");
         assert_eq!(
             CurrentScreen::PatchsetDetails,
             app.state.navigation.current_screen
@@ -334,7 +353,7 @@ mod unix {
         assert!(app.state.lore.details.is_some());
 
         shutdown_kw(&app).await;
-        fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).expect("temp dir removes");
     }
 
     #[tokio::test]
@@ -350,17 +369,21 @@ mod unix {
         );
         app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
-            .unwrap();
+            .expect("patchset details handles");
 
         let ops = app.state.kw.ops.as_ref().expect("KwOps state");
         assert_eq!(
             "root@box:22",
-            ops.readiness.deploy_remote.as_ref().unwrap().endpoint()
+            ops.readiness
+                .deploy_remote
+                .as_ref()
+                .expect("deploy remote is set")
+                .endpoint()
         );
         assert_eq!(BootOnceState::Off, ops.readiness.boot_once);
 
         shutdown_kw(&app).await;
-        fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).expect("temp dir removes");
     }
 
     #[tokio::test]
@@ -377,9 +400,11 @@ mod unix {
         );
         app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
-            .unwrap();
+            .expect("patchset details handles");
 
-        app.handle_kw_ops(InputEvent::StartKwDeploy).await.unwrap();
+        app.handle_kw_ops(InputEvent::StartKwDeploy)
+            .await
+            .expect("kw ops handles");
 
         let Some(AppPopup::Confirm { title, .. }) = app.state.popup.as_ref() else {
             panic!("expected boot-once confirm popup");
@@ -387,12 +412,17 @@ mod unix {
         assert_eq!("Boot into new kernel once?", title);
         assert_eq!(
             Some(DeployStartKind::Deploy),
-            app.state.kw.ops.as_ref().unwrap().pending_deploy
+            app.state
+                .kw
+                .ops
+                .as_ref()
+                .expect("ops is set")
+                .pending_deploy
         );
         assert!(process.spawned().is_empty());
 
         shutdown_kw(&app).await;
-        fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).expect("temp dir removes");
     }
 
     #[tokio::test]
@@ -409,9 +439,11 @@ mod unix {
         );
         app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
-            .unwrap();
+            .expect("patchset details handles");
 
-        app.handle_kw_ops(InputEvent::StartKwDeploy).await.unwrap();
+        app.handle_kw_ops(InputEvent::StartKwDeploy)
+            .await
+            .expect("kw ops handles");
         assert_info_popup(
             app.state.popup.as_ref(),
             "Cannot start deploy",
@@ -420,7 +452,7 @@ mod unix {
         assert!(process.spawned().is_empty());
 
         shutdown_kw(&app).await;
-        fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).expect("temp dir removes");
     }
 
     #[tokio::test]
@@ -437,9 +469,11 @@ mod unix {
         );
         app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
-            .unwrap();
+            .expect("patchset details handles");
 
-        app.handle_kw_ops(InputEvent::StartKwDeploy).await.unwrap();
+        app.handle_kw_ops(InputEvent::StartKwDeploy)
+            .await
+            .expect("kw ops handles");
         assert!(app.state.popup.is_none());
         let spawned = process.spawned();
         assert_eq!(1, spawned.len());
@@ -465,7 +499,7 @@ mod unix {
 
         process.last_child().finish(0);
         shutdown_kw(&app).await;
-        fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).expect("temp dir removes");
     }
 
     #[tokio::test]
@@ -482,11 +516,11 @@ mod unix {
         );
         app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
-            .unwrap();
+            .expect("patchset details handles");
 
         app.handle_kw_ops(InputEvent::StartKwBuildThenDeploy)
             .await
-            .unwrap();
+            .expect("kw ops handles");
         assert!(app.state.popup.is_none());
         assert_eq!(vec!["build"], process.spawned()[0].args);
 
@@ -508,7 +542,7 @@ mod unix {
 
         process.last_child().finish(0);
         shutdown_kw(&app).await;
-        fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).expect("temp dir removes");
     }
 
     #[tokio::test]
@@ -539,23 +573,33 @@ mod unix {
         );
         app.handle_patchset_details(InputEvent::OpenKwOps, &dummy_terminal_handle())
             .await
-            .unwrap();
+            .expect("patchset details handles");
         assert!(matches!(
-            app.state.kw.ops.as_ref().unwrap().readiness.deploy_alone,
+            app.state
+                .kw
+                .ops
+                .as_ref()
+                .expect("ops is set")
+                .readiness
+                .deploy_alone,
             Err(DeployAloneRefusal::NoBuildRecord)
         ));
 
-        app.handle_kw_ops(InputEvent::EditKwOpsField).await.unwrap();
-        app.state.kw.ops.as_mut().unwrap().edit_buffer = "built".to_string();
-        app.handle_kw_ops(InputEvent::StageKwOpsEdit).await.unwrap();
+        app.handle_kw_ops(InputEvent::EditKwOpsField)
+            .await
+            .expect("kw ops handles");
+        app.state.kw.ops.as_mut().expect("ops is set").edit_buffer = "built".to_string();
+        app.handle_kw_ops(InputEvent::StageKwOpsEdit)
+            .await
+            .expect("kw ops handles");
 
-        let ops = app.state.kw.ops.as_ref().unwrap();
+        let ops = app.state.kw.ops.as_ref().expect("ops is set");
         assert_eq!("built", ops.branch);
         assert_eq!(Ok(()), ops.readiness.deploy_alone);
         assert_eq!(Some("feature".to_string()), ops.readiness.current_branch);
 
         shutdown_kw(&app).await;
-        fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).expect("temp dir removes");
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -570,25 +614,34 @@ mod unix {
             deploy_kw_fs(false),
             feature_build_history(Some(matching_feature_build_record())),
         );
-        let kw = app.services.kw.as_ref().unwrap().clone();
+        let kw = app.services.kw.as_ref().expect("kw is set").clone();
         let (scenes, event_tx, handle) = spawn_app_actor(app);
 
-        event_tx.send(InputEvent::OpenKwOps).await.unwrap();
+        event_tx
+            .send(InputEvent::OpenKwOps)
+            .await
+            .expect("open kw ops sends");
         wait_for_kw_ops(&scenes, |_| true).await;
-        event_tx.send(InputEvent::StartKwDeploy).await.unwrap();
+        event_tx
+            .send(InputEvent::StartKwDeploy)
+            .await
+            .expect("start kw deploy sends");
         wait_for_latest_popup(&scenes, |popup| {
             popup.is_some_and(|popup| popup.title == "Boot into new kernel once?")
         })
         .await;
 
-        event_tx.send(InputEvent::ConfirmPopup).await.unwrap();
+        event_tx
+            .send(InputEvent::ConfirmPopup)
+            .await
+            .expect("confirm popup sends");
         wait_for_latest_popup(&scenes, |popup| popup.is_none()).await;
         assert!(process.spawned().is_empty());
 
         drop(event_tx);
-        handle.run_until_done().await.unwrap();
+        handle.run_until_done().await.expect("actor finishes");
         kw.shutdown().await;
-        fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).expect("temp dir removes");
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -603,16 +656,28 @@ mod unix {
             deploy_kw_fs(false),
             feature_build_history(Some(matching_feature_build_record())),
         );
-        let kw = app.services.kw.as_ref().unwrap().clone();
+        let kw = app.services.kw.as_ref().expect("kw is set").clone();
         let (scenes, event_tx, handle) = spawn_app_actor(app);
 
-        event_tx.send(InputEvent::OpenKwOps).await.unwrap();
+        event_tx
+            .send(InputEvent::OpenKwOps)
+            .await
+            .expect("open kw ops sends");
         wait_for_kw_ops(&scenes, |_| true).await;
-        event_tx.send(InputEvent::StartKwDeploy).await.unwrap();
+        event_tx
+            .send(InputEvent::StartKwDeploy)
+            .await
+            .expect("start kw deploy sends");
         wait_for_latest_popup(&scenes, |popup| popup.is_some()).await;
 
-        event_tx.send(InputEvent::NavigateRight).await.unwrap();
-        event_tx.send(InputEvent::ConfirmPopup).await.unwrap();
+        event_tx
+            .send(InputEvent::NavigateRight)
+            .await
+            .expect("navigate right sends");
+        event_tx
+            .send(InputEvent::ConfirmPopup)
+            .await
+            .expect("confirm popup sends");
         wait_for_nav(&scenes, |text| text.contains("kw: deploying feature")).await;
         wait_for_latest_popup(&scenes, |popup| popup.is_none()).await;
 
@@ -622,9 +687,9 @@ mod unix {
 
         process.last_child().finish(0);
         drop(event_tx);
-        handle.run_until_done().await.unwrap();
+        handle.run_until_done().await.expect("actor finishes");
         kw.shutdown().await;
-        fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).expect("temp dir removes");
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -637,13 +702,19 @@ mod unix {
             process.clone(),
             Arc::new(OsFileSystem),
         );
-        let kw = app.services.kw.as_ref().unwrap().clone();
+        let kw = app.services.kw.as_ref().expect("kw is set").clone();
         let (scenes, event_tx, handle) = spawn_app_actor(app);
 
-        event_tx.send(InputEvent::OpenKwOps).await.unwrap();
+        event_tx
+            .send(InputEvent::OpenKwOps)
+            .await
+            .expect("open kw ops sends");
         wait_for_kw_ops(&scenes, |_| true).await;
 
-        event_tx.send(InputEvent::StartKwBuild).await.unwrap();
+        event_tx
+            .send(InputEvent::StartKwBuild)
+            .await
+            .expect("start kw build sends");
         wait_for_nav(&scenes, |text| text.contains("kw: building feature")).await;
         wait_for_kw_ops(&scenes, |ops| {
             ops.log_tail.contains("Waiting for kw output")
@@ -653,7 +724,7 @@ mod unix {
         process.last_child().write_log(b"cc1: compiling foo.c\n");
         wait_for_kw_ops(&scenes, |ops| ops.log_tail.contains("cc1: compiling foo.c")).await;
 
-        event_tx.send(InputEvent::Back).await.unwrap();
+        event_tx.send(InputEvent::Back).await.expect("back sends");
         wait_for_details(&scenes).await;
         wait_for_nav(&scenes, |text| text.contains("kw: building feature")).await;
 
@@ -667,7 +738,10 @@ mod unix {
             "log ticks must not redraw while away from KwOps"
         );
 
-        event_tx.send(InputEvent::ToggleBookmark).await.unwrap();
+        event_tx
+            .send(InputEvent::ToggleBookmark)
+            .await
+            .expect("toggle bookmark sends");
         time::timeout(Duration::from_secs(5), async {
             loop {
                 if scene_count(&scenes) > draws_on_details {
@@ -679,7 +753,10 @@ mod unix {
         .await
         .expect("input must still redraw off KwOps");
 
-        event_tx.send(InputEvent::OpenKwOps).await.unwrap();
+        event_tx
+            .send(InputEvent::OpenKwOps)
+            .await
+            .expect("open kw ops sends");
         wait_for_kw_ops(&scenes, |ops| {
             ops.log_tail.contains("cc1: compiling foo.c")
                 && ops.log_tail.contains("ld: linking vmlinux")
@@ -703,9 +780,9 @@ mod unix {
         );
 
         drop(event_tx);
-        handle.run_until_done().await.unwrap();
+        handle.run_until_done().await.expect("actor finishes");
         kw.shutdown().await;
-        fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).expect("temp dir removes");
     }
 
     fn app_with_details_and_kw(log_dir: &Path, kw_shell: MockShellTrait) -> App {
@@ -939,7 +1016,7 @@ mod unix {
             process::id()
         ));
         let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+        fs::create_dir_all(&dir).expect("dir creates");
         dir
     }
 
@@ -959,7 +1036,10 @@ mod unix {
             .times(1..)
             .returning(move |frame| {
                 if let TerminalFrame::Main(scene) = frame {
-                    scenes_for_draw.lock().unwrap().push(*scene);
+                    scenes_for_draw
+                        .lock()
+                        .expect("scenes for draw locks")
+                        .push(*scene);
                 }
                 Ok(())
             });
@@ -978,7 +1058,7 @@ mod unix {
             loop {
                 if scenes
                     .lock()
-                    .unwrap()
+                    .expect("scenes locks")
                     .iter()
                     .any(|scene| predicate(&nav_text(scene)))
                 {
@@ -997,7 +1077,7 @@ mod unix {
     ) {
         time::timeout(Duration::from_secs(5), async {
             loop {
-                let matches = scenes.lock().unwrap().last().is_some_and(
+                let matches = scenes.lock().expect("scenes locks").last().is_some_and(
                     |scene| matches!(&scene.body, UiBody::KwOps(ops) if predicate(ops)),
                 );
                 if matches {
@@ -1018,7 +1098,7 @@ mod unix {
             loop {
                 let matches = scenes
                     .lock()
-                    .unwrap()
+                    .expect("scenes locks")
                     .last()
                     .is_some_and(|scene| predicate(scene.popup.as_ref()));
                 if matches {
@@ -1036,7 +1116,7 @@ mod unix {
             loop {
                 if scenes
                     .lock()
-                    .unwrap()
+                    .expect("scenes locks")
                     .last()
                     .is_some_and(|scene| matches!(scene.body, UiBody::PatchsetDetails(_)))
                 {
@@ -1050,7 +1130,7 @@ mod unix {
     }
 
     fn scene_count(scenes: &Arc<Mutex<Vec<UiScene>>>) -> usize {
-        scenes.lock().unwrap().len()
+        scenes.lock().expect("scenes locks").len()
     }
 
     fn nav_text(scene: &UiScene) -> String {

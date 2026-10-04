@@ -21,7 +21,7 @@ async fn latest_list_opens_details_and_back_returns_to_latest() {
         .app
         .handle_mailing_list_selection(InputEvent::OpenLatestPatchsets, &mut loading)
         .await
-        .unwrap();
+        .expect("mailing list selection handles");
     assert_eq!(ControlFlow::Continue(()), result);
     assert_eq!(
         CurrentScreen::LatestPatchsets,
@@ -32,7 +32,7 @@ async fn latest_list_opens_details_and_back_returns_to_latest() {
         .app
         .handle_latest_patchsets(InputEvent::OpenPatchsetDetails, &mut loading)
         .await
-        .unwrap();
+        .expect("latest patchsets handles");
     assert_eq!(
         CurrentScreen::PatchsetDetails,
         harness.app.state.navigation.current_screen
@@ -43,7 +43,7 @@ async fn latest_list_opens_details_and_back_returns_to_latest() {
         .app
         .handle_patchset_details(InputEvent::Back, &dummy_terminal_handle())
         .await
-        .unwrap();
+        .expect("patchset details handles");
 
     assert_eq!(
         CurrentScreen::LatestPatchsets,
@@ -64,7 +64,7 @@ async fn bookmarked_list_opens_details_and_back_returns_to_bookmarks() {
         .app
         .handle_mailing_list_selection(InputEvent::OpenBookmarkedPatchsets, &mut loading)
         .await
-        .unwrap();
+        .expect("mailing list selection handles");
     assert_eq!(ControlFlow::Continue(()), result);
     assert_eq!(
         CurrentScreen::BookmarkedPatchsets,
@@ -75,7 +75,7 @@ async fn bookmarked_list_opens_details_and_back_returns_to_bookmarks() {
         .app
         .handle_bookmarked_patchsets(InputEvent::OpenPatchsetDetails, &mut loading)
         .await
-        .unwrap();
+        .expect("bookmarked patchsets handles");
     assert_eq!(
         CurrentScreen::PatchsetDetails,
         harness.app.state.navigation.current_screen
@@ -86,7 +86,7 @@ async fn bookmarked_list_opens_details_and_back_returns_to_bookmarks() {
         .app
         .handle_patchset_details(InputEvent::Back, &dummy_terminal_handle())
         .await
-        .unwrap();
+        .expect("patchset details handles");
 
     assert_eq!(
         CurrentScreen::BookmarkedPatchsets,

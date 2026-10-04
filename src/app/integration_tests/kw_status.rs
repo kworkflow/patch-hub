@@ -48,16 +48,16 @@ static LOG_DIR_SEQ: AtomicU64 = AtomicU64::new(0);
 async fn first_frame_shows_a_job_that_started_before_attach() {
     let log_dir = kw_log_dir("attach-running");
     let (app, kw, process) = app_with_kw(&log_dir);
-    kw.start_build(start_request()).await.unwrap();
+    kw.start_build(start_request()).await.expect("build starts");
 
     let (scenes, event_tx, handle) = spawn_app_actor(app);
     wait_for_nav(&scenes, |text| text.contains("kw: building")).await;
 
     process.last_child().finish(0);
     drop(event_tx);
-    handle.run_until_done().await.unwrap();
+    handle.run_until_done().await.expect("actor finishes");
     kw.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -69,7 +69,7 @@ async fn status_change_redraws_without_input() {
     wait_for_nav(&scenes, |text| !text.contains("kw:")).await;
     let draws_before_start = scene_count(&scenes);
 
-    kw.start_build(start_request()).await.unwrap();
+    kw.start_build(start_request()).await.expect("build starts");
     wait_for_nav(&scenes, |text| {
         text.contains(&format!("kw: building {BUILD_BRANCH}"))
     })
@@ -83,9 +83,9 @@ async fn status_change_redraws_without_input() {
     wait_for_nav(&scenes, |text| !text.contains("kw:")).await;
 
     drop(event_tx);
-    handle.run_until_done().await.unwrap();
+    handle.run_until_done().await.expect("actor finishes");
     kw.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -107,7 +107,10 @@ async fn closed_watch_does_not_busy_loop_and_input_still_works() {
         "a closed kw watch must not spin the render loop"
     );
 
-    event_tx.send(InputEvent::NavigateDown).await.unwrap();
+    event_tx
+        .send(InputEvent::NavigateDown)
+        .await
+        .expect("navigate down sends");
     time::timeout(Duration::from_secs(5), async {
         loop {
             if scene_count(&scenes) > draws_after_close {
@@ -120,8 +123,8 @@ async fn closed_watch_does_not_busy_loop_and_input_still_works() {
     .expect("input must still redraw after the kw watch closes");
 
     drop(event_tx);
-    handle.run_until_done().await.unwrap();
-    fs::remove_dir_all(&log_dir).unwrap();
+    handle.run_until_done().await.expect("actor finishes");
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -131,31 +134,36 @@ async fn quit_with_no_job_exits_without_confirm() {
     let (scenes, event_tx, handle) = spawn_app_actor(app);
 
     wait_for_nav(&scenes, |_| true).await;
-    event_tx.send(InputEvent::Quit).await.unwrap();
+    event_tx.send(InputEvent::Quit).await.expect("quit sends");
     time::timeout(Duration::from_secs(5), handle.run_until_done())
         .await
         .expect("quit with no running job must exit without a confirm popup")
-        .unwrap();
+        .expect("actor finishes");
 
     kw.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn quit_while_job_running_opens_confirm_and_wait_keeps_app_alive() {
     let log_dir = kw_log_dir("quit-wait");
     let (app, kw, process) = app_with_kw(&log_dir);
-    kw.start_build(start_request()).await.unwrap();
+    kw.start_build(start_request()).await.expect("build starts");
 
     let (scenes, event_tx, handle) = spawn_app_actor(app);
     wait_for_nav(&scenes, |text| text.contains("kw: building")).await;
 
-    event_tx.send(InputEvent::Quit).await.unwrap();
+    event_tx.send(InputEvent::Quit).await.expect("quit sends");
     wait_for_latest_popup(&scenes, |popup| {
         popup.is_some_and(|popup| popup.title == "Cancel job and quit?")
     })
     .await;
-    let latest = scenes.lock().unwrap().last().cloned().unwrap();
+    let latest = scenes
+        .lock()
+        .expect("scenes locks")
+        .last()
+        .cloned()
+        .expect("last scene is set");
     let popup = latest.popup.expect("confirm popup");
     match popup.body {
         PopupBody::Confirm {
@@ -170,55 +178,70 @@ async fn quit_while_job_running_opens_confirm_and_wait_keeps_app_alive() {
         other => panic!("expected Confirm scene, got {other:?}"),
     }
 
-    event_tx.send(InputEvent::ConfirmPopup).await.unwrap();
+    event_tx
+        .send(InputEvent::ConfirmPopup)
+        .await
+        .expect("confirm popup sends");
     wait_for_latest_popup(&scenes, |popup| popup.is_none()).await;
     wait_for_nav(&scenes, |text| text.contains("kw: building")).await;
 
-    event_tx.send(InputEvent::NavigateDown).await.unwrap();
+    event_tx
+        .send(InputEvent::NavigateDown)
+        .await
+        .expect("navigate down sends");
     process.last_child().finish(0);
     drop(event_tx);
-    handle.run_until_done().await.unwrap();
+    handle.run_until_done().await.expect("actor finishes");
     kw.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn quit_confirm_esc_is_wait() {
     let log_dir = kw_log_dir("quit-esc-wait");
     let (app, kw, process) = app_with_kw(&log_dir);
-    kw.start_build(start_request()).await.unwrap();
+    kw.start_build(start_request()).await.expect("build starts");
 
     let (scenes, event_tx, handle) = spawn_app_actor(app);
     wait_for_nav(&scenes, |text| text.contains("kw: building")).await;
 
-    event_tx.send(InputEvent::Quit).await.unwrap();
+    event_tx.send(InputEvent::Quit).await.expect("quit sends");
     wait_for_latest_popup(&scenes, |popup| popup.is_some()).await;
-    event_tx.send(InputEvent::ClosePopup).await.unwrap();
+    event_tx
+        .send(InputEvent::ClosePopup)
+        .await
+        .expect("close popup sends");
     wait_for_latest_popup(&scenes, |popup| popup.is_none()).await;
     wait_for_nav(&scenes, |text| text.contains("kw: building")).await;
 
     process.last_child().finish(0);
     drop(event_tx);
-    handle.run_until_done().await.unwrap();
+    handle.run_until_done().await.expect("actor finishes");
     kw.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn cancel_and_quit_requests_cancellation() {
     let log_dir = kw_log_dir("quit-cancel");
     let (app, kw, process) = app_with_kw(&log_dir);
-    kw.start_build(start_request()).await.unwrap();
+    kw.start_build(start_request()).await.expect("build starts");
 
     let (scenes, event_tx, handle) = spawn_app_actor(app);
     wait_for_nav(&scenes, |text| text.contains("kw: building")).await;
 
-    event_tx.send(InputEvent::Quit).await.unwrap();
+    event_tx.send(InputEvent::Quit).await.expect("quit sends");
     wait_for_latest_popup(&scenes, |popup| popup.is_some()).await;
-    event_tx.send(InputEvent::NavigateLeft).await.unwrap();
-    event_tx.send(InputEvent::ConfirmPopup).await.unwrap();
+    event_tx
+        .send(InputEvent::NavigateLeft)
+        .await
+        .expect("navigate left sends");
+    event_tx
+        .send(InputEvent::ConfirmPopup)
+        .await
+        .expect("confirm popup sends");
 
-    handle.run_until_done().await.unwrap();
+    handle.run_until_done().await.expect("actor finishes");
     time::timeout(Duration::from_secs(5), async {
         loop {
             if process.last_child().was_killed() {
@@ -231,7 +254,7 @@ async fn cancel_and_quit_requests_cancellation() {
     .expect("cancel-and-quit must request kw cancellation");
     drop(event_tx);
     kw.shutdown().await;
-    fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).expect("temp dir removes");
 }
 
 fn spawn_app_actor(
@@ -250,7 +273,10 @@ fn spawn_app_actor(
         .times(1..)
         .returning(move |frame| {
             if let TerminalFrame::Main(scene) = frame {
-                scenes_for_draw.lock().unwrap().push(*scene);
+                scenes_for_draw
+                    .lock()
+                    .expect("scenes for draw locks")
+                    .push(*scene);
             }
             Ok(())
         });
@@ -303,7 +329,7 @@ async fn wait_for_nav(scenes: &Arc<Mutex<Vec<UiScene>>>, predicate: impl Fn(&str
         loop {
             if scenes
                 .lock()
-                .unwrap()
+                .expect("scenes locks")
                 .iter()
                 .any(|scene| predicate(&nav_text(scene)))
             {
@@ -324,7 +350,7 @@ async fn wait_for_latest_popup(
         loop {
             let matches = scenes
                 .lock()
-                .unwrap()
+                .expect("scenes locks")
                 .last()
                 .is_some_and(|scene| predicate(scene.popup.as_ref()));
             if matches {
@@ -338,7 +364,7 @@ async fn wait_for_latest_popup(
 }
 
 fn scene_count(scenes: &Arc<Mutex<Vec<UiScene>>>) -> usize {
-    scenes.lock().unwrap().len()
+    scenes.lock().expect("scenes locks").len()
 }
 
 fn nav_text(scene: &UiScene) -> String {
@@ -358,7 +384,7 @@ fn kw_log_dir(test_name: &str) -> PathBuf {
         process::id()
     ));
     let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
+    fs::create_dir_all(&dir).expect("dir creates");
     dir
 }
 

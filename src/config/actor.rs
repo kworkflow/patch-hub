@@ -133,7 +133,7 @@ mod tests {
     fn unique_test_dir(prefix: &str) -> PathBuf {
         let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
         let p = env::temp_dir().join(format!("patch-hub-{prefix}-{}-{n}", process::id()));
-        fs::create_dir_all(&p).unwrap();
+        fs::create_dir_all(&p).expect("dir creates");
         p
     }
 
@@ -164,7 +164,8 @@ mod tests {
 
     fn spawn_test_actor() -> (ConfigHandle, PathBuf) {
         let (env, home) = default_env();
-        let (state, repo) = ConfigService::bootstrap_parts(&env, OsFileSystem).unwrap();
+        let (state, repo) =
+            ConfigService::bootstrap_parts(&env, OsFileSystem).expect("config bootstraps");
         (ConfigActor::spawn(state, repo), home)
     }
 
@@ -172,7 +173,7 @@ mod tests {
     async fn get_snapshot_returns_actor_state() {
         let (handle, _home) = spawn_test_actor();
 
-        let snapshot = handle.get_snapshot().await.unwrap();
+        let snapshot = handle.get_snapshot().await.expect("snapshot loads");
 
         assert_eq!(30, snapshot.page_size());
         handle.shutdown().await;
@@ -188,10 +189,17 @@ mod tests {
                 ..Default::default()
             })
             .await
-            .unwrap();
+            .expect("update applies");
 
         assert_eq!(77, snapshot.page_size());
-        assert_eq!(77, handle.get_snapshot().await.unwrap().page_size());
+        assert_eq!(
+            77,
+            handle
+                .get_snapshot()
+                .await
+                .expect("snapshot loads")
+                .page_size()
+        );
         handle.shutdown().await;
     }
 
@@ -206,10 +214,10 @@ mod tests {
                 ..Default::default()
             })
             .await
-            .unwrap();
+            .expect("update applies");
 
-        let raw = fs::read_to_string(&cfg_path).unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let raw = fs::read_to_string(&cfg_path).expect("file reads");
+        let parsed: serde_json::Value = serde_json::from_str(&raw).expect("config parses");
         assert_eq!(parsed["page_size"], 88);
         handle.shutdown().await;
     }
@@ -227,7 +235,14 @@ mod tests {
             .unwrap_err();
 
         assert!(matches!(err, ConfigError::InvalidPageSize(ref s) if s == "not-a-number"));
-        assert_eq!(30, handle.get_snapshot().await.unwrap().page_size());
+        assert_eq!(
+            30,
+            handle
+                .get_snapshot()
+                .await
+                .expect("snapshot loads")
+                .page_size()
+        );
         handle.shutdown().await;
     }
 

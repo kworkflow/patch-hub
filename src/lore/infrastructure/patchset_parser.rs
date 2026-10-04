@@ -257,17 +257,17 @@ mod tests {
         assert_eq!(3, patches.len(), "Wrong number of patches");
         assert_eq!(
             fs::read_to_string("test_samples/lore_session/split_patchset/expected_patch_1.mbx")
-                .unwrap(),
+                .expect("file reads"),
             patches[0]
         );
         assert_eq!(
             fs::read_to_string("test_samples/lore_session/split_patchset/expected_patch_2.mbx")
-                .unwrap(),
+                .expect("file reads"),
             patches[1]
         );
         assert_eq!(
             fs::read_to_string("test_samples/lore_session/split_patchset/expected_patch_3.mbx")
-                .unwrap(),
+                .expect("file reads"),
             patches[2]
         );
     }
@@ -283,23 +283,23 @@ mod tests {
             fs::read_to_string(
                 "test_samples/lore_session/split_patchset/expected_cover_letter.cover"
             )
-            .unwrap(),
+            .expect("file reads"),
             patches[0],
             "Wrong cover letter"
         );
         assert_eq!(
             fs::read_to_string("test_samples/lore_session/split_patchset/expected_patch_1.mbx")
-                .unwrap(),
+                .expect("file reads"),
             patches[1]
         );
         assert_eq!(
             fs::read_to_string("test_samples/lore_session/split_patchset/expected_patch_2.mbx")
-                .unwrap(),
+                .expect("file reads"),
             patches[2]
         );
         assert_eq!(
             fs::read_to_string("test_samples/lore_session/split_patchset/expected_patch_3.mbx")
-                .unwrap(),
+                .expect("file reads"),
             patches[3]
         );
     }
@@ -325,11 +325,11 @@ mod tests {
         let patch_sample = fs::read_to_string(
             "test_samples/lore_session/generate_patch_reply_template/patch_sample.mbx",
         )
-        .unwrap();
+        .expect("file reads");
         let expected = fs::read_to_string(
             "test_samples/lore_session/generate_patch_reply_template/expected_reply_template.mbx",
         )
-        .unwrap();
+        .expect("file reads");
 
         assert_eq!(
             expected,
@@ -342,7 +342,7 @@ mod tests {
         let patch_html = fs::read_to_string(
             "test_samples/lore_session/extract_git_reply_command/patch_lore_sample.html",
         )
-        .unwrap();
+        .expect("file reads");
         let reply_path = "/tmp/some-reply.mbx";
         let expected = ShellCommand {
             program: "git".to_string(),

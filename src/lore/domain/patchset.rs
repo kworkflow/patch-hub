@@ -120,8 +120,8 @@ mod tests {
     use crate::lore::infrastructure::parsers::LoreParserService;
 
     fn feed_from_file(path: &str) -> PatchFeed {
-        let xml = fs::read_to_string(path).unwrap();
-        LoreParserService::parse_patch_feed(&xml).unwrap()
+        let xml = fs::read_to_string(path).expect("file reads");
+        LoreParserService::parse_patch_feed(&xml).expect("patch feed parses")
     }
 
     #[test]
@@ -143,7 +143,7 @@ mod tests {
         assert_eq!(1, idx.representative_patch_ids().len());
         let id = &idx.representative_patch_ids()[0];
         assert!(id.contains("1234.567-1-john@johnson.com"));
-        let patch = idx.patches_by_id.get(id).unwrap();
+        let patch = idx.patches_by_id.get(id).expect("entry is present");
         assert_eq!("some/subsystem: Do this and that", patch.title());
         assert_eq!(1, patch.version());
     }
@@ -196,10 +196,10 @@ mod tests {
         );
         idx.process_feed_page(feed);
 
-        let page = idx.get_page(2, 1).unwrap();
+        let page = idx.get_page(2, 1).expect("page loads");
         assert_eq!(2, page.len());
 
-        let page2 = idx.get_page(2, 2).unwrap();
+        let page2 = idx.get_page(2, 2).expect("page loads");
         assert_eq!(1, page2.len());
 
         assert!(idx.get_page(2, 3).is_none());

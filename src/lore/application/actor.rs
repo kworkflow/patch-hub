@@ -317,7 +317,10 @@ mod tests {
 
         let handle = spawn_test_actor(make_service(lists_store, user_state));
 
-        let data = handle.get_bootstrap_data().await.unwrap();
+        let data = handle
+            .get_bootstrap_data()
+            .await
+            .expect("bootstrap data loads");
 
         assert_eq!(1, data.mailing_lists.len());
         assert_eq!("linux-mm", data.mailing_lists[0].name());
@@ -338,11 +341,11 @@ mod tests {
         let first = handle
             .fetch_available_lists(CacheMode::UseCache)
             .await
-            .unwrap();
+            .expect("available lists fetches");
         let second = handle
             .fetch_available_lists(CacheMode::UseCache)
             .await
-            .unwrap();
+            .expect("available lists fetches");
 
         assert_eq!("cached-list", first[0].name());
         assert_eq!("cached-list", second[0].name());

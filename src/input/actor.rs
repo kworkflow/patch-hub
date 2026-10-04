@@ -188,7 +188,10 @@ mod tests {
         let (input_handle, _terminal_handle) = spawn_test_actor(session, mailing_list_context());
         let (sub_tx, mut sub_rx) = mpsc::channel::<InputEvent>(8);
 
-        input_handle.subscribe_app(sub_tx).await.unwrap();
+        input_handle
+            .subscribe_app(sub_tx)
+            .await
+            .expect("app subscribes");
 
         let received = sub_rx.recv().await;
         assert_eq!(received, Some(InputEvent::NavigateDown));
@@ -212,13 +215,16 @@ mod tests {
         let (input_handle, _terminal_handle) = spawn_test_actor(session, mailing_list_context());
         let (sub_tx, mut sub_rx) = mpsc::channel::<InputEvent>(8);
 
-        input_handle.subscribe_app(sub_tx).await.unwrap();
+        input_handle
+            .subscribe_app(sub_tx)
+            .await
+            .expect("app subscribes");
         // In MailingListSelection, Esc maps to Quit. Switch to PatchsetDetails
         // so Esc maps to Back instead.
         input_handle
             .update_context(details_context())
             .await
-            .unwrap();
+            .expect("context updates");
 
         let received = sub_rx.recv().await;
         assert_eq!(received, Some(InputEvent::Back));
@@ -246,7 +252,10 @@ mod tests {
 
         let (input_handle, _terminal_handle) = spawn_test_actor(session, mailing_list_context());
         let (sub_tx, mut sub_rx) = mpsc::channel::<InputEvent>(8);
-        input_handle.subscribe_app(sub_tx).await.unwrap();
+        input_handle
+            .subscribe_app(sub_tx)
+            .await
+            .expect("app subscribes");
 
         // Only NavigateDown arrives; the F6 event is silently discarded.
         let received = sub_rx.recv().await;
@@ -261,8 +270,11 @@ mod tests {
         let (input_handle, _terminal_handle) = spawn_test_actor(session, mailing_list_context());
         let (sub_tx, mut sub_rx) = mpsc::channel::<InputEvent>(8);
 
-        input_handle.subscribe_app(sub_tx).await.unwrap();
-        input_handle.shutdown().await.unwrap();
+        input_handle
+            .subscribe_app(sub_tx)
+            .await
+            .expect("app subscribes");
+        input_handle.shutdown().await.expect("actor shuts down");
 
         // When the actor stops it drops the subscriber Sender, closing the
         // channel. recv() returns None once all senders are gone.
@@ -283,7 +295,10 @@ mod tests {
 
         let (input_handle, _terminal_handle) = spawn_test_actor(session, mailing_list_context());
         let (sub_tx, mut sub_rx) = mpsc::channel::<InputEvent>(8);
-        input_handle.subscribe_app(sub_tx).await.unwrap();
+        input_handle
+            .subscribe_app(sub_tx)
+            .await
+            .expect("app subscribes");
 
         // When the pump stops due to the error, it drops event_tx.
         // InputActor sees event_rx close and stops, dropping the subscriber sender.
@@ -308,7 +323,10 @@ mod tests {
         };
         let (input_handle, _terminal_handle) = spawn_test_actor(session, context);
         let (sub_tx, mut sub_rx) = mpsc::channel::<InputEvent>(8);
-        input_handle.subscribe_app(sub_tx).await.unwrap();
+        input_handle
+            .subscribe_app(sub_tx)
+            .await
+            .expect("app subscribes");
 
         let received = sub_rx.recv().await;
         assert_eq!(received, Some(InputEvent::ClosePopup));

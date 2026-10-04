@@ -57,14 +57,14 @@ impl FakeControl {
         let mut file = OpenOptions::new()
             .append(true)
             .open(&self.log_path)
-            .unwrap();
-        file.write_all(contents).unwrap();
+            .expect("file opens");
+        file.write_all(contents).expect("file writes");
     }
 
     /// Unblock `wait()`, reporting exit with `exit_code`. A terminal state is
     /// terminal: a process already finished or killed does not exit later.
     pub fn finish(&self, exit_code: i32) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().expect("state locks");
         if state.raw_status.is_none() {
             state.raw_status = Some(exit_code << 8);
             drop(state);
@@ -73,11 +73,11 @@ impl FakeControl {
     }
 
     pub fn was_killed(&self) -> bool {
-        self.state.lock().unwrap().killed
+        self.state.lock().expect("state locks").killed
     }
 
     pub fn was_force_killed(&self) -> bool {
-        self.state.lock().unwrap().force_killed
+        self.state.lock().expect("state locks").force_killed
     }
 }
 
@@ -124,7 +124,7 @@ impl FakeProcess {
     pub fn spawned(&self) -> Vec<SpawnRecord> {
         self.spawns
             .lock()
-            .unwrap()
+            .expect("spawns locks")
             .iter()
             .map(|spawn| spawn.record.clone())
             .collect()
@@ -136,7 +136,7 @@ impl FakeProcess {
     pub fn last_child(&self) -> Arc<FakeControl> {
         self.spawns
             .lock()
-            .unwrap()
+            .expect("spawns locks")
             .last()
             .map(|spawn| spawn.control.clone())
             .expect("FakeProcess::last_child called before any spawn")
@@ -169,7 +169,7 @@ impl ProcessTrait for FakeProcess {
             notify: Notify::new(),
             log_path: log_path.to_path_buf(),
         });
-        self.spawns.lock().unwrap().push(FakeSpawn {
+        self.spawns.lock().expect("spawns locks").push(FakeSpawn {
             record: SpawnRecord {
                 program: cmd.program.clone(),
                 args: cmd.args.clone(),
@@ -196,7 +196,7 @@ impl RunningProcess for FakeRunningProcess {
             // racing the check is not lost because Notify stores one
             // permit.
             let finished = {
-                let state = self.control.state.lock().unwrap();
+                let state = self.control.state.lock().expect("state locks");
                 state.raw_status.map(|raw| (raw, state.fails_wait))
             };
             if let Some((raw, fails_wait)) = finished {
@@ -211,7 +211,7 @@ impl RunningProcess for FakeRunningProcess {
     }
 
     fn kill(&mut self) -> Result<(), ProcessError> {
-        let mut state = self.control.state.lock().unwrap();
+        let mut state = self.control.state.lock().expect("state locks");
         // Mirrors the real kill()'s ESRCH tolerance: killing an already-dead
         // process is a successful no-op, not a kill.
         if state.raw_status.is_none() {
@@ -226,7 +226,7 @@ impl RunningProcess for FakeRunningProcess {
     }
 
     fn force_kill(&mut self) -> Result<(), ProcessError> {
-        let mut state = self.control.state.lock().unwrap();
+        let mut state = self.control.state.lock().expect("state locks");
         // SIGKILL cannot be ignored: even a SIGTERM-stubborn process dies.
         if state.raw_status.is_none() {
             state.force_killed = true;

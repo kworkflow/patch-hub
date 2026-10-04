@@ -24,14 +24,14 @@ async fn latest_render_failure_shows_popup_and_stays_on_latest() {
         .app
         .handle_mailing_list_selection(InputEvent::OpenLatestPatchsets, &mut loading)
         .await
-        .unwrap();
+        .expect("mailing list selection handles");
     assert_eq!(ControlFlow::Continue(()), result);
 
     harness
         .app
         .handle_latest_patchsets(InputEvent::OpenPatchsetDetails, &mut loading)
         .await
-        .unwrap();
+        .expect("latest patchsets handles");
 
     assert_eq!(
         CurrentScreen::LatestPatchsets,
@@ -60,14 +60,14 @@ async fn bookmarked_lore_failure_shows_popup_and_stays_on_bookmarks() {
         .app
         .handle_mailing_list_selection(InputEvent::OpenBookmarkedPatchsets, &mut loading)
         .await
-        .unwrap();
+        .expect("mailing list selection handles");
     assert_eq!(ControlFlow::Continue(()), result);
 
     harness
         .app
         .handle_bookmarked_patchsets(InputEvent::OpenPatchsetDetails, &mut loading)
         .await
-        .unwrap();
+        .expect("bookmarked patchsets handles");
 
     assert_eq!(
         CurrentScreen::BookmarkedPatchsets,
