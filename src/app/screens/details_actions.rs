@@ -225,15 +225,15 @@ impl PatchsetDetailsState {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
 
-    use serde_xml_rs::from_str;
+    mod helpers {
+        use super::super::*;
+        use serde_xml_rs::from_str;
+        use std::collections::{HashMap, HashSet};
 
-    use super::*;
-
-    fn test_patch() -> Patch {
-        from_str(
-            r#"
+        pub(super) fn test_patch() -> Patch {
+            from_str(
+                r#"
             <entry xmlns:thr="http://purl.org/syndication/thread/1.0">
                 <author>
                     <name>Foo Bar</name>
@@ -246,33 +246,37 @@ mod tests {
                 <content></content>
             </entry>
         "#,
-        )
-        .expect("test patch XML should deserialize")
-    }
+            )
+            .expect("test patch XML should deserialize")
+        }
 
-    fn details_state_with_preview(preview: &str) -> PatchsetDetailsState {
-        PatchsetDetailsState {
-            representative_patch: test_patch(),
-            raw_patches: vec!["raw patch".to_string()],
-            patches_preview: vec![preview.to_string()],
-            has_cover_letter: false,
-            patches_to_reply: vec![false],
-            patchset_path: "/tmp/patchset.mbx".to_string(),
-            preview_index: 0,
-            preview_scroll_offset: 0,
-            preview_pan: 0,
-            preview_fullscreen: false,
-            patchset_actions: HashMap::from([
-                (PatchsetAction::Bookmark, false),
-                (PatchsetAction::ReplyWithReviewedBy, false),
-                (PatchsetAction::Apply, false),
-            ]),
-            reviewed_by: vec![HashSet::new()],
-            tested_by: vec![HashSet::new()],
-            acked_by: vec![HashSet::new()],
-            last_screen: CurrentScreen::LatestPatchsets,
+        pub(super) fn details_state_with_preview(preview: &str) -> PatchsetDetailsState {
+            PatchsetDetailsState {
+                representative_patch: test_patch(),
+                raw_patches: vec!["raw patch".to_string()],
+                patches_preview: vec![preview.to_string()],
+                has_cover_letter: false,
+                patches_to_reply: vec![false],
+                patchset_path: "/tmp/patchset.mbx".to_string(),
+                preview_index: 0,
+                preview_scroll_offset: 0,
+                preview_pan: 0,
+                preview_fullscreen: false,
+                patchset_actions: HashMap::from([
+                    (PatchsetAction::Bookmark, false),
+                    (PatchsetAction::ReplyWithReviewedBy, false),
+                    (PatchsetAction::Apply, false),
+                ]),
+                reviewed_by: vec![HashSet::new()],
+                tested_by: vec![HashSet::new()],
+                acked_by: vec![HashSet::new()],
+                last_screen: CurrentScreen::LatestPatchsets,
+            }
         }
     }
+    use helpers::*;
+
+    use super::*;
 
     #[test]
     fn rendered_height_accounts_for_rendered_text_projection() {

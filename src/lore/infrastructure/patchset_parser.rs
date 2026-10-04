@@ -198,22 +198,27 @@ impl PatchsetTextService {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::sync::Arc;
 
-    use crate::infrastructure::file_system::OsFileSystem;
+    mod helpers {
+
+        use super::super::*;
+        use crate::infrastructure::file_system::OsFileSystem;
+        use std::sync::Arc;
+
+        pub(super) fn parser() -> MboxPatchsetParser {
+            MboxPatchsetParser::new(Arc::new(OsFileSystem))
+        }
+
+        pub(super) fn commands_eq(cmd1: &ShellCommand, cmd2: &ShellCommand) -> bool {
+            cmd1.program == cmd2.program && cmd1.args == cmd2.args
+        }
+    }
+    use helpers::*;
+    use std::fs;
 
     use super::*;
     use std::env;
     use std::process;
-
-    fn parser() -> MboxPatchsetParser {
-        MboxPatchsetParser::new(Arc::new(OsFileSystem))
-    }
-
-    fn commands_eq(cmd1: &ShellCommand, cmd2: &ShellCommand) -> bool {
-        cmd1.program == cmd2.program && cmd1.args == cmd2.args
-    }
 
     #[test]
     fn split_patchset_returns_error_on_missing_path() {

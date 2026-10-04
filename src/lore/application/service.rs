@@ -461,7 +461,60 @@ impl LoreService {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, sync::Arc};
+
+    mod helpers {
+        use super::super::*;
+        use crate::lore::infrastructure::{
+            http_lore_client::{MockFeedGateway, MockListsGateway, MockPatchHtmlGateway},
+            patchset_fetcher::MockPatchsetFetcher,
+            patchset_parser::MockPatchsetParser,
+            persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
+        };
+        use crate::{
+            infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
+            lore::application::models::cache::CacheTtl,
+        };
+        use std::sync::Arc;
+
+        // ── helpers ───────────────────────────────────────────────────────────────
+
+        pub(super) fn make_service(
+            lists_gateway: MockListsGateway,
+            feed_gateway: MockFeedGateway,
+            patch_html_gateway: MockPatchHtmlGateway,
+            lists_store: MockMailingListsCacheStore,
+            user_state: MockUserLoreStateStore,
+            fetcher: MockPatchsetFetcher,
+            parser: MockPatchsetParser,
+        ) -> LoreService {
+            LoreService::new(
+                Arc::new(lists_gateway),
+                Arc::new(feed_gateway),
+                Arc::new(patch_html_gateway),
+                Arc::new(lists_store),
+                Arc::new(user_state),
+                Arc::new(fetcher),
+                Arc::new(parser),
+                Arc::new(MockFileSystemTrait::new()),
+                Arc::new(MockShellTrait::new()),
+                CacheTtl::default(),
+            )
+        }
+
+        // ── patchset details cache tests ──────────────────────────────────────────
+
+        pub(super) fn make_patch_for_cache(msg_id: &str) -> Patch {
+            serde_json::from_value(serde_json::json!({
+                "title": "test",
+                "author": { "name": "T", "email": "t@t.com" },
+                "link": { "@href": msg_id },
+                "updated": "2023-01-01"
+            }))
+            .expect("json parses")
+        }
+    }
+    use helpers::*;
+    use std::fs;
 
     use crate::lore::infrastructure::{
         http_lore_client::{
@@ -472,43 +525,14 @@ mod tests {
         patchset_parser::MockPatchsetParser,
         persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
     };
-    use crate::{
-        infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
-        lore::{
-            application::models::cache::{
-                CacheTtl, FeedCacheEntry, MailingListsCacheEntry, PatchsetCacheEntry,
-                PatchsetCacheKey,
-            },
-            domain::{mailing_list::MailingList, patchset::PatchFeedIndex},
+    use crate::lore::{
+        application::models::cache::{
+            FeedCacheEntry, MailingListsCacheEntry, PatchsetCacheEntry, PatchsetCacheKey,
         },
+        domain::{mailing_list::MailingList, patchset::PatchFeedIndex},
     };
 
     use super::*;
-
-    // ── helpers ───────────────────────────────────────────────────────────────
-
-    fn make_service(
-        lists_gateway: MockListsGateway,
-        feed_gateway: MockFeedGateway,
-        patch_html_gateway: MockPatchHtmlGateway,
-        lists_store: MockMailingListsCacheStore,
-        user_state: MockUserLoreStateStore,
-        fetcher: MockPatchsetFetcher,
-        parser: MockPatchsetParser,
-    ) -> LoreService {
-        LoreService::new(
-            Arc::new(lists_gateway),
-            Arc::new(feed_gateway),
-            Arc::new(patch_html_gateway),
-            Arc::new(lists_store),
-            Arc::new(user_state),
-            Arc::new(fetcher),
-            Arc::new(parser),
-            Arc::new(MockFileSystemTrait::new()),
-            Arc::new(MockShellTrait::new()),
-            CacheTtl::default(),
-        )
-    }
 
     // ── mailing lists cache tests ─────────────────────────────────────────────
 
@@ -830,18 +854,6 @@ mod tests {
             .fetch_next_patch_page(target, 1, 1, CacheMode::Refresh)
             .expect("next patch page fetches");
         assert_eq!(1, patches.len());
-    }
-
-    // ── patchset details cache tests ──────────────────────────────────────────
-
-    fn make_patch_for_cache(msg_id: &str) -> Patch {
-        serde_json::from_value(serde_json::json!({
-            "title": "test",
-            "author": { "name": "T", "email": "t@t.com" },
-            "link": { "@href": msg_id },
-            "updated": "2023-01-01"
-        }))
-        .expect("json parses")
     }
 
     #[test]

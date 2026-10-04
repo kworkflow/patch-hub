@@ -287,11 +287,22 @@ impl KwArgvService {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
-    fn extras(tokens: &[&str]) -> Vec<String> {
-        tokens.iter().map(|token| token.to_string()).collect()
+    mod helpers {
+        use super::super::*;
+
+        pub(super) fn extras(tokens: &[&str]) -> Vec<String> {
+            tokens.iter().map(|token| token.to_string()).collect()
+        }
+
+        pub(super) const ENDPOINT: &str = "root@lima-ph-dut.internal:22";
+
+        pub(super) fn deploy(extra: &[&str]) -> Vec<String> {
+            KwArgvService::build_deploy_argv(ENDPOINT, false, true, &extras(extra))
+        }
     }
+    use super::*;
+    use helpers::*;
 
     #[test]
     fn build_argv_without_extras_is_the_base_command() {
@@ -403,12 +414,6 @@ mod tests {
                 &extras(&["--remote", "host:22", "--no-reboot"])
             )
         );
-    }
-
-    const ENDPOINT: &str = "root@lima-ph-dut.internal:22";
-
-    fn deploy(extra: &[&str]) -> Vec<String> {
-        KwArgvService::build_deploy_argv(ENDPOINT, false, true, &extras(extra))
     }
 
     #[test]

@@ -247,6 +247,40 @@ impl Default for InputMapper {
 
 #[cfg(test)]
 mod tests {
+
+    mod helpers {
+        use crate::{
+            app::screens::CurrentScreen,
+            input::{
+                context::InputContext,
+                event::{KeyInput, TerminalEvent},
+            },
+        };
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers};
+
+        pub(super) fn context(current_screen: CurrentScreen) -> InputContext {
+            InputContext {
+                current_screen,
+                ..Default::default()
+            }
+        }
+
+        pub(super) fn key(code: KeyCode) -> TerminalEvent {
+            TerminalEvent::Key(KeyInput {
+                code,
+                ..Default::default()
+            })
+        }
+
+        pub(super) fn modified_key(code: KeyCode, modifiers: KeyModifiers) -> TerminalEvent {
+            TerminalEvent::Key(KeyInput {
+                code,
+                modifiers,
+                ..Default::default()
+            })
+        }
+    }
+    use helpers::*;
     use ratatui::crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 
     use crate::{
@@ -257,28 +291,6 @@ mod tests {
             mapper::InputMapper,
         },
     };
-
-    fn context(current_screen: CurrentScreen) -> InputContext {
-        InputContext {
-            current_screen,
-            ..Default::default()
-        }
-    }
-
-    fn key(code: KeyCode) -> TerminalEvent {
-        TerminalEvent::Key(KeyInput {
-            code,
-            ..Default::default()
-        })
-    }
-
-    fn modified_key(code: KeyCode, modifiers: KeyModifiers) -> TerminalEvent {
-        TerminalEvent::Key(KeyInput {
-            code,
-            modifiers,
-            ..Default::default()
-        })
-    }
 
     #[test]
     fn maps_escape_to_close_popup_when_popup_is_open() {

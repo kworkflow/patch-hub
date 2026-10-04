@@ -2,7 +2,7 @@ use std::{
     io,
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
         Mutex,
     },
     time::Duration,
@@ -13,14 +13,12 @@ use crate::{
         env::MockEnvTrait,
         file_system::{FileSystemError, MockFileSystemTrait},
         process::FakeProcess,
-        shell::{MockShellTrait, ShellCommand, ShellOutput},
+        shell::{MockShellTrait, ShellOutput},
     },
     kw::{
         errors::KwStartError,
         history::MockKwHistoryStore,
-        messages::{DeployOptions, StartRequest},
         models::{
-            history::{KwApplyRecord, KwBuildRecord},
             readiness::{BootOnceState, DeployAloneRefusal, TreeReadiness},
             remote::RemoteRefusal,
         },
@@ -32,173 +30,121 @@ use super::*;
 use chrono::DateTime;
 use std::env;
 use std::fs;
-use std::process;
 use tokio::time;
+mod helpers {
+    use super::super::*;
+    use crate::{
+        infrastructure::{
+            env::MockEnvTrait,
+            file_system::{FileSystemError, MockFileSystemTrait},
+            process::FakeProcess,
+            shell::{MockShellTrait, ShellCommand, ShellOutput},
+        },
+        kw::{
+            history::MockKwHistoryStore,
+            messages::{DeployOptions, StartRequest},
+            models::history::{KwApplyRecord, KwBuildRecord},
+            status::{KwJobStatus, KwPhase},
+        },
+    };
 
-static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
+    use std::env;
+    use std::fs;
+    use std::process;
+    use std::{
+        io,
+        path::Path,
+        sync::{
+            atomic::{AtomicBool, AtomicU64, Ordering},
+            Mutex,
+        },
+        time::Duration,
+    };
+    use tokio::time;
 
-/// A real directory: FakeProcess creates the log file on spawn, so the
-/// parent must exist even though the fs trait is mocked.
-fn tmp_log_dir(test_name: &str) -> PathBuf {
-    let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
-    let dir = env::temp_dir().join(format!(
-        "patch-hub-kw-actor-{}-{test_name}-{n}",
-        process::id()
-    ));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).expect("dir creates");
-    dir
-}
+    pub static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
 
-fn kernel_tree(path: &Path) -> KernelTree {
-    serde_json::from_value(serde_json::json!({
-        "path": path.to_str().expect("path is utf-8"),
-        "branch": "master"
-    }))
-    .expect("json parses")
-}
-
-fn start_request() -> StartRequest {
-    StartRequest {
-        kernel_tree_id: "mainline".to_string(),
-        tree: kernel_tree(Path::new("/home/user/linux")),
-        branch: "patchset-2026-08-01-17-30-00".to_string(),
-        extra_args: Vec::new(),
-        deploy: None,
+    /// A real directory: FakeProcess creates the log file on spawn, so the
+    /// parent must exist even though the fs trait is mocked.
+    pub fn tmp_log_dir(test_name: &str) -> PathBuf {
+        let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
+        let dir = env::temp_dir().join(format!(
+            "patch-hub-kw-actor-{}-{test_name}-{n}",
+            process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("dir creates");
+        dir
     }
-}
 
-/// Spawns the actor with the already-configured mocks (mockall
-/// expectations need `&mut`, so they are set before the mocks move
-/// behind `Arc`s). The log dir is a real unique temp dir even though
-/// these tests never start a job, so a future test that accidentally
-/// does cannot share a fixed path with the job tests.
-fn spawn_test_actor(
-    test_name: &str,
-    history: MockKwHistoryStore,
-    shell: MockShellTrait,
-    fs: MockFileSystemTrait,
-    env: MockEnvTrait,
-) -> KwHandle {
-    KwActor::spawn(
-        Arc::new(history),
-        Arc::new(FakeProcess::new()),
-        Arc::new(shell),
-        Arc::new(fs),
-        Arc::new(env),
-        tmp_log_dir(test_name),
-    )
-}
+    pub fn kernel_tree(path: &Path) -> KernelTree {
+        serde_json::from_value(serde_json::json!({
+            "path": path.to_str().expect("path is utf-8"),
+            "branch": "master"
+        }))
+        .expect("json parses")
+    }
 
-const KW_VERSION_OK: &[u8] = b"kw, version 0.10.0\n";
-/// A clean `git status --porcelain` answer.
-const CLEAN_STATUS: (&[u8], &[u8], bool) = (b"", b"", true);
-/// A successful `git switch` answer.
-const SWITCH_OK: (&[u8], bool) = (b"", true);
-
-fn command_parts(cmd: &ShellCommand) -> Vec<String> {
-    let mut parts = vec![cmd.program.clone()];
-    parts.extend(cmd.args.clone());
-    parts
-}
-
-fn command(parts: &[&str]) -> Vec<String> {
-    parts.iter().map(|part| part.to_string()).collect()
-}
-
-/// A shell mock that logs every command's argv parts and answers by
-/// content: kw's version probe with `kw_version`; `git status
-/// --porcelain` with `status` (stdout, stderr, success); `git switch`
-/// with `switch` (stderr, success); any other git call — the HEAD
-/// branch probe — with `master`.
-fn recording_shell(
-    kw_version: &'static [u8],
-    status: (&'static [u8], &'static [u8], bool),
-    switch: (&'static [u8], bool),
-) -> (MockShellTrait, Arc<Mutex<Vec<Vec<String>>>>) {
-    let calls = Arc::new(Mutex::new(Vec::new()));
-    let calls_in_shell = Arc::clone(&calls);
-    let mut shell = MockShellTrait::new();
-    shell
-        .expect_execute()
-        .withf(|cmd| {
-            cmd.program == "kw" && cmd.args == ["--version"]
-                || cmd.program == "git"
-                    && cmd.args
-                        == [
-                            "-C",
-                            "/home/user/linux",
-                            "status",
-                            "--porcelain",
-                            "--untracked-files=no",
-                        ]
-                || cmd.program == "git"
-                    && cmd.args == ["-C", "/home/user/linux", "branch", "--show-current"]
-                || cmd.program == "git"
-                    && cmd.args
-                        == [
-                            "-C",
-                            "/home/user/linux",
-                            "switch",
-                            "--",
-                            "patchset-2026-08-01-17-30-00",
-                        ]
-                || cmd.program == "git"
-                    && cmd.args == ["-C", "/home/user/linux", "switch", "--", "master"]
-        })
-        .times(2..=9)
-        .returning(move |cmd| {
-            calls_in_shell
-                .lock()
-                .expect("calls in shell locks")
-                .push(command_parts(cmd));
-            let output = |stdout: &[u8], stderr: &[u8], success: bool| ShellOutput {
-                stdout: stdout.to_vec(),
-                stderr: stderr.to_vec(),
-                success,
-            };
-            if cmd.program == "kw" {
-                return Ok(output(kw_version, b"", true));
-            }
-            if cmd.args.iter().any(|arg| arg == "status") {
-                return Ok(output(status.0, status.1, status.2));
-            }
-            if cmd.args.iter().any(|arg| arg == "switch") {
-                return Ok(output(b"", switch.0, switch.1));
-            }
-            Ok(output(b"master\n", b"", true))
-        });
-    (shell, calls)
-}
-
-/// Shell double for checkout/restore tests: kw version probe answers
-/// 0.10.0, `git status --porcelain` reflects the dirty flag, the HEAD
-/// probe reports `head` (including git's trailing newline), and a
-/// successful `git switch` updates `head`. Switches to `fail_switch_to`
-/// fail, so going forward can succeed while coming back fails.
-pub(super) struct GitStub {
-    head: Arc<Mutex<String>>,
-    dirty: Arc<AtomicBool>,
-    fail_switch_to: Arc<Mutex<Option<String>>>,
-}
-
-impl GitStub {
-    pub(super) fn on_branch(branch: &str) -> Self {
-        Self {
-            head: Arc::new(Mutex::new(branch.to_string())),
-            dirty: Arc::new(AtomicBool::new(false)),
-            fail_switch_to: Arc::new(Mutex::new(None)),
+    pub fn start_request() -> StartRequest {
+        StartRequest {
+            kernel_tree_id: "mainline".to_string(),
+            tree: kernel_tree(Path::new("/home/user/linux")),
+            branch: "patchset-2026-08-01-17-30-00".to_string(),
+            extra_args: Vec::new(),
+            deploy: None,
         }
     }
 
-    pub(super) fn head(&self) -> String {
-        self.head.lock().expect("head locks").clone()
+    /// Spawns the actor with the already-configured mocks (mockall
+    /// expectations need `&mut`, so they are set before the mocks move
+    /// behind `Arc`s). The log dir is a real unique temp dir even though
+    /// these tests never start a job, so a future test that accidentally
+    /// does cannot share a fixed path with the job tests.
+    pub fn spawn_test_actor(
+        test_name: &str,
+        history: MockKwHistoryStore,
+        shell: MockShellTrait,
+        fs: MockFileSystemTrait,
+        env: MockEnvTrait,
+    ) -> KwHandle {
+        KwActor::spawn(
+            Arc::new(history),
+            Arc::new(FakeProcess::new()),
+            Arc::new(shell),
+            Arc::new(fs),
+            Arc::new(env),
+            tmp_log_dir(test_name),
+        )
     }
 
-    pub(super) fn shell(&self) -> MockShellTrait {
-        let head = Arc::clone(&self.head);
-        let dirty = Arc::clone(&self.dirty);
-        let fail_switch_to = Arc::clone(&self.fail_switch_to);
+    pub const KW_VERSION_OK: &[u8] = b"kw, version 0.10.0\n";
+    /// A clean `git status --porcelain` answer.
+    pub const CLEAN_STATUS: (&[u8], &[u8], bool) = (b"", b"", true);
+    /// A successful `git switch` answer.
+    pub const SWITCH_OK: (&[u8], bool) = (b"", true);
+
+    pub fn command_parts(cmd: &ShellCommand) -> Vec<String> {
+        let mut parts = vec![cmd.program.clone()];
+        parts.extend(cmd.args.clone());
+        parts
+    }
+
+    pub fn command(parts: &[&str]) -> Vec<String> {
+        parts.iter().map(|part| part.to_string()).collect()
+    }
+
+    /// A shell mock that logs every command's argv parts and answers by
+    /// content: kw's version probe with `kw_version`; `git status
+    /// --porcelain` with `status` (stdout, stderr, success); `git switch`
+    /// with `switch` (stderr, success); any other git call — the HEAD
+    /// branch probe — with `master`.
+    pub fn recording_shell(
+        kw_version: &'static [u8],
+        status: (&'static [u8], &'static [u8], bool),
+        switch: (&'static [u8], bool),
+    ) -> (MockShellTrait, Arc<Mutex<Vec<Vec<String>>>>) {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let calls_in_shell = Arc::clone(&calls);
         let mut shell = MockShellTrait::new();
         shell
             .expect_execute()
@@ -226,496 +172,624 @@ impl GitStub {
                             ]
                     || cmd.program == "git"
                         && cmd.args == ["-C", "/home/user/linux", "switch", "--", "master"]
-                    || cmd.program == "git"
-                        && cmd.args == ["-C", "/home/user/linux", "switch", "--", "patchset-two"]
             })
-            .times(5..=11)
+            .times(2..=9)
             .returning(move |cmd| {
-                let output = |stdout: &[u8]| ShellOutput {
+                calls_in_shell
+                    .lock()
+                    .expect("calls in shell locks")
+                    .push(command_parts(cmd));
+                let output = |stdout: &[u8], stderr: &[u8], success: bool| ShellOutput {
                     stdout: stdout.to_vec(),
-                    stderr: Vec::new(),
-                    success: true,
+                    stderr: stderr.to_vec(),
+                    success,
                 };
                 if cmd.program == "kw" {
-                    return Ok(output(KW_VERSION_OK));
+                    return Ok(output(kw_version, b"", true));
                 }
                 if cmd.args.iter().any(|arg| arg == "status") {
-                    let stdout: &[u8] = if dirty.load(Ordering::Relaxed) {
-                        b" M src/main.c\n"
-                    } else {
-                        b""
-                    };
-                    return Ok(output(stdout));
+                    return Ok(output(status.0, status.1, status.2));
                 }
                 if cmd.args.iter().any(|arg| arg == "switch") {
-                    let branch = cmd.args.last().expect("iterator yields last").clone();
-                    if fail_switch_to
-                        .lock()
-                        .expect("fail switch to locks")
-                        .as_deref()
-                        == Some(branch.as_str())
-                    {
-                        return Ok(ShellOutput {
-                            stdout: Vec::new(),
-                            stderr: b"error: you need to resolve your current index first\n"
-                                .to_vec(),
-                            success: false,
-                        });
-                    }
-                    *head.lock().expect("head locks") = branch;
-                    return Ok(output(b""));
+                    return Ok(output(b"", switch.0, switch.1));
                 }
-                let current = format!("{}\n", head.lock().expect("head locks"));
-                Ok(output(current.as_bytes()))
+                Ok(output(b"master\n", b"", true))
             });
-        shell
-    }
-}
-
-impl GitStub {
-    fn set_dirty(&self, dirty: bool) {
-        self.dirty.store(dirty, Ordering::Relaxed);
+        (shell, calls)
     }
 
-    fn fail_switches_to(&self, branch: Option<&str>) {
-        *self.fail_switch_to.lock().expect("fail switch to locks") = branch.map(str::to_string);
+    /// Shell double for checkout/restore tests: kw version probe answers
+    /// 0.10.0, `git status --porcelain` reflects the dirty flag, the HEAD
+    /// probe reports `head` (including git's trailing newline), and a
+    /// successful `git switch` updates `head`. Switches to `fail_switch_to`
+    /// fail, so going forward can succeed while coming back fails.
+    pub struct GitStub {
+        head: Arc<Mutex<String>>,
+        dirty: Arc<AtomicBool>,
+        fail_switch_to: Arc<Mutex<Option<String>>>,
     }
-}
 
-/// fs answers for a ready kernel tree with no active kw env: the
-/// kernel-root probes pass, `.config` exists, `.kw/env.current` is
-/// absent, `.kw/build.config` is unreadable (arch probes as None),
-/// and there is no arch/ dir to glob images from.
-fn expect_ready_tree(fs: &mut MockFileSystemTrait) {
-    fs.expect_is_dir()
-        .withf(|path| {
-            path == std::path::Path::new("/home/user/linux")
-                || path == std::path::Path::new("/home/user/linux/.kw")
-                || path == std::path::Path::new("/home/user/linux/Documentation")
-                || path == std::path::Path::new("/home/user/linux/arch")
-                || path == std::path::Path::new("/home/user/linux/drivers")
-                || path == std::path::Path::new("/home/user/linux/fs")
-                || path == std::path::Path::new("/home/user/linux/include")
-                || path == std::path::Path::new("/home/user/linux/init")
-                || path == std::path::Path::new("/home/user/linux/ipc")
-                || path == std::path::Path::new("/home/user/linux/kernel")
-                || path == std::path::Path::new("/home/user/linux/lib")
-                || path == std::path::Path::new("/home/user/linux/scripts")
-        })
-        .times(12..=24)
-        .returning(|_| true);
-    fs.expect_is_file()
-        .withf(|path| {
-            path == std::path::Path::new("/home/user/linux/.config")
-                || path == std::path::Path::new("/home/user/linux/.kw/env.current")
-                || path == std::path::Path::new("/home/user/linux/COPYING")
-                || path == std::path::Path::new("/home/user/linux/CREDITS")
-                || path == std::path::Path::new("/home/user/linux/Kbuild")
-                || path == std::path::Path::new("/home/user/linux/Makefile")
-                || path == std::path::Path::new("/home/user/linux/README")
-        })
-        .times(7..=14)
-        .returning(|path| !path.ends_with(".kw/env.current"));
-    fs.expect_exists()
-        .withf(|path| path == std::path::Path::new("/home/user/linux/MAINTAINERS"))
-        .times(1..=2)
-        .returning(|_| true);
-    fs.expect_read_to_string()
-        .withf(|path| {
-            path == std::path::Path::new("/home/user/linux/.kw/build.config")
-                || path == std::path::Path::new("/home/user/linux/include/config/kernel.release")
-                || path.extension() == Some("log".as_ref())
-        })
-        .times(1..=3)
-        .returning(|path| {
-            read_real_job_log(path).unwrap_or_else(|| {
-                Err(FileSystemError::IoError(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "missing",
-                )))
+    impl GitStub {
+        pub fn on_branch(branch: &str) -> Self {
+            Self {
+                head: Arc::new(Mutex::new(branch.to_string())),
+                dirty: Arc::new(AtomicBool::new(false)),
+                fail_switch_to: Arc::new(Mutex::new(None)),
+            }
+        }
+
+        pub fn head(&self) -> String {
+            self.head.lock().expect("head locks").clone()
+        }
+
+        pub fn shell(&self) -> MockShellTrait {
+            let head = Arc::clone(&self.head);
+            let dirty = Arc::clone(&self.dirty);
+            let fail_switch_to = Arc::clone(&self.fail_switch_to);
+            let mut shell = MockShellTrait::new();
+            shell
+                .expect_execute()
+                .withf(|cmd| {
+                    cmd.program == "kw" && cmd.args == ["--version"]
+                        || cmd.program == "git"
+                            && cmd.args
+                                == [
+                                    "-C",
+                                    "/home/user/linux",
+                                    "status",
+                                    "--porcelain",
+                                    "--untracked-files=no",
+                                ]
+                        || cmd.program == "git"
+                            && cmd.args == ["-C", "/home/user/linux", "branch", "--show-current"]
+                        || cmd.program == "git"
+                            && cmd.args
+                                == [
+                                    "-C",
+                                    "/home/user/linux",
+                                    "switch",
+                                    "--",
+                                    "patchset-2026-08-01-17-30-00",
+                                ]
+                        || cmd.program == "git"
+                            && cmd.args == ["-C", "/home/user/linux", "switch", "--", "master"]
+                        || cmd.program == "git"
+                            && cmd.args
+                                == ["-C", "/home/user/linux", "switch", "--", "patchset-two"]
+                })
+                .times(5..=11)
+                .returning(move |cmd| {
+                    let output = |stdout: &[u8]| ShellOutput {
+                        stdout: stdout.to_vec(),
+                        stderr: Vec::new(),
+                        success: true,
+                    };
+                    if cmd.program == "kw" {
+                        return Ok(output(KW_VERSION_OK));
+                    }
+                    if cmd.args.iter().any(|arg| arg == "status") {
+                        let stdout: &[u8] = if dirty.load(Ordering::Relaxed) {
+                            b" M src/main.c\n"
+                        } else {
+                            b""
+                        };
+                        return Ok(output(stdout));
+                    }
+                    if cmd.args.iter().any(|arg| arg == "switch") {
+                        let branch = cmd.args.last().expect("iterator yields last").clone();
+                        if fail_switch_to
+                            .lock()
+                            .expect("fail switch to locks")
+                            .as_deref()
+                            == Some(branch.as_str())
+                        {
+                            return Ok(ShellOutput {
+                                stdout: Vec::new(),
+                                stderr: b"error: you need to resolve your current index first\n"
+                                    .to_vec(),
+                                success: false,
+                            });
+                        }
+                        *head.lock().expect("head locks") = branch;
+                        return Ok(output(b""));
+                    }
+                    let current = format!("{}\n", head.lock().expect("head locks"));
+                    Ok(output(current.as_bytes()))
+                });
+            shell
+        }
+    }
+
+    impl GitStub {
+        pub(super) fn set_dirty(&self, dirty: bool) {
+            self.dirty.store(dirty, Ordering::Relaxed);
+        }
+
+        pub(super) fn fail_switches_to(&self, branch: Option<&str>) {
+            *self.fail_switch_to.lock().expect("fail switch to locks") = branch.map(str::to_string);
+        }
+    }
+
+    /// fs answers for a ready kernel tree with no active kw env: the
+    /// kernel-root probes pass, `.config` exists, `.kw/env.current` is
+    /// absent, `.kw/build.config` is unreadable (arch probes as None),
+    /// and there is no arch/ dir to glob images from.
+    pub fn expect_ready_tree(fs: &mut MockFileSystemTrait) {
+        fs.expect_is_dir()
+            .withf(|path| {
+                path == std::path::Path::new("/home/user/linux")
+                    || path == std::path::Path::new("/home/user/linux/.kw")
+                    || path == std::path::Path::new("/home/user/linux/Documentation")
+                    || path == std::path::Path::new("/home/user/linux/arch")
+                    || path == std::path::Path::new("/home/user/linux/drivers")
+                    || path == std::path::Path::new("/home/user/linux/fs")
+                    || path == std::path::Path::new("/home/user/linux/include")
+                    || path == std::path::Path::new("/home/user/linux/init")
+                    || path == std::path::Path::new("/home/user/linux/ipc")
+                    || path == std::path::Path::new("/home/user/linux/kernel")
+                    || path == std::path::Path::new("/home/user/linux/lib")
+                    || path == std::path::Path::new("/home/user/linux/scripts")
             })
-        });
-    fs.expect_read_dir()
-        .withf(|path| path == std::path::Path::new("/home/user/linux/arch"))
-        .times(0..=1)
-        .returning(|_| {
-            Err(FileSystemError::IoError(io::Error::new(
-                io::ErrorKind::NotFound,
-                "missing",
-            )))
-        });
-}
-
-/// Job logs are real files ([`FakeProcess`] creates them and
-/// `write_log` appends to them), so fs doubles read `*.log` paths from
-/// disk.
-fn read_real_job_log(path: &Path) -> Option<Result<String, FileSystemError>> {
-    (path.extension() == Some("log".as_ref()))
-        .then(|| fs::read_to_string(path).map_err(FileSystemError::from))
-}
-
-/// A ready kernel tree whose log dir can be created.
-fn ready_fs() -> MockFileSystemTrait {
-    let mut fs = MockFileSystemTrait::new();
-    expect_ready_tree(&mut fs);
-    fs.expect_create_dir_all()
-        .withf(|path| path.starts_with(std::env::temp_dir()))
-        .times(1..=2)
-        .returning(|_| Ok(()));
-    fs
-}
-
-/// A ready kernel tree whose build produced an image and a
-/// kernelrelease: build.config sets `arch=x86`, `arch/x86/boot/`
-/// holds a bzImage, and `include/config/kernel.release` exists. The
-/// image's metadata is unreadable, so its mtime falls back to the
-/// epoch — still the only, hence newest, candidate.
-fn built_tree_fs() -> MockFileSystemTrait {
-    let mut fs = MockFileSystemTrait::new();
-    fs.expect_is_dir()
-        .withf(|path| {
-            path == std::path::Path::new("/home/user/linux")
-                || path == std::path::Path::new("/home/user/linux/.kw")
-                || path == std::path::Path::new("/home/user/linux/Documentation")
-                || path == std::path::Path::new("/home/user/linux/arch")
-                || path == std::path::Path::new("/home/user/linux/drivers")
-                || path == std::path::Path::new("/home/user/linux/fs")
-                || path == std::path::Path::new("/home/user/linux/include")
-                || path == std::path::Path::new("/home/user/linux/init")
-                || path == std::path::Path::new("/home/user/linux/ipc")
-                || path == std::path::Path::new("/home/user/linux/kernel")
-                || path == std::path::Path::new("/home/user/linux/lib")
-                || path == std::path::Path::new("/home/user/linux/scripts")
-        })
-        .times(12)
-        .returning(|_| true);
-    fs.expect_is_file()
-        .withf(|path| {
-            path == std::path::Path::new("/home/user/linux/.config")
-                || path == std::path::Path::new("/home/user/linux/.kw/env.current")
-                || path == std::path::Path::new("/home/user/linux/COPYING")
-                || path == std::path::Path::new("/home/user/linux/CREDITS")
-                || path == std::path::Path::new("/home/user/linux/Kbuild")
-                || path == std::path::Path::new("/home/user/linux/Makefile")
-                || path == std::path::Path::new("/home/user/linux/README")
-                || path == std::path::Path::new("/home/user/linux/arch/x86/boot/bzImage")
-        })
-        .times(7..=8)
-        .returning(|path| !path.ends_with(".kw/env.current"));
-    fs.expect_exists()
-        .withf(|path| path == std::path::Path::new("/home/user/linux/MAINTAINERS"))
-        .times(1)
-        .returning(|_| true);
-    fs.expect_read_to_string()
-        .withf(|path| {
-            path == std::path::Path::new("/home/user/linux/.kw/build.config")
-                || path == std::path::Path::new("/home/user/linux/include/config/kernel.release")
-                || path.extension() == Some("log".as_ref())
-        })
-        .times(2)
-        .returning(|path| {
-            if path.ends_with("build.config") {
-                Ok("arch=x86\n".to_string())
-            } else if path.ends_with("kernel.release") {
-                Ok("6.17.0\n".to_string())
-            } else {
+            .times(12..=24)
+            .returning(|_| true);
+        fs.expect_is_file()
+            .withf(|path| {
+                path == std::path::Path::new("/home/user/linux/.config")
+                    || path == std::path::Path::new("/home/user/linux/.kw/env.current")
+                    || path == std::path::Path::new("/home/user/linux/COPYING")
+                    || path == std::path::Path::new("/home/user/linux/CREDITS")
+                    || path == std::path::Path::new("/home/user/linux/Kbuild")
+                    || path == std::path::Path::new("/home/user/linux/Makefile")
+                    || path == std::path::Path::new("/home/user/linux/README")
+            })
+            .times(7..=14)
+            .returning(|path| !path.ends_with(".kw/env.current"));
+        fs.expect_exists()
+            .withf(|path| path == std::path::Path::new("/home/user/linux/MAINTAINERS"))
+            .times(1..=2)
+            .returning(|_| true);
+        fs.expect_read_to_string()
+            .withf(|path| {
+                path == std::path::Path::new("/home/user/linux/.kw/build.config")
+                    || path
+                        == std::path::Path::new("/home/user/linux/include/config/kernel.release")
+                    || path.extension() == Some("log".as_ref())
+            })
+            .times(1..=3)
+            .returning(|path| {
+                read_real_job_log(path).unwrap_or_else(|| {
+                    Err(FileSystemError::IoError(io::Error::new(
+                        io::ErrorKind::NotFound,
+                        "missing",
+                    )))
+                })
+            });
+        fs.expect_read_dir()
+            .withf(|path| path == std::path::Path::new("/home/user/linux/arch"))
+            .times(0..=1)
+            .returning(|_| {
                 Err(FileSystemError::IoError(io::Error::new(
                     io::ErrorKind::NotFound,
                     "missing",
                 )))
+            });
+    }
+
+    /// Job logs are real files ([`FakeProcess`] creates them and
+    /// `write_log` appends to them), so fs doubles read `*.log` paths from
+    /// disk.
+    pub fn read_real_job_log(path: &Path) -> Option<Result<String, FileSystemError>> {
+        (path.extension() == Some("log".as_ref()))
+            .then(|| fs::read_to_string(path).map_err(FileSystemError::from))
+    }
+
+    /// A ready kernel tree whose log dir can be created.
+    pub fn ready_fs() -> MockFileSystemTrait {
+        let mut fs = MockFileSystemTrait::new();
+        expect_ready_tree(&mut fs);
+        fs.expect_create_dir_all()
+            .withf(|path| path.starts_with(std::env::temp_dir()))
+            .times(1..=2)
+            .returning(|_| Ok(()));
+        fs
+    }
+
+    /// A ready kernel tree whose build produced an image and a
+    /// kernelrelease: build.config sets `arch=x86`, `arch/x86/boot/`
+    /// holds a bzImage, and `include/config/kernel.release` exists. The
+    /// image's metadata is unreadable, so its mtime falls back to the
+    /// epoch — still the only, hence newest, candidate.
+    pub fn built_tree_fs() -> MockFileSystemTrait {
+        let mut fs = MockFileSystemTrait::new();
+        fs.expect_is_dir()
+            .withf(|path| {
+                path == std::path::Path::new("/home/user/linux")
+                    || path == std::path::Path::new("/home/user/linux/.kw")
+                    || path == std::path::Path::new("/home/user/linux/Documentation")
+                    || path == std::path::Path::new("/home/user/linux/arch")
+                    || path == std::path::Path::new("/home/user/linux/drivers")
+                    || path == std::path::Path::new("/home/user/linux/fs")
+                    || path == std::path::Path::new("/home/user/linux/include")
+                    || path == std::path::Path::new("/home/user/linux/init")
+                    || path == std::path::Path::new("/home/user/linux/ipc")
+                    || path == std::path::Path::new("/home/user/linux/kernel")
+                    || path == std::path::Path::new("/home/user/linux/lib")
+                    || path == std::path::Path::new("/home/user/linux/scripts")
+            })
+            .times(12)
+            .returning(|_| true);
+        fs.expect_is_file()
+            .withf(|path| {
+                path == std::path::Path::new("/home/user/linux/.config")
+                    || path == std::path::Path::new("/home/user/linux/.kw/env.current")
+                    || path == std::path::Path::new("/home/user/linux/COPYING")
+                    || path == std::path::Path::new("/home/user/linux/CREDITS")
+                    || path == std::path::Path::new("/home/user/linux/Kbuild")
+                    || path == std::path::Path::new("/home/user/linux/Makefile")
+                    || path == std::path::Path::new("/home/user/linux/README")
+                    || path == std::path::Path::new("/home/user/linux/arch/x86/boot/bzImage")
+            })
+            .times(7..=8)
+            .returning(|path| !path.ends_with(".kw/env.current"));
+        fs.expect_exists()
+            .withf(|path| path == std::path::Path::new("/home/user/linux/MAINTAINERS"))
+            .times(1)
+            .returning(|_| true);
+        fs.expect_read_to_string()
+            .withf(|path| {
+                path == std::path::Path::new("/home/user/linux/.kw/build.config")
+                    || path
+                        == std::path::Path::new("/home/user/linux/include/config/kernel.release")
+                    || path.extension() == Some("log".as_ref())
+            })
+            .times(2)
+            .returning(|path| {
+                if path.ends_with("build.config") {
+                    Ok("arch=x86\n".to_string())
+                } else if path.ends_with("kernel.release") {
+                    Ok("6.17.0\n".to_string())
+                } else {
+                    Err(FileSystemError::IoError(io::Error::new(
+                        io::ErrorKind::NotFound,
+                        "missing",
+                    )))
+                }
+            });
+        fs.expect_read_dir()
+            .withf(|path| path == std::path::Path::new("/home/user/linux/arch/x86/boot"))
+            .times(0..=1)
+            .returning(|path| {
+                if path.ends_with("arch/x86/boot") {
+                    Ok(vec![PathBuf::from(
+                        "/home/user/linux/arch/x86/boot/bzImage",
+                    )])
+                } else {
+                    Err(FileSystemError::IoError(io::Error::new(
+                        io::ErrorKind::NotFound,
+                        "missing",
+                    )))
+                }
+            });
+        fs.expect_metadata()
+            .withf(|path| path == std::path::Path::new("/home/user/linux/arch/x86/boot/bzImage"))
+            .times(0..=1)
+            .returning(|_| Err(FileSystemError::IoError(io::Error::other("no metadata"))));
+        fs.expect_create_dir_all()
+            .withf(|path| path.starts_with(std::env::temp_dir()))
+            .times(1)
+            .returning(|_| Ok(()));
+        fs
+    }
+
+    pub const DEPLOY_REMOTE_CONFIG: &str =
+        "#kw-default=dut\nHost dut\n  Hostname box\n  Port 22\n  User root\n";
+    pub const DEPLOY_BOOT_ONCE_OFF: &str = "boot_into_new_kernel_once=no\n";
+    pub const DEPLOY_BOOT_ONCE_ON: &str = "boot_into_new_kernel_once=yes\n";
+
+    pub fn deploy_ready_fs() -> MockFileSystemTrait {
+        deploy_fs(DEPLOY_REMOTE_CONFIG, DEPLOY_BOOT_ONCE_OFF, true)
+    }
+
+    pub fn deploy_fs(
+        remote_config: &'static str,
+        deploy_config: &'static str,
+        has_image: bool,
+    ) -> MockFileSystemTrait {
+        let mut fs = MockFileSystemTrait::new();
+        fs.expect_is_dir()
+            .withf(|path| {
+                path == std::path::Path::new("/home/user/linux")
+                    || path == std::path::Path::new("/home/user/linux/.kw")
+                    || path == std::path::Path::new("/home/user/linux/Documentation")
+                    || path == std::path::Path::new("/home/user/linux/arch")
+                    || path == std::path::Path::new("/home/user/linux/drivers")
+                    || path == std::path::Path::new("/home/user/linux/fs")
+                    || path == std::path::Path::new("/home/user/linux/include")
+                    || path == std::path::Path::new("/home/user/linux/init")
+                    || path == std::path::Path::new("/home/user/linux/ipc")
+                    || path == std::path::Path::new("/home/user/linux/kernel")
+                    || path == std::path::Path::new("/home/user/linux/lib")
+                    || path == std::path::Path::new("/home/user/linux/scripts")
+            })
+            .times(12)
+            .returning(|_| true);
+        fs.expect_is_file()
+            .withf(|path| {
+                path == std::path::Path::new("/home/user/linux/.config")
+                    || path == std::path::Path::new("/home/user/linux/.kw/deploy.config")
+                    || path == std::path::Path::new("/home/user/linux/.kw/env.current")
+                    || path == std::path::Path::new("/home/user/linux/.kw/remote.config")
+                    || path == std::path::Path::new("/home/user/linux/COPYING")
+                    || path == std::path::Path::new("/home/user/linux/CREDITS")
+                    || path == std::path::Path::new("/home/user/linux/Kbuild")
+                    || path == std::path::Path::new("/home/user/linux/Makefile")
+                    || path == std::path::Path::new("/home/user/linux/README")
+                    || path == std::path::Path::new("/home/user/linux/arch/x86/boot/bzImage")
+            })
+            .times(8..=10)
+            .returning(|path| !path.ends_with(".kw/env.current"));
+        fs.expect_exists()
+            .withf(|path| path == std::path::Path::new("/home/user/linux/MAINTAINERS"))
+            .times(1)
+            .returning(|_| true);
+        fs.expect_read_to_string()
+            .withf(|path| {
+                path == std::path::Path::new("/home/user/linux/.kw/build.config")
+                    || path == std::path::Path::new("/home/user/linux/.kw/deploy.config")
+                    || path == std::path::Path::new("/home/user/linux/.kw/remote.config")
+                    || path
+                        == std::path::Path::new("/home/user/linux/include/config/kernel.release")
+                    || path.extension() == Some("log".as_ref())
+            })
+            .times(2..=5)
+            .returning(move |path| {
+                if let Some(log) = read_real_job_log(path) {
+                    log
+                } else if path.ends_with("build.config") {
+                    Ok("arch=x86\n".to_string())
+                } else if path.ends_with("kernel.release") {
+                    Ok("6.17.0\n".to_string())
+                } else if path.ends_with("remote.config") {
+                    Ok(remote_config.to_string())
+                } else if path.ends_with("deploy.config") {
+                    Ok(deploy_config.to_string())
+                } else {
+                    Err(FileSystemError::IoError(io::Error::new(
+                        io::ErrorKind::NotFound,
+                        "missing",
+                    )))
+                }
+            });
+        fs.expect_read_dir()
+            .withf(|path| path == std::path::Path::new("/home/user/linux/arch/x86/boot"))
+            .times(0..=1)
+            .returning(move |path| {
+                if has_image && path.ends_with("arch/x86/boot") {
+                    Ok(vec![PathBuf::from(
+                        "/home/user/linux/arch/x86/boot/bzImage",
+                    )])
+                } else {
+                    Err(FileSystemError::IoError(io::Error::new(
+                        io::ErrorKind::NotFound,
+                        "missing",
+                    )))
+                }
+            });
+        fs.expect_metadata()
+            .withf(|path| path == std::path::Path::new("/home/user/linux/arch/x86/boot/bzImage"))
+            .times(0..=1)
+            .returning(|_| Err(FileSystemError::IoError(io::Error::other("no metadata"))));
+        fs.expect_create_dir_all()
+            .withf(|path| path.starts_with(std::env::temp_dir()))
+            .times(0..=2)
+            .returning(|_| Ok(()));
+        fs
+    }
+
+    pub fn matching_build_record() -> KwBuildRecord {
+        KwBuildRecord {
+            kernel_tree_id: "mainline".to_string(),
+            tree_path: "/home/user/linux".to_string(),
+            message_id: None,
+            branch: "patchset-2026-08-01-17-30-00".to_string(),
+            arch: Some("x86".to_string()),
+            image_path: Some("/home/user/linux/arch/x86/boot/bzImage".to_string()),
+            output_dir: None,
+            kernelrelease: Some("6.17.0".to_string()),
+            log_path: String::new(),
+            built_at: "2026-08-01T18:10:00Z".to_string(),
+            success: true,
+        }
+    }
+
+    pub fn deploy_options(acknowledged: bool) -> DeployOptions {
+        DeployOptions {
+            reboot: false,
+            force: true,
+            boot_once_acknowledged: acknowledged,
+        }
+    }
+
+    pub fn deploy_request() -> StartRequest {
+        let mut request = start_request();
+        request.deploy = Some(deploy_options(false));
+        request
+    }
+
+    /// History for a deploy-alone start: answers the record lookup for the
+    /// requested branch and panics if a deploy writes a build record.
+    pub fn deploy_history(record: Option<KwBuildRecord>) -> MockKwHistoryStore {
+        let mut history = MockKwHistoryStore::new();
+        history
+            .expect_build_records()
+            .withf(|kernel_tree_id, branch| {
+                kernel_tree_id == "mainline" && branch == "patchset-2026-08-01-17-30-00"
+            })
+            .times(1)
+            .returning(move |_, _| Ok((record.clone(), record.clone())));
+        history.expect_record_build().withf(|_| true).times(0);
+        history
+    }
+
+    pub fn env_with_kw() -> MockEnvTrait {
+        let mut env = MockEnvTrait::new();
+        env.expect_which()
+            .withf(|name| name == "kw")
+            .times(1)
+            .returning(|_| true);
+        env
+    }
+
+    pub fn spawn_deploy_actor(
+        test_name: &str,
+        history: MockKwHistoryStore,
+        fs: MockFileSystemTrait,
+    ) -> (KwHandle, Arc<FakeProcess>, PathBuf) {
+        let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
+        spawn_full_actor(test_name, history, shell, fs, env_with_kw())
+    }
+
+    /// History answers for an actor whose jobs complete: no patchset
+    /// link, build-record writes accepted and dropped.
+    pub fn quiet_history() -> MockKwHistoryStore {
+        let mut history = MockKwHistoryStore::new();
+        history
+            .expect_apply_record_for_branch()
+            .withf(|tree, branch| tree == "mainline" && branch == "patchset-2026-08-01-17-30-00")
+            .times(1)
+            .returning(|_, _| Ok(None));
+        history
+            .expect_record_build()
+            .withf(|record| record.branch == "patchset-2026-08-01-17-30-00")
+            .times(1)
+            .returning(|_| Ok(()));
+        history
+    }
+
+    /// A history double that captures written build records and answers
+    /// the patchset-link lookup with `apply_record`.
+    pub fn recording_history(
+        apply_record: Option<KwApplyRecord>,
+    ) -> (MockKwHistoryStore, Arc<Mutex<Vec<KwBuildRecord>>>) {
+        let builds = Arc::new(Mutex::new(Vec::new()));
+        let builds_in_store = Arc::clone(&builds);
+        let mut history = MockKwHistoryStore::new();
+        history
+            .expect_apply_record_for_branch()
+            .withf(|tree, branch| tree == "mainline" && branch == "patchset-2026-08-01-17-30-00")
+            .times(1)
+            .returning(move |_, _| Ok(apply_record.clone()));
+        history
+            .expect_record_build()
+            .withf(|record| record.branch == "patchset-2026-08-01-17-30-00")
+            .times(1)
+            .returning(move |record| {
+                builds_in_store
+                    .lock()
+                    .expect("builds in store locks")
+                    .push(record);
+                Ok(())
+            });
+        (history, builds)
+    }
+
+    /// Spawns the actor with every dependency explicit, a real temp log
+    /// dir, and the [`FakeProcess`] exposed so tests drive the "running"
+    /// process.
+    pub fn spawn_full_actor(
+        test_name: &str,
+        history: MockKwHistoryStore,
+        shell: MockShellTrait,
+        fs: MockFileSystemTrait,
+        env: MockEnvTrait,
+    ) -> (KwHandle, Arc<FakeProcess>, PathBuf) {
+        let process = Arc::new(FakeProcess::new());
+        let log_dir = tmp_log_dir(test_name);
+        let handle = KwActor::spawn(
+            Arc::new(history),
+            process.clone(),
+            Arc::new(shell),
+            Arc::new(fs),
+            Arc::new(env),
+            log_dir.clone(),
+        );
+        (handle, process, log_dir)
+    }
+
+    /// Spawns the actor with a real temp log dir and exposes the
+    /// [`FakeProcess`] so tests drive the "running" process. The env mock
+    /// has kw on PATH.
+    pub fn spawn_job_actor_with_mocks(
+        test_name: &str,
+        shell: MockShellTrait,
+        fs: MockFileSystemTrait,
+    ) -> (KwHandle, Arc<FakeProcess>, PathBuf) {
+        let mut env = MockEnvTrait::new();
+        env.expect_which()
+            .withf(|name| name == "kw")
+            .times(1..=2)
+            .returning(|_| true);
+        spawn_full_actor(test_name, quiet_history(), shell, fs, env)
+    }
+
+    pub fn spawn_job_actor(test_name: &str) -> (KwHandle, Arc<FakeProcess>, PathBuf) {
+        let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
+        spawn_job_actor_with_mocks(test_name, shell, ready_fs())
+    }
+
+    pub fn apply_record() -> KwApplyRecord {
+        KwApplyRecord {
+            message_id: "msg-1".to_string(),
+            kernel_tree_id: "mainline".to_string(),
+            tree_path: "/home/user/linux".to_string(),
+            applied_branch: "patchset-2026-08-01-17-30-00".to_string(),
+            base_branch: "master".to_string(),
+            applied_at: "2026-08-01T17:30:00Z".to_string(),
+        }
+    }
+
+    /// Waits until the status leaves `Idle`/`Running` and returns the
+    /// terminal status. The receiver may have observed the `Running`
+    /// transition first, so a single `changed()` is not enough. The timeout
+    /// backstops against a wedged actor; tests that exercise the grace
+    /// periods run with paused time instead of waiting them out.
+    pub async fn wait_for_terminal_status(
+        watch: &mut watch::Receiver<KwStatusSnapshot>,
+    ) -> KwJobStatus {
+        time::timeout(Duration::from_secs(10), async {
+            loop {
+                let status = watch.borrow().job.clone();
+                if !matches!(status, KwJobStatus::Idle | KwJobStatus::Running { .. }) {
+                    return status;
+                }
+                watch.changed().await.expect("watch notifies");
             }
-        });
-    fs.expect_read_dir()
-        .withf(|path| path == std::path::Path::new("/home/user/linux/arch/x86/boot"))
-        .times(0..=1)
-        .returning(|path| {
-            if path.ends_with("arch/x86/boot") {
-                Ok(vec![PathBuf::from(
-                    "/home/user/linux/arch/x86/boot/bzImage",
-                )])
-            } else {
-                Err(FileSystemError::IoError(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "missing",
-                )))
-            }
-        });
-    fs.expect_metadata()
-        .withf(|path| path == std::path::Path::new("/home/user/linux/arch/x86/boot/bzImage"))
-        .times(0..=1)
-        .returning(|_| Err(FileSystemError::IoError(io::Error::other("no metadata"))));
-    fs.expect_create_dir_all()
-        .withf(|path| path.starts_with(std::env::temp_dir()))
-        .times(1)
-        .returning(|_| Ok(()));
-    fs
-}
-
-pub(super) const DEPLOY_REMOTE_CONFIG: &str =
-    "#kw-default=dut\nHost dut\n  Hostname box\n  Port 22\n  User root\n";
-pub(super) const DEPLOY_BOOT_ONCE_OFF: &str = "boot_into_new_kernel_once=no\n";
-pub(super) const DEPLOY_BOOT_ONCE_ON: &str = "boot_into_new_kernel_once=yes\n";
-
-pub(super) fn deploy_ready_fs() -> MockFileSystemTrait {
-    deploy_fs(DEPLOY_REMOTE_CONFIG, DEPLOY_BOOT_ONCE_OFF, true)
-}
-
-pub(super) fn deploy_fs(
-    remote_config: &'static str,
-    deploy_config: &'static str,
-    has_image: bool,
-) -> MockFileSystemTrait {
-    let mut fs = MockFileSystemTrait::new();
-    fs.expect_is_dir()
-        .withf(|path| {
-            path == std::path::Path::new("/home/user/linux")
-                || path == std::path::Path::new("/home/user/linux/.kw")
-                || path == std::path::Path::new("/home/user/linux/Documentation")
-                || path == std::path::Path::new("/home/user/linux/arch")
-                || path == std::path::Path::new("/home/user/linux/drivers")
-                || path == std::path::Path::new("/home/user/linux/fs")
-                || path == std::path::Path::new("/home/user/linux/include")
-                || path == std::path::Path::new("/home/user/linux/init")
-                || path == std::path::Path::new("/home/user/linux/ipc")
-                || path == std::path::Path::new("/home/user/linux/kernel")
-                || path == std::path::Path::new("/home/user/linux/lib")
-                || path == std::path::Path::new("/home/user/linux/scripts")
         })
-        .times(12)
-        .returning(|_| true);
-    fs.expect_is_file()
-        .withf(|path| {
-            path == std::path::Path::new("/home/user/linux/.config")
-                || path == std::path::Path::new("/home/user/linux/.kw/deploy.config")
-                || path == std::path::Path::new("/home/user/linux/.kw/env.current")
-                || path == std::path::Path::new("/home/user/linux/.kw/remote.config")
-                || path == std::path::Path::new("/home/user/linux/COPYING")
-                || path == std::path::Path::new("/home/user/linux/CREDITS")
-                || path == std::path::Path::new("/home/user/linux/Kbuild")
-                || path == std::path::Path::new("/home/user/linux/Makefile")
-                || path == std::path::Path::new("/home/user/linux/README")
-                || path == std::path::Path::new("/home/user/linux/arch/x86/boot/bzImage")
-        })
-        .times(8..=10)
-        .returning(|path| !path.ends_with(".kw/env.current"));
-    fs.expect_exists()
-        .withf(|path| path == std::path::Path::new("/home/user/linux/MAINTAINERS"))
-        .times(1)
-        .returning(|_| true);
-    fs.expect_read_to_string()
-        .withf(|path| {
-            path == std::path::Path::new("/home/user/linux/.kw/build.config")
-                || path == std::path::Path::new("/home/user/linux/.kw/deploy.config")
-                || path == std::path::Path::new("/home/user/linux/.kw/remote.config")
-                || path == std::path::Path::new("/home/user/linux/include/config/kernel.release")
-                || path.extension() == Some("log".as_ref())
-        })
-        .times(2..=5)
-        .returning(move |path| {
-            if let Some(log) = read_real_job_log(path) {
-                log
-            } else if path.ends_with("build.config") {
-                Ok("arch=x86\n".to_string())
-            } else if path.ends_with("kernel.release") {
-                Ok("6.17.0\n".to_string())
-            } else if path.ends_with("remote.config") {
-                Ok(remote_config.to_string())
-            } else if path.ends_with("deploy.config") {
-                Ok(deploy_config.to_string())
-            } else {
-                Err(FileSystemError::IoError(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "missing",
-                )))
-            }
-        });
-    fs.expect_read_dir()
-        .withf(|path| path == std::path::Path::new("/home/user/linux/arch/x86/boot"))
-        .times(0..=1)
-        .returning(move |path| {
-            if has_image && path.ends_with("arch/x86/boot") {
-                Ok(vec![PathBuf::from(
-                    "/home/user/linux/arch/x86/boot/bzImage",
-                )])
-            } else {
-                Err(FileSystemError::IoError(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "missing",
-                )))
-            }
-        });
-    fs.expect_metadata()
-        .withf(|path| path == std::path::Path::new("/home/user/linux/arch/x86/boot/bzImage"))
-        .times(0..=1)
-        .returning(|_| Err(FileSystemError::IoError(io::Error::other("no metadata"))));
-    fs.expect_create_dir_all()
-        .withf(|path| path.starts_with(std::env::temp_dir()))
-        .times(0..=2)
-        .returning(|_| Ok(()));
-    fs
-}
+        .await
+        .expect("status must reach a terminal state")
+    }
 
-pub(super) fn matching_build_record() -> KwBuildRecord {
-    KwBuildRecord {
-        kernel_tree_id: "mainline".to_string(),
-        tree_path: "/home/user/linux".to_string(),
-        message_id: None,
-        branch: "patchset-2026-08-01-17-30-00".to_string(),
-        arch: Some("x86".to_string()),
-        image_path: Some("/home/user/linux/arch/x86/boot/bzImage".to_string()),
-        output_dir: None,
-        kernelrelease: Some("6.17.0".to_string()),
-        log_path: String::new(),
-        built_at: "2026-08-01T18:10:00Z".to_string(),
-        success: true,
+    pub async fn wait_for_running_phase(
+        watch: &mut watch::Receiver<KwStatusSnapshot>,
+        phase: KwPhase,
+    ) -> KwJobStatus {
+        time::timeout(Duration::from_secs(10), async {
+            loop {
+                let status = watch.borrow().job.clone();
+                if matches!(
+                    status,
+                    KwJobStatus::Running { phase: running, .. } if running == phase
+                ) {
+                    return status;
+                }
+                watch.changed().await.expect("watch notifies");
+            }
+        })
+        .await
+        .expect("status must reach the expected running phase")
     }
 }
-
-pub(super) fn deploy_options(acknowledged: bool) -> DeployOptions {
-    DeployOptions {
-        reboot: false,
-        force: true,
-        boot_once_acknowledged: acknowledged,
-    }
-}
-
-pub(super) fn deploy_request() -> StartRequest {
-    let mut request = start_request();
-    request.deploy = Some(deploy_options(false));
-    request
-}
-
-/// History for a deploy-alone start: answers the record lookup for the
-/// requested branch and panics if a deploy writes a build record.
-pub(super) fn deploy_history(record: Option<KwBuildRecord>) -> MockKwHistoryStore {
-    let mut history = MockKwHistoryStore::new();
-    history
-        .expect_build_records()
-        .withf(|kernel_tree_id, branch| {
-            kernel_tree_id == "mainline" && branch == "patchset-2026-08-01-17-30-00"
-        })
-        .times(1)
-        .returning(move |_, _| Ok((record.clone(), record.clone())));
-    history.expect_record_build().withf(|_| true).times(0);
-    history
-}
-
-pub(super) fn env_with_kw() -> MockEnvTrait {
-    let mut env = MockEnvTrait::new();
-    env.expect_which()
-        .withf(|name| name == "kw")
-        .times(1)
-        .returning(|_| true);
-    env
-}
-
-pub(super) fn spawn_deploy_actor(
-    test_name: &str,
-    history: MockKwHistoryStore,
-    fs: MockFileSystemTrait,
-) -> (KwHandle, Arc<FakeProcess>, PathBuf) {
-    let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
-    spawn_full_actor(test_name, history, shell, fs, env_with_kw())
-}
-
-/// History answers for an actor whose jobs complete: no patchset
-/// link, build-record writes accepted and dropped.
-pub(super) fn quiet_history() -> MockKwHistoryStore {
-    let mut history = MockKwHistoryStore::new();
-    history
-        .expect_apply_record_for_branch()
-        .withf(|tree, branch| tree == "mainline" && branch == "patchset-2026-08-01-17-30-00")
-        .times(1)
-        .returning(|_, _| Ok(None));
-    history
-        .expect_record_build()
-        .withf(|record| record.branch == "patchset-2026-08-01-17-30-00")
-        .times(1)
-        .returning(|_| Ok(()));
-    history
-}
-
-/// A history double that captures written build records and answers
-/// the patchset-link lookup with `apply_record`.
-pub(super) fn recording_history(
-    apply_record: Option<KwApplyRecord>,
-) -> (MockKwHistoryStore, Arc<Mutex<Vec<KwBuildRecord>>>) {
-    let builds = Arc::new(Mutex::new(Vec::new()));
-    let builds_in_store = Arc::clone(&builds);
-    let mut history = MockKwHistoryStore::new();
-    history
-        .expect_apply_record_for_branch()
-        .withf(|tree, branch| tree == "mainline" && branch == "patchset-2026-08-01-17-30-00")
-        .times(1)
-        .returning(move |_, _| Ok(apply_record.clone()));
-    history
-        .expect_record_build()
-        .withf(|record| record.branch == "patchset-2026-08-01-17-30-00")
-        .times(1)
-        .returning(move |record| {
-            builds_in_store
-                .lock()
-                .expect("builds in store locks")
-                .push(record);
-            Ok(())
-        });
-    (history, builds)
-}
-
-/// Spawns the actor with every dependency explicit, a real temp log
-/// dir, and the [`FakeProcess`] exposed so tests drive the "running"
-/// process.
-pub(super) fn spawn_full_actor(
-    test_name: &str,
-    history: MockKwHistoryStore,
-    shell: MockShellTrait,
-    fs: MockFileSystemTrait,
-    env: MockEnvTrait,
-) -> (KwHandle, Arc<FakeProcess>, PathBuf) {
-    let process = Arc::new(FakeProcess::new());
-    let log_dir = tmp_log_dir(test_name);
-    let handle = KwActor::spawn(
-        Arc::new(history),
-        process.clone(),
-        Arc::new(shell),
-        Arc::new(fs),
-        Arc::new(env),
-        log_dir.clone(),
-    );
-    (handle, process, log_dir)
-}
-
-/// Spawns the actor with a real temp log dir and exposes the
-/// [`FakeProcess`] so tests drive the "running" process. The env mock
-/// has kw on PATH.
-fn spawn_job_actor_with_mocks(
-    test_name: &str,
-    shell: MockShellTrait,
-    fs: MockFileSystemTrait,
-) -> (KwHandle, Arc<FakeProcess>, PathBuf) {
-    let mut env = MockEnvTrait::new();
-    env.expect_which()
-        .withf(|name| name == "kw")
-        .times(1..=2)
-        .returning(|_| true);
-    spawn_full_actor(test_name, quiet_history(), shell, fs, env)
-}
-
-fn spawn_job_actor(test_name: &str) -> (KwHandle, Arc<FakeProcess>, PathBuf) {
-    let (shell, _calls) = recording_shell(KW_VERSION_OK, CLEAN_STATUS, SWITCH_OK);
-    spawn_job_actor_with_mocks(test_name, shell, ready_fs())
-}
-
-fn apply_record() -> KwApplyRecord {
-    KwApplyRecord {
-        message_id: "msg-1".to_string(),
-        kernel_tree_id: "mainline".to_string(),
-        tree_path: "/home/user/linux".to_string(),
-        applied_branch: "patchset-2026-08-01-17-30-00".to_string(),
-        base_branch: "master".to_string(),
-        applied_at: "2026-08-01T17:30:00Z".to_string(),
-    }
-}
+pub use helpers::*;
 
 #[tokio::test]
 async fn record_apply_writes_through_history_store() {
@@ -946,47 +1020,6 @@ async fn get_readiness_for_branch_looks_up_that_branch_not_head() {
 
     assert_eq!(Some("master".to_string()), readiness.current_branch);
     handle.shutdown().await;
-}
-
-/// Waits until the status leaves `Idle`/`Running` and returns the
-/// terminal status. The receiver may have observed the `Running`
-/// transition first, so a single `changed()` is not enough. The timeout
-/// backstops against a wedged actor; tests that exercise the grace
-/// periods run with paused time instead of waiting them out.
-pub(super) async fn wait_for_terminal_status(
-    watch: &mut watch::Receiver<KwStatusSnapshot>,
-) -> KwJobStatus {
-    time::timeout(Duration::from_secs(10), async {
-        loop {
-            let status = watch.borrow().job.clone();
-            if !matches!(status, KwJobStatus::Idle | KwJobStatus::Running { .. }) {
-                return status;
-            }
-            watch.changed().await.expect("watch notifies");
-        }
-    })
-    .await
-    .expect("status must reach a terminal state")
-}
-
-pub(super) async fn wait_for_running_phase(
-    watch: &mut watch::Receiver<KwStatusSnapshot>,
-    phase: KwPhase,
-) -> KwJobStatus {
-    time::timeout(Duration::from_secs(10), async {
-        loop {
-            let status = watch.borrow().job.clone();
-            if matches!(
-                status,
-                KwJobStatus::Running { phase: running, .. } if running == phase
-            ) {
-                return status;
-            }
-            watch.changed().await.expect("watch notifies");
-        }
-    })
-    .await
-    .expect("status must reach the expected running phase")
 }
 
 #[tokio::test]

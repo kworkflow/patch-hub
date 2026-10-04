@@ -123,15 +123,21 @@ impl ReviewedReplyService {
 
 #[cfg(test)]
 mod tests {
+
+    mod helpers {
+
+        use super::super::*;
+
+        pub(super) fn command(name: &str) -> ShellCommand {
+            ShellCommand::new("git").arg("send-email").arg(name)
+        }
+    }
+    use helpers::*;
     use std::{collections::HashSet, io};
 
     use crate::infrastructure::shell::{MockShellTrait, ShellError};
 
     use super::*;
-
-    fn command(name: &str) -> ShellCommand {
-        ShellCommand::new("git").arg("send-email").arg(name)
-    }
 
     #[test]
     fn selected_reply_indexes_preserves_original_patch_indexes() {

@@ -103,45 +103,54 @@ impl UserLoreStateStore for FileLorePersistence {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
-    use std::env;
-    use std::fs;
-    use std::sync::Arc;
 
-    use crate::infrastructure::file_system::OsFileSystem;
+    mod helpers {
+
+        use crate::infrastructure::file_system::OsFileSystem;
+        use std::env;
+        use std::fs;
+        use std::sync::Arc;
+
+        use super::super::*;
+        use std::path::PathBuf;
+        use std::process;
+
+        pub(super) fn tmp_dir(test_name: &str) -> PathBuf {
+            let dir = env::temp_dir().join(format!(
+                "patch-hub-persistence-{}-{}",
+                test_name,
+                process::id()
+            ));
+            fs::create_dir_all(&dir).expect("dir creates");
+            dir
+        }
+
+        pub(super) fn make_persistence(dir: &Path) -> FileLorePersistence {
+            FileLorePersistence::new(
+                Arc::new(OsFileSystem),
+                dir.join("lists.json")
+                    .to_str()
+                    .expect("path is utf-8")
+                    .to_string(),
+                dir.join("bookmarked.json")
+                    .to_str()
+                    .expect("path is utf-8")
+                    .to_string(),
+                dir.join("reviewed.json")
+                    .to_str()
+                    .expect("path is utf-8")
+                    .to_string(),
+            )
+        }
+    }
+    use helpers::*;
+    use std::collections::{HashMap, HashSet};
+
+    use std::fs;
+
     use crate::lore::domain::mailing_list::MailingList;
 
     use super::*;
-    use std::path::PathBuf;
-    use std::process;
-
-    fn tmp_dir(test_name: &str) -> PathBuf {
-        let dir = env::temp_dir().join(format!(
-            "patch-hub-persistence-{}-{}",
-            test_name,
-            process::id()
-        ));
-        fs::create_dir_all(&dir).expect("dir creates");
-        dir
-    }
-
-    fn make_persistence(dir: &Path) -> FileLorePersistence {
-        FileLorePersistence::new(
-            Arc::new(OsFileSystem),
-            dir.join("lists.json")
-                .to_str()
-                .expect("path is utf-8")
-                .to_string(),
-            dir.join("bookmarked.json")
-                .to_str()
-                .expect("path is utf-8")
-                .to_string(),
-            dir.join("reviewed.json")
-                .to_str()
-                .expect("path is utf-8")
-                .to_string(),
-        )
-    }
 
     #[test]
     fn available_lists_round_trip() {

@@ -1,80 +1,83 @@
-use std::{
-    io,
-    os::unix::process::ExitStatusExt,
-    path::{Path, PathBuf},
-    process::ExitStatus,
-    time::{Duration, Instant},
-};
-
-use nix::{errno::Errno, sys::signal::kill, unistd::Pid};
+use std::{io, os::unix::process::ExitStatusExt, process::ExitStatus, time::Duration};
 
 use super::{
     FakeProcess, MockProcessTrait, MockRunningProcess, OsProcess, ProcessError, ProcessTrait,
     RunningProcess,
 };
 use crate::infrastructure::shell::ShellCommand;
-use nix::sys::signal::Signal;
-use std::env;
 use std::fs;
-use std::process;
 use tokio::time;
+mod helpers {
 
-struct TempDir(PathBuf);
+    use nix::sys::signal::Signal;
+    use nix::{errno::Errno, sys::signal::kill, unistd::Pid};
+    use std::env;
+    use std::fs;
+    use std::process;
+    use std::{
+        path::{Path, PathBuf},
+        time::{Duration, Instant},
+    };
+    use tokio::time;
 
-impl TempDir {
-    fn new(test_name: &str) -> Self {
-        let dir = env::temp_dir().join(format!(
-            "patch_hub_process_test_{}_{test_name}",
-            process::id()
-        ));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("dir creates");
-        Self(dir)
-    }
+    pub struct TempDir(PathBuf);
 
-    fn path(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
-
-async fn wait_for(mut cond: impl FnMut() -> bool, timeout: Duration) -> bool {
-    let start = Instant::now();
-    while !cond() {
-        if start.elapsed() > timeout {
-            return false;
+    impl TempDir {
+        pub(super) fn new(test_name: &str) -> Self {
+            let dir = env::temp_dir().join(format!(
+                "patch_hub_process_test_{}_{test_name}",
+                process::id()
+            ));
+            let _ = fs::remove_dir_all(&dir);
+            fs::create_dir_all(&dir).expect("dir creates");
+            Self(dir)
         }
-        time::sleep(Duration::from_millis(25)).await;
+
+        pub(super) fn path(&self) -> &Path {
+            &self.0
+        }
     }
-    true
-}
 
-fn pid_is_gone(pid: i32) -> bool {
-    matches!(kill(Pid::from_raw(pid), None::<Signal>), Err(Errno::ESRCH))
-}
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
 
-// The shell redirection creates the sidecar file before `echo $!` writes into
-// it, so polling for existence can observe an empty file; poll for parseable
-// content instead.
-async fn await_sidecar_pid(path: &Path) -> i32 {
-    let mut pid = None;
-    wait_for(
-        || {
-            pid = fs::read_to_string(path)
-                .ok()
-                .and_then(|contents| contents.trim().parse::<i32>().ok());
-            pid.is_some()
-        },
-        Duration::from_secs(2),
-    )
-    .await;
-    pid.expect("sidecar never received a grandchild pid")
+    pub async fn wait_for(mut cond: impl FnMut() -> bool, timeout: Duration) -> bool {
+        let start = Instant::now();
+        while !cond() {
+            if start.elapsed() > timeout {
+                return false;
+            }
+            time::sleep(Duration::from_millis(25)).await;
+        }
+        true
+    }
+
+    pub fn pid_is_gone(pid: i32) -> bool {
+        matches!(kill(Pid::from_raw(pid), None::<Signal>), Err(Errno::ESRCH))
+    }
+
+    // The shell redirection creates the sidecar file before `echo $!` writes into
+    // it, so polling for existence can observe an empty file; poll for parseable
+    // content instead.
+    pub async fn await_sidecar_pid(path: &Path) -> i32 {
+        let mut pid = None;
+        wait_for(
+            || {
+                pid = fs::read_to_string(path)
+                    .ok()
+                    .and_then(|contents| contents.trim().parse::<i32>().ok());
+                pid.is_some()
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+        pid.expect("sidecar never received a grandchild pid")
+    }
 }
+pub use helpers::*;
 
 #[tokio::test]
 async fn spawn_returns_while_process_still_running() {

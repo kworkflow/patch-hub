@@ -122,22 +122,28 @@ impl KwJobStatus {
 
 #[cfg(test)]
 mod tests {
+
+    mod helpers {
+        use super::super::*;
+        use std::path::PathBuf;
+
+        pub(super) fn running(branch: &str) -> KwStatusSnapshot {
+            KwStatusSnapshot {
+                job: KwJobStatus::Running {
+                    kind: KwJobKind::Build,
+                    phase: KwPhase::Building,
+                    kernel_tree_id: "mainline".to_string(),
+                    branch: branch.to_string(),
+                    log_path: PathBuf::from("/tmp/build.log"),
+                },
+                restore_branch: Some("master".to_string()),
+            }
+        }
+    }
+    use helpers::*;
     use std::path::PathBuf;
 
     use super::*;
-
-    fn running(branch: &str) -> KwStatusSnapshot {
-        KwStatusSnapshot {
-            job: KwJobStatus::Running {
-                kind: KwJobKind::Build,
-                phase: KwPhase::Building,
-                kernel_tree_id: "mainline".to_string(),
-                branch: branch.to_string(),
-                log_path: PathBuf::from("/tmp/build.log"),
-            },
-            restore_branch: Some("master".to_string()),
-        }
-    }
 
     #[test]
     fn running_indicator_names_the_phase_and_branch() {

@@ -315,30 +315,36 @@ impl Display for EditableConfig {
 
 #[cfg(test)]
 mod tests {
+
+    mod helpers {
+        use super::super::*;
+        use crate::config::ConfigState;
+
+        pub(super) fn snapshot_with_trees(keys: &[&str], target: Option<&str>) -> ConfigSnapshot {
+            let mut state = ConfigState::default();
+            for key in keys {
+                state.kernel_trees.insert(
+                    (*key).to_string(),
+                    serde_json::from_value(serde_json::json!({
+                        "path": format!("/{key}"),
+                        "branch": "master"
+                    }))
+                    .expect("json parses"),
+                );
+            }
+            state.target_kernel_tree = target.map(str::to_string);
+            ConfigSnapshot::from(&state)
+        }
+
+        pub(super) fn tree_row(edit: &mut EditConfigState) {
+            while edit.highlighted() != 11 {
+                edit.highlight_next();
+            }
+        }
+    }
     use super::*;
     use crate::config::ConfigState;
-
-    fn snapshot_with_trees(keys: &[&str], target: Option<&str>) -> ConfigSnapshot {
-        let mut state = ConfigState::default();
-        for key in keys {
-            state.kernel_trees.insert(
-                (*key).to_string(),
-                serde_json::from_value(serde_json::json!({
-                    "path": format!("/{key}"),
-                    "branch": "master"
-                }))
-                .expect("json parses"),
-            );
-        }
-        state.target_kernel_tree = target.map(str::to_string);
-        ConfigSnapshot::from(&state)
-    }
-
-    fn tree_row(edit: &mut EditConfigState) {
-        while edit.highlighted() != 11 {
-            edit.highlight_next();
-        }
-    }
+    use helpers::*;
 
     #[test]
     fn draft_includes_deploy_knobs_with_compiled_in_defaults() {

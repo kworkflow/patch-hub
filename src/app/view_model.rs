@@ -664,55 +664,121 @@ impl From<&AppPopup> for PopupViewModel {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, path::PathBuf};
+
+    mod helpers {
+        use super::super::*;
+        use crate::{
+            app::models::kw_ops::KwOpsState,
+            kw::models::readiness::{KwReadiness, KwVersionCheck},
+        };
+        use crate::{
+            app::{
+                screens::{
+                    bookmarked::BookmarkedPatchsetsState, mail_list::MailingListSelectionState,
+                },
+                state::{
+                    AppState, ConfigUiState, KwUiState, LoreUiState, NavigationState, UserLoreState,
+                },
+            },
+            config::{ConfigSnapshot, ConfigState},
+            kw::status::{KwJobKind, KwJobStatus, KwStatusSnapshot},
+            lore::domain::mailing_list::MailingList,
+        };
+        use std::{collections::HashMap, path::PathBuf};
+
+        pub(super) fn app_state_with_kw(status: Option<KwStatusSnapshot>) -> AppState {
+            let dummy_list = MailingList::new("test-list", "Test list");
+            AppState {
+                navigation: NavigationState {
+                    current_screen: CurrentScreen::MailingListSelection,
+                },
+                lore: LoreUiState {
+                    mailing_list_selection: MailingListSelectionState {
+                        mailing_lists: vec![dummy_list.clone()],
+                        target_list: String::new(),
+                        possible_mailing_lists: vec![dummy_list],
+                        highlighted_list_index: 0,
+                    },
+                    latest_patchsets: None,
+                    details: None,
+                },
+                user_state: UserLoreState {
+                    bookmarked_patchsets: BookmarkedPatchsetsState {
+                        bookmarked_patchsets: vec![],
+                        patchset_index: 0,
+                    },
+                    reviewed_patchsets: HashMap::new(),
+                },
+                config_state: ConfigUiState { edit_config: None },
+                config: ConfigSnapshot::from(&ConfigState::default()),
+                popup: None,
+                kw: KwUiState { status, ops: None },
+            }
+        }
+
+        pub(super) fn sample_kw_ops(branch: Option<&str>) -> KwOpsState {
+            KwOpsState::new(
+                "[PATCH] test".to_string(),
+                "http://lore.example/123".to_string(),
+                "linux".to_string(),
+                serde_json::from_value(serde_json::json!({
+                    "path": "/kernel",
+                    "branch": "main"
+                }))
+                .expect("json parses"),
+                KwReadiness {
+                    kw_binary: KwBinaryProbe {
+                        available: true,
+                        version_line: Some("kw, version 0.10.0".to_string()),
+                        check: KwVersionCheck::Meets,
+                    },
+                    tree: TreeReadiness::Ready {
+                        arch: Some("x86_64".to_string()),
+                    },
+                    output_dir: None,
+                    deploy_alone: Err(DeployAloneRefusal::NoBuildRecord),
+                    current_branch: branch.map(str::to_string),
+                    deploy_remote: Err(RemoteRefusal::NoRemotesConfigured),
+                    boot_once: BootOnceState::Unknown,
+                },
+            )
+        }
+
+        pub(super) fn sample_remote() -> KwRemote {
+            KwRemote {
+                name: "dut".to_string(),
+                hostname: "box".to_string(),
+                port: 22,
+                user: Some("root".to_string()),
+            }
+        }
+
+        pub(super) fn succeeded_deploy(warnings: &[&str]) -> KwStatusSnapshot {
+            KwStatusSnapshot {
+                job: KwJobStatus::Succeeded {
+                    kind: KwJobKind::Deploy,
+                    kernel_tree_id: "mainline".to_string(),
+                    branch: "patchset-x".to_string(),
+                    log_path: PathBuf::from("/tmp/deploy.log"),
+                    warnings: warnings.iter().map(|w| w.to_string()).collect(),
+                },
+                restore_branch: None,
+            }
+        }
+    }
+    use helpers::*;
+    use std::path::PathBuf;
 
     use crate::{
         app::{models::kw_ops::KwOpsState, screens::edit_config::EditConfigState},
         kw::models::readiness::{KwReadiness, KwVersionCheck},
     };
     use crate::{
-        app::{
-            screens::{bookmarked::BookmarkedPatchsetsState, mail_list::MailingListSelectionState},
-            state::{
-                AppState, ConfigUiState, KwUiState, LoreUiState, NavigationState, UserLoreState,
-            },
-        },
         config::{ConfigSnapshot, ConfigState},
         kw::status::{KwJobKind, KwJobStatus, KwPhase, KwStatusSnapshot},
-        lore::domain::mailing_list::MailingList,
     };
 
     use super::*;
-
-    fn app_state_with_kw(status: Option<KwStatusSnapshot>) -> AppState {
-        let dummy_list = MailingList::new("test-list", "Test list");
-        AppState {
-            navigation: NavigationState {
-                current_screen: CurrentScreen::MailingListSelection,
-            },
-            lore: LoreUiState {
-                mailing_list_selection: MailingListSelectionState {
-                    mailing_lists: vec![dummy_list.clone()],
-                    target_list: String::new(),
-                    possible_mailing_lists: vec![dummy_list],
-                    highlighted_list_index: 0,
-                },
-                latest_patchsets: None,
-                details: None,
-            },
-            user_state: UserLoreState {
-                bookmarked_patchsets: BookmarkedPatchsetsState {
-                    bookmarked_patchsets: vec![],
-                    patchset_index: 0,
-                },
-                reviewed_patchsets: HashMap::new(),
-            },
-            config_state: ConfigUiState { edit_config: None },
-            config: ConfigSnapshot::from(&ConfigState::default()),
-            popup: None,
-            kw: KwUiState { status, ops: None },
-        }
-    }
 
     #[test]
     fn running_job_projects_a_global_indicator() {
@@ -844,34 +910,6 @@ mod tests {
         assert_eq!("unavailable (no remotes configured)", vm.build_deploy_label);
     }
 
-    fn sample_kw_ops(branch: Option<&str>) -> KwOpsState {
-        KwOpsState::new(
-            "[PATCH] test".to_string(),
-            "http://lore.example/123".to_string(),
-            "linux".to_string(),
-            serde_json::from_value(serde_json::json!({
-                "path": "/kernel",
-                "branch": "main"
-            }))
-            .expect("json parses"),
-            KwReadiness {
-                kw_binary: KwBinaryProbe {
-                    available: true,
-                    version_line: Some("kw, version 0.10.0".to_string()),
-                    check: KwVersionCheck::Meets,
-                },
-                tree: TreeReadiness::Ready {
-                    arch: Some("x86_64".to_string()),
-                },
-                output_dir: None,
-                deploy_alone: Err(DeployAloneRefusal::NoBuildRecord),
-                current_branch: branch.map(str::to_string),
-                deploy_remote: Err(RemoteRefusal::NoRemotesConfigured),
-                boot_once: BootOnceState::Unknown,
-            },
-        )
-    }
-
     #[test]
     fn cleared_readable_branch_does_not_claim_detached_head() {
         let mut state = app_state_with_kw(None);
@@ -943,15 +981,6 @@ mod tests {
             "unavailable (a job is already running)",
             vm.build_deploy_label
         );
-    }
-
-    fn sample_remote() -> KwRemote {
-        KwRemote {
-            name: "dut".to_string(),
-            hostname: "box".to_string(),
-            port: 22,
-            user: Some("root".to_string()),
-        }
     }
 
     #[test]
@@ -1111,19 +1140,6 @@ mod tests {
         );
         assert_eq!(Some("/tmp/build.log".to_string()), vm.log_path);
         assert_eq!(None, vm.warnings);
-    }
-
-    fn succeeded_deploy(warnings: &[&str]) -> KwStatusSnapshot {
-        KwStatusSnapshot {
-            job: KwJobStatus::Succeeded {
-                kind: KwJobKind::Deploy,
-                kernel_tree_id: "mainline".to_string(),
-                branch: "patchset-x".to_string(),
-                log_path: PathBuf::from("/tmp/deploy.log"),
-                warnings: warnings.iter().map(|w| w.to_string()).collect(),
-            },
-            restore_branch: None,
-        }
     }
 
     #[test]

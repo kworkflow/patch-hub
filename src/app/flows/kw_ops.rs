@@ -579,41 +579,46 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::app::models::kw_ops::KwOpsState;
-    use crate::kw::models::readiness::{
-        BootOnceState, DeployAloneRefusal, KwBinaryProbe, KwReadiness, KwVersionCheck,
-        TreeReadiness,
-    };
-    use crate::kw::models::remote::RemoteRefusal;
 
-    fn sample_ops() -> KwOpsState {
-        KwOpsState::new(
-            "title".to_string(),
-            "mid".to_string(),
-            "linux".to_string(),
-            serde_json::from_value(serde_json::json!({
-                "path": "/kernel",
-                "branch": "main"
-            }))
-            .expect("json parses"),
-            KwReadiness {
-                kw_binary: KwBinaryProbe {
-                    available: true,
-                    version_line: Some("kw, version 0.10.0".to_string()),
-                    check: KwVersionCheck::Meets,
+    mod helpers {
+
+        use crate::app::models::kw_ops::KwOpsState;
+        use crate::kw::models::readiness::{
+            BootOnceState, DeployAloneRefusal, KwBinaryProbe, KwReadiness, KwVersionCheck,
+            TreeReadiness,
+        };
+        use crate::kw::models::remote::RemoteRefusal;
+
+        pub(super) fn sample_ops() -> KwOpsState {
+            KwOpsState::new(
+                "title".to_string(),
+                "mid".to_string(),
+                "linux".to_string(),
+                serde_json::from_value(serde_json::json!({
+                    "path": "/kernel",
+                    "branch": "main"
+                }))
+                .expect("json parses"),
+                KwReadiness {
+                    kw_binary: KwBinaryProbe {
+                        available: true,
+                        version_line: Some("kw, version 0.10.0".to_string()),
+                        check: KwVersionCheck::Meets,
+                    },
+                    tree: TreeReadiness::Ready {
+                        arch: Some("x86_64".to_string()),
+                    },
+                    output_dir: None,
+                    deploy_alone: Err(DeployAloneRefusal::NoBuildRecord),
+                    current_branch: Some("main".to_string()),
+                    deploy_remote: Err(RemoteRefusal::NoRemotesConfigured),
+                    boot_once: BootOnceState::Unknown,
                 },
-                tree: TreeReadiness::Ready {
-                    arch: Some("x86_64".to_string()),
-                },
-                output_dir: None,
-                deploy_alone: Err(DeployAloneRefusal::NoBuildRecord),
-                current_branch: Some("main".to_string()),
-                deploy_remote: Err(RemoteRefusal::NoRemotesConfigured),
-                boot_once: BootOnceState::Unknown,
-            },
-        )
+            )
+        }
     }
+    use super::*;
+    use helpers::*;
 
     #[test]
     fn missing_log_is_an_empty_tail_not_a_diagnostic() {

@@ -96,16 +96,24 @@ impl EditConfigPainter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::app::models::view_model::EditConfigViewModel;
 
-    fn vm(is_editing_mode: bool, editing_tree_selector: bool) -> EditConfigViewModel {
-        EditConfigViewModel {
-            entries: vec![],
-            is_editing_mode,
-            editing_tree_selector,
+    mod helpers {
+
+        use crate::app::models::view_model::EditConfigViewModel;
+
+        pub(super) fn vm(
+            is_editing_mode: bool,
+            editing_tree_selector: bool,
+        ) -> EditConfigViewModel {
+            EditConfigViewModel {
+                entries: vec![],
+                is_editing_mode,
+                editing_tree_selector,
+            }
         }
     }
+    use super::*;
+    use helpers::*;
 
     #[test]
     fn keys_hint_shows_cycle_bindings_on_the_tree_row() {

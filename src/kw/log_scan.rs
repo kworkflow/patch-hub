@@ -112,76 +112,80 @@ impl LogScanService {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
-    /// `kw build` under an env `O=` with in-tree leftovers in the source
-    /// tree.
-    const UNCLEAN_TREE_BUILD_LOG: &str = "\
-/boot/config-6.8.0-138-generic:883:warning: symbol value '0' invalid for BASE_SMALL
-  SYNC    include/config/auto.conf.cmd
-***
-*** The source tree is not clean, please run 'make ARCH=arm64 mrproper'
-*** in /opt/ph-lab/work/linux
-***
-make[3]: *** [/opt/ph-lab/work/linux/Makefile:709: outputmakefile] Error 1
-make[2]: *** [/opt/ph-lab/work/linux/Makefile:906: include/config/auto.conf.cmd] Error 2
-make[2]: *** [include/config/auto.conf.cmd] Deleting file 'include/generated/rustc_cfg'
-make[2]: *** [include/config/auto.conf.cmd] Deleting file 'include/generated/autoconf.h'
-make[1]: *** [/opt/ph-lab/work/linux/Makefile:248: __sub-make] Error 2
-make[1]: Leaving directory '/opt/ph-lab/work/out'
-";
+    mod helpers {
 
-    /// A compile error that stops the build.
-    const COMPILE_ERROR_BUILD_LOG: &str = "\
-  CC      mm/filemap.o
-  AS      arch/arm64/kernel/entry.o
-/opt/ph-lab/work/linux/init/main.c:1691:2: error: #error M4 broken-build fixture
- 1691 | #error M4 broken-build fixture
+        /// `kw build` under an env `O=` with in-tree leftovers in the source
+        /// tree.
+        pub(super) const UNCLEAN_TREE_BUILD_LOG: &str = "\
+    /boot/config-6.8.0-138-generic:883:warning: symbol value '0' invalid for BASE_SMALL
+      SYNC    include/config/auto.conf.cmd
+    ***
+    *** The source tree is not clean, please run 'make ARCH=arm64 mrproper'
+    *** in /opt/ph-lab/work/linux
+    ***
+    make[3]: *** [/opt/ph-lab/work/linux/Makefile:709: outputmakefile] Error 1
+    make[2]: *** [/opt/ph-lab/work/linux/Makefile:906: include/config/auto.conf.cmd] Error 2
+    make[2]: *** [include/config/auto.conf.cmd] Deleting file 'include/generated/rustc_cfg'
+    make[2]: *** [include/config/auto.conf.cmd] Deleting file 'include/generated/autoconf.h'
+    make[1]: *** [/opt/ph-lab/work/linux/Makefile:248: __sub-make] Error 2
+    make[1]: Leaving directory '/opt/ph-lab/work/out'
+    ";
+
+        /// A compile error that stops the build.
+        pub(super) const COMPILE_ERROR_BUILD_LOG: &str = "\
+      CC      mm/filemap.o
+      AS      arch/arm64/kernel/entry.o
+    /opt/ph-lab/work/linux/init/main.c:1691:2: error: #error M4 broken-build fixture
+     1691 | #error M4 broken-build fixture
       |  ^~~~~
-make[4]: *** [/opt/ph-lab/work/linux/scripts/Makefile.build:289: init/main.o] Error 1
-make[3]: *** [/opt/ph-lab/work/linux/scripts/Makefile.build:549: init] Error 2
-make[3]: *** Waiting for unfinished jobs....
-  CC      kernel/exec_domain.o
-make: *** [Makefile:248: __sub-make] Error 2
-";
+    make[4]: *** [/opt/ph-lab/work/linux/scripts/Makefile.build:289: init/main.o] Error 1
+    make[3]: *** [/opt/ph-lab/work/linux/scripts/Makefile.build:549: init] Error 2
+    make[3]: *** Waiting for unfinished jobs....
+      CC      kernel/exec_domain.o
+    make: *** [Makefile:248: __sub-make] Error 2
+    ";
 
-    /// tinyconfig deploy: kw exits 0 although initramfs generation failed
-    /// and GRUB never listed the kernel.
-    const TINYCONFIG_DEPLOY_LOG: &str = "\
-cp /tmp/kw/kw_pkg/Image-7.2.0-rc6+ /boot/
-generate_debian_temporary_root_file_system VERBOSE 7.2.0-rc6+ remote GRUB
-update-initramfs -c -k 7.2.0-rc6+
-update-initramfs: Generating /boot/initrd.img-7.2.0-rc6+
-W: zstd compression (CONFIG_RD_ZSTD) not supported by kernel, using gzip
-E: gzip compression (CONFIG_RD_GZIP) not supported by kernel
-update-initramfs: failed for /boot/initrd.img-7.2.0-rc6+ with 1.
-update-grub
-Sourcing file `/etc/default/grub'
-Generating grub configuration file ...
-Found linux image: /boot/vmlinuz-6.8.0-137-generic
-Found initrd image: /boot/initrd.img-6.8.0-137-generic
-Found linux image: /boot/vmlinuz-6.8.0-136-generic
-Found initrd image: /boot/initrd.img-6.8.0-136-generic
-Adding boot menu entry for UEFI Firmware Settings ...
-done
-";
+        /// tinyconfig deploy: kw exits 0 although initramfs generation failed
+        /// and GRUB never listed the kernel.
+        pub(super) const TINYCONFIG_DEPLOY_LOG: &str = "\
+    cp /tmp/kw/kw_pkg/Image-7.2.0-rc6+ /boot/
+    generate_debian_temporary_root_file_system VERBOSE 7.2.0-rc6+ remote GRUB
+    update-initramfs -c -k 7.2.0-rc6+
+    update-initramfs: Generating /boot/initrd.img-7.2.0-rc6+
+    W: zstd compression (CONFIG_RD_ZSTD) not supported by kernel, using gzip
+    E: gzip compression (CONFIG_RD_GZIP) not supported by kernel
+    update-initramfs: failed for /boot/initrd.img-7.2.0-rc6+ with 1.
+    update-grub
+    Sourcing file `/etc/default/grub'
+    Generating grub configuration file ...
+    Found linux image: /boot/vmlinuz-6.8.0-137-generic
+    Found initrd image: /boot/initrd.img-6.8.0-137-generic
+    Found linux image: /boot/vmlinuz-6.8.0-136-generic
+    Found initrd image: /boot/initrd.img-6.8.0-136-generic
+    Adding boot menu entry for UEFI Firmware Settings ...
+    done
+    ";
 
-    /// A deploy where initramfs generation and GRUB both succeed.
-    const CLEAN_DEPLOY_LOG: &str = "\
-* Preparing modules
-cp: cannot stat '/home/lima.guest/.cache/kw/envs/L29wdC9waC1sYWIvd29yay9saW51eA==/ph-boot/arch/arm64/boot/dts/*.dtb': No such file or directory
-* Sending kernel package (7.2.0-rc6-phboot-g2a475abe5df2.kw.tar) to the remote
-update-initramfs: Generating /boot/initrd.img-7.2.0-rc6-phboot-g2a475abe5df2
-Ignoring old or unknown version 7.2.0-rc6-phboot-g2a475abe5df2 (latest is 6.8.0-137-generic)
-Generating grub configuration file ...
-Found linux image: /boot/vmlinuz-6.8.0-137-generic
-Found initrd image: /boot/initrd.img-6.8.0-137-generic
-Found linux image: /boot/Image-7.2.0-rc6-phboot-g2a475abe5df2
-Found initrd image: /boot/initrd.img-7.2.0-rc6-phboot-g2a475abe5df2
-Found linux image: /boot/Image-7.2.0-rc6-phboot+
-Found linux image: /boot/Image-7.2.0-rc6+
-done
-";
+        /// A deploy where initramfs generation and GRUB both succeed.
+        pub(super) const CLEAN_DEPLOY_LOG: &str = "\
+    * Preparing modules
+    cp: cannot stat '/home/lima.guest/.cache/kw/envs/L29wdC9waC1sYWIvd29yay9saW51eA==/ph-boot/arch/arm64/boot/dts/*.dtb': No such file or directory
+    * Sending kernel package (7.2.0-rc6-phboot-g2a475abe5df2.kw.tar) to the remote
+    update-initramfs: Generating /boot/initrd.img-7.2.0-rc6-phboot-g2a475abe5df2
+    Ignoring old or unknown version 7.2.0-rc6-phboot-g2a475abe5df2 (latest is 6.8.0-137-generic)
+    Generating grub configuration file ...
+    Found linux image: /boot/vmlinuz-6.8.0-137-generic
+    Found initrd image: /boot/initrd.img-6.8.0-137-generic
+    Found linux image: /boot/Image-7.2.0-rc6-phboot-g2a475abe5df2
+    Found initrd image: /boot/initrd.img-7.2.0-rc6-phboot-g2a475abe5df2
+    Found linux image: /boot/Image-7.2.0-rc6-phboot+
+    Found linux image: /boot/Image-7.2.0-rc6+
+    done
+    ";
+    }
+    use super::*;
+    use helpers::*;
 
     #[test]
     fn first_error_names_the_kbuild_banner_not_the_make_cascade() {

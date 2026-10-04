@@ -176,6 +176,17 @@ impl TerminalActor {
 
 #[cfg(test)]
 mod tests {
+
+    mod helpers {
+
+        use super::super::*;
+        use crate::terminal::session::MockTerminalSessionApi;
+
+        pub(super) fn spawn_test_actor(session: MockTerminalSessionApi) -> TerminalHandle {
+            TerminalActor::spawn(Box::new(session))
+        }
+    }
+    use helpers::*;
     use std::time::Duration;
 
     use ratatui::crossterm::event::KeyCode;
@@ -183,10 +194,6 @@ mod tests {
     use crate::{terminal::messages::TerminalFrame, terminal::session::MockTerminalSessionApi};
 
     use super::*;
-
-    fn spawn_test_actor(session: MockTerminalSessionApi) -> TerminalHandle {
-        TerminalActor::spawn(Box::new(session))
-    }
 
     #[tokio::test]
     async fn draw_returns_ok_from_actor() {

@@ -353,37 +353,176 @@ impl AppActor {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Arc};
+
+    mod helpers {
+        use super::super::*;
+        use crate::app::models::kw_ops::KwOpsState;
+        use crate::kw::models::{
+            readiness::{
+                BootOnceState, DeployAloneRefusal, KwBinaryProbe, KwReadiness, KwVersionCheck,
+                TreeReadiness,
+            },
+            remote::RemoteRefusal,
+        };
+        use crate::{
+            app::{
+                screens::{
+                    bookmarked::BookmarkedPatchsetsState, mail_list::MailingListSelectionState,
+                    CurrentScreen,
+                },
+                state::{AppState, ConfigUiState, LoreUiState, NavigationState, UserLoreState},
+                AppServices,
+            },
+            config::{ConfigHandle, ConfigSnapshot, ConfigState},
+            infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
+            kw::history::MockKwHistoryStore,
+            lore::{
+                application::{
+                    actor::LoreApiActor, handle::LoreApiHandle, models::cache::CacheTtl,
+                    service::LoreService,
+                },
+                domain::mailing_list::MailingList,
+                infrastructure::{
+                    http_lore_client::{MockFeedGateway, MockListsGateway, MockPatchHtmlGateway},
+                    patchset_fetcher::MockPatchsetFetcher,
+                    patchset_parser::MockPatchsetParser,
+                    persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
+                },
+            },
+            render::{actor::RenderActor, handle::RenderHandle, ShellRenderService},
+        };
+        use std::{collections::HashMap, sync::Arc};
+        use tokio::sync::mpsc;
+
+        pub(super) fn dummy_config_handle() -> ConfigHandle {
+            let (config_tx, _config_rx) = mpsc::channel(1);
+            ConfigHandle::new(config_tx)
+        }
+
+        pub(super) fn minimal_app() -> App {
+            let (lore_tx, _lore_rx) = mpsc::channel(1);
+            let (render_tx, _render_rx) = mpsc::channel(1);
+
+            let dummy_list = MailingList::new("test-list", "Test list");
+
+            App {
+                state: AppState {
+                    navigation: NavigationState {
+                        current_screen: CurrentScreen::MailingListSelection,
+                    },
+                    lore: LoreUiState {
+                        mailing_list_selection: MailingListSelectionState {
+                            mailing_lists: vec![dummy_list.clone()],
+                            target_list: String::new(),
+                            possible_mailing_lists: vec![dummy_list],
+                            highlighted_list_index: 0,
+                        },
+                        latest_patchsets: None,
+                        details: None,
+                    },
+                    user_state: UserLoreState {
+                        bookmarked_patchsets: BookmarkedPatchsetsState {
+                            bookmarked_patchsets: vec![],
+                            patchset_index: 0,
+                        },
+                        reviewed_patchsets: HashMap::new(),
+                    },
+                    config_state: ConfigUiState { edit_config: None },
+                    config: ConfigSnapshot::from(&ConfigState::default()),
+                    popup: None,
+                    kw: Default::default(),
+                },
+                services: AppServices {
+                    lore_api: LoreApiHandle::new(lore_tx),
+                    render: RenderHandle::new(render_tx),
+                    shell: Box::new(MockShellTrait::new()),
+                    fs: Arc::new(MockFileSystemTrait::new()),
+                    config: dummy_config_handle(),
+                    kw_history: Arc::new(MockKwHistoryStore::new()),
+                    kw: None,
+                },
+            }
+        }
+
+        pub(super) fn spawn_real_lore_api(list: MailingList) -> LoreApiHandle {
+            let mut lists_store = MockMailingListsCacheStore::new();
+            lists_store
+                .expect_load_available_lists()
+                .withf(|| true)
+                .times(1)
+                .returning(move || Ok(vec![list.clone()]));
+            let mut user_state = MockUserLoreStateStore::new();
+            user_state
+                .expect_load_bookmarked_patchsets()
+                .withf(|| true)
+                .times(1)
+                .returning(|| Ok(vec![]));
+            user_state
+                .expect_load_reviewed_patchsets()
+                .withf(|| true)
+                .times(1)
+                .returning(|| Ok(HashMap::new()));
+
+            let service = LoreService::new(
+                Arc::new(MockListsGateway::new()),
+                Arc::new(MockFeedGateway::new()),
+                Arc::new(MockPatchHtmlGateway::new()),
+                Arc::new(lists_store),
+                Arc::new(user_state),
+                Arc::new(MockPatchsetFetcher::new()),
+                Arc::new(MockPatchsetParser::new()),
+                Arc::new(MockFileSystemTrait::new()),
+                Arc::new(MockShellTrait::new()),
+                CacheTtl::default(),
+            );
+            LoreApiActor::spawn(service)
+        }
+
+        pub(super) fn spawn_real_render() -> RenderHandle {
+            RenderActor::spawn(Box::new(ShellRenderService::new(Arc::new(
+                MockShellTrait::new(),
+            ))))
+        }
+
+        pub(super) fn sample_kw_ops() -> KwOpsState {
+            KwOpsState::new(
+                "title".to_string(),
+                "mid".to_string(),
+                "linux".to_string(),
+                serde_json::from_value(serde_json::json!({
+                    "path": "/kernel",
+                    "branch": "main"
+                }))
+                .expect("json parses"),
+                KwReadiness {
+                    kw_binary: KwBinaryProbe {
+                        available: true,
+                        version_line: Some("kw, version 0.10.0".to_string()),
+                        check: KwVersionCheck::Meets,
+                    },
+                    tree: TreeReadiness::Ready {
+                        arch: Some("x86_64".to_string()),
+                    },
+                    output_dir: None,
+                    deploy_alone: Err(DeployAloneRefusal::NoBuildRecord),
+                    current_branch: Some("main".to_string()),
+                    deploy_remote: Err(RemoteRefusal::NoRemotesConfigured),
+                    boot_once: BootOnceState::Unknown,
+                },
+            )
+        }
+    }
+    use helpers::*;
+    use std::sync::Arc;
 
     use tokio::sync::mpsc;
 
     use crate::{
-        app::{
-            screens::{
-                bookmarked::BookmarkedPatchsetsState, mail_list::MailingListSelectionState,
-                CurrentScreen,
-            },
-            state::{AppState, ConfigUiState, LoreUiState, NavigationState, UserLoreState},
-            AppServices,
-        },
-        config::{ConfigHandle, ConfigSnapshot, ConfigState},
+        config::{ConfigSnapshot, ConfigState},
         infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
         input::{event::InputEvent, handle::InputHandle, messages::InputMessage},
         kw::history::MockKwHistoryStore,
-        lore::{
-            application::{
-                actor::LoreApiActor, handle::LoreApiHandle, models::cache::CacheTtl,
-                service::LoreService,
-            },
-            domain::mailing_list::MailingList,
-            infrastructure::{
-                http_lore_client::{MockFeedGateway, MockListsGateway, MockPatchHtmlGateway},
-                patchset_fetcher::MockPatchsetFetcher,
-                patchset_parser::MockPatchsetParser,
-                persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
-            },
-        },
-        render::{actor::RenderActor, handle::RenderHandle, ShellRenderService},
+        lore::domain::mailing_list::MailingList,
         terminal::{
             actor::TerminalActor, messages::TerminalFrame, session::MockTerminalSessionApi,
         },
@@ -391,64 +530,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::app::models::kw_ops::{DeployStartKind, KwOpsState};
-    use crate::kw::models::{
-        readiness::{
-            BootOnceState, DeployAloneRefusal, KwBinaryProbe, KwReadiness, KwVersionCheck,
-            TreeReadiness,
-        },
-        remote::RemoteRefusal,
-    };
-
-    fn dummy_config_handle() -> ConfigHandle {
-        let (config_tx, _config_rx) = mpsc::channel(1);
-        ConfigHandle::new(config_tx)
-    }
-
-    fn minimal_app() -> App {
-        let (lore_tx, _lore_rx) = mpsc::channel(1);
-        let (render_tx, _render_rx) = mpsc::channel(1);
-
-        let dummy_list = MailingList::new("test-list", "Test list");
-
-        App {
-            state: AppState {
-                navigation: NavigationState {
-                    current_screen: CurrentScreen::MailingListSelection,
-                },
-                lore: LoreUiState {
-                    mailing_list_selection: MailingListSelectionState {
-                        mailing_lists: vec![dummy_list.clone()],
-                        target_list: String::new(),
-                        possible_mailing_lists: vec![dummy_list],
-                        highlighted_list_index: 0,
-                    },
-                    latest_patchsets: None,
-                    details: None,
-                },
-                user_state: UserLoreState {
-                    bookmarked_patchsets: BookmarkedPatchsetsState {
-                        bookmarked_patchsets: vec![],
-                        patchset_index: 0,
-                    },
-                    reviewed_patchsets: HashMap::new(),
-                },
-                config_state: ConfigUiState { edit_config: None },
-                config: ConfigSnapshot::from(&ConfigState::default()),
-                popup: None,
-                kw: Default::default(),
-            },
-            services: AppServices {
-                lore_api: LoreApiHandle::new(lore_tx),
-                render: RenderHandle::new(render_tx),
-                shell: Box::new(MockShellTrait::new()),
-                fs: Arc::new(MockFileSystemTrait::new()),
-                config: dummy_config_handle(),
-                kw_history: Arc::new(MockKwHistoryStore::new()),
-                kw: None,
-            },
-        }
-    }
+    use crate::app::models::kw_ops::DeployStartKind;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn input_channel_close_stops_actor_and_returns_ok() {
@@ -479,46 +561,6 @@ mod tests {
         drop(event_tx);
         let result = handle.run_until_done().await;
         assert!(result.is_ok());
-    }
-
-    fn spawn_real_lore_api(list: MailingList) -> LoreApiHandle {
-        let mut lists_store = MockMailingListsCacheStore::new();
-        lists_store
-            .expect_load_available_lists()
-            .withf(|| true)
-            .times(1)
-            .returning(move || Ok(vec![list.clone()]));
-        let mut user_state = MockUserLoreStateStore::new();
-        user_state
-            .expect_load_bookmarked_patchsets()
-            .withf(|| true)
-            .times(1)
-            .returning(|| Ok(vec![]));
-        user_state
-            .expect_load_reviewed_patchsets()
-            .withf(|| true)
-            .times(1)
-            .returning(|| Ok(HashMap::new()));
-
-        let service = LoreService::new(
-            Arc::new(MockListsGateway::new()),
-            Arc::new(MockFeedGateway::new()),
-            Arc::new(MockPatchHtmlGateway::new()),
-            Arc::new(lists_store),
-            Arc::new(user_state),
-            Arc::new(MockPatchsetFetcher::new()),
-            Arc::new(MockPatchsetParser::new()),
-            Arc::new(MockFileSystemTrait::new()),
-            Arc::new(MockShellTrait::new()),
-            CacheTtl::default(),
-        );
-        LoreApiActor::spawn(service)
-    }
-
-    fn spawn_real_render() -> RenderHandle {
-        RenderActor::spawn(Box::new(ShellRenderService::new(Arc::new(
-            MockShellTrait::new(),
-        ))))
     }
 
     /// Verifies that AppActor, LoreApiActor, and RenderActor can be wired
@@ -571,34 +613,6 @@ mod tests {
         // Explicit shutdown in documented order: LoreAPI then Render.
         lore_api.shutdown().await;
         render.shutdown().await;
-    }
-
-    fn sample_kw_ops() -> KwOpsState {
-        KwOpsState::new(
-            "title".to_string(),
-            "mid".to_string(),
-            "linux".to_string(),
-            serde_json::from_value(serde_json::json!({
-                "path": "/kernel",
-                "branch": "main"
-            }))
-            .expect("json parses"),
-            KwReadiness {
-                kw_binary: KwBinaryProbe {
-                    available: true,
-                    version_line: Some("kw, version 0.10.0".to_string()),
-                    check: KwVersionCheck::Meets,
-                },
-                tree: TreeReadiness::Ready {
-                    arch: Some("x86_64".to_string()),
-                },
-                output_dir: None,
-                deploy_alone: Err(DeployAloneRefusal::NoBuildRecord),
-                current_branch: Some("main".to_string()),
-                deploy_remote: Err(RemoteRefusal::NoRemotesConfigured),
-                boot_once: BootOnceState::Unknown,
-            },
-        )
     }
 
     #[tokio::test]

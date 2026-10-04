@@ -114,15 +114,20 @@ impl PatchFeedIndex {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+
+    mod helpers {
+        use super::super::*;
+        use crate::lore::infrastructure::parsers::LoreParserService;
+        use std::fs;
+
+        pub(super) fn feed_from_file(path: &str) -> PatchFeed {
+            let xml = fs::read_to_string(path).expect("file reads");
+            LoreParserService::parse_patch_feed(&xml).expect("patch feed parses")
+        }
+    }
+    use helpers::*;
 
     use super::*;
-    use crate::lore::infrastructure::parsers::LoreParserService;
-
-    fn feed_from_file(path: &str) -> PatchFeed {
-        let xml = fs::read_to_string(path).expect("file reads");
-        LoreParserService::parse_patch_feed(&xml).expect("patch feed parses")
-    }
 
     #[test]
     fn new_starts_with_empty_state() {

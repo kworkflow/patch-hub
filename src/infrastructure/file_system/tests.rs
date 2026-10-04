@@ -1,30 +1,37 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::{FileSystemTrait, OsFileSystem};
-use std::env;
 use std::fs;
-use std::process;
+mod helpers {
 
-struct TempDir(PathBuf);
+    use std::env;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process;
 
-impl TempDir {
-    fn new(test_name: &str) -> Self {
-        let dir = env::temp_dir().join(format!("patch_hub_fs_test_{}_{test_name}", process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("dir creates");
-        Self(dir)
+    pub struct TempDir(PathBuf);
+
+    impl TempDir {
+        pub(super) fn new(test_name: &str) -> Self {
+            let dir =
+                env::temp_dir().join(format!("patch_hub_fs_test_{}_{test_name}", process::id()));
+            let _ = fs::remove_dir_all(&dir);
+            fs::create_dir_all(&dir).expect("dir creates");
+            Self(dir)
+        }
+
+        pub(super) fn path(&self) -> &Path {
+            &self.0
+        }
     }
 
-    fn path(&self) -> &Path {
-        &self.0
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
     }
 }
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
+pub use helpers::*;
 
 #[test]
 fn read_to_string_returns_file_contents() {

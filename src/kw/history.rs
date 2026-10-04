@@ -173,78 +173,89 @@ impl KwHistoryStore for FileKwHistoryStore {
 
 #[cfg(test)]
 mod tests {
+
+    mod helpers {
+        use super::super::*;
+        use crate::infrastructure::file_system::OsFileSystem;
+        use std::env;
+        use std::fs;
+        use std::path::PathBuf;
+        use std::process;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        pub(super) static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
+
+        pub(super) fn tmp_dir(test_name: &str) -> PathBuf {
+            let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
+            let dir = env::temp_dir().join(format!(
+                "patch-hub-kw-history-{}-{}-{}",
+                test_name,
+                process::id(),
+                n
+            ));
+            // A leftover from a failed previous run (pid reuse + counter reset)
+            // must not poison this one.
+            let _ = fs::remove_dir_all(&dir);
+            fs::create_dir_all(&dir).expect("dir creates");
+            dir
+        }
+
+        pub(super) fn store_at(dir: &Path) -> FileKwHistoryStore {
+            FileKwHistoryStore::new(
+                Arc::new(OsFileSystem),
+                dir.to_str().expect("path is utf-8").to_string(),
+            )
+        }
+
+        pub(super) fn record(
+            message_id: &str,
+            kernel_tree_id: &str,
+            branch: &str,
+        ) -> KwApplyRecord {
+            KwApplyRecord {
+                message_id: message_id.to_string(),
+                kernel_tree_id: kernel_tree_id.to_string(),
+                tree_path: format!("/home/user/{kernel_tree_id}"),
+                applied_branch: branch.to_string(),
+                base_branch: "master".to_string(),
+                applied_at: "2026-08-01T17:30:00Z".to_string(),
+            }
+        }
+
+        pub(super) fn record_at(
+            message_id: &str,
+            kernel_tree_id: &str,
+            branch: &str,
+            applied_at: &str,
+        ) -> KwApplyRecord {
+            KwApplyRecord {
+                applied_at: applied_at.to_string(),
+                ..record(message_id, kernel_tree_id, branch)
+            }
+        }
+
+        pub(super) fn build(kernel_tree_id: &str, branch: &str, built_at: &str) -> KwBuildRecord {
+            KwBuildRecord {
+                kernel_tree_id: kernel_tree_id.to_string(),
+                tree_path: format!("/home/user/{kernel_tree_id}"),
+                message_id: None,
+                branch: branch.to_string(),
+                arch: Some("x86".to_string()),
+                image_path: Some(format!("/home/user/{kernel_tree_id}/arch/x86/boot/bzImage")),
+                output_dir: None,
+                kernelrelease: Some("6.17.0".to_string()),
+                log_path: "/home/user/.cache/patch_hub/kw_logs/build-1.log".to_string(),
+                built_at: built_at.to_string(),
+                success: true,
+            }
+        }
+    }
+    use helpers::*;
     use std::fs;
-    use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU64, Ordering};
 
     use crate::infrastructure::file_system::OsFileSystem;
 
     use super::*;
-    use std::env;
-    use std::process;
-
-    static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
-
-    fn tmp_dir(test_name: &str) -> PathBuf {
-        let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
-        let dir = env::temp_dir().join(format!(
-            "patch-hub-kw-history-{}-{}-{}",
-            test_name,
-            process::id(),
-            n
-        ));
-        // A leftover from a failed previous run (pid reuse + counter reset)
-        // must not poison this one.
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("dir creates");
-        dir
-    }
-
-    fn store_at(dir: &Path) -> FileKwHistoryStore {
-        FileKwHistoryStore::new(
-            Arc::new(OsFileSystem),
-            dir.to_str().expect("path is utf-8").to_string(),
-        )
-    }
-
-    fn record(message_id: &str, kernel_tree_id: &str, branch: &str) -> KwApplyRecord {
-        KwApplyRecord {
-            message_id: message_id.to_string(),
-            kernel_tree_id: kernel_tree_id.to_string(),
-            tree_path: format!("/home/user/{kernel_tree_id}"),
-            applied_branch: branch.to_string(),
-            base_branch: "master".to_string(),
-            applied_at: "2026-08-01T17:30:00Z".to_string(),
-        }
-    }
-
-    fn record_at(
-        message_id: &str,
-        kernel_tree_id: &str,
-        branch: &str,
-        applied_at: &str,
-    ) -> KwApplyRecord {
-        KwApplyRecord {
-            applied_at: applied_at.to_string(),
-            ..record(message_id, kernel_tree_id, branch)
-        }
-    }
-
-    fn build(kernel_tree_id: &str, branch: &str, built_at: &str) -> KwBuildRecord {
-        KwBuildRecord {
-            kernel_tree_id: kernel_tree_id.to_string(),
-            tree_path: format!("/home/user/{kernel_tree_id}"),
-            message_id: None,
-            branch: branch.to_string(),
-            arch: Some("x86".to_string()),
-            image_path: Some(format!("/home/user/{kernel_tree_id}/arch/x86/boot/bzImage")),
-            output_dir: None,
-            kernelrelease: Some("6.17.0".to_string()),
-            log_path: "/home/user/.cache/patch_hub/kw_logs/build-1.log".to_string(),
-            built_at: built_at.to_string(),
-            success: true,
-        }
-    }
 
     #[test]
     fn record_and_read_round_trip() {

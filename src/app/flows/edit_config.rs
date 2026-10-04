@@ -95,144 +95,154 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::HashMap,
-        env::VarError,
-        fs,
-        path::PathBuf,
-        sync::{
-            atomic::{AtomicU64, Ordering},
-            Arc,
-        },
-    };
 
-    use tokio::sync::mpsc;
+    mod helpers {
+        use crate::{
+            app::{
+                screens::{
+                    bookmarked::BookmarkedPatchsetsState, mail_list::MailingListSelectionState,
+                    CurrentScreen,
+                },
+                state::{AppState, ConfigUiState, LoreUiState, NavigationState, UserLoreState},
+                App, AppServices,
+            },
+            config::{ConfigActor, ConfigHandle, ConfigService, ConfigSnapshot},
+            infrastructure::{
+                env::MockEnvTrait, file_system::MockFileSystemTrait, file_system::OsFileSystem,
+                shell::MockShellTrait,
+            },
+            kw::history::MockKwHistoryStore,
+            lore::{application::handle::LoreApiHandle, domain::mailing_list::MailingList},
+            render::handle::RenderHandle,
+        };
+        use std::{
+            collections::HashMap,
+            env::VarError,
+            fs,
+            path::PathBuf,
+            sync::{
+                atomic::{AtomicU64, Ordering},
+                Arc,
+            },
+        };
+        use tokio::sync::mpsc;
+
+        use std::env;
+        use std::process;
+
+        pub(super) static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
+
+        pub(super) fn unique_test_dir(prefix: &str) -> PathBuf {
+            let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
+            let p = env::temp_dir().join(format!(
+                "patch-hub-edit-config-{prefix}-{}-{n}",
+                process::id()
+            ));
+            fs::create_dir_all(&p).expect("dir creates");
+            p
+        }
+
+        pub(super) fn default_env() -> (MockEnvTrait, PathBuf) {
+            let home = unique_test_dir("home");
+            let home_s = home.to_string_lossy().into_owned();
+            let mut mock = MockEnvTrait::new();
+            mock.expect_var()
+                .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+                .times(1)
+                .returning(|_| Err(VarError::NotPresent.into()));
+            mock.expect_var()
+                .withf(move |key| key == "HOME")
+                .times(2)
+                .returning(move |_| Ok(home_s.clone()));
+            mock.expect_var()
+                .withf(|key| {
+                    matches!(
+                        key,
+                        "PATCH_HUB_PAGE_SIZE"
+                            | "PATCH_HUB_CACHE_DIR"
+                            | "PATCH_HUB_DATA_DIR"
+                            | "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS"
+                            | "PATCH_HUB_PATCH_RENDERER"
+                    )
+                })
+                .times(5)
+                .returning(|_| Err(VarError::NotPresent.into()));
+            (mock, home)
+        }
+
+        pub(super) fn app_with_kernel_trees(
+            keys: &[&str],
+            target: Option<&str>,
+        ) -> (App, ConfigHandle, PathBuf) {
+            let (env, home) = default_env();
+            let (mut state, repo) =
+                ConfigService::bootstrap_parts(&env, OsFileSystem).expect("config bootstraps");
+            for key in keys {
+                state.kernel_trees.insert(
+                    (*key).to_string(),
+                    serde_json::from_value(serde_json::json!({
+                        "path": format!("/{key}"),
+                        "branch": "master"
+                    }))
+                    .expect("json parses"),
+                );
+            }
+            state.target_kernel_tree = target.map(str::to_string);
+            let snapshot = ConfigSnapshot::from(&state);
+            let config = ConfigActor::spawn(state, repo);
+
+            let dummy_list = MailingList::new("test-list", "Test list");
+            let (lore_tx, _lore_rx) = mpsc::channel(1);
+            let (render_tx, _render_rx) = mpsc::channel(1);
+            let app = App {
+                state: AppState {
+                    navigation: NavigationState {
+                        current_screen: CurrentScreen::EditConfig,
+                    },
+                    lore: LoreUiState {
+                        mailing_list_selection: MailingListSelectionState {
+                            mailing_lists: vec![dummy_list.clone()],
+                            target_list: String::new(),
+                            possible_mailing_lists: vec![dummy_list],
+                            highlighted_list_index: 0,
+                        },
+                        latest_patchsets: None,
+                        details: None,
+                    },
+                    user_state: UserLoreState {
+                        bookmarked_patchsets: BookmarkedPatchsetsState {
+                            bookmarked_patchsets: vec![],
+                            patchset_index: 0,
+                        },
+                        reviewed_patchsets: HashMap::new(),
+                    },
+                    config_state: ConfigUiState { edit_config: None },
+                    config: snapshot,
+                    popup: None,
+                    kw: Default::default(),
+                },
+                services: AppServices {
+                    lore_api: LoreApiHandle::new(lore_tx),
+                    render: RenderHandle::new(render_tx),
+                    shell: Box::new(MockShellTrait::new()),
+                    fs: Arc::new(MockFileSystemTrait::new()),
+                    config: config.clone(),
+                    kw_history: Arc::new(MockKwHistoryStore::new()),
+                    kw: None,
+                },
+            };
+            (app, config, home)
+        }
+    }
+    use helpers::*;
+    use std::fs;
 
     use crate::{
-        app::{
-            screens::{
-                bookmarked::BookmarkedPatchsetsState, mail_list::MailingListSelectionState,
-                CurrentScreen,
-            },
-            state::{AppState, ConfigUiState, LoreUiState, NavigationState, UserLoreState},
-            App, AppServices,
-        },
-        config::{
-            ConfigActor, ConfigHandle, ConfigService, ConfigSnapshot, DEFAULT_CONFIG_PATH_SUFFIX,
-        },
-        infrastructure::{
-            env::MockEnvTrait, file_system::MockFileSystemTrait, file_system::OsFileSystem,
-            shell::MockShellTrait,
-        },
-        kw::history::MockKwHistoryStore,
-        lore::{application::handle::LoreApiHandle, domain::mailing_list::MailingList},
-        render::handle::RenderHandle,
+        app::{screens::CurrentScreen, App},
+        config::DEFAULT_CONFIG_PATH_SUFFIX,
     };
 
     use super::*;
-    use std::env;
-    use std::process;
-
-    static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
-
-    fn unique_test_dir(prefix: &str) -> PathBuf {
-        let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
-        let p = env::temp_dir().join(format!(
-            "patch-hub-edit-config-{prefix}-{}-{n}",
-            process::id()
-        ));
-        fs::create_dir_all(&p).expect("dir creates");
-        p
-    }
-
-    fn default_env() -> (MockEnvTrait, PathBuf) {
-        let home = unique_test_dir("home");
-        let home_s = home.to_string_lossy().into_owned();
-        let mut mock = MockEnvTrait::new();
-        mock.expect_var()
-            .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
-            .times(1)
-            .returning(|_| Err(VarError::NotPresent.into()));
-        mock.expect_var()
-            .withf(move |key| key == "HOME")
-            .times(2)
-            .returning(move |_| Ok(home_s.clone()));
-        mock.expect_var()
-            .withf(|key| {
-                matches!(
-                    key,
-                    "PATCH_HUB_PAGE_SIZE"
-                        | "PATCH_HUB_CACHE_DIR"
-                        | "PATCH_HUB_DATA_DIR"
-                        | "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS"
-                        | "PATCH_HUB_PATCH_RENDERER"
-                )
-            })
-            .times(5)
-            .returning(|_| Err(VarError::NotPresent.into()));
-        (mock, home)
-    }
-
-    fn app_with_kernel_trees(keys: &[&str], target: Option<&str>) -> (App, ConfigHandle, PathBuf) {
-        let (env, home) = default_env();
-        let (mut state, repo) =
-            ConfigService::bootstrap_parts(&env, OsFileSystem).expect("config bootstraps");
-        for key in keys {
-            state.kernel_trees.insert(
-                (*key).to_string(),
-                serde_json::from_value(serde_json::json!({
-                    "path": format!("/{key}"),
-                    "branch": "master"
-                }))
-                .expect("json parses"),
-            );
-        }
-        state.target_kernel_tree = target.map(str::to_string);
-        let snapshot = ConfigSnapshot::from(&state);
-        let config = ConfigActor::spawn(state, repo);
-
-        let dummy_list = MailingList::new("test-list", "Test list");
-        let (lore_tx, _lore_rx) = mpsc::channel(1);
-        let (render_tx, _render_rx) = mpsc::channel(1);
-        let app = App {
-            state: AppState {
-                navigation: NavigationState {
-                    current_screen: CurrentScreen::EditConfig,
-                },
-                lore: LoreUiState {
-                    mailing_list_selection: MailingListSelectionState {
-                        mailing_lists: vec![dummy_list.clone()],
-                        target_list: String::new(),
-                        possible_mailing_lists: vec![dummy_list],
-                        highlighted_list_index: 0,
-                    },
-                    latest_patchsets: None,
-                    details: None,
-                },
-                user_state: UserLoreState {
-                    bookmarked_patchsets: BookmarkedPatchsetsState {
-                        bookmarked_patchsets: vec![],
-                        patchset_index: 0,
-                    },
-                    reviewed_patchsets: HashMap::new(),
-                },
-                config_state: ConfigUiState { edit_config: None },
-                config: snapshot,
-                popup: None,
-                kw: Default::default(),
-            },
-            services: AppServices {
-                lore_api: LoreApiHandle::new(lore_tx),
-                render: RenderHandle::new(render_tx),
-                shell: Box::new(MockShellTrait::new()),
-                fs: Arc::new(MockFileSystemTrait::new()),
-                config: config.clone(),
-                kw_history: Arc::new(MockKwHistoryStore::new()),
-                kw: None,
-            },
-        };
-        (app, config, home)
-    }
 
     #[test]
     fn help_documents_tree_cycle_and_save_keys() {

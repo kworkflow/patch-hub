@@ -205,60 +205,123 @@ impl KwRemote {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::HashMap,
-        path::{Path, PathBuf},
-        sync::Arc,
-    };
 
-    use crate::infrastructure::{
-        env::{EnvError, MockEnvTrait},
-        file_system::{FileSystemError, MockFileSystemTrait},
-    };
+    mod helpers {
+        use super::super::*;
+        use crate::infrastructure::{
+            env::{EnvError, MockEnvTrait},
+            file_system::{FileSystemError, MockFileSystemTrait},
+        };
+        use crate::kw::models::remote::RemoteRefusal;
+        use std::env;
+        use std::io;
+        use std::{collections::HashMap, path::PathBuf, sync::Arc};
+
+        /// Example remote.config: two hosts, default on the second, fields indented.
+        pub(super) const SAMPLE_REMOTE_CONFIG: &str = "\
+    #kw-default=arch-test
+    Host steamos
+      Hostname steamdeck
+      Port 8888
+      User jozzi
+    Host arch-test
+      Hostname arch-tm
+      Port 22
+      User abc
+    ";
+
+        /// Lab deploy-smoke file: IdentityFile must not break parsing, and
+        /// User root must land on the endpoint.
+        pub(super) const LAB_FIXTURE: &str = "\
+    #kw-default=ph-dut
+    Host ph-dut
+      Hostname lima-ph-dut.internal
+      Port 22
+      User root
+      IdentityFile /opt/ph-lab/keys/lab_ed25519
+    ";
+
+        pub(super) fn choose(content: &str) -> Result<KwRemote, RemoteRefusal> {
+            RemoteConfigService::select_deploy_remote(&RemoteConfigService::parse_remote_config(
+                content,
+            ))
+        }
+
+        pub(super) fn remote(
+            name: &str,
+            hostname: &str,
+            port: u16,
+            user: Option<&str>,
+        ) -> KwRemote {
+            KwRemote {
+                name: name.to_string(),
+                hostname: hostname.to_string(),
+                port,
+                user: user.map(str::to_string),
+            }
+        }
+
+        pub(super) fn fs_with_files(files: &[(&str, &str)]) -> MockFileSystemTrait {
+            let map = files
+                .iter()
+                .map(|(path, content)| (PathBuf::from(path), content.to_string()))
+                .collect::<HashMap<PathBuf, String>>();
+            let is_file = Arc::new(map.clone());
+            let read = Arc::new(map);
+            let mut fs = MockFileSystemTrait::new();
+            fs.expect_is_file()
+                .withf(|path| {
+                    path == std::path::Path::new("/home/user/.config/kw/remote.config")
+                        || path == std::path::Path::new("/home/user/linux/.kw/remote.config")
+                        || path == std::path::Path::new("/kernel/.kw/remote.config")
+                        || path == std::path::Path::new("/xdg/kw/remote.config")
+                })
+                .times(1..=2)
+                .returning(move |path| is_file.contains_key(path));
+            fs.expect_read_to_string()
+                .withf(|path| {
+                    path == std::path::Path::new("/home/user/.config/kw/remote.config")
+                        || path == std::path::Path::new("/home/user/linux/.kw/remote.config")
+                        || path == std::path::Path::new("/kernel/.kw/remote.config")
+                        || path == std::path::Path::new("/xdg/kw/remote.config")
+                })
+                .times(0..=1)
+                .returning(move |path| {
+                    read.get(path).cloned().ok_or_else(|| {
+                        FileSystemError::IoError(io::Error::new(io::ErrorKind::NotFound, "missing"))
+                    })
+                });
+            fs
+        }
+
+        pub(super) fn env_with(xdg: Option<&str>, home: Option<&str>) -> MockEnvTrait {
+            let xdg = xdg.map(str::to_string);
+            let home = home.map(str::to_string);
+            let mut env = MockEnvTrait::new();
+            env.expect_var()
+                .withf(|key| matches!(key, "HOME" | "XDG_CONFIG_HOME"))
+                .times(0..=2)
+                .returning(move |key| match key {
+                    "XDG_CONFIG_HOME" => xdg.clone().ok_or_else(missing_var),
+                    "HOME" => home.clone().ok_or_else(missing_var),
+                    _ => Err(missing_var()),
+                });
+            env
+        }
+
+        pub(super) fn missing_var() -> EnvError {
+            env::VarError::NotPresent.into()
+        }
+    }
+    use helpers::*;
+    use std::path::Path;
+
+    use crate::infrastructure::file_system::{FileSystemError, MockFileSystemTrait};
 
     use super::*;
     use crate::kw::models::remote::RemoteRefusal;
-    use std::env;
+
     use std::io;
-
-    /// Example remote.config: two hosts, default on the second, fields indented.
-    const SAMPLE_REMOTE_CONFIG: &str = "\
-#kw-default=arch-test
-Host steamos
-  Hostname steamdeck
-  Port 8888
-  User jozzi
-Host arch-test
-  Hostname arch-tm
-  Port 22
-  User abc
-";
-
-    /// Lab deploy-smoke file: IdentityFile must not break parsing, and
-    /// User root must land on the endpoint.
-    const LAB_FIXTURE: &str = "\
-#kw-default=ph-dut
-Host ph-dut
-  Hostname lima-ph-dut.internal
-  Port 22
-  User root
-  IdentityFile /opt/ph-lab/keys/lab_ed25519
-";
-
-    fn choose(content: &str) -> Result<KwRemote, RemoteRefusal> {
-        RemoteConfigService::select_deploy_remote(&RemoteConfigService::parse_remote_config(
-            content,
-        ))
-    }
-
-    fn remote(name: &str, hostname: &str, port: u16, user: Option<&str>) -> KwRemote {
-        KwRemote {
-            name: name.to_string(),
-            hostname: hostname.to_string(),
-            port,
-            user: user.map(str::to_string),
-        }
-    }
 
     #[test]
     fn plan_fixture_picks_the_default_host() {
@@ -471,58 +534,6 @@ Host dut extra
         }
         .to_string()
         .contains("gone"));
-    }
-
-    fn fs_with_files(files: &[(&str, &str)]) -> MockFileSystemTrait {
-        let map = files
-            .iter()
-            .map(|(path, content)| (PathBuf::from(path), content.to_string()))
-            .collect::<HashMap<PathBuf, String>>();
-        let is_file = Arc::new(map.clone());
-        let read = Arc::new(map);
-        let mut fs = MockFileSystemTrait::new();
-        fs.expect_is_file()
-            .withf(|path| {
-                path == std::path::Path::new("/home/user/.config/kw/remote.config")
-                    || path == std::path::Path::new("/home/user/linux/.kw/remote.config")
-                    || path == std::path::Path::new("/kernel/.kw/remote.config")
-                    || path == std::path::Path::new("/xdg/kw/remote.config")
-            })
-            .times(1..=2)
-            .returning(move |path| is_file.contains_key(path));
-        fs.expect_read_to_string()
-            .withf(|path| {
-                path == std::path::Path::new("/home/user/.config/kw/remote.config")
-                    || path == std::path::Path::new("/home/user/linux/.kw/remote.config")
-                    || path == std::path::Path::new("/kernel/.kw/remote.config")
-                    || path == std::path::Path::new("/xdg/kw/remote.config")
-            })
-            .times(0..=1)
-            .returning(move |path| {
-                read.get(path).cloned().ok_or_else(|| {
-                    FileSystemError::IoError(io::Error::new(io::ErrorKind::NotFound, "missing"))
-                })
-            });
-        fs
-    }
-
-    fn env_with(xdg: Option<&str>, home: Option<&str>) -> MockEnvTrait {
-        let xdg = xdg.map(str::to_string);
-        let home = home.map(str::to_string);
-        let mut env = MockEnvTrait::new();
-        env.expect_var()
-            .withf(|key| matches!(key, "HOME" | "XDG_CONFIG_HOME"))
-            .times(0..=2)
-            .returning(move |key| match key {
-                "XDG_CONFIG_HOME" => xdg.clone().ok_or_else(missing_var),
-                "HOME" => home.clone().ok_or_else(missing_var),
-                _ => Err(missing_var()),
-            });
-        env
-    }
-
-    fn missing_var() -> EnvError {
-        env::VarError::NotPresent.into()
     }
 
     #[test]

@@ -1,141 +1,149 @@
 use serde_json::json;
-use std::{
-    collections::HashSet,
-    env::VarError,
-    fs,
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::{collections::HashSet, env::VarError, fs};
 
 use crate::config::actor::ConfigActor;
 use crate::config::repository::{ConfigRepository, JsonConfigRepository};
 use crate::config::service::ConfigService;
 use crate::config::state::ConfigState;
 use crate::config::{
-    ConfigError, ConfigSnapshot, ConfigUpdateDraft, KernelTree, ValidatedConfigUpdate,
-    DEFAULT_CONFIG_PATH_SUFFIX,
+    ConfigError, ConfigUpdateDraft, ValidatedConfigUpdate, DEFAULT_CONFIG_PATH_SUFFIX,
 };
-use crate::infrastructure::{
-    env::{EnvTrait, MockEnvTrait},
-    file_system::OsFileSystem,
-};
-use std::env;
-use std::process;
+use crate::infrastructure::env::MockEnvTrait;
+mod helpers {
 
-static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
+    use crate::config::service::ConfigService;
+    use crate::config::state::ConfigState;
+    use crate::config::{ConfigSnapshot, KernelTree};
+    use crate::infrastructure::{
+        env::{EnvTrait, MockEnvTrait},
+        file_system::OsFileSystem,
+    };
+    use serde_json::json;
+    use std::env;
+    use std::process;
+    use std::{
+        env::VarError,
+        fs,
+        path::{Path, PathBuf},
+        sync::atomic::{AtomicU64, Ordering},
+    };
 
-fn os_fs() -> OsFileSystem {
-    OsFileSystem
+    pub static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
+
+    pub fn os_fs() -> OsFileSystem {
+        OsFileSystem
+    }
+
+    pub fn sample_kernel_tree(path: &str, branch: &str) -> KernelTree {
+        serde_json::from_value(json!({
+            "path": path,
+            "branch": branch
+        }))
+        .expect("json parses")
+    }
+
+    pub fn state_with_trees(env: &dyn EnvTrait) -> ConfigState {
+        let mut state = ConfigState::new_with_defaults(env);
+        state.kernel_trees.insert(
+            "linux".into(),
+            sample_kernel_tree("/home/user/linux", "master"),
+        );
+        state.kernel_trees.insert(
+            "amd-gfx".into(),
+            sample_kernel_tree("/home/user/amd-gfx", "amd-staging-drm-next"),
+        );
+        state
+    }
+
+    pub fn unique_test_dir(prefix: &str) -> PathBuf {
+        let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
+        let p = env::temp_dir().join(format!("patch-hub-{prefix}-{}-{}", process::id(), n));
+        fs::create_dir_all(&p).expect("dir creates");
+        p
+    }
+
+    pub fn bootstrap_snapshot(env: &dyn EnvTrait) -> ConfigSnapshot {
+        ConfigSnapshot::from(
+            &ConfigService::bootstrap_parts(env, os_fs())
+                .expect("config bootstraps")
+                .0,
+        )
+    }
+
+    /// Writable `HOME` and mock env: no `PATCH_HUB_CONFIG_PATH` (uses `HOME/.config/...`).
+    pub fn default_env() -> (MockEnvTrait, PathBuf) {
+        let home = unique_test_dir("home");
+        let home_s = home.to_string_lossy().into_owned();
+        let mut mock = MockEnvTrait::new();
+        mock.expect_var()
+            .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+            .times(0..=1)
+            .returning(|_| Err(VarError::NotPresent.into()));
+        mock.expect_var()
+            .withf(move |key| key == "HOME")
+            .times(1..=2)
+            .returning(move |_| Ok(home_s.clone()));
+        mock.expect_var()
+            .withf(|key| {
+                matches!(
+                    key,
+                    "PATCH_HUB_PAGE_SIZE"
+                        | "PATCH_HUB_CACHE_DIR"
+                        | "PATCH_HUB_DATA_DIR"
+                        | "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS"
+                        | "PATCH_HUB_PATCH_RENDERER"
+                )
+            })
+            .times(0..=5)
+            .returning(|_| Err(VarError::NotPresent.into()));
+        (mock, home)
+    }
+
+    /// Fully-populated config file content, with paths under `root` so
+    /// `ensure_directories` stays inside a writable temp tree. After bootstrap, `normalize_derived_paths`
+    /// overwrites patchset/data paths from `cache_dir` and `data_dir` only (explicit per-field paths
+    /// in JSON are not preserved).
+    pub fn config_fixture_json(root: &Path) -> String {
+        let patchsets_cache_dir = root.join("cachedir").join("path");
+        let bookmarked = root.join("bookmarked").join("patchsets.json");
+        let mailing = root.join("mailing").join("lists.json");
+        let reviewed = root.join("reviewed").join("patchsets.json");
+        let logs = root.join("logs");
+        let cache_dir = root.join("cache_dir");
+        let data_dir = root.join("data_dir");
+
+        let v = json!({
+          "page_size": 1234,
+          "patchsets_cache_dir": patchsets_cache_dir.to_str(),
+          "bookmarked_patchsets_path": bookmarked.to_str(),
+          "mailing_lists_path": mailing.to_str(),
+          "reviewed_patchsets_path": reviewed.to_str(),
+          "logs_path": logs.to_str(),
+          "git_send_email_options": "--long-option value -s -h -o -r -t",
+          "cache_dir": cache_dir.to_str(),
+          "data_dir": data_dir.to_str(),
+          "patch_renderer": "default",
+          "cover_renderer": "default",
+          "max_log_age": 42,
+          "kernel_trees": {
+            "linux": {
+              "path": "/home/user/linux",
+              "branch": "master"
+            },
+            "amd-gfx": {
+              "path": "/home/user/amd-gfx",
+              "branch": "amd-staging-drm-next"
+            }
+          },
+          "target_kernel_tree": "linux",
+          "git_am_options": "--foo-bar foobar -s -n -o -r -l -a -x",
+          "git_am_branch_prefix": "really-creative-prefix-",
+          "stay_on_applied_branch": false
+        });
+        serde_json::to_string_pretty(&v).expect("config serializes")
+    }
 }
-
-fn sample_kernel_tree(path: &str, branch: &str) -> KernelTree {
-    serde_json::from_value(json!({
-        "path": path,
-        "branch": branch
-    }))
-    .expect("json parses")
-}
-
-fn state_with_trees(env: &dyn EnvTrait) -> ConfigState {
-    let mut state = ConfigState::new_with_defaults(env);
-    state.kernel_trees.insert(
-        "linux".into(),
-        sample_kernel_tree("/home/user/linux", "master"),
-    );
-    state.kernel_trees.insert(
-        "amd-gfx".into(),
-        sample_kernel_tree("/home/user/amd-gfx", "amd-staging-drm-next"),
-    );
-    state
-}
-
-fn unique_test_dir(prefix: &str) -> PathBuf {
-    let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
-    let p = env::temp_dir().join(format!("patch-hub-{prefix}-{}-{}", process::id(), n));
-    fs::create_dir_all(&p).expect("dir creates");
-    p
-}
-
-fn bootstrap_snapshot(env: &dyn EnvTrait) -> ConfigSnapshot {
-    ConfigSnapshot::from(
-        &ConfigService::bootstrap_parts(env, os_fs())
-            .expect("config bootstraps")
-            .0,
-    )
-}
-
-/// Writable `HOME` and mock env: no `PATCH_HUB_CONFIG_PATH` (uses `HOME/.config/...`).
-fn default_env() -> (MockEnvTrait, PathBuf) {
-    let home = unique_test_dir("home");
-    let home_s = home.to_string_lossy().into_owned();
-    let mut mock = MockEnvTrait::new();
-    mock.expect_var()
-        .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
-        .times(0..=1)
-        .returning(|_| Err(VarError::NotPresent.into()));
-    mock.expect_var()
-        .withf(move |key| key == "HOME")
-        .times(1..=2)
-        .returning(move |_| Ok(home_s.clone()));
-    mock.expect_var()
-        .withf(|key| {
-            matches!(
-                key,
-                "PATCH_HUB_PAGE_SIZE"
-                    | "PATCH_HUB_CACHE_DIR"
-                    | "PATCH_HUB_DATA_DIR"
-                    | "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS"
-                    | "PATCH_HUB_PATCH_RENDERER"
-            )
-        })
-        .times(0..=5)
-        .returning(|_| Err(VarError::NotPresent.into()));
-    (mock, home)
-}
-
-/// Fully-populated config file content, with paths under `root` so
-/// `ensure_directories` stays inside a writable temp tree. After bootstrap, `normalize_derived_paths`
-/// overwrites patchset/data paths from `cache_dir` and `data_dir` only (explicit per-field paths
-/// in JSON are not preserved).
-fn config_fixture_json(root: &Path) -> String {
-    let patchsets_cache_dir = root.join("cachedir").join("path");
-    let bookmarked = root.join("bookmarked").join("patchsets.json");
-    let mailing = root.join("mailing").join("lists.json");
-    let reviewed = root.join("reviewed").join("patchsets.json");
-    let logs = root.join("logs");
-    let cache_dir = root.join("cache_dir");
-    let data_dir = root.join("data_dir");
-
-    let v = json!({
-      "page_size": 1234,
-      "patchsets_cache_dir": patchsets_cache_dir.to_str(),
-      "bookmarked_patchsets_path": bookmarked.to_str(),
-      "mailing_lists_path": mailing.to_str(),
-      "reviewed_patchsets_path": reviewed.to_str(),
-      "logs_path": logs.to_str(),
-      "git_send_email_options": "--long-option value -s -h -o -r -t",
-      "cache_dir": cache_dir.to_str(),
-      "data_dir": data_dir.to_str(),
-      "patch_renderer": "default",
-      "cover_renderer": "default",
-      "max_log_age": 42,
-      "kernel_trees": {
-        "linux": {
-          "path": "/home/user/linux",
-          "branch": "master"
-        },
-        "amd-gfx": {
-          "path": "/home/user/amd-gfx",
-          "branch": "amd-staging-drm-next"
-        }
-      },
-      "target_kernel_tree": "linux",
-      "git_am_options": "--foo-bar foobar -s -n -o -r -l -a -x",
-      "git_am_branch_prefix": "really-creative-prefix-",
-      "stay_on_applied_branch": false
-    });
-    serde_json::to_string_pretty(&v).expect("config serializes")
-}
+pub use helpers::*;
 
 #[test]
 fn bootstrap_with_default_values() {

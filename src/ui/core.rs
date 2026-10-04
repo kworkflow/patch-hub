@@ -113,35 +113,38 @@ impl Default for UiCore {
 
 #[cfg(test)]
 mod tests {
-    use crate::app::models::view_model::{
-        AppViewModel, MailingListSelectionViewModel, ScreenViewModel, TargetListStatus,
-    };
 
-    use super::UiCore;
+    mod helpers {
+        use super::super::UiCore;
+        use crate::app::models::view_model::{
+            AppViewModel, MailingListSelectionViewModel, ScreenViewModel, TargetListStatus,
+        };
 
-    fn mailing_list_vm(kw_running: Option<String>) -> AppViewModel {
-        AppViewModel {
-            screen: ScreenViewModel::MailingListSelection(MailingListSelectionViewModel {
-                entries: vec![],
-                highlighted_index: 0,
-                target_list: String::new(),
-                target_list_status: TargetListStatus::Empty,
-            }),
-            popup: None,
-            kw_running,
+        pub(super) fn mailing_list_vm(kw_running: Option<String>) -> AppViewModel {
+            AppViewModel {
+                screen: ScreenViewModel::MailingListSelection(MailingListSelectionViewModel {
+                    entries: vec![],
+                    highlighted_index: 0,
+                    target_list: String::new(),
+                    target_list_status: TargetListStatus::Empty,
+                }),
+                popup: None,
+                kw_running,
+            }
+        }
+
+        pub(super) fn nav_text(vm: AppViewModel) -> String {
+            UiCore::new()
+                .build_scene(&vm)
+                .expect("scene builds")
+                .navigation
+                .mode_spans
+                .into_iter()
+                .map(|span| span.content.to_string())
+                .collect()
         }
     }
-
-    fn nav_text(vm: AppViewModel) -> String {
-        UiCore::new()
-            .build_scene(&vm)
-            .expect("scene builds")
-            .navigation
-            .mode_spans
-            .into_iter()
-            .map(|span| span.content.to_string())
-            .collect()
-    }
+    use helpers::*;
 
     #[test]
     fn running_indicator_is_appended_to_the_nav_bar() {

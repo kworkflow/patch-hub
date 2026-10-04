@@ -104,24 +104,22 @@ impl PatchsetFetcher for B4PatchsetFetcher {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::infrastructure::{
-        file_system::MockFileSystemTrait,
-        shell::{MockShellTrait, ShellError, ShellOutput},
-    };
-    use crate::lore::infrastructure::parsers::LoreParserService;
-    use std::io;
-    use std::sync::atomic;
 
-    // message_id → "linux-kernel.1234.567-1-john@johnson.com.mbx"
-    // (trailing slash in href becomes the last dot, then "mbx")
-    const CACHE_DIR: &str = "/cache";
-    const MESSAGE_ID: &str = "https://lore.kernel.org/linux-kernel/1234.567-1-john@johnson.com/";
-    const CACHED_FILE: &str = "/cache/linux-kernel.1234.567-1-john@johnson.com.mbx";
+    mod helpers {
+        use super::super::*;
 
-    fn make_patch_with_message_id(message_id: &str) -> Patch {
-        let xml = format!(
-            r#"<?xml version="1.0" encoding="UTF-8"?>
+        use crate::lore::infrastructure::parsers::LoreParserService;
+
+        // message_id → "linux-kernel.1234.567-1-john@johnson.com.mbx"
+        // (trailing slash in href becomes the last dot, then "mbx")
+        pub(super) const CACHE_DIR: &str = "/cache";
+        pub(super) const MESSAGE_ID: &str =
+            "https://lore.kernel.org/linux-kernel/1234.567-1-john@johnson.com/";
+        pub(super) const CACHED_FILE: &str = "/cache/linux-kernel.1234.567-1-john@johnson.com.mbx";
+
+        pub(super) fn make_patch_with_message_id(message_id: &str) -> Patch {
+            let xml = format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
             <feed xmlns="http://www.w3.org/2005/Atom">
                 <entry>
                     <title>some/subsystem: Do this</title>
@@ -131,12 +129,22 @@ mod tests {
                     <link href="{message_id}"/>
                 </entry>
             </feed>"#,
-        );
-        LoreParserService::parse_patch_feed(&xml)
-            .expect("patch feed parses")
-            .patches()[0]
-            .clone()
+            );
+            LoreParserService::parse_patch_feed(&xml)
+                .expect("patch feed parses")
+                .patches()[0]
+                .clone()
+        }
     }
+    use super::*;
+    use crate::infrastructure::{
+        file_system::MockFileSystemTrait,
+        shell::{MockShellTrait, ShellError, ShellOutput},
+    };
+    use helpers::*;
+
+    use std::io;
+    use std::sync::atomic;
 
     #[test]
     fn download_skips_b4_when_file_already_exists() {

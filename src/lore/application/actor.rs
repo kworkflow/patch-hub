@@ -254,48 +254,53 @@ impl LoreApiActor {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Arc};
 
-    use crate::{
-        infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
-        lore::{
-            application::{
-                handle::LoreApiHandle,
-                models::cache::{CacheMode, CacheTtl},
+    mod helpers {
+        use super::super::*;
+        use crate::{
+            infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
+            lore::{
+                application::{handle::LoreApiHandle, models::cache::CacheTtl},
+                infrastructure::{
+                    http_lore_client::{MockFeedGateway, MockListsGateway, MockPatchHtmlGateway},
+                    patchset_fetcher::MockPatchsetFetcher,
+                    patchset_parser::MockPatchsetParser,
+                    persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
+                },
             },
-            domain::mailing_list::MailingList,
-            infrastructure::{
-                http_lore_client::{MockFeedGateway, MockListsGateway, MockPatchHtmlGateway},
-                patchset_fetcher::MockPatchsetFetcher,
-                patchset_parser::MockPatchsetParser,
-                persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
-            },
-        },
+        };
+        use std::sync::Arc;
+
+        pub(super) fn make_service(
+            lists_store: MockMailingListsCacheStore,
+            user_state: MockUserLoreStateStore,
+        ) -> LoreService {
+            LoreService::new(
+                Arc::new(MockListsGateway::new()),
+                Arc::new(MockFeedGateway::new()),
+                Arc::new(MockPatchHtmlGateway::new()),
+                Arc::new(lists_store),
+                Arc::new(user_state),
+                Arc::new(MockPatchsetFetcher::new()),
+                Arc::new(MockPatchsetParser::new()),
+                Arc::new(MockFileSystemTrait::new()),
+                Arc::new(MockShellTrait::new()),
+                CacheTtl::default(),
+            )
+        }
+
+        pub(super) fn spawn_test_actor(core: LoreService) -> LoreApiHandle {
+            LoreApiActor::spawn(core)
+        }
+    }
+    use helpers::*;
+    use std::collections::HashMap;
+
+    use crate::lore::{
+        application::models::cache::CacheMode,
+        domain::mailing_list::MailingList,
+        infrastructure::persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
     };
-
-    use super::*;
-
-    fn make_service(
-        lists_store: MockMailingListsCacheStore,
-        user_state: MockUserLoreStateStore,
-    ) -> LoreService {
-        LoreService::new(
-            Arc::new(MockListsGateway::new()),
-            Arc::new(MockFeedGateway::new()),
-            Arc::new(MockPatchHtmlGateway::new()),
-            Arc::new(lists_store),
-            Arc::new(user_state),
-            Arc::new(MockPatchsetFetcher::new()),
-            Arc::new(MockPatchsetParser::new()),
-            Arc::new(MockFileSystemTrait::new()),
-            Arc::new(MockShellTrait::new()),
-            CacheTtl::default(),
-        )
-    }
-
-    fn spawn_test_actor(core: LoreService) -> LoreApiHandle {
-        LoreApiActor::spawn(core)
-    }
 
     #[tokio::test]
     async fn handle_returns_bootstrap_data_from_actor() {

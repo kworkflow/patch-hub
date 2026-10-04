@@ -1,16 +1,6 @@
-use crate::{
-    app::{
-        models::popup::AppPopup,
-        screens::{details_actions::PatchsetDetailsState, CurrentScreen},
-    },
-    input::event::InputEvent,
-};
+use crate::{app::screens::CurrentScreen, input::event::InputEvent};
 
-use super::helpers::{
-    app_harness::{dummy_terminal_handle, AppHarness},
-    lore::{sample_patch, sample_patchset_details},
-    render::sample_rendered_preview,
-};
+use super::helpers::app_harness::{dummy_terminal_handle, AppHarness};
 
 #[tokio::test]
 async fn open_kw_ops_without_actor_stays_on_details() {
@@ -34,27 +24,38 @@ async fn open_kw_ops_without_actor_stays_on_details() {
         "not attached",
     );
 }
-
-fn details_state() -> PatchsetDetailsState {
-    PatchsetDetailsState::build_from_rendered_preview(
-        sample_patch(),
-        sample_patchset_details(),
-        sample_rendered_preview(),
-        false,
-        CurrentScreen::LatestPatchsets,
-    )
-}
-
-fn assert_info_popup(popup: Option<&AppPopup>, expected_title: &str, fragment: &str) {
-    let Some(AppPopup::Info { title, body, .. }) = popup else {
-        panic!("expected info popup");
+mod helpers {
+    use super::super::helpers::{
+        lore::{sample_patch, sample_patchset_details},
+        render::sample_rendered_preview,
     };
-    assert_eq!(expected_title, title);
-    assert!(
-        body.contains(fragment),
-        "expected popup body to contain {fragment:?}, got {body:?}"
-    );
+    use crate::app::{
+        models::popup::AppPopup,
+        screens::{details_actions::PatchsetDetailsState, CurrentScreen},
+    };
+
+    pub fn details_state() -> PatchsetDetailsState {
+        PatchsetDetailsState::build_from_rendered_preview(
+            sample_patch(),
+            sample_patchset_details(),
+            sample_rendered_preview(),
+            false,
+            CurrentScreen::LatestPatchsets,
+        )
+    }
+
+    pub fn assert_info_popup(popup: Option<&AppPopup>, expected_title: &str, fragment: &str) {
+        let Some(AppPopup::Info { title, body, .. }) = popup else {
+            panic!("expected info popup");
+        };
+        assert_eq!(expected_title, title);
+        assert!(
+            body.contains(fragment),
+            "expected popup body to contain {fragment:?}, got {body:?}"
+        );
+    }
 }
+pub use helpers::*;
 
 mod unix {
     use std::{

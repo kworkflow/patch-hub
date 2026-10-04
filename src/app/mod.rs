@@ -604,15 +604,15 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
 
-    use serde_xml_rs::from_str;
+    mod helpers {
+        use super::super::*;
+        use serde_xml_rs::from_str;
+        use std::collections::{HashMap, HashSet};
 
-    use super::*;
-
-    fn test_patch() -> Patch {
-        from_str(
-            r#"
+        pub(super) fn test_patch() -> Patch {
+            from_str(
+                r#"
             <entry xmlns:thr="http://purl.org/syndication/thread/1.0">
                 <author>
                     <name>Foo Bar</name>
@@ -625,33 +625,38 @@ mod tests {
                 <content></content>
             </entry>
         "#,
-        )
-        .expect("test patch XML should deserialize")
-    }
+            )
+            .expect("test patch XML should deserialize")
+        }
 
-    fn details_state() -> PatchsetDetailsState {
-        PatchsetDetailsState {
-            representative_patch: test_patch(),
-            raw_patches: vec!["raw patch 0".to_string(), "raw patch 1".to_string()],
-            patches_preview: vec!["preview 0".to_string(), "preview 1".to_string()],
-            has_cover_letter: false,
-            patches_to_reply: vec![false, true],
-            patchset_path: "/tmp/patchset.mbx".to_string(),
-            preview_index: 0,
-            preview_scroll_offset: 0,
-            preview_pan: 0,
-            preview_fullscreen: false,
-            patchset_actions: HashMap::from([
-                (PatchsetAction::Bookmark, false),
-                (PatchsetAction::ReplyWithReviewedBy, true),
-                (PatchsetAction::Apply, true),
-            ]),
-            reviewed_by: vec![HashSet::new(), HashSet::new()],
-            tested_by: vec![HashSet::new(), HashSet::new()],
-            acked_by: vec![HashSet::new(), HashSet::new()],
-            last_screen: CurrentScreen::LatestPatchsets,
+        pub(super) fn details_state() -> PatchsetDetailsState {
+            PatchsetDetailsState {
+                representative_patch: test_patch(),
+                raw_patches: vec!["raw patch 0".to_string(), "raw patch 1".to_string()],
+                patches_preview: vec!["preview 0".to_string(), "preview 1".to_string()],
+                has_cover_letter: false,
+                patches_to_reply: vec![false, true],
+                patchset_path: "/tmp/patchset.mbx".to_string(),
+                preview_index: 0,
+                preview_scroll_offset: 0,
+                preview_pan: 0,
+                preview_fullscreen: false,
+                patchset_actions: HashMap::from([
+                    (PatchsetAction::Bookmark, false),
+                    (PatchsetAction::ReplyWithReviewedBy, true),
+                    (PatchsetAction::Apply, true),
+                ]),
+                reviewed_by: vec![HashSet::new(), HashSet::new()],
+                tested_by: vec![HashSet::new(), HashSet::new()],
+                acked_by: vec![HashSet::new(), HashSet::new()],
+                last_screen: CurrentScreen::LatestPatchsets,
+            }
         }
     }
+    use helpers::*;
+    use std::collections::HashSet;
+
+    use super::*;
 
     #[test]
     fn patchset_action_selected_reads_action_map() {

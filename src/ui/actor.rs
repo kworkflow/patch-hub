@@ -79,33 +79,40 @@ impl UiActor {
 
 #[cfg(test)]
 mod tests {
-    use tokio::sync::mpsc;
 
-    use crate::{
-        app::models::view_model::{
-            AppViewModel, MailingListSelectionViewModel, ScreenViewModel, TargetListStatus,
-        },
-        ui::{errors::UiError, handle::UiHandle},
-    };
+    mod helpers {
 
-    use super::{UiActor, DEFAULT_UI_CHANNEL_SIZE};
+        use super::super::UiActor;
+        use crate::{
+            app::models::view_model::{
+                AppViewModel, MailingListSelectionViewModel, ScreenViewModel, TargetListStatus,
+            },
+            ui::handle::UiHandle,
+        };
 
-    fn minimal_vm() -> AppViewModel {
-        AppViewModel {
-            screen: ScreenViewModel::MailingListSelection(MailingListSelectionViewModel {
-                entries: vec![],
-                highlighted_index: 0,
-                target_list: String::new(),
-                target_list_status: TargetListStatus::Empty,
-            }),
-            popup: None,
-            kw_running: None,
+        pub(super) fn minimal_vm() -> AppViewModel {
+            AppViewModel {
+                screen: ScreenViewModel::MailingListSelection(MailingListSelectionViewModel {
+                    entries: vec![],
+                    highlighted_index: 0,
+                    target_list: String::new(),
+                    target_list_status: TargetListStatus::Empty,
+                }),
+                popup: None,
+                kw_running: None,
+            }
+        }
+
+        pub(super) fn spawn_test_actor() -> UiHandle {
+            UiActor::spawn()
         }
     }
+    use helpers::*;
+    use tokio::sync::mpsc;
 
-    fn spawn_test_actor() -> UiHandle {
-        UiActor::spawn()
-    }
+    use crate::ui::{errors::UiError, handle::UiHandle};
+
+    use super::DEFAULT_UI_CHANNEL_SIZE;
 
     #[tokio::test]
     async fn build_scene_returns_ok_for_valid_view_model() {

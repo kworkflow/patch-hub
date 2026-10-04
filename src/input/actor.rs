@@ -137,41 +137,51 @@ impl InputActor {
 
 #[cfg(test)]
 mod tests {
+
+    mod helpers {
+
+        use super::super::*;
+        use crate::{
+            app::screens::CurrentScreen,
+            input::context::InputContext,
+            terminal::{actor::TerminalActor, session::MockTerminalSessionApi},
+        };
+
+        pub(super) fn mailing_list_context() -> InputContext {
+            InputContext {
+                current_screen: CurrentScreen::MailingListSelection,
+                ..Default::default()
+            }
+        }
+
+        pub(super) fn details_context() -> InputContext {
+            InputContext {
+                current_screen: CurrentScreen::PatchsetDetails,
+                ..Default::default()
+            }
+        }
+
+        pub(super) fn spawn_test_actor(
+            session: MockTerminalSessionApi,
+            context: InputContext,
+        ) -> (InputHandle, TerminalHandle) {
+            let terminal_handle = TerminalActor::spawn(Box::new(session));
+            let input_handle = InputActor::spawn(terminal_handle.clone(), context);
+            (input_handle, terminal_handle)
+        }
+    }
+    use helpers::*;
     use ratatui::crossterm::event::KeyCode;
 
     use crate::{
-        app::screens::CurrentScreen,
         input::{
             context::InputContext,
             event::{InputEvent, KeyInput, TerminalEvent},
         },
-        terminal::{actor::TerminalActor, session::MockTerminalSessionApi, TerminalError},
+        terminal::{session::MockTerminalSessionApi, TerminalError},
     };
 
     use super::*;
-
-    fn mailing_list_context() -> InputContext {
-        InputContext {
-            current_screen: CurrentScreen::MailingListSelection,
-            ..Default::default()
-        }
-    }
-
-    fn details_context() -> InputContext {
-        InputContext {
-            current_screen: CurrentScreen::PatchsetDetails,
-            ..Default::default()
-        }
-    }
-
-    fn spawn_test_actor(
-        session: MockTerminalSessionApi,
-        context: InputContext,
-    ) -> (InputHandle, TerminalHandle) {
-        let terminal_handle = TerminalActor::spawn(Box::new(session));
-        let input_handle = InputActor::spawn(terminal_handle.clone(), context);
-        (input_handle, terminal_handle)
-    }
 
     #[tokio::test]
     async fn key_event_in_mailing_list_context_delivers_navigate_down() {

@@ -110,67 +110,70 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        env::VarError,
-        fs,
-        path::PathBuf,
-        sync::atomic::{AtomicU64, Ordering},
-    };
 
-    use crate::{
-        config::{
-            service::ConfigService, ConfigError, ConfigUpdateDraft, DEFAULT_CONFIG_PATH_SUFFIX,
-        },
-        infrastructure::{env::MockEnvTrait, file_system::OsFileSystem},
-    };
+    mod helpers {
+        use super::super::*;
+        use crate::{
+            config::service::ConfigService,
+            infrastructure::{env::MockEnvTrait, file_system::OsFileSystem},
+        };
+        use std::env;
+        use std::process;
+        use std::{
+            env::VarError,
+            fs,
+            path::PathBuf,
+            sync::atomic::{AtomicU64, Ordering},
+        };
 
-    use super::*;
-    use std::env;
-    use std::process;
+        pub(super) static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
 
-    static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
+        pub(super) fn unique_test_dir(prefix: &str) -> PathBuf {
+            let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
+            let p = env::temp_dir().join(format!("patch-hub-{prefix}-{}-{n}", process::id()));
+            fs::create_dir_all(&p).expect("dir creates");
+            p
+        }
 
-    fn unique_test_dir(prefix: &str) -> PathBuf {
-        let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
-        let p = env::temp_dir().join(format!("patch-hub-{prefix}-{}-{n}", process::id()));
-        fs::create_dir_all(&p).expect("dir creates");
-        p
+        pub(super) fn default_env() -> (MockEnvTrait, PathBuf) {
+            let home = unique_test_dir("actor-home");
+            let home_s = home.to_string_lossy().into_owned();
+            let mut mock = MockEnvTrait::new();
+            mock.expect_var()
+                .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+                .times(1)
+                .returning(|_| Err(VarError::NotPresent.into()));
+            mock.expect_var()
+                .withf(move |key| key == "HOME")
+                .times(2)
+                .returning(move |_| Ok(home_s.clone()));
+            mock.expect_var()
+                .withf(|key| {
+                    matches!(
+                        key,
+                        "PATCH_HUB_PAGE_SIZE"
+                            | "PATCH_HUB_CACHE_DIR"
+                            | "PATCH_HUB_DATA_DIR"
+                            | "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS"
+                            | "PATCH_HUB_PATCH_RENDERER"
+                    )
+                })
+                .times(5)
+                .returning(|_| Err(VarError::NotPresent.into()));
+            (mock, home)
+        }
+
+        pub(super) fn spawn_test_actor() -> (ConfigHandle, PathBuf) {
+            let (env, home) = default_env();
+            let (state, repo) =
+                ConfigService::bootstrap_parts(&env, OsFileSystem).expect("config bootstraps");
+            (ConfigActor::spawn(state, repo), home)
+        }
     }
+    use helpers::*;
+    use std::fs;
 
-    fn default_env() -> (MockEnvTrait, PathBuf) {
-        let home = unique_test_dir("actor-home");
-        let home_s = home.to_string_lossy().into_owned();
-        let mut mock = MockEnvTrait::new();
-        mock.expect_var()
-            .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
-            .times(1)
-            .returning(|_| Err(VarError::NotPresent.into()));
-        mock.expect_var()
-            .withf(move |key| key == "HOME")
-            .times(2)
-            .returning(move |_| Ok(home_s.clone()));
-        mock.expect_var()
-            .withf(|key| {
-                matches!(
-                    key,
-                    "PATCH_HUB_PAGE_SIZE"
-                        | "PATCH_HUB_CACHE_DIR"
-                        | "PATCH_HUB_DATA_DIR"
-                        | "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS"
-                        | "PATCH_HUB_PATCH_RENDERER"
-                )
-            })
-            .times(5)
-            .returning(|_| Err(VarError::NotPresent.into()));
-        (mock, home)
-    }
-
-    fn spawn_test_actor() -> (ConfigHandle, PathBuf) {
-        let (env, home) = default_env();
-        let (state, repo) =
-            ConfigService::bootstrap_parts(&env, OsFileSystem).expect("config bootstraps");
-        (ConfigActor::spawn(state, repo), home)
-    }
+    use crate::config::{ConfigError, ConfigUpdateDraft, DEFAULT_CONFIG_PATH_SUFFIX};
 
     #[tokio::test]
     async fn get_snapshot_returns_actor_state() {

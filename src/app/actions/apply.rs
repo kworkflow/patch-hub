@@ -298,172 +298,178 @@ impl ApplyPatchsetService {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::VecDeque,
-        sync::{Arc, Mutex},
-    };
 
-    use crate::{
-        config::{ConfigSnapshot, ConfigState},
-        infrastructure::{
-            file_system::MockFileSystemTrait,
-            shell::{MockShellTrait, ShellCommand, ShellOutput},
-        },
-    };
+    mod helpers {
+        use super::super::*;
+        use crate::{
+            config::{ConfigSnapshot, ConfigState},
+            infrastructure::{
+                file_system::MockFileSystemTrait,
+                shell::{MockShellTrait, ShellCommand, ShellOutput},
+            },
+        };
+        use std::{
+            collections::VecDeque,
+            sync::{Arc, Mutex},
+        };
+
+        pub(super) const KERNEL_TREE_PATH: &str = "/kernel";
+        pub(super) const BASE_BRANCH: &str = "main";
+        pub(super) const PATCHSET_PATH: &str = "/tmp/patchset.mbx";
+
+        // `stay_on_applied_branch` is deliberately absent so the tests below
+        // exercise the serde default (true) that existing config files inherit.
+        pub(super) fn config() -> ConfigSnapshot {
+            ConfigSnapshot::from(
+                &serde_json::from_value::<ConfigState>(serde_json::json!({
+                    "kernel_trees": {
+                        "linux": {
+                            "path": KERNEL_TREE_PATH,
+                            "branch": BASE_BRANCH
+                        }
+                    },
+                    "target_kernel_tree": "linux",
+                    "git_am_options": "--signoff --3way",
+                    "git_am_branch_prefix": "patchset-"
+                }))
+                .expect("test config should deserialize"),
+            )
+        }
+
+        pub(super) fn config_stay_disabled() -> ConfigSnapshot {
+            ConfigSnapshot::from(
+                &serde_json::from_value::<ConfigState>(serde_json::json!({
+                    "kernel_trees": {
+                        "linux": {
+                            "path": KERNEL_TREE_PATH,
+                            "branch": BASE_BRANCH
+                        }
+                    },
+                    "target_kernel_tree": "linux",
+                    "git_am_options": "--signoff --3way",
+                    "git_am_branch_prefix": "patchset-",
+                    "stay_on_applied_branch": false
+                }))
+                .expect("test config should deserialize"),
+            )
+        }
+
+        pub(super) fn config_without_target() -> ConfigSnapshot {
+            ConfigSnapshot::from(&ConfigState::default())
+        }
+
+        pub(super) fn request() -> ApplyPatchsetRequest {
+            ApplyPatchsetRequest {
+                patch_title: "[PATCH] test".to_string(),
+                patchset_path: PATCHSET_PATH.to_string(),
+            }
+        }
+
+        pub(super) fn output(
+            stdout: impl Into<Vec<u8>>,
+            stderr: impl Into<Vec<u8>>,
+            success: bool,
+        ) -> ShellOutput {
+            ShellOutput {
+                stdout: stdout.into(),
+                stderr: stderr.into(),
+                success,
+            }
+        }
+
+        pub(super) fn clean_fs() -> MockFileSystemTrait {
+            let mut fs = MockFileSystemTrait::new();
+            fs.expect_is_dir()
+                .withf(|path| {
+                    path == std::path::Path::new("/kernel")
+                        || path == std::path::Path::new("/kernel/.git")
+                        || path == std::path::Path::new("/kernel/.git/rebase-apply")
+                        || path == std::path::Path::new("/kernel/.git/rebase-merge")
+                })
+                .times(4..=8)
+                .returning(|path| matches!(path.to_str(), Some("/kernel") | Some("/kernel/.git")));
+            fs.expect_is_file()
+                .withf(|path| {
+                    path == std::path::Path::new("/kernel/.git/BISECT_LOG")
+                        || path == std::path::Path::new("/kernel/.git/MERGE_HEAD")
+                })
+                .times(2..=4)
+                .returning(|_| false);
+            fs
+        }
+
+        pub(super) fn shell_with_outputs(
+            outputs: Vec<ShellOutput>,
+        ) -> (MockShellTrait, Arc<Mutex<Vec<Vec<String>>>>) {
+            let calls = Arc::new(Mutex::new(Vec::new()));
+            let outputs = Arc::new(Mutex::new(VecDeque::from(outputs)));
+            let mut shell = MockShellTrait::new();
+            let calls_for_execute = Arc::clone(&calls);
+            let outputs_for_execute = Arc::clone(&outputs);
+            shell
+                .expect_execute()
+                .withf(|cmd| {
+                    cmd.program == "git"
+                        && (cmd.args == ["-C", "/kernel", "status", "--porcelain"]
+                            || cmd.args
+                                == [
+                                    "-C",
+                                    "/kernel",
+                                    "show-ref",
+                                    "--verify",
+                                    "--quiet",
+                                    "refs/heads/main",
+                                ]
+                            || cmd.args == ["-C", "/kernel", "rev-parse", "--abbrev-ref", "HEAD"]
+                            || cmd.args == ["-C", "/kernel", "switch", "main"]
+                            || (cmd.args.len() == 5
+                                && cmd.args[..4] == ["-C", "/kernel", "checkout", "-b"]
+                                && cmd.args[4].starts_with("patchset-"))
+                            || cmd.args
+                                == [
+                                    "-C",
+                                    "/kernel",
+                                    "am",
+                                    "/tmp/patchset.mbx",
+                                    "--signoff",
+                                    "--3way",
+                                ]
+                            || cmd.args == ["-C", "/kernel", "switch", "feature"]
+                            || cmd.args == ["-C", "/kernel", "am", "--abort"]
+                            || (cmd.args.len() == 5
+                                && cmd.args[..4] == ["-C", "/kernel", "branch", "-D"]
+                                && cmd.args[4].starts_with("patchset-")))
+                })
+                .times(1..=18)
+                .returning(move |cmd| {
+                    calls_for_execute
+                        .lock()
+                        .expect("calls for execute locks")
+                        .push(command_parts(cmd));
+                    Ok(outputs_for_execute
+                        .lock()
+                        .expect("outputs for execute locks")
+                        .pop_front()
+                        .expect("test should provide one output per shell command"))
+                });
+            (shell, calls)
+        }
+
+        pub(super) fn command_parts(cmd: &ShellCommand) -> Vec<String> {
+            let mut parts = vec![cmd.program.clone()];
+            parts.extend(cmd.args.clone());
+            parts
+        }
+
+        pub(super) fn command(parts: &[&str]) -> Vec<String> {
+            parts.iter().map(|part| part.to_string()).collect()
+        }
+    }
+    use helpers::*;
+
+    use crate::infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait};
 
     use super::*;
-
-    const KERNEL_TREE_PATH: &str = "/kernel";
-    const BASE_BRANCH: &str = "main";
-    const PATCHSET_PATH: &str = "/tmp/patchset.mbx";
-
-    // `stay_on_applied_branch` is deliberately absent so the tests below
-    // exercise the serde default (true) that existing config files inherit.
-    fn config() -> ConfigSnapshot {
-        ConfigSnapshot::from(
-            &serde_json::from_value::<ConfigState>(serde_json::json!({
-                "kernel_trees": {
-                    "linux": {
-                        "path": KERNEL_TREE_PATH,
-                        "branch": BASE_BRANCH
-                    }
-                },
-                "target_kernel_tree": "linux",
-                "git_am_options": "--signoff --3way",
-                "git_am_branch_prefix": "patchset-"
-            }))
-            .expect("test config should deserialize"),
-        )
-    }
-
-    fn config_stay_disabled() -> ConfigSnapshot {
-        ConfigSnapshot::from(
-            &serde_json::from_value::<ConfigState>(serde_json::json!({
-                "kernel_trees": {
-                    "linux": {
-                        "path": KERNEL_TREE_PATH,
-                        "branch": BASE_BRANCH
-                    }
-                },
-                "target_kernel_tree": "linux",
-                "git_am_options": "--signoff --3way",
-                "git_am_branch_prefix": "patchset-",
-                "stay_on_applied_branch": false
-            }))
-            .expect("test config should deserialize"),
-        )
-    }
-
-    fn config_without_target() -> ConfigSnapshot {
-        ConfigSnapshot::from(&ConfigState::default())
-    }
-
-    fn request() -> ApplyPatchsetRequest {
-        ApplyPatchsetRequest {
-            patch_title: "[PATCH] test".to_string(),
-            patchset_path: PATCHSET_PATH.to_string(),
-        }
-    }
-
-    fn output(
-        stdout: impl Into<Vec<u8>>,
-        stderr: impl Into<Vec<u8>>,
-        success: bool,
-    ) -> ShellOutput {
-        ShellOutput {
-            stdout: stdout.into(),
-            stderr: stderr.into(),
-            success,
-        }
-    }
-
-    fn clean_fs() -> MockFileSystemTrait {
-        let mut fs = MockFileSystemTrait::new();
-        fs.expect_is_dir()
-            .withf(|path| {
-                path == std::path::Path::new("/kernel")
-                    || path == std::path::Path::new("/kernel/.git")
-                    || path == std::path::Path::new("/kernel/.git/rebase-apply")
-                    || path == std::path::Path::new("/kernel/.git/rebase-merge")
-            })
-            .times(4..=8)
-            .returning(|path| matches!(path.to_str(), Some("/kernel") | Some("/kernel/.git")));
-        fs.expect_is_file()
-            .withf(|path| {
-                path == std::path::Path::new("/kernel/.git/BISECT_LOG")
-                    || path == std::path::Path::new("/kernel/.git/MERGE_HEAD")
-            })
-            .times(2..=4)
-            .returning(|_| false);
-        fs
-    }
-
-    fn shell_with_outputs(
-        outputs: Vec<ShellOutput>,
-    ) -> (MockShellTrait, Arc<Mutex<Vec<Vec<String>>>>) {
-        let calls = Arc::new(Mutex::new(Vec::new()));
-        let outputs = Arc::new(Mutex::new(VecDeque::from(outputs)));
-        let mut shell = MockShellTrait::new();
-        let calls_for_execute = Arc::clone(&calls);
-        let outputs_for_execute = Arc::clone(&outputs);
-        shell
-            .expect_execute()
-            .withf(|cmd| {
-                cmd.program == "git"
-                    && (cmd.args == ["-C", "/kernel", "status", "--porcelain"]
-                        || cmd.args
-                            == [
-                                "-C",
-                                "/kernel",
-                                "show-ref",
-                                "--verify",
-                                "--quiet",
-                                "refs/heads/main",
-                            ]
-                        || cmd.args == ["-C", "/kernel", "rev-parse", "--abbrev-ref", "HEAD"]
-                        || cmd.args == ["-C", "/kernel", "switch", "main"]
-                        || (cmd.args.len() == 5
-                            && cmd.args[..4] == ["-C", "/kernel", "checkout", "-b"]
-                            && cmd.args[4].starts_with("patchset-"))
-                        || cmd.args
-                            == [
-                                "-C",
-                                "/kernel",
-                                "am",
-                                "/tmp/patchset.mbx",
-                                "--signoff",
-                                "--3way",
-                            ]
-                        || cmd.args == ["-C", "/kernel", "switch", "feature"]
-                        || cmd.args == ["-C", "/kernel", "am", "--abort"]
-                        || (cmd.args.len() == 5
-                            && cmd.args[..4] == ["-C", "/kernel", "branch", "-D"]
-                            && cmd.args[4].starts_with("patchset-")))
-            })
-            .times(1..=18)
-            .returning(move |cmd| {
-                calls_for_execute
-                    .lock()
-                    .expect("calls for execute locks")
-                    .push(command_parts(cmd));
-                Ok(outputs_for_execute
-                    .lock()
-                    .expect("outputs for execute locks")
-                    .pop_front()
-                    .expect("test should provide one output per shell command"))
-            });
-        (shell, calls)
-    }
-
-    fn command_parts(cmd: &ShellCommand) -> Vec<String> {
-        let mut parts = vec![cmd.program.clone()];
-        parts.extend(cmd.args.clone());
-        parts
-    }
-
-    fn command(parts: &[&str]) -> Vec<String> {
-        parts.iter().map(|part| part.to_string()).collect()
-    }
 
     #[test]
     fn apply_success_stays_on_applied_branch_by_default() {

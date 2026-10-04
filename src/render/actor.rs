@@ -108,19 +108,22 @@ impl RenderActor {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+
+    mod helpers {
+        use super::super::*;
+        use crate::{infrastructure::shell::OsShell, render::ShellRenderService};
+        use std::sync::Arc;
+
+        pub(super) fn spawn_test_actor() -> RenderHandle {
+            RenderActor::spawn(Box::new(ShellRenderService::new(Arc::new(OsShell))))
+        }
+    }
+    use helpers::*;
 
     use crate::{
-        infrastructure::shell::OsShell,
-        render::{RenderPatchsetRequest, ShellRenderService},
+        render::RenderPatchsetRequest,
         render_prefs::{CoverRenderer, PatchRenderer},
     };
-
-    use super::*;
-
-    fn spawn_test_actor() -> RenderHandle {
-        RenderActor::spawn(Box::new(ShellRenderService::new(Arc::new(OsShell))))
-    }
 
     #[tokio::test]
     async fn render_patchset_preview_returns_one_entry_per_patch() {

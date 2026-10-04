@@ -88,6 +88,36 @@ impl DependencyService {
 
 #[cfg(test)]
 mod tests {
+
+    mod helpers {
+        use crate::infrastructure::{
+            env::MockEnvTrait,
+            shell::{MockShellTrait, ShellOutput},
+        };
+
+        /// An env where every binary is present and kw reports a current
+        /// version, so individual tests only need to override their own case.
+        pub(super) fn happy_env() -> (MockEnvTrait, MockShellTrait) {
+            let mut env = MockEnvTrait::new();
+            env.expect_which()
+                .withf(|name| matches!(name, "b4" | "bat" | "git" | "kw"))
+                .times(3..=4)
+                .returning(|_| true);
+            let mut shell = MockShellTrait::new();
+            shell
+                .expect_execute()
+                .withf(|cmd| cmd.program == "kw" && cmd.args == ["--version"])
+                .times(1)
+                .returning(|_| {
+                    Ok(ShellOutput {
+                        stdout: b"0.10.0\n".to_vec(),
+                        stderr: Vec::new(),
+                        success: true,
+                    })
+                });
+            (env, shell)
+        }
+    }
     use crate::{
         config::{ConfigState, ValidatedConfigUpdate},
         infrastructure::{
@@ -96,31 +126,9 @@ mod tests {
         },
         render_prefs::PatchRenderer,
     };
+    use helpers::*;
 
     use super::*;
-
-    /// An env where every binary is present and kw reports a current
-    /// version, so individual tests only need to override their own case.
-    fn happy_env() -> (MockEnvTrait, MockShellTrait) {
-        let mut env = MockEnvTrait::new();
-        env.expect_which()
-            .withf(|name| matches!(name, "b4" | "bat" | "git" | "kw"))
-            .times(3..=4)
-            .returning(|_| true);
-        let mut shell = MockShellTrait::new();
-        shell
-            .expect_execute()
-            .withf(|cmd| cmd.program == "kw" && cmd.args == ["--version"])
-            .times(1)
-            .returning(|_| {
-                Ok(ShellOutput {
-                    stdout: b"0.10.0\n".to_vec(),
-                    stderr: Vec::new(),
-                    success: true,
-                })
-            });
-        (env, shell)
-    }
 
     #[test]
     fn missing_b4_returns_dependencies_error() {

@@ -1,9 +1,6 @@
 use std::ops::ControlFlow;
 
-use crate::{
-    app::{models::popup::AppPopup, screens::CurrentScreen},
-    input::event::InputEvent,
-};
+use crate::{app::screens::CurrentScreen, input::event::InputEvent};
 
 use super::helpers::{
     app_harness::AppHarness,
@@ -83,17 +80,26 @@ async fn bookmarked_lore_failure_shows_popup_and_stays_on_bookmarks() {
         ],
     );
 }
+mod helpers {
 
-fn assert_info_popup_contains(popup: Option<&AppPopup>, expected_title: &str, expected: &[&str]) {
-    let Some(AppPopup::Info { title, body, .. }) = popup else {
-        panic!("expected info popup");
-    };
+    use crate::app::models::popup::AppPopup;
 
-    assert_eq!(expected_title, title);
-    for fragment in expected {
-        assert!(
-            body.contains(fragment),
-            "expected popup body to contain {fragment:?}, got {body:?}"
-        );
+    pub fn assert_info_popup_contains(
+        popup: Option<&AppPopup>,
+        expected_title: &str,
+        expected: &[&str],
+    ) {
+        let Some(AppPopup::Info { title, body, .. }) = popup else {
+            panic!("expected info popup");
+        };
+
+        assert_eq!(expected_title, title);
+        for fragment in expected {
+            assert!(
+                body.contains(fragment),
+                "expected popup body to contain {fragment:?}, got {body:?}"
+            );
+        }
     }
 }
+pub use helpers::*;

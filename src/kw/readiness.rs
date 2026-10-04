@@ -500,105 +500,160 @@ impl ReadinessService {
 
 #[cfg(test)]
 mod tests {
+
+    mod helpers {
+        use std::{
+            fs,
+            path::{Path, PathBuf},
+            sync::atomic::{AtomicU64, Ordering},
+            time::{Duration, SystemTime},
+        };
+
+        use crate::config::KernelTree;
+        use crate::infrastructure::shell::ShellOutput;
+
+        use crate::kw::models::history::KwBuildRecord;
+
+        use std::env;
+
+        use std::process;
+
+        pub(super) static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
+
+        pub(super) struct TempDir(PathBuf);
+
+        impl TempDir {
+            pub(super) fn new(test_name: &str) -> Self {
+                let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
+                let dir = env::temp_dir().join(format!(
+                    "patch-hub-kw-readiness-{}-{}-{}",
+                    test_name,
+                    process::id(),
+                    n
+                ));
+                // A leftover from a failed previous run must not poison this one.
+                let _ = fs::remove_dir_all(&dir);
+                fs::create_dir_all(&dir).expect("dir creates");
+                Self(dir)
+            }
+
+            pub(super) fn path(&self) -> &Path {
+                &self.0
+            }
+        }
+
+        impl Drop for TempDir {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.0);
+            }
+        }
+
+        pub(super) const KERNEL_ROOT_FILES: [&str; 6] = [
+            "COPYING",
+            "CREDITS",
+            "Kbuild",
+            "Makefile",
+            "README",
+            "MAINTAINERS",
+        ];
+        pub(super) const KERNEL_ROOT_DIRS: [&str; 10] = [
+            "Documentation",
+            "arch",
+            "include",
+            "drivers",
+            "fs",
+            "init",
+            "ipc",
+            "kernel",
+            "lib",
+            "scripts",
+        ];
+        /// Creates the exact file/dir set kw's `is_kernel_root` expects.
+        pub(super) fn make_kernel_root(dir: &Path) {
+            for file in KERNEL_ROOT_FILES {
+                fs::write(dir.join(file), "").expect("file writes");
+            }
+            for sub in KERNEL_ROOT_DIRS {
+                fs::create_dir(dir.join(sub)).expect("dir creates");
+            }
+        }
+
+        /// A kernel root with `.kw/` and an in-tree `.config`: the fully ready
+        /// fixture most probes start from.
+        pub(super) fn make_ready_tree(test_name: &str) -> TempDir {
+            let dir = TempDir::new(test_name);
+            make_kernel_root(dir.path());
+            fs::create_dir(dir.path().join(".kw")).expect("dir creates");
+            fs::write(dir.path().join(".config"), "").expect("file writes");
+            dir
+        }
+
+        /// Creates a file whose mtime is `mtime_secs` seconds after the epoch,
+        /// so newest-wins ordering is fully deterministic.
+        pub(super) fn write_file_with_mtime(path: &Path, mtime_secs: u64) {
+            let file = fs::File::create(path).expect("file creates");
+            file.set_times(
+                fs::FileTimes::new()
+                    .set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(mtime_secs)),
+            )
+            .expect("mtime sets");
+        }
+
+        pub(super) fn shell_output(stdout: &str, success: bool) -> ShellOutput {
+            ShellOutput {
+                stdout: stdout.as_bytes().to_vec(),
+                stderr: Vec::new(),
+                success,
+            }
+        }
+
+        pub(super) fn kernel_tree(path: &Path) -> KernelTree {
+            serde_json::from_value(serde_json::json!({
+                "path": path.to_str().expect("path is utf-8"),
+                "branch": "master"
+            }))
+            .expect("json parses")
+        }
+
+        pub(super) fn built_record(tree: &Path, branch: &str) -> KwBuildRecord {
+            KwBuildRecord {
+                kernel_tree_id: "mainline".to_string(),
+                tree_path: tree.to_str().expect("path is utf-8").to_string(),
+                message_id: None,
+                branch: branch.to_string(),
+                arch: Some("x86".to_string()),
+                image_path: None,
+                output_dir: None,
+                kernelrelease: None,
+                log_path: String::new(),
+                built_at: "2026-08-01T18:10:00Z".to_string(),
+                success: true,
+            }
+        }
+    }
+    use helpers::*;
     use std::{
         fs,
         path::{Path, PathBuf},
-        sync::atomic::{AtomicU64, Ordering},
-        time::{Duration, SystemTime},
     };
 
     use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 
-    use crate::config::KernelTree;
     use crate::infrastructure::{
         env::MockEnvTrait,
         file_system::{FileSystemError, MockFileSystemTrait, OsFileSystem},
-        shell::{MockShellTrait, ShellOutput},
+        shell::MockShellTrait,
     };
+    use crate::kw::history::{FileKwHistoryStore, KwHistoryStore};
     use crate::kw::models::readiness::{BootOnceState, DeployAloneRefusal, TreeReadiness};
     use crate::kw::models::remote::RemoteRefusal;
-    use crate::kw::{
-        history::{FileKwHistoryStore, KwHistoryStore},
-        models::history::KwBuildRecord,
-    };
 
     use super::*;
 
     use std::env;
     use std::io;
-    use std::process;
+
     use std::sync::Arc;
-
-    static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
-
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(test_name: &str) -> Self {
-            let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
-            let dir = env::temp_dir().join(format!(
-                "patch-hub-kw-readiness-{}-{}-{}",
-                test_name,
-                process::id(),
-                n
-            ));
-            // A leftover from a failed previous run must not poison this one.
-            let _ = fs::remove_dir_all(&dir);
-            fs::create_dir_all(&dir).expect("dir creates");
-            Self(dir)
-        }
-
-        fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
-
-    const KERNEL_ROOT_FILES: [&str; 6] = [
-        "COPYING",
-        "CREDITS",
-        "Kbuild",
-        "Makefile",
-        "README",
-        "MAINTAINERS",
-    ];
-    const KERNEL_ROOT_DIRS: [&str; 10] = [
-        "Documentation",
-        "arch",
-        "include",
-        "drivers",
-        "fs",
-        "init",
-        "ipc",
-        "kernel",
-        "lib",
-        "scripts",
-    ];
-
-    /// Creates the exact file/dir set kw's `is_kernel_root` expects.
-    fn make_kernel_root(dir: &Path) {
-        for file in KERNEL_ROOT_FILES {
-            fs::write(dir.join(file), "").expect("file writes");
-        }
-        for sub in KERNEL_ROOT_DIRS {
-            fs::create_dir(dir.join(sub)).expect("dir creates");
-        }
-    }
-
-    /// A kernel root with `.kw/` and an in-tree `.config`: the fully ready
-    /// fixture most probes start from.
-    fn make_ready_tree(test_name: &str) -> TempDir {
-        let dir = TempDir::new(test_name);
-        make_kernel_root(dir.path());
-        fs::create_dir(dir.path().join(".kw")).expect("dir creates");
-        fs::write(dir.path().join(".config"), "").expect("file writes");
-        dir
-    }
 
     #[test]
     fn parse_kw_config_mirrors_kw_semantics() {
@@ -824,17 +879,6 @@ last_line_without_newline=yes";
             None,
             ReadinessService::read_build_arch(&OsFileSystem, empty.path())
         );
-    }
-
-    /// Creates a file whose mtime is `mtime_secs` seconds after the epoch,
-    /// so newest-wins ordering is fully deterministic.
-    fn write_file_with_mtime(path: &Path, mtime_secs: u64) {
-        let file = fs::File::create(path).expect("file creates");
-        file.set_times(
-            fs::FileTimes::new()
-                .set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(mtime_secs)),
-        )
-        .expect("mtime sets");
     }
 
     #[test]
@@ -1140,38 +1184,6 @@ last_line_without_newline=yes";
             None,
             ReadinessService::read_kernelrelease(&OsFileSystem, dir.path())
         );
-    }
-
-    fn shell_output(stdout: &str, success: bool) -> ShellOutput {
-        ShellOutput {
-            stdout: stdout.as_bytes().to_vec(),
-            stderr: Vec::new(),
-            success,
-        }
-    }
-
-    fn kernel_tree(path: &Path) -> KernelTree {
-        serde_json::from_value(serde_json::json!({
-            "path": path.to_str().expect("path is utf-8"),
-            "branch": "master"
-        }))
-        .expect("json parses")
-    }
-
-    fn built_record(tree: &Path, branch: &str) -> KwBuildRecord {
-        KwBuildRecord {
-            kernel_tree_id: "mainline".to_string(),
-            tree_path: tree.to_str().expect("path is utf-8").to_string(),
-            message_id: None,
-            branch: branch.to_string(),
-            arch: Some("x86".to_string()),
-            image_path: None,
-            output_dir: None,
-            kernelrelease: None,
-            log_path: String::new(),
-            built_at: "2026-08-01T18:10:00Z".to_string(),
-            success: true,
-        }
     }
 
     #[test]
