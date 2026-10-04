@@ -29,7 +29,7 @@ use crate::{
             http_lore_client::{FeedGateway, ListsGateway, LoreHttpError, PatchHtmlGateway},
             parsers::LoreParserService,
             patchset_fetcher::PatchsetFetcher,
-            patchset_parser::{PatchsetParser, PatchsetParserService},
+            patchset_parser::{PatchsetParser, PatchsetTextService},
             persistence::{MailingListsCacheStore, UserLoreStateStore},
         },
     },
@@ -345,7 +345,7 @@ impl LoreService {
                 .ok_or_else(|| LoreError::Parse("Message-Id header not found".to_string()))?;
 
             let reply_path = tmp_dir.join(format!("{message_id}-reply.mbx"));
-            let mut reply = PatchsetParserService::generate_reply_template(patch);
+            let mut reply = PatchsetTextService::generate_reply_template(patch);
             reply.push_str(&format!("\nReviewed-by: {git_signature}\n"));
             self.fs
                 .write(&reply_path, reply.as_bytes())
@@ -355,7 +355,7 @@ impl LoreService {
                 .fetch_patch_html(target_list, message_id)
                 .map_err(LoreError::Http)?;
 
-            let command = PatchsetParserService::extract_git_reply_command(
+            let command = PatchsetTextService::extract_git_reply_command(
                 &patch_html,
                 git_send_email_options,
                 &format!("{}", reply_path.display()),
@@ -426,7 +426,7 @@ impl LoreService {
 
 impl LoreService {
     fn extract_tag_summary(raw_patch: &str) -> PatchTagSummary {
-        let (cover, _) = PatchsetParserService::split_cover(raw_patch);
+        let (cover, _) = PatchsetTextService::split_cover(raw_patch);
 
         let mut reviewed_by = HashSet::new();
         let mut tested_by = HashSet::new();

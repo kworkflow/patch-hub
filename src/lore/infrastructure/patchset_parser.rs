@@ -103,9 +103,9 @@ impl PatchsetParser for MboxPatchsetParser {
     }
 }
 
-pub struct PatchsetParserService;
+pub struct PatchsetTextService;
 
-impl PatchsetParserService {
+impl PatchsetTextService {
     /// Splits a raw patch string into `(cover, diff)` at the first `\n---\n` separator.
     ///
     /// Everything before (and including) the separator line is the cover; everything
@@ -289,7 +289,7 @@ mod tests {
     #[test]
     fn split_cover_finds_separator() {
         let raw = "Subject: test\nTo: list\n\nBody text.\n---\ndiff --git a/foo b/foo";
-        let (cover, diff) = PatchsetParserService::split_cover(raw);
+        let (cover, diff) = PatchsetTextService::split_cover(raw);
         assert!(cover.contains("Body text."));
         assert!(diff.contains("diff --git"));
     }
@@ -297,7 +297,7 @@ mod tests {
     #[test]
     fn split_cover_returns_full_patch_when_no_separator() {
         let raw = "Subject: no diff here\nBody only.";
-        let (cover, diff) = PatchsetParserService::split_cover(raw);
+        let (cover, diff) = PatchsetTextService::split_cover(raw);
         assert_eq!(raw, cover);
         assert!(diff.is_empty());
     }
@@ -315,7 +315,7 @@ mod tests {
 
         assert_eq!(
             expected,
-            PatchsetParserService::generate_reply_template(&patch_sample)
+            PatchsetTextService::generate_reply_template(&patch_sample)
         );
     }
 
@@ -341,7 +341,7 @@ mod tests {
             ],
         };
 
-        let result = PatchsetParserService::extract_git_reply_command(
+        let result = PatchsetTextService::extract_git_reply_command(
             &patch_html,
             "--dry-run --suppress-cc=all",
             reply_path,
