@@ -149,7 +149,10 @@ impl KwArgvService {
         reserved: &[ReservedOption],
         extra_args: &[String],
     ) -> Vec<String> {
-        let mut argv: Vec<String> = base.iter().map(|arg| arg.to_string()).collect();
+        let mut argv = base
+            .iter()
+            .map(|arg| arg.to_string())
+            .collect::<Vec<String>>();
         let mut extras = extra_args.iter();
         while let Some(token) = extras.next() {
             match Self::find_reserved_option(reserved, token) {
@@ -244,7 +247,7 @@ impl KwArgvService {
         if body.is_empty() || body.starts_with('-') {
             return None;
         }
-        let chars: Vec<char> = body.chars().collect();
+        let chars = body.chars().collect::<Vec<char>>();
         let mut i = 0;
         let mut hit = None;
         while i < chars.len() {

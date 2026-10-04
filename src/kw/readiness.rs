@@ -93,7 +93,7 @@ impl ReadinessService {
             let Some((key, value)) = uncommented.split_once('=') else {
                 continue;
             };
-            let key: String = key.chars().filter(|c| !c.is_whitespace()).collect();
+            let key = key.chars().filter(|c| !c.is_whitespace()).collect();
             entries.insert(key, value.trim().to_string());
         }
         entries
@@ -492,11 +492,11 @@ impl ReadinessService {
         let start = line.find(|c: char| c.is_ascii_digit())?;
         let mut parts = line[start..].splitn(3, '.');
         let major = parts.next()?.parse().ok()?;
-        let minor: String = parts
+        let minor = parts
             .next()?
             .chars()
             .take_while(|c| c.is_ascii_digit())
-            .collect();
+            .collect::<String>();
         Some((major, minor.parse().ok()?))
     }
 

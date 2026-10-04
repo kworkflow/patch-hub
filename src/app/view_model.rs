@@ -194,7 +194,7 @@ impl From<&AppState> for PatchsetDetailsViewModel {
             .unwrap_or(&false)
         {
             let number_offset = if details.has_cover_letter { 0 } else { 1 };
-            let numbers: Vec<String> = details
+            let numbers = details
                 .patches_to_reply
                 .iter()
                 .enumerate()
@@ -205,7 +205,7 @@ impl From<&AppState> for PatchsetDetailsViewModel {
                         None
                     }
                 })
-                .collect();
+                .collect::<Vec<String>>();
             if numbers.is_empty() {
                 None
             } else {

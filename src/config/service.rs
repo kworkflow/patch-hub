@@ -195,7 +195,11 @@ impl ConfigService {
     }
 
     fn reject_unknown_kernel_tree(raw: &str, current: &ConfigState) -> ConfigError {
-        let mut keys: Vec<String> = current.kernel_trees.keys().cloned().collect();
+        let mut keys = current
+            .kernel_trees
+            .keys()
+            .cloned()
+            .collect::<Vec<String>>();
         keys.sort();
         let hint = if keys.is_empty() {
             "no kernel trees are configured; unset the target or add trees in the config file"

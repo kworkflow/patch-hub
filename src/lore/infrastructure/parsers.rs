@@ -27,10 +27,10 @@ impl LoreParserService {
         let mut list_descriptions: Vec<&str> = Vec::new();
         let mut available_lists: Vec<MailingList> = Vec::new();
 
-        let pre_blocks: Vec<&str> = RE_PRE_BLOCK
+        let pre_blocks = RE_PRE_BLOCK
             .captures_iter(html)
             .filter_map(|cap| cap.get(1).map(|m| m.as_str()))
-            .collect();
+            .collect::<Vec<&str>>();
 
         if pre_blocks.len() < 3 {
             return available_lists;

@@ -170,7 +170,7 @@ fn open_bufreader_reads_file() {
     let fs = OsFileSystem;
     let reader = fs.open_bufreader(&file_path).unwrap();
 
-    let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+    let lines = reader.lines().map(|l| l.unwrap()).collect::<Vec<String>>();
     assert_eq!(lines, vec!["line1", "line2"]);
 }
 

@@ -30,7 +30,7 @@ impl PatchRendererService {
     /// the trailing signature delimiter (the `--` at the end of the patch) if it
     /// exists, as it is incorrectly rendered as a deletion by diff renderers.
     fn clean_patch_for_preview(patch: &str) -> String {
-        let lines: Vec<&str> = patch.lines().collect();
+        let lines = patch.lines().collect::<Vec<&str>>();
 
         if let Some(sig_pos) = lines.iter().position(|&line| line.trim() == "--") {
             lines[..sig_pos].join("\n")

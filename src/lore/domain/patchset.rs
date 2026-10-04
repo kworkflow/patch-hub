@@ -64,7 +64,7 @@ impl PatchFeedIndex {
             upper_end = max_index + 1;
         }
 
-        let page: Vec<&Patch> = (lower_end..upper_end)
+        let page = (lower_end..upper_end)
             .filter_map(|i| self.patches_by_id.get(&self.representative_patch_ids[i]))
             .collect();
 

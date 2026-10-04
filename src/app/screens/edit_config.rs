@@ -56,7 +56,11 @@ impl EditConfigState {
             config.kw_deploy_force().to_string(),
         );
 
-        let mut keys: Vec<String> = config.kernel_trees().into_iter().cloned().collect();
+        let mut keys = config
+            .kernel_trees()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<String>>();
         keys.sort();
         let raw_target = config
             .target_kernel_tree()

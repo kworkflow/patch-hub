@@ -291,10 +291,10 @@ impl LoreService {
             .split_patchset(&patchset_path)
             .map_err(LoreError::Parse)?;
 
-        let tag_summary: Vec<PatchTagSummary> = raw_patches
+        let tag_summary = raw_patches
             .iter()
             .map(|p| Self::extract_tag_summary(p))
-            .collect();
+            .collect::<Vec<PatchTagSummary>>();
 
         match mode {
             CacheMode::Bypass => {}
@@ -440,7 +440,7 @@ impl LoreService {
                 ("Acked-by:", &mut acked_by),
             ] {
                 if let Some(rest) = line.strip_prefix(prefix) {
-                    let parts: Vec<&str> = rest.trim().split('<').collect();
+                    let parts = rest.trim().split('<').collect::<Vec<&str>>();
                     if parts.len() == 2 {
                         let name = parts[0].trim().to_string();
                         let email = parts[1].trim_end_matches('>').trim().to_string();

@@ -479,10 +479,10 @@ Host dut extra
     }
 
     fn fs_with_files(files: &[(&str, &str)]) -> MockFileSystemTrait {
-        let map: HashMap<PathBuf, String> = files
+        let map = files
             .iter()
             .map(|(path, content)| (PathBuf::from(path), content.to_string()))
-            .collect();
+            .collect::<HashMap<PathBuf, String>>();
         let is_file = Arc::new(map.clone());
         let read = Arc::new(map);
         let mut fs = MockFileSystemTrait::new();
