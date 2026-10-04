@@ -110,14 +110,14 @@ async fn main() -> Result<()> {
             config.data_dir().to_string(),
         ));
 
-        let kw_handle = Some(KwActor::spawn(
+        let kw_handle = KwActor::spawn(
             kw_history.clone(),
             Arc::new(OsProcess),
             shell_arc.clone(),
             fs_arc.clone(),
             Arc::new(OsEnv),
             Path::new(config.cache_dir()).join("kw_logs"),
-        ));
+        );
 
         let render = RenderActor::spawn(Box::new(ShellRenderService::new(shell_arc.clone())));
 
@@ -150,7 +150,7 @@ async fn main() -> Result<()> {
             lore_api.clone(),
             render.clone(),
             kw_history.clone(),
-            kw_handle.clone(),
+            Some(kw_handle.clone()),
         )?;
         let (app_input_tx, app_input_rx) = mpsc::channel::<InputEvent>(64);
         let input_handle = InputActor::spawn(terminal_handle.clone(), app.input_context());
@@ -177,9 +177,7 @@ async fn main() -> Result<()> {
             .shutdown()
             .await
             .map_err(|e| eyre!("{e}"))?;
-        if let Some(kw_handle) = kw_handle {
-            kw_handle.shutdown().await;
-        }
+        kw_handle.shutdown().await;
         config_handle.shutdown().await;
         lore_api.shutdown().await;
         render.shutdown().await;
