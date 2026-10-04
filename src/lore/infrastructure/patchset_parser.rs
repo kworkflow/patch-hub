@@ -229,6 +229,24 @@ mod tests {
     }
 
     #[test]
+    fn split_patchset_returns_error_on_invalid_utf8() {
+        let path = std::env::temp_dir().join(format!(
+            "patch-hub-mbox-invalid-utf8-{}.mbx",
+            std::process::id()
+        ));
+        fs::write(&path, b"Subject: not utf-8\n\xff\n").expect("write invalid mbox");
+        let path_str = path.to_str().expect("temp path is utf-8");
+        let err = parser()
+            .split_patchset(path_str)
+            .expect_err("invalid UTF-8 must return an error");
+        let _ = fs::remove_file(&path);
+        assert!(
+            err.starts_with(&format!("{path_str}: ")),
+            "expected \"{{path}}: {{err}}\", got {err}"
+        );
+    }
+
+    #[test]
     fn split_patchset_without_cover_letter() {
         let patches = parser()
             .split_patchset(
