@@ -103,15 +103,22 @@ mod tests {
     /// version, so individual tests only need to override their own case.
     fn happy_env() -> (MockEnvTrait, MockShellTrait) {
         let mut env = MockEnvTrait::new();
-        env.expect_which().returning(|_| true);
+        env.expect_which()
+            .withf(|name| matches!(name, "b4" | "bat" | "git" | "kw"))
+            .times(3..=4)
+            .returning(|_| true);
         let mut shell = MockShellTrait::new();
-        shell.expect_execute().returning(|_| {
-            Ok(ShellOutput {
-                stdout: b"0.10.0\n".to_vec(),
-                stderr: Vec::new(),
-                success: true,
-            })
-        });
+        shell
+            .expect_execute()
+            .withf(|cmd| cmd.program == "kw" && cmd.args == ["--version"])
+            .times(1)
+            .returning(|_| {
+                Ok(ShellOutput {
+                    stdout: b"0.10.0\n".to_vec(),
+                    stderr: Vec::new(),
+                    success: true,
+                })
+            });
         (env, shell)
     }
 
@@ -120,9 +127,10 @@ mod tests {
         let mut env = MockEnvTrait::new();
         env.expect_which()
             .withf(|name| name == "b4")
+            .times(1)
             .returning(|_| false);
         let mut shell = MockShellTrait::new();
-        shell.expect_execute().times(0);
+        shell.expect_execute().withf(|_| true).times(0);
 
         let err = DependencyService::check_external_deps(
             &env,
@@ -139,6 +147,7 @@ mod tests {
         let (mut env, shell) = happy_env();
         env.expect_which()
             .withf(|name| name == "git")
+            .times(0)
             .returning(|_| false);
 
         let result = DependencyService::check_external_deps(
@@ -161,6 +170,7 @@ mod tests {
         let (mut env, shell) = happy_env();
         env.expect_which()
             .withf(|name| name == "bat")
+            .times(0)
             .returning(|_| false);
 
         let result =
@@ -174,9 +184,10 @@ mod tests {
         let (mut env, mut shell) = happy_env();
         env.expect_which()
             .withf(|name| name == "kw")
+            .times(0)
             .returning(|_| false);
         // No kw on PATH: the version probe must not spawn anything.
-        shell.expect_execute().times(0);
+        shell.expect_execute().withf(|_| true).times(0);
 
         let result = DependencyService::check_external_deps(
             &env,
@@ -192,13 +203,17 @@ mod tests {
         let (env, mut shell) = happy_env();
         // Real 0.10 installs can still report the stale beta-0.9: the floor
         // check stays a warning regardless of what kw answers.
-        shell.expect_execute().returning(|_| {
-            Ok(ShellOutput {
-                stdout: b"beta-0.9\nBranch: master\nCommit: 3575d38\n".to_vec(),
-                stderr: Vec::new(),
-                success: true,
-            })
-        });
+        shell
+            .expect_execute()
+            .withf(|_| true)
+            .times(0)
+            .returning(|_| {
+                Ok(ShellOutput {
+                    stdout: b"beta-0.9\nBranch: master\nCommit: 3575d38\n".to_vec(),
+                    stderr: Vec::new(),
+                    success: true,
+                })
+            });
 
         let result = DependencyService::check_external_deps(
             &env,

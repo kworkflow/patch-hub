@@ -238,8 +238,14 @@ async fn dropped_unreaped_process_group_is_killed() {
 #[tokio::test]
 async fn running_process_is_dyn_compatible_and_mockable() {
     let mut mock = MockRunningProcess::new();
-    mock.expect_wait().returning(|| Ok(ExitStatus::from_raw(0)));
-    mock.expect_kill().returning(|| Ok(()));
+    mock.expect_wait()
+        .withf(|| true)
+        .times(1)
+        .returning(|| Ok(ExitStatus::from_raw(0)));
+    mock.expect_kill()
+        .withf(|| true)
+        .times(1)
+        .returning(|| Ok(()));
 
     let mut process: Box<dyn RunningProcess> = Box::new(mock);
     process.kill().expect("process kills");
@@ -366,12 +372,20 @@ async fn mock_process_trait_can_simulate_spawn_failure() {
     let cmd = ShellCommand::new("kw").arg("build");
 
     let mut mock = MockProcessTrait::new();
-    mock.expect_spawn().return_once(|_, _, _| {
-        Err(ProcessError::IoError(io::Error::new(
-            io::ErrorKind::NotFound,
-            "kw not found",
-        )))
-    });
+    mock.expect_spawn()
+        .withf(|cmd, cwd, log_path| {
+            cmd.program == "kw"
+                && cmd.args == ["build"]
+                && cwd.starts_with(std::env::temp_dir())
+                && log_path.starts_with(std::env::temp_dir())
+        })
+        .times(1)
+        .return_once(|_, _, _| {
+            Err(ProcessError::IoError(io::Error::new(
+                io::ErrorKind::NotFound,
+                "kw not found",
+            )))
+        });
 
     let result = mock.spawn(&cmd, dir.path(), &log);
 

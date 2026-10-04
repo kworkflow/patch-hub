@@ -147,11 +147,13 @@ mod tests {
         mock_fs
             .expect_exists()
             .withf(|p| p == Path::new(CACHE_DIR))
+            .times(1)
             .returning(|_| true);
         // file already cached
         mock_fs
             .expect_exists()
             .withf(|p| p == Path::new(CACHED_FILE))
+            .times(2)
             .returning(|_| true);
 
         let mock_shell = MockShellTrait::new(); // b4 must NOT be called
@@ -180,10 +182,12 @@ mod tests {
         mock_fs
             .expect_exists()
             .withf(|p| p == Path::new(CACHE_DIR))
+            .times(1)
             .returning(|_| true);
         mock_fs
             .expect_exists()
             .withf(|p| p == Path::new(CACHED_FILE))
+            .times(2)
             .returning(move |_| {
                 let n = call_count_clone.fetch_add(1, atomic::Ordering::SeqCst);
                 n > 0 // false on first call (before b4), true on second (after b4)
@@ -220,15 +224,32 @@ mod tests {
         mock_fs
             .expect_exists()
             .withf(|p| p == Path::new(CACHE_DIR))
+            .times(1)
             .returning(|_| true);
         mock_fs
             .expect_exists()
             .withf(|p| p == Path::new(CACHED_FILE))
+            .times(1)
             .returning(|_| false);
 
         let mut mock_shell = MockShellTrait::new();
         mock_shell
             .expect_execute()
+            .withf(|cmd| {
+                cmd.program == "b4"
+                    && cmd.args
+                        == [
+                            "--quiet",
+                            "am",
+                            "--use-version",
+                            "1",
+                            "https://lore.kernel.org/linux-kernel/1234.567-1-john@johnson.com/",
+                            "--outdir",
+                            "/cache",
+                            "--mbox-name",
+                            "linux-kernel.1234.567-1-john@johnson.com.mbx",
+                        ]
+            })
             .times(1)
             .returning(|_| Err(ShellError::IoError(io::Error::other("b4 not found"))));
 

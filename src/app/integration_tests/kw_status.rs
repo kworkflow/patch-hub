@@ -295,8 +295,14 @@ fn app_with_kw(log_dir: &Path) -> (App, KwHandle, Arc<FakeProcess>) {
     let mut history = MockKwHistoryStore::new();
     history
         .expect_apply_record_for_branch()
+        .withf(|tree, branch| tree == "linux" && branch == "patchset-2026-08-20-15-00-00")
+        .times(1)
         .returning(|_, _| Ok(None));
-    history.expect_record_build().returning(|_| Ok(()));
+    history
+        .expect_record_build()
+        .withf(|record| record.branch == "patchset-2026-08-20-15-00-00")
+        .times(1)
+        .returning(|_| Ok(()));
     let kw = KwActor::spawn(
         Arc::new(history),
         process.clone(),
@@ -419,45 +425,114 @@ fn apply_config() -> ConfigSnapshot {
 
 fn kw_actor_shell() -> MockShellTrait {
     let mut shell = MockShellTrait::new();
-    shell.expect_execute().returning(|cmd| {
-        let stdout = match cmd.program.as_str() {
-            "kw" => b"kw, version 0.10.0\n".to_vec(),
-            _ if cmd.args.iter().any(|arg| arg == "status") => Vec::new(),
-            _ => b"main\n".to_vec(),
-        };
-        Ok(ShellOutput {
-            stdout,
-            stderr: Vec::new(),
-            success: true,
+    shell
+        .expect_execute()
+        .withf(|cmd| {
+            cmd.program == "kw" && cmd.args == ["--version"]
+                || cmd.program == "git"
+                    && cmd.args
+                        == [
+                            "-C",
+                            "/kernel",
+                            "status",
+                            "--porcelain",
+                            "--untracked-files=no",
+                        ]
+                || cmd.program == "git" && cmd.args == ["-C", "/kernel", "branch", "--show-current"]
+                || cmd.program == "git"
+                    && cmd.args
+                        == [
+                            "-C",
+                            "/kernel",
+                            "switch",
+                            "--",
+                            "patchset-2026-08-20-15-00-00",
+                        ]
         })
-    });
+        .times(4)
+        .returning(|cmd| {
+            let stdout = match cmd.program.as_str() {
+                "kw" => b"kw, version 0.10.0\n".to_vec(),
+                _ if cmd.args.iter().any(|arg| arg == "status") => Vec::new(),
+                _ => b"main\n".to_vec(),
+            };
+            Ok(ShellOutput {
+                stdout,
+                stderr: Vec::new(),
+                success: true,
+            })
+        });
     shell
 }
 
 fn kw_actor_fs() -> MockFileSystemTrait {
     let mut fs = MockFileSystemTrait::new();
-    fs.expect_is_dir().returning(|_| true);
+    fs.expect_is_dir()
+        .withf(|path| {
+            path == std::path::Path::new("/kernel")
+                || path == std::path::Path::new("/kernel/.kw")
+                || path == std::path::Path::new("/kernel/Documentation")
+                || path == std::path::Path::new("/kernel/arch")
+                || path == std::path::Path::new("/kernel/drivers")
+                || path == std::path::Path::new("/kernel/fs")
+                || path == std::path::Path::new("/kernel/include")
+                || path == std::path::Path::new("/kernel/init")
+                || path == std::path::Path::new("/kernel/ipc")
+                || path == std::path::Path::new("/kernel/kernel")
+                || path == std::path::Path::new("/kernel/lib")
+                || path == std::path::Path::new("/kernel/scripts")
+        })
+        .times(12)
+        .returning(|_| true);
     fs.expect_is_file()
+        .withf(|path| {
+            path == std::path::Path::new("/kernel/.config")
+                || path == std::path::Path::new("/kernel/.kw/env.current")
+                || path == std::path::Path::new("/kernel/COPYING")
+                || path == std::path::Path::new("/kernel/CREDITS")
+                || path == std::path::Path::new("/kernel/Kbuild")
+                || path == std::path::Path::new("/kernel/Makefile")
+                || path == std::path::Path::new("/kernel/README")
+        })
+        .times(7)
         .returning(|path| !path.ends_with(".kw/env.current"));
-    fs.expect_exists().returning(|_| true);
-    fs.expect_read_to_string().returning(|_| {
-        Err(FileSystemError::IoError(io::Error::new(
-            io::ErrorKind::NotFound,
-            "missing",
-        )))
-    });
-    fs.expect_read_dir().returning(|_| {
-        Err(FileSystemError::IoError(io::Error::new(
-            io::ErrorKind::NotFound,
-            "missing",
-        )))
-    });
-    fs.expect_create_dir_all().returning(|_| Ok(()));
+    fs.expect_exists()
+        .withf(|path| path == std::path::Path::new("/kernel/MAINTAINERS"))
+        .times(1)
+        .returning(|_| true);
+    fs.expect_read_to_string()
+        .withf(|path| {
+            path == std::path::Path::new("/kernel/.kw/build.config")
+                || path == std::path::Path::new("/kernel/include/config/kernel.release")
+        })
+        .times(1..=2)
+        .returning(|_| {
+            Err(FileSystemError::IoError(io::Error::new(
+                io::ErrorKind::NotFound,
+                "missing",
+            )))
+        });
+    fs.expect_read_dir()
+        .withf(|path| path == std::path::Path::new("/kernel/arch"))
+        .times(0..=1)
+        .returning(|_| {
+            Err(FileSystemError::IoError(io::Error::new(
+                io::ErrorKind::NotFound,
+                "missing",
+            )))
+        });
+    fs.expect_create_dir_all()
+        .withf(|path| path.starts_with(std::env::temp_dir()))
+        .times(1)
+        .returning(|_| Ok(()));
     fs
 }
 
 fn kw_actor_env() -> MockEnvTrait {
     let mut env = MockEnvTrait::new();
-    env.expect_which().returning(|_| true);
+    env.expect_which()
+        .withf(|name| name == "kw")
+        .times(1)
+        .returning(|_| true);
     env
 }

@@ -178,6 +178,7 @@ mod tests {
         let mut feed_gateway = MockFeedGateway::new();
         feed_gateway
             .expect_fetch_patch_feed_page()
+            .withf(|list, offset| list == "some-list" && *offset == 0)
             .times(1)
             .returning(|_, _| Ok(patch_feed_response()));
 
@@ -194,6 +195,7 @@ mod tests {
         let mut feed_gateway = MockFeedGateway::new();
         feed_gateway
             .expect_fetch_patch_feed_page()
+            .withf(|list, offset| list == "some-list" && *offset == 0)
             .times(1)
             .returning(|_, _| Err(LoreHttpError::EndOfFeed));
 
@@ -212,6 +214,7 @@ mod tests {
         let mut feed_gateway = MockFeedGateway::new();
         feed_gateway
             .expect_fetch_patch_feed_page()
+            .withf(|list, offset| list == "some-list" && *offset == 0)
             .times(1)
             .returning(|_, _| {
                 Err(LoreHttpError::Net(NetError::HttpStatus {

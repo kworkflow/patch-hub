@@ -71,9 +71,11 @@ fn default_env() -> (MockEnvTrait, PathBuf) {
     let mut mock = MockEnvTrait::new();
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .times(0..=1)
         .returning(|_| Err(VarError::NotPresent.into()));
     mock.expect_var()
         .withf(move |key| key == "HOME")
+        .times(1..=2)
         .returning(move |_| Ok(home_s.clone()));
     mock.expect_var()
         .withf(|key| {
@@ -86,6 +88,7 @@ fn default_env() -> (MockEnvTrait, PathBuf) {
                     | "PATCH_HUB_PATCH_RENDERER"
             )
         })
+        .times(0..=5)
         .returning(|_| Err(VarError::NotPresent.into()));
     (mock, home)
 }
@@ -188,9 +191,11 @@ fn bootstrap_with_config_file() {
     let mut mock = MockEnvTrait::new();
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .times(1)
         .returning(move |_| Ok(tmp_path_s.clone()));
     mock.expect_var()
         .withf(|key| key == "HOME")
+        .times(0)
         .returning(move |_| Ok(home_s.clone()));
     mock.expect_var()
         .withf(|key| {
@@ -203,6 +208,7 @@ fn bootstrap_with_config_file() {
                     | "PATCH_HUB_PATCH_RENDERER"
             )
         })
+        .times(5)
         .returning(|_| Err(VarError::NotPresent.into()));
 
     let config = bootstrap_snapshot(&mock);
@@ -280,24 +286,31 @@ fn bootstrap_with_env_vars() {
     let mut mock = MockEnvTrait::new();
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .times(1)
         .returning(|_| Err(VarError::NotPresent.into()));
     mock.expect_var()
         .withf(move |key| key == "HOME")
+        .times(2)
         .returning(move |_| Ok(home_s.clone()));
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_PAGE_SIZE")
+        .times(1)
         .returning(|_| Ok("42".to_string()));
     mock.expect_var()
         .withf(move |key| key == "PATCH_HUB_CACHE_DIR")
+        .times(1)
         .returning(move |_| Ok(cache_s.clone()));
     mock.expect_var()
         .withf(move |key| key == "PATCH_HUB_DATA_DIR")
+        .times(1)
         .returning(move |_| Ok(data_s.clone()));
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS")
+        .times(1)
         .returning(|_| Ok("--option1 --option2".to_string()));
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_PATCH_RENDERER")
+        .times(1)
         .returning(|_| Err(VarError::NotPresent.into()));
 
     let config = bootstrap_snapshot(&mock);
@@ -344,10 +357,12 @@ fn bootstrap_config_precedence() {
     env_with_file
         .expect_var()
         .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .times(1)
         .returning(move |_| Ok(tmp_path_s.clone()));
     env_with_file
         .expect_var()
         .withf(move |key| key == "HOME")
+        .times(0)
         .returning(move |_| Ok(home_s.clone()));
     env_with_file
         .expect_var()
@@ -361,6 +376,7 @@ fn bootstrap_config_precedence() {
                     | "PATCH_HUB_PATCH_RENDERER"
             )
         })
+        .times(5)
         .returning(|_| Err(VarError::NotPresent.into()));
 
     assert_eq!(1234, bootstrap_snapshot(&env_with_file).page_size());
@@ -371,14 +387,17 @@ fn bootstrap_config_precedence() {
     env_with_file_and_var
         .expect_var()
         .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .times(1)
         .returning(move |_| Ok(tmp_path_s2.clone()));
     env_with_file_and_var
         .expect_var()
         .withf(|key| key == "PATCH_HUB_PAGE_SIZE")
+        .times(1)
         .returning(|_| Ok("42".to_string()));
     env_with_file_and_var
         .expect_var()
         .withf(move |key| key == "HOME")
+        .times(0)
         .returning(move |_| Ok(home_s2.clone()));
     env_with_file_and_var
         .expect_var()
@@ -391,6 +410,7 @@ fn bootstrap_config_precedence() {
                     | "PATCH_HUB_PATCH_RENDERER"
             )
         })
+        .times(4)
         .returning(|_| Err(VarError::NotPresent.into()));
 
     assert_eq!(42, bootstrap_snapshot(&env_with_file_and_var).page_size());
@@ -422,6 +442,7 @@ fn bootstrap_rejects_invalid_patch_hub_page_size_env() {
     let mut mock = MockEnvTrait::new();
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .times(1)
         .returning(|_| Err(VarError::NotPresent.into()));
     mock.expect_var()
         .withf(|key| key == "HOME")
@@ -429,6 +450,7 @@ fn bootstrap_rejects_invalid_patch_hub_page_size_env() {
         .returning(move |_| Ok(home_s.clone()));
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_PAGE_SIZE")
+        .times(1)
         .returning(|_| Ok("not-a-number".into()));
     mock.expect_var()
         .withf(|key| {
@@ -440,6 +462,7 @@ fn bootstrap_rejects_invalid_patch_hub_page_size_env() {
                     | "PATCH_HUB_PATCH_RENDERER"
             )
         })
+        .times(0)
         .returning(|_| Err(VarError::NotPresent.into()));
 
     match ConfigService::bootstrap_parts(&mock, os_fs()) {
@@ -457,6 +480,7 @@ fn bootstrap_rejects_invalid_patch_hub_patch_renderer_env() {
     let mut mock = MockEnvTrait::new();
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .times(1)
         .returning(|_| Err(VarError::NotPresent.into()));
     mock.expect_var()
         .withf(|key| key == "HOME")
@@ -464,18 +488,23 @@ fn bootstrap_rejects_invalid_patch_hub_patch_renderer_env() {
         .returning(move |_| Ok(home_s.clone()));
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_PAGE_SIZE")
+        .times(1)
         .returning(|_| Err(VarError::NotPresent.into()));
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_CACHE_DIR")
+        .times(1)
         .returning(|_| Err(VarError::NotPresent.into()));
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_DATA_DIR")
+        .times(1)
         .returning(|_| Err(VarError::NotPresent.into()));
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_GIT_SEND_EMAIL_OPTIONS")
+        .times(1)
         .returning(|_| Err(VarError::NotPresent.into()));
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_PATCH_RENDERER")
+        .times(1)
         .returning(|_| Ok("not-a-real-renderer".into()));
 
     match ConfigService::bootstrap_parts(&mock, os_fs()) {
@@ -778,9 +807,11 @@ fn json_config_repository_save_creates_parent_and_leaves_no_tmp_stale() {
     let mut mock = MockEnvTrait::new();
     mock.expect_var()
         .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+        .times(1)
         .returning(move |_| Ok(cfg_s.clone()));
     mock.expect_var()
         .withf(|key| key == "HOME")
+        .times(1)
         .returning(move |_| Ok(home_s.clone()));
 
     let repo = JsonConfigRepository::new(&mock, os_fs());

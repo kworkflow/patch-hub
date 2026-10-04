@@ -143,9 +143,11 @@ mod tests {
         let mut mock = MockEnvTrait::new();
         mock.expect_var()
             .withf(|key| key == "PATCH_HUB_CONFIG_PATH")
+            .times(1)
             .returning(|_| Err(VarError::NotPresent.into()));
         mock.expect_var()
             .withf(move |key| key == "HOME")
+            .times(2)
             .returning(move |_| Ok(home_s.clone()));
         mock.expect_var()
             .withf(|key| {
@@ -158,6 +160,7 @@ mod tests {
                         | "PATCH_HUB_PATCH_RENDERER"
                 )
             })
+            .times(5)
             .returning(|_| Err(VarError::NotPresent.into()));
         (mock, home)
     }

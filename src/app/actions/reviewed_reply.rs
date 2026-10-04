@@ -168,6 +168,10 @@ mod tests {
         let mut shell = MockShellTrait::new();
         shell
             .expect_spawn_interactive()
+            .withf(|cmd| {
+                cmd.program == "git"
+                    && (cmd.args == ["send-email", "first"] || cmd.args == ["send-email", "second"])
+            })
             .times(2)
             .returning(|cmd| Ok(cmd.args.last().is_some_and(|arg| arg == "first")));
         let mut successful_indexes = HashSet::from([0]);
@@ -187,6 +191,7 @@ mod tests {
         let mut shell = MockShellTrait::new();
         shell
             .expect_spawn_interactive()
+            .withf(|cmd| cmd.program == "git" && cmd.args == ["send-email", "first"])
             .times(1)
             .returning(|_| Err(ShellError::IoError(io::Error::other("failed"))));
         let mut successful_indexes = HashSet::new();

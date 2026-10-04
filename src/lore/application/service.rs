@@ -517,6 +517,7 @@ mod tests {
         let mut lists_store = MockMailingListsCacheStore::new();
         lists_store
             .expect_load_available_lists()
+            .withf(|| true)
             .times(1)
             .returning(|| Ok(vec![MailingList::new("linux-mm", "desc")]));
 
@@ -600,6 +601,7 @@ mod tests {
         let mut lists_store = MockMailingListsCacheStore::new();
         lists_store
             .expect_save_available_lists()
+            .withf(|lists| lists.len() == 320)
             .times(1)
             .returning(|_| Ok(()));
 
@@ -627,12 +629,14 @@ mod tests {
         let mut lists_gateway = MockListsGateway::new();
         lists_gateway
             .expect_fetch_available_lists_page()
+            .withf(|offset| *offset == 0)
             .times(1)
             .returning(|_| Ok(String::new())); // empty page → break loop
 
         let mut lists_store = MockMailingListsCacheStore::new();
         lists_store
             .expect_save_available_lists()
+            .withf(|lists| lists.is_empty())
             .times(1)
             .returning(|_| Ok(()));
 
@@ -666,16 +670,19 @@ mod tests {
         let mut lists_store = MockMailingListsCacheStore::new();
         lists_store
             .expect_load_available_lists()
+            .withf(|| true)
             .times(1)
             .returning(|| Ok(vec![MailingList::new("linux-mm", "")]));
 
         let mut user_state = MockUserLoreStateStore::new();
         user_state
             .expect_load_bookmarked_patchsets()
+            .withf(|| true)
             .times(1)
             .returning(|| Ok(vec![]));
         user_state
             .expect_load_reviewed_patchsets()
+            .withf(|| true)
             .times(1)
             .returning(|| Ok(HashMap::new()));
 
@@ -735,6 +742,7 @@ mod tests {
         let mut feed_gateway = MockFeedGateway::new();
         feed_gateway
             .expect_fetch_patch_feed_page()
+            .withf(|list, offset| list == "some-list" && *offset == 0)
             .times(1)
             .returning(|_, _| Err(LoreHttpError::EndOfFeed));
 
@@ -793,6 +801,7 @@ mod tests {
         let mut feed_gateway = MockFeedGateway::new();
         feed_gateway
             .expect_fetch_patch_feed_page()
+            .withf(|list, offset| list == "some-list" && *offset == 0)
             .times(1)
             .returning(move |_, _| Ok(fs::read_to_string(src).expect("file reads")));
 
@@ -875,12 +884,14 @@ mod tests {
         let mut fetcher = MockPatchsetFetcher::new();
         fetcher
             .expect_download()
+            .withf(|patch| patch.title() == "test")
             .times(1)
             .returning(|_| Ok("/tmp/new.mbx".to_string()));
 
         let mut parser = MockPatchsetParser::new();
         parser
             .expect_split_patchset()
+            .withf(|path| path == "/tmp/new.mbx")
             .times(1)
             .returning(|_| Ok(vec!["raw".to_string()]));
 
@@ -911,12 +922,14 @@ mod tests {
         let mut fetcher = MockPatchsetFetcher::new();
         fetcher
             .expect_download()
+            .withf(|patch| patch.title() == "test")
             .times(1)
             .returning(|_| Ok("/tmp/refreshed.mbx".to_string()));
 
         let mut parser = MockPatchsetParser::new();
         parser
             .expect_split_patchset()
+            .withf(|path| path == "/tmp/refreshed.mbx")
             .times(1)
             .returning(|_| Ok(vec!["fresh raw".to_string()]));
 

@@ -216,6 +216,9 @@ async fn apply_success_with_history_write_failure_keeps_success_popup() {
     let mut kw_history = MockKwHistoryStore::new();
     kw_history
         .expect_record_apply()
+        .withf(|record| {
+            record.message_id == "http://lore.kernel.org/test-list/1234-1-foo@bar.example"
+        })
         .times(1)
         .returning(|_| Err(FileSystemError::IoError(io::Error::other("disk full"))));
     let mut app = app_with_details(
@@ -259,7 +262,7 @@ async fn apply_failure_does_not_record_history() {
         output("", "", true),
     ]);
     let mut kw_history = MockKwHistoryStore::new();
-    kw_history.expect_record_apply().times(0);
+    kw_history.expect_record_apply().withf(|_| true).times(0);
     let mut app = app_with_details(
         clean_fs(),
         shell,
@@ -330,11 +333,23 @@ async fn apply_is_allowed_again_after_the_job_finishes() {
     let log_dir = kw_log_dir("apply-after-job");
     let process = Arc::new(FakeProcess::new());
     let mut store = MockKwHistoryStore::new();
-    store.expect_record_apply().returning(|_| Ok(()));
+    store
+        .expect_record_apply()
+        .withf(|record| {
+            record.message_id == "http://lore.kernel.org/test-list/1234-1-foo@bar.example"
+        })
+        .times(1)
+        .returning(|_| Ok(()));
     store
         .expect_apply_record_for_branch()
+        .withf(|tree, branch| tree == "linux" && branch == "patchset-2026-08-20-15-00-00")
+        .times(1)
         .returning(|_, _| Ok(None));
-    store.expect_record_build().returning(|_| Ok(()));
+    store
+        .expect_record_build()
+        .withf(|record| record.branch == "patchset-2026-08-20-15-00-00")
+        .times(1)
+        .returning(|_| Ok(()));
     let mut app = app_with_details_and_kw(
         clean_fs(),
         shell,
@@ -415,6 +430,7 @@ async fn reviewed_reply_success_records_persists_and_resets_reply_action() {
         .returning(|_| Ok(output("/tmp/reviewed-reply\n", "", true)));
     shell
         .expect_spawn_interactive()
+        .withf(|cmd| cmd.program == "git" && cmd.args == ["send-email", "--annotate"])
         .times(1)
         .returning(|_| Ok(true));
     let mut app = app_with_reviewed_reply_details(shell, lore_api);
@@ -450,6 +466,7 @@ async fn reviewed_reply_failure_does_not_record_failed_index() {
         .returning(|_| Ok(output("/tmp/reviewed-reply\n", "", true)));
     shell
         .expect_spawn_interactive()
+        .withf(|cmd| cmd.program == "git" && cmd.args == ["send-email", "--annotate"])
         .times(1)
         .returning(|_| Ok(false));
     let mut app = app_with_reviewed_reply_details(shell, lore_api);
@@ -635,7 +652,13 @@ fn reviewed_reply_lore_handle(saved_reviewed: SharedReviewedState) -> LoreApiHan
 // serde default (true) that existing config files inherit.
 fn history_store_allowing_writes() -> MockKwHistoryStore {
     let mut store = MockKwHistoryStore::new();
-    store.expect_record_apply().returning(|_| Ok(()));
+    store
+        .expect_record_apply()
+        .withf(|record| {
+            record.message_id == "http://lore.kernel.org/test-list/1234-1-foo@bar.example"
+        })
+        .times(0..=1)
+        .returning(|_| Ok(()));
     store
 }
 
@@ -677,8 +700,21 @@ fn apply_config_stay_disabled() -> ConfigSnapshot {
 fn clean_fs() -> MockFileSystemTrait {
     let mut fs = MockFileSystemTrait::new();
     fs.expect_is_dir()
+        .withf(|path| {
+            path == std::path::Path::new("/kernel")
+                || path == std::path::Path::new("/kernel/.git")
+                || path == std::path::Path::new("/kernel/.git/rebase-apply")
+                || path == std::path::Path::new("/kernel/.git/rebase-merge")
+        })
+        .times(0..=4)
         .returning(|path| matches!(path.to_str(), Some("/kernel") | Some("/kernel/.git")));
-    fs.expect_is_file().returning(|_| false);
+    fs.expect_is_file()
+        .withf(|path| {
+            path == std::path::Path::new("/kernel/.git/BISECT_LOG")
+                || path == std::path::Path::new("/kernel/.git/MERGE_HEAD")
+        })
+        .times(0..=2)
+        .returning(|_| false);
     fs
 }
 
@@ -688,17 +724,52 @@ fn shell_with_outputs(outputs: Vec<ShellOutput>) -> (MockShellTrait, Arc<Mutex<V
     let mut shell = MockShellTrait::new();
     let calls_for_execute = Arc::clone(&calls);
     let outputs_for_execute = Arc::clone(&outputs);
-    shell.expect_execute().returning(move |cmd| {
-        calls_for_execute
-            .lock()
-            .expect("calls for execute locks")
-            .push(command_parts(cmd));
-        Ok(outputs_for_execute
-            .lock()
-            .expect("outputs for execute locks")
-            .pop_front()
-            .expect("test should provide one output per shell command"))
-    });
+    shell
+        .expect_execute()
+        .withf(|cmd| {
+            cmd.program == "git"
+                && (cmd.args == ["-C", "/kernel", "status", "--porcelain"]
+                    || cmd.args
+                        == [
+                            "-C",
+                            "/kernel",
+                            "show-ref",
+                            "--verify",
+                            "--quiet",
+                            "refs/heads/main",
+                        ]
+                    || cmd.args == ["-C", "/kernel", "rev-parse", "--abbrev-ref", "HEAD"]
+                    || cmd.args == ["-C", "/kernel", "switch", "main"]
+                    || (cmd.args.len() == 5
+                        && cmd.args[..4] == ["-C", "/kernel", "checkout", "-b"]
+                        && cmd.args[4].starts_with("patchset-"))
+                    || cmd.args
+                        == [
+                            "-C",
+                            "/kernel",
+                            "am",
+                            "/tmp/patchset.mbx",
+                            "--signoff",
+                            "--3way",
+                        ]
+                    || cmd.args == ["-C", "/kernel", "am", "--abort"]
+                    || cmd.args == ["-C", "/kernel", "switch", "feature"]
+                    || (cmd.args.len() == 5
+                        && cmd.args[..4] == ["-C", "/kernel", "branch", "-D"]
+                        && cmd.args[4].starts_with("patchset-")))
+        })
+        .times(0..=9)
+        .returning(move |cmd| {
+            calls_for_execute
+                .lock()
+                .expect("calls for execute locks")
+                .push(command_parts(cmd));
+            Ok(outputs_for_execute
+                .lock()
+                .expect("outputs for execute locks")
+                .pop_front()
+                .expect("test should provide one output per shell command"))
+        });
     (shell, calls)
 }
 
@@ -721,46 +792,115 @@ fn command_parts(cmd: &ShellCommand) -> Vec<String> {
 /// tree — the happy path through the actor's start probes.
 fn kw_actor_shell() -> MockShellTrait {
     let mut shell = MockShellTrait::new();
-    shell.expect_execute().returning(|cmd| {
-        let stdout = match cmd.program.as_str() {
-            "kw" => b"kw, version 0.10.0\n".to_vec(),
-            _ if cmd.args.iter().any(|arg| arg == "status") => Vec::new(),
-            _ => b"main\n".to_vec(),
-        };
-        Ok(ShellOutput {
-            stdout,
-            stderr: Vec::new(),
-            success: true,
+    shell
+        .expect_execute()
+        .withf(|cmd| {
+            cmd.program == "kw" && cmd.args == ["--version"]
+                || cmd.program == "git"
+                    && cmd.args
+                        == [
+                            "-C",
+                            "/kernel",
+                            "status",
+                            "--porcelain",
+                            "--untracked-files=no",
+                        ]
+                || cmd.program == "git" && cmd.args == ["-C", "/kernel", "branch", "--show-current"]
+                || cmd.program == "git"
+                    && cmd.args
+                        == [
+                            "-C",
+                            "/kernel",
+                            "switch",
+                            "--",
+                            "patchset-2026-08-20-15-00-00",
+                        ]
         })
-    });
+        .times(4)
+        .returning(|cmd| {
+            let stdout = match cmd.program.as_str() {
+                "kw" => b"kw, version 0.10.0\n".to_vec(),
+                _ if cmd.args.iter().any(|arg| arg == "status") => Vec::new(),
+                _ => b"main\n".to_vec(),
+            };
+            Ok(ShellOutput {
+                stdout,
+                stderr: Vec::new(),
+                success: true,
+            })
+        });
     shell
 }
 
 fn kw_actor_fs() -> MockFileSystemTrait {
     let mut fs = MockFileSystemTrait::new();
-    fs.expect_is_dir().returning(|_| true);
+    fs.expect_is_dir()
+        .withf(|path| {
+            path == std::path::Path::new("/kernel")
+                || path == std::path::Path::new("/kernel/.kw")
+                || path == std::path::Path::new("/kernel/Documentation")
+                || path == std::path::Path::new("/kernel/arch")
+                || path == std::path::Path::new("/kernel/drivers")
+                || path == std::path::Path::new("/kernel/fs")
+                || path == std::path::Path::new("/kernel/include")
+                || path == std::path::Path::new("/kernel/init")
+                || path == std::path::Path::new("/kernel/ipc")
+                || path == std::path::Path::new("/kernel/kernel")
+                || path == std::path::Path::new("/kernel/lib")
+                || path == std::path::Path::new("/kernel/scripts")
+        })
+        .times(12)
+        .returning(|_| true);
     fs.expect_is_file()
+        .withf(|path| {
+            path == std::path::Path::new("/kernel/.config")
+                || path == std::path::Path::new("/kernel/.kw/env.current")
+                || path == std::path::Path::new("/kernel/COPYING")
+                || path == std::path::Path::new("/kernel/CREDITS")
+                || path == std::path::Path::new("/kernel/Kbuild")
+                || path == std::path::Path::new("/kernel/Makefile")
+                || path == std::path::Path::new("/kernel/README")
+        })
+        .times(7)
         .returning(|path| !path.ends_with(".kw/env.current"));
-    fs.expect_exists().returning(|_| true);
-    fs.expect_read_to_string().returning(|_| {
-        Err(FileSystemError::IoError(io::Error::new(
-            io::ErrorKind::NotFound,
-            "missing",
-        )))
-    });
-    fs.expect_read_dir().returning(|_| {
-        Err(FileSystemError::IoError(io::Error::new(
-            io::ErrorKind::NotFound,
-            "missing",
-        )))
-    });
-    fs.expect_create_dir_all().returning(|_| Ok(()));
+    fs.expect_exists()
+        .withf(|path| path == std::path::Path::new("/kernel/MAINTAINERS"))
+        .times(1)
+        .returning(|_| true);
+    fs.expect_read_to_string()
+        .withf(|path| {
+            path == std::path::Path::new("/kernel/.kw/build.config")
+                || path == std::path::Path::new("/kernel/include/config/kernel.release")
+        })
+        .times(1..=2)
+        .returning(|_| {
+            Err(FileSystemError::IoError(io::Error::new(
+                io::ErrorKind::NotFound,
+                "missing",
+            )))
+        });
+    fs.expect_read_dir()
+        .withf(|path| path == std::path::Path::new("/kernel/arch"))
+        .times(0..=1)
+        .returning(|_| {
+            Err(FileSystemError::IoError(io::Error::new(
+                io::ErrorKind::NotFound,
+                "missing",
+            )))
+        });
+    fs.expect_create_dir_all()
+        .withf(|path| path.starts_with(std::env::temp_dir()))
+        .times(1)
+        .returning(|_| Ok(()));
     fs
 }
 
 fn kw_actor_env() -> MockEnvTrait {
     let mut env = MockEnvTrait::new();
-    env.expect_which().returning(|_| true);
+    env.expect_which()
+        .withf(|name| name == "kw")
+        .times(1)
+        .returning(|_| true);
     env
 }
 

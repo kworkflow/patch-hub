@@ -211,7 +211,11 @@ mod tests {
             .withf(|frame| matches!(frame, TerminalFrame::Empty))
             .times(1)
             .returning(|_| Ok(()));
-        session.expect_size().times(1).returning(|| Ok((120, 40)));
+        session
+            .expect_size()
+            .withf(|| true)
+            .times(1)
+            .returning(|| Ok((120, 40)));
         let handle = spawn_test_actor(session);
 
         handle
@@ -244,7 +248,11 @@ mod tests {
     #[tokio::test]
     async fn setup_user_io_delegates_to_session() {
         let mut session = MockTerminalSessionApi::new();
-        session.expect_setup_user_io().times(1).returning(|| Ok(()));
+        session
+            .expect_setup_user_io()
+            .withf(|| true)
+            .times(1)
+            .returning(|| Ok(()));
         let handle = spawn_test_actor(session);
 
         handle.setup_user_io().await.expect("user io sets up");
@@ -255,6 +263,7 @@ mod tests {
         let mut session = MockTerminalSessionApi::new();
         session
             .expect_teardown_user_io()
+            .withf(|| true)
             .times(1)
             .returning(|| Ok(()));
         let handle = spawn_test_actor(session);
@@ -265,7 +274,11 @@ mod tests {
     #[tokio::test]
     async fn shutdown_delegates_to_session_and_is_safe_to_repeat() {
         let mut session = MockTerminalSessionApi::new();
-        session.expect_shutdown().times(2).returning(|| Ok(()));
+        session
+            .expect_shutdown()
+            .withf(|| true)
+            .times(2)
+            .returning(|| Ok(()));
         let handle = spawn_test_actor(session);
 
         handle.shutdown().await.expect("actor shuts down");

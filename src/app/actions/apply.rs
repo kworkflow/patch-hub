@@ -380,8 +380,21 @@ mod tests {
     fn clean_fs() -> MockFileSystemTrait {
         let mut fs = MockFileSystemTrait::new();
         fs.expect_is_dir()
+            .withf(|path| {
+                path == std::path::Path::new("/kernel")
+                    || path == std::path::Path::new("/kernel/.git")
+                    || path == std::path::Path::new("/kernel/.git/rebase-apply")
+                    || path == std::path::Path::new("/kernel/.git/rebase-merge")
+            })
+            .times(4..=8)
             .returning(|path| matches!(path.to_str(), Some("/kernel") | Some("/kernel/.git")));
-        fs.expect_is_file().returning(|_| false);
+        fs.expect_is_file()
+            .withf(|path| {
+                path == std::path::Path::new("/kernel/.git/BISECT_LOG")
+                    || path == std::path::Path::new("/kernel/.git/MERGE_HEAD")
+            })
+            .times(2..=4)
+            .returning(|_| false);
         fs
     }
 
@@ -393,17 +406,52 @@ mod tests {
         let mut shell = MockShellTrait::new();
         let calls_for_execute = Arc::clone(&calls);
         let outputs_for_execute = Arc::clone(&outputs);
-        shell.expect_execute().returning(move |cmd| {
-            calls_for_execute
-                .lock()
-                .expect("calls for execute locks")
-                .push(command_parts(cmd));
-            Ok(outputs_for_execute
-                .lock()
-                .expect("outputs for execute locks")
-                .pop_front()
-                .expect("test should provide one output per shell command"))
-        });
+        shell
+            .expect_execute()
+            .withf(|cmd| {
+                cmd.program == "git"
+                    && (cmd.args == ["-C", "/kernel", "status", "--porcelain"]
+                        || cmd.args
+                            == [
+                                "-C",
+                                "/kernel",
+                                "show-ref",
+                                "--verify",
+                                "--quiet",
+                                "refs/heads/main",
+                            ]
+                        || cmd.args == ["-C", "/kernel", "rev-parse", "--abbrev-ref", "HEAD"]
+                        || cmd.args == ["-C", "/kernel", "switch", "main"]
+                        || (cmd.args.len() == 5
+                            && cmd.args[..4] == ["-C", "/kernel", "checkout", "-b"]
+                            && cmd.args[4].starts_with("patchset-"))
+                        || cmd.args
+                            == [
+                                "-C",
+                                "/kernel",
+                                "am",
+                                "/tmp/patchset.mbx",
+                                "--signoff",
+                                "--3way",
+                            ]
+                        || cmd.args == ["-C", "/kernel", "switch", "feature"]
+                        || cmd.args == ["-C", "/kernel", "am", "--abort"]
+                        || (cmd.args.len() == 5
+                            && cmd.args[..4] == ["-C", "/kernel", "branch", "-D"]
+                            && cmd.args[4].starts_with("patchset-")))
+            })
+            .times(1..=18)
+            .returning(move |cmd| {
+                calls_for_execute
+                    .lock()
+                    .expect("calls for execute locks")
+                    .push(command_parts(cmd));
+                Ok(outputs_for_execute
+                    .lock()
+                    .expect("outputs for execute locks")
+                    .pop_front()
+                    .expect("test should provide one output per shell command"))
+            });
         (shell, calls)
     }
 
@@ -534,10 +582,10 @@ mod tests {
     #[test]
     fn missing_target_kernel_tree_rejects_before_shell_commands() {
         let mut fs = MockFileSystemTrait::new();
-        fs.expect_is_dir().times(0);
-        fs.expect_is_file().times(0);
+        fs.expect_is_dir().withf(|_| true).times(0);
+        fs.expect_is_file().withf(|_| true).times(0);
         let mut shell = MockShellTrait::new();
-        shell.expect_execute().times(0);
+        shell.expect_execute().withf(|_| true).times(0);
 
         let result =
             ApplyPatchsetService::apply_patchset(&request(), &fs, &shell, &config_without_target())

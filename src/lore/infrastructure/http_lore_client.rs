@@ -139,7 +139,7 @@ mod tests {
     #[test]
     fn fetch_patch_feed_page_returns_end_of_feed_on_empty_body() {
         let mut mock = MockNetClientTrait::new();
-        mock.expect_request()
+        mock.expect_request().withf(|_method, url| url == "https://lore.kernel.org/linux-kernel/?x=A&q=((s:patch+OR+s:rfc)+AND+NOT+s:re:)&o=0")
             .times(1)
             .returning(|_, _| Ok("</feed>".to_string()));
 

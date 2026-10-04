@@ -302,16 +302,19 @@ mod tests {
         let mut lists_store = MockMailingListsCacheStore::new();
         lists_store
             .expect_load_available_lists()
+            .withf(|| true)
             .times(1)
             .returning(|| Ok(vec![MailingList::new("linux-mm", "")]));
 
         let mut user_state = MockUserLoreStateStore::new();
         user_state
             .expect_load_bookmarked_patchsets()
+            .withf(|| true)
             .times(1)
             .returning(|| Ok(vec![]));
         user_state
             .expect_load_reviewed_patchsets()
+            .withf(|| true)
             .times(1)
             .returning(|| Ok(HashMap::new()));
 
@@ -333,6 +336,7 @@ mod tests {
         let mut lists_store = MockMailingListsCacheStore::new();
         lists_store
             .expect_load_available_lists()
+            .withf(|| true)
             .times(1)
             .returning(|| Ok(vec![MailingList::new("cached-list", "")]));
 
