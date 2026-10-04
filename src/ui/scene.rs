@@ -7,9 +7,7 @@
 
 use ratatui::text::{Span, Text};
 
-// Shared presentation-row types live in the app view-model layer. Re-export
-// them here so callers within `ui/` only import from `scene`.
-pub use crate::app::view_model::{
+use crate::app::models::view_model::{
     ConfigEntryRow, MailingListEntry, PatchSummaryRow, TagTrailerCounts,
 };
 

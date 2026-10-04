@@ -27,7 +27,7 @@ use infrastructure::{
 use input::{actor::InputActor, event::InputEvent};
 use kw::history::{FileKwHistoryStore, KwHistoryStore};
 use lore::{
-    application::{actor::LoreApiActor, cache::CacheTtl, service::LoreService},
+    application::{actor::LoreApiActor, models::cache::CacheTtl, service::LoreService},
     infrastructure::{
         http_lore_client::HttpLoreGateway,
         patchset_fetcher::B4PatchsetFetcher,

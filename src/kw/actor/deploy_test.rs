@@ -1,5 +1,6 @@
 use crate::kw::{
-    history::MockKwHistoryStore, readiness::DeployAloneRefusal, remote::RemoteRefusal,
+    history::MockKwHistoryStore,
+    models::{readiness::DeployAloneRefusal, remote::RemoteRefusal},
 };
 
 use super::{actor_test::*, *};

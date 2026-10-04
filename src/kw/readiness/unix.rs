@@ -11,15 +11,14 @@ use crate::infrastructure::{
 };
 use crate::{
     config::KernelTree,
-    kw::{
-        history::{KwBuildRecord, KwHistoryStore},
-        remote,
-    },
+    kw::{history::KwHistoryStore, models::history::KwBuildRecord, remote},
 };
 
-use super::{
-    BootOnceState, DeployAloneRefusal, KwReadiness, KwReadinessError, ReadinessService,
-    TreeReadiness,
+use crate::kw::{
+    models::readiness::{
+        BootOnceState, DeployAloneRefusal, KwReadiness, KwReadinessError, TreeReadiness,
+    },
+    readiness::ReadinessService,
 };
 
 impl ReadinessService {

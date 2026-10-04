@@ -18,7 +18,7 @@ use crate::{
     },
     input::{event::InputEvent, handle::InputHandle, messages::InputMessage},
     kw::{actor::KwActor, history::MockKwHistoryStore, messages::StartRequest},
-    lore::application::cache::BootstrapLoreData,
+    lore::application::models::cache::BootstrapLoreData,
     terminal::{actor::TerminalActor, messages::TerminalFrame, session::MockTerminalSessionApi},
     ui::{actor::UiActor, scene::UiScene},
 };

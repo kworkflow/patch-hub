@@ -4,8 +4,7 @@ use crate::{
     config::KernelTree,
     kw::{
         errors::{KwError, KwStartError},
-        history::KwApplyRecord,
-        readiness::KwReadiness,
+        models::{history::KwApplyRecord, readiness::KwReadiness},
         status::KwStatusSnapshot,
     },
 };

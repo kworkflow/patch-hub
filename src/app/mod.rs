@@ -17,7 +17,7 @@ pub(crate) mod flows;
 pub mod handle;
 pub mod input;
 pub(crate) mod loading;
-pub mod models;
+pub(crate) mod models;
 pub mod popup;
 pub mod screens;
 pub mod state;
@@ -49,20 +49,20 @@ use crate::{
         shell::ShellTrait,
     },
     kw::{
-        handle::KwHandle,
-        history::{KwApplyRecord, KwHistoryStore},
+        handle::KwHandle, history::KwHistoryStore, models::history::KwApplyRecord,
         status::KwJobStatus,
     },
     lore::{
         application::{
-            cache::{BootstrapLoreData, CacheMode},
             errors::LoreError,
             handle::LoreApiHandle,
+            models::cache::{BootstrapLoreData, CacheMode},
         },
         domain::patch::Patch,
     },
     render::{handle::RenderHandle, RenderPatchsetRequest},
 };
+use models::view_model::AppViewModel;
 use screens::{
     bookmarked::BookmarkedPatchsetsState,
     details_actions::{PatchsetAction, PatchsetDetailsState},
@@ -72,7 +72,6 @@ use screens::{
     CurrentScreen,
 };
 pub use state::{AppState, ConfigUiState, LoreUiState, NavigationState, UserLoreState};
-pub use view_model::AppViewModel;
 
 /// Injected capabilities used by `App` orchestration (not screen state).
 pub struct AppServices {
@@ -493,11 +492,11 @@ impl App {
     /// The popup blocking an apply while a kw job runs, if a job is in
     /// fact running. An unreachable actor cannot be running a job, so a
     /// status-query failure lets the apply proceed.
-    async fn kw_job_running_popup(&self) -> Option<popup::AppPopup> {
+    async fn kw_job_running_popup(&self) -> Option<models::popup::AppPopup> {
         let kw = self.services.kw.as_ref()?;
         match kw.get_status().await {
             Ok(snapshot) if matches!(snapshot.job, KwJobStatus::Running { .. }) => {
-                Some(popup::AppPopup::info(
+                Some(models::popup::AppPopup::info(
                     "Patchset Apply Blocked",
                     " A kw job is running on the kernel tree.\n\nApplying a patchset now would rewrite the branch the job is building under it.\n\nWait for the job to finish, then apply again.",
                 ))
@@ -508,7 +507,10 @@ impl App {
 
     /// Runs the git-am apply and maps the outcome to the result popup,
     /// recording the apply in the kw history on success.
-    async fn apply_patchset_popup(&self, details: &PatchsetDetailsState) -> popup::AppPopup {
+    async fn apply_patchset_popup(
+        &self,
+        details: &PatchsetDetailsState,
+    ) -> models::popup::AppPopup {
         let request = Self::build_apply_patchset_request(details);
         let action_service = PatchsetActionService::new(
             &*self.services.fs,
@@ -560,9 +562,9 @@ impl App {
                         }
                     }
                 };
-                popup::AppPopup::info("Patchset Apply Success", popup_body)
+                models::popup::AppPopup::info("Patchset Apply Success", popup_body)
             }
-            Err(msg) => popup::AppPopup::info("Patchset Apply Fail", msg),
+            Err(msg) => models::popup::AppPopup::info("Patchset Apply Fail", msg),
         }
     }
 

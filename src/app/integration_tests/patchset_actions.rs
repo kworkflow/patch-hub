@@ -8,7 +8,7 @@ use tokio::{spawn, sync::mpsc};
 
 use crate::{
     app::{
-        popup::AppPopup,
+        models::popup::AppPopup,
         screens::{
             details_actions::{PatchsetAction, PatchsetDetailsState},
             CurrentScreen,
@@ -26,7 +26,7 @@ use crate::{
         actor::KwActor, history::MockKwHistoryStore, messages::StartRequest, status::KwJobStatus,
     },
     lore::application::{
-        cache::BootstrapLoreData, handle::LoreApiHandle, messages::LoreApiMessage,
+        handle::LoreApiHandle, messages::LoreApiMessage, models::cache::BootstrapLoreData,
     },
 };
 

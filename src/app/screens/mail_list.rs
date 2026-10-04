@@ -1,7 +1,7 @@
 use color_eyre::{eyre::bail, Result};
 
 use crate::lore::{
-    application::{cache::CacheMode, handle::LoreApiHandle},
+    application::{handle::LoreApiHandle, models::cache::CacheMode},
     domain::mailing_list::MailingList,
 };
 

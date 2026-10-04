@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::{
-    app::view_model::{PopupViewBody, PopupViewModel},
+    app::models::view_model::{PopupViewBody, PopupViewModel},
     ui::scene::{PopupBody, PopupScene},
 };
 

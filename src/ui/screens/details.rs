@@ -7,8 +7,8 @@ use ratatui::{
 };
 
 use crate::{
-    app::view_model::PatchsetDetailsViewModel,
-    ui::scene::{PatchsetDetailsScene, TagTrailerCounts},
+    app::models::view_model::{PatchsetDetailsViewModel, TagTrailerCounts},
+    ui::scene::PatchsetDetailsScene,
 };
 
 pub struct DetailsPainter;

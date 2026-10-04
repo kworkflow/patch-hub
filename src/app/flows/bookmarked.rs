@@ -3,7 +3,7 @@ use tracing::debug;
 use color_eyre::Result;
 
 use crate::{
-    app::{loading::LoadingIndicator, popup::AppPopup, screens::CurrentScreen, App},
+    app::{loading::LoadingIndicator, models::popup::AppPopup, screens::CurrentScreen, App},
     input::event::InputEvent,
 };
 

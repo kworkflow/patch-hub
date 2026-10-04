@@ -9,10 +9,10 @@ use crate::{
     infrastructure::shell::ShellCommand,
     lore::{
         application::{
-            cache::{BootstrapLoreData, CacheMode},
             dto::PatchsetDetails,
             errors::LoreError,
             messages::{LoreApiMessage, LoreApiResult},
+            models::cache::{BootstrapLoreData, CacheMode},
         },
         domain::{mailing_list::MailingList, patch::Patch},
     },

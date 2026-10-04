@@ -17,10 +17,13 @@ use crate::{
     },
     kw::{
         errors::KwStartError,
-        history::{KwApplyRecord, KwBuildRecord, MockKwHistoryStore},
+        history::MockKwHistoryStore,
         messages::{DeployOptions, StartRequest},
-        readiness::{BootOnceState, DeployAloneRefusal, TreeReadiness},
-        remote::RemoteRefusal,
+        models::{
+            history::{KwApplyRecord, KwBuildRecord},
+            readiness::{BootOnceState, DeployAloneRefusal, TreeReadiness},
+            remote::RemoteRefusal,
+        },
         status::{KwJobKind, KwJobStatus, KwPhase},
     },
 };

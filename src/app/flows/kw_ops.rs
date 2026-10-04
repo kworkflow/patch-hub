@@ -4,11 +4,11 @@ use color_eyre::Result;
 
 use crate::{
     app::{
-        popup::AppPopup,
-        screens::{
+        models::{
             kw_ops::{DeployStartKind, KwOpsFocus, KwOpsState},
-            CurrentScreen,
+            popup::AppPopup,
         },
+        screens::CurrentScreen,
         App,
     },
     infrastructure::file_system::FileSystemError,
@@ -16,7 +16,7 @@ use crate::{
     kw::{
         errors::{KwError, KwStartError},
         messages::{DeployOptions, StartRequest},
-        readiness::BootOnceState,
+        models::readiness::BootOnceState,
         status::{KwJobStatus, KwStatusSnapshot},
     },
 };
@@ -566,12 +566,12 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::screens::kw_ops::KwOpsState;
-    use crate::kw::readiness::{
+    use crate::app::models::kw_ops::KwOpsState;
+    use crate::kw::models::readiness::{
         BootOnceState, DeployAloneRefusal, KwBinaryProbe, KwReadiness, KwVersionCheck,
         TreeReadiness,
     };
-    use crate::kw::remote::RemoteRefusal;
+    use crate::kw::models::remote::RemoteRefusal;
 
     fn sample_ops() -> KwOpsState {
         KwOpsState::new(

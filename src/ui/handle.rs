@@ -1,7 +1,7 @@
 use tokio::sync::{mpsc, oneshot};
 
 use crate::{
-    app::view_model::AppViewModel,
+    app::models::view_model::AppViewModel,
     ui::{
         errors::UiError,
         messages::{UiMessage, UiResult},

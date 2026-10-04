@@ -16,10 +16,7 @@ use crate::infrastructure::{
     shell::{ShellCommand, ShellTrait},
 };
 
-pub use crate::kw::models::readiness::{
-    BootOnceState, DeployAloneRefusal, KwBinaryProbe, KwReadiness, KwReadinessError,
-    KwVersionCheck, TreeReadiness,
-};
+use crate::kw::models::readiness::{KwBinaryProbe, KwVersionCheck};
 
 #[cfg(unix)]
 mod unix;
@@ -101,8 +98,12 @@ mod tests {
         file_system::{FileSystemError, MockFileSystemTrait, OsFileSystem},
         shell::{MockShellTrait, ShellOutput},
     };
-    use crate::kw::history::{FileKwHistoryStore, KwBuildRecord, KwHistoryStore};
-    use crate::kw::remote::RemoteRefusal;
+    use crate::kw::models::readiness::{BootOnceState, DeployAloneRefusal, TreeReadiness};
+    use crate::kw::models::remote::RemoteRefusal;
+    use crate::kw::{
+        history::{FileKwHistoryStore, KwHistoryStore},
+        models::history::KwBuildRecord,
+    };
 
     use super::*;
 

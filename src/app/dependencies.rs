@@ -4,7 +4,7 @@ use crate::{
     app::errors::AppError,
     config::ConfigSnapshot,
     infrastructure::{env::EnvTrait, shell::ShellTrait},
-    kw::readiness::{KwVersionCheck, ReadinessService},
+    kw::{models::readiness::KwVersionCheck, readiness::ReadinessService},
     render_prefs::PatchRenderer,
 };
 

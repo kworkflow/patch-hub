@@ -4,5 +4,5 @@ pub mod dto;
 pub mod errors;
 pub mod handle;
 pub mod messages;
-pub mod models;
+pub(crate) mod models;
 pub mod service;

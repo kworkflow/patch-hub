@@ -5,7 +5,7 @@ use ratatui::crossterm::event::KeyCode;
 use tracing::debug;
 
 use crate::{
-    app::{popup::AppPopup, screens::CurrentScreen, App},
+    app::{models::popup::AppPopup, screens::CurrentScreen, App},
     input::event::{InputEvent, ScrollAmount},
     terminal::handle::TerminalHandle,
 };

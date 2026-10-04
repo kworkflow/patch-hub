@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::infrastructure::{env::EnvTrait, file_system::FileSystemTrait};
 
-use super::{KwRemote, ParsedRemoteConfig, RemoteRefusal};
+use crate::kw::models::remote::{KwRemote, ParsedRemoteConfig, RemoteRefusal};
 
 struct HostBuilder {
     name: String,

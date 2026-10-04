@@ -1,6 +1,6 @@
 use crate::{
     app::{
-        popup::AppPopup,
+        models::popup::AppPopup,
         screens::{details_actions::PatchsetDetailsState, CurrentScreen},
     },
     input::event::InputEvent,
@@ -79,11 +79,14 @@ mod unix {
         input::{event::InputEvent, handle::InputHandle, messages::InputMessage},
         kw::{
             actor::KwActor,
-            history::{KwBuildRecord, MockKwHistoryStore},
-            readiness::{BootOnceState, DeployAloneRefusal},
+            history::MockKwHistoryStore,
+            models::{
+                history::KwBuildRecord,
+                readiness::{BootOnceState, DeployAloneRefusal},
+            },
             status::{KwJobKind, KwJobStatus, KwPhase, KwStatusSnapshot},
         },
-        lore::application::cache::BootstrapLoreData,
+        lore::application::models::cache::BootstrapLoreData,
         terminal::{
             actor::TerminalActor, messages::TerminalFrame, session::MockTerminalSessionApi,
         },
@@ -99,8 +102,7 @@ mod unix {
             app_harness::{dummy_config_handle, dummy_render_handle, dummy_terminal_handle},
             lore::{lore_handle_with_persistence, sample_mailing_list},
         },
-        popup::AppPopup,
-        screens::kw_ops::DeployStartKind,
+        models::{kw_ops::DeployStartKind, popup::AppPopup},
     };
 
     static LOG_DIR_SEQ: AtomicU64 = AtomicU64::new(0);

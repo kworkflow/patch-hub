@@ -7,7 +7,7 @@ use crate::{
     config::{ConfigHandle, ConfigState},
     infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
     kw::history::MockKwHistoryStore,
-    lore::application::{cache::BootstrapLoreData, handle::LoreApiHandle},
+    lore::application::{handle::LoreApiHandle, models::cache::BootstrapLoreData},
     render::handle::RenderHandle,
     terminal::{handle::TerminalHandle, messages::TerminalMessage},
 };

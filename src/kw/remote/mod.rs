@@ -12,9 +12,7 @@
 //! to the home copy would silently deploy to a different machine than the
 //! tree is configured for.
 
-#[cfg(unix)]
-pub use crate::kw::models::remote::ParsedRemoteConfig;
-pub use crate::kw::models::remote::{KwRemote, RemoteRefusal};
+use crate::kw::models::remote::KwRemote;
 
 #[cfg(unix)]
 mod unix;
@@ -46,6 +44,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::kw::models::remote::RemoteRefusal;
 
     /// Example remote.config: two hosts, default on the second, fields indented.
     const SAMPLE_REMOTE_CONFIG: &str = "\

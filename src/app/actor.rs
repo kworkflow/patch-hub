@@ -18,7 +18,7 @@ use crate::{
     app::{
         handle::AppHandle,
         loading::TerminalLoadingIndicator,
-        popup::{AppPopup, ConfirmAction},
+        models::popup::{AppPopup, ConfirmAction},
         screens::CurrentScreen,
         App,
     },
@@ -378,7 +378,8 @@ mod tests {
         kw::history::MockKwHistoryStore,
         lore::{
             application::{
-                actor::LoreApiActor, cache::CacheTtl, handle::LoreApiHandle, service::LoreService,
+                actor::LoreApiActor, handle::LoreApiHandle, models::cache::CacheTtl,
+                service::LoreService,
             },
             domain::mailing_list::MailingList,
             infrastructure::{
@@ -564,8 +565,8 @@ mod tests {
         render.shutdown().await;
     }
 
-    fn sample_kw_ops() -> crate::app::screens::kw_ops::KwOpsState {
-        crate::app::screens::kw_ops::KwOpsState::new(
+    fn sample_kw_ops() -> crate::app::models::kw_ops::KwOpsState {
+        crate::app::models::kw_ops::KwOpsState::new(
             "title".to_string(),
             "mid".to_string(),
             "linux".to_string(),
@@ -574,20 +575,20 @@ mod tests {
                 "branch": "main"
             }))
             .unwrap(),
-            crate::kw::readiness::KwReadiness {
-                kw_binary: crate::kw::readiness::KwBinaryProbe {
+            crate::kw::models::readiness::KwReadiness {
+                kw_binary: crate::kw::models::readiness::KwBinaryProbe {
                     available: true,
                     version_line: Some("kw, version 0.10.0".to_string()),
-                    check: crate::kw::readiness::KwVersionCheck::Meets,
+                    check: crate::kw::models::readiness::KwVersionCheck::Meets,
                 },
-                tree: crate::kw::readiness::TreeReadiness::Ready {
+                tree: crate::kw::models::readiness::TreeReadiness::Ready {
                     arch: Some("x86_64".to_string()),
                 },
                 output_dir: None,
-                deploy_alone: Err(crate::kw::readiness::DeployAloneRefusal::NoBuildRecord),
+                deploy_alone: Err(crate::kw::models::readiness::DeployAloneRefusal::NoBuildRecord),
                 current_branch: Some("main".to_string()),
-                deploy_remote: Err(crate::kw::remote::RemoteRefusal::NoRemotesConfigured),
-                boot_once: crate::kw::readiness::BootOnceState::Unknown,
+                deploy_remote: Err(crate::kw::models::remote::RemoteRefusal::NoRemotesConfigured),
+                boot_once: crate::kw::models::readiness::BootOnceState::Unknown,
             },
         )
     }
@@ -596,7 +597,7 @@ mod tests {
     async fn proceed_with_boot_once_acks_and_clears_pending() {
         let mut app = minimal_app();
         let mut ops = sample_kw_ops();
-        ops.pending_deploy = Some(crate::app::screens::kw_ops::DeployStartKind::Deploy);
+        ops.pending_deploy = Some(crate::app::models::kw_ops::DeployStartKind::Deploy);
         app.state.kw.ops = Some(ops);
         app.state.popup = Some(AppPopup::boot_once_warning());
 
@@ -621,7 +622,7 @@ mod tests {
     async fn back_out_clears_pending_without_acknowledging() {
         let mut app = minimal_app();
         let mut ops = sample_kw_ops();
-        ops.pending_deploy = Some(crate::app::screens::kw_ops::DeployStartKind::BuildThenDeploy);
+        ops.pending_deploy = Some(crate::app::models::kw_ops::DeployStartKind::BuildThenDeploy);
         app.state.kw.ops = Some(ops);
         app.state.popup = Some(AppPopup::boot_once_warning());
 
@@ -639,7 +640,7 @@ mod tests {
     fn closing_the_boot_once_popup_clears_pending() {
         let mut app = minimal_app();
         let mut ops = sample_kw_ops();
-        ops.pending_deploy = Some(crate::app::screens::kw_ops::DeployStartKind::Deploy);
+        ops.pending_deploy = Some(crate::app::models::kw_ops::DeployStartKind::Deploy);
         app.state.kw.ops = Some(ops);
         app.state.popup = Some(AppPopup::boot_once_warning());
 
@@ -653,14 +654,14 @@ mod tests {
     fn closing_the_quit_popup_does_not_touch_pending_deploy() {
         let mut app = minimal_app();
         let mut ops = sample_kw_ops();
-        ops.pending_deploy = Some(crate::app::screens::kw_ops::DeployStartKind::Deploy);
+        ops.pending_deploy = Some(crate::app::models::kw_ops::DeployStartKind::Deploy);
         app.state.kw.ops = Some(ops);
         app.state.popup = Some(AppPopup::quit_while_job_running());
 
         AppActor::dismiss_open_popup(&mut app);
         assert!(app.state.popup.is_none());
         assert_eq!(
-            Some(crate::app::screens::kw_ops::DeployStartKind::Deploy),
+            Some(crate::app::models::kw_ops::DeployStartKind::Deploy),
             app.state.kw.ops.as_ref().unwrap().pending_deploy
         );
     }

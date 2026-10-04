@@ -13,12 +13,12 @@ use crate::{
     },
     lore::{
         application::{
-            cache::{
+            dto::{PatchTagSummary, PatchsetDetails},
+            errors::LoreError,
+            models::cache::{
                 BootstrapLoreData, CacheMode, CacheTtl, FeedCacheEntry, LoreCache,
                 MailingListsCacheEntry, PatchsetCacheEntry, PatchsetCacheKey,
             },
-            dto::{PatchTagSummary, PatchsetDetails},
-            errors::LoreError,
         },
         domain::{
             mailing_list::MailingList,
@@ -474,7 +474,7 @@ mod tests {
     use crate::{
         infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
         lore::{
-            application::cache::{
+            application::models::cache::{
                 CacheTtl, FeedCacheEntry, MailingListsCacheEntry, PatchsetCacheEntry,
                 PatchsetCacheKey,
             },

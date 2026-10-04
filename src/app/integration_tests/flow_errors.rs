@@ -1,7 +1,7 @@
 use std::ops::ControlFlow;
 
 use crate::{
-    app::{popup::AppPopup, screens::CurrentScreen},
+    app::{models::popup::AppPopup, screens::CurrentScreen},
     input::event::InputEvent,
 };
 

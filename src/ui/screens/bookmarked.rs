@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::{app::view_model::BookmarkedViewModel, ui::scene::BookmarkedScene};
+use crate::{app::models::view_model::BookmarkedViewModel, ui::scene::BookmarkedScene};
 
 pub struct BookmarkedPainter;
 

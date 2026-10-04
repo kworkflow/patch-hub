@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::{app::view_model::LatestPatchsetsViewModel, ui::scene::LatestScene};
+use crate::{app::models::view_model::LatestPatchsetsViewModel, ui::scene::LatestScene};
 
 pub struct LatestPainter;
 

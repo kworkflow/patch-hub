@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::{
-    app::view_model::{MailingListSelectionViewModel, TargetListStatus},
+    app::models::view_model::{MailingListSelectionViewModel, TargetListStatus},
     ui::scene::MailingListScene,
 };
 

@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::{app::view_model::KwOpsViewModel, ui::scene::KwOpsScene};
+use crate::{app::models::view_model::KwOpsViewModel, ui::scene::KwOpsScene};
 
 pub struct KwOpsPainter;
 

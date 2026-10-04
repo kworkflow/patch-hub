@@ -259,8 +259,8 @@ mod tests {
         infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
         lore::{
             application::{
-                cache::{CacheMode, CacheTtl},
                 handle::LoreApiHandle,
+                models::cache::{CacheMode, CacheTtl},
             },
             domain::mailing_list::MailingList,
             infrastructure::{

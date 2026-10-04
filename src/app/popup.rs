@@ -11,7 +11,7 @@ use crate::{
     lore::domain::patch::Author,
 };
 
-pub use crate::app::models::popup::{AppHelpBuilder, AppPopup, ConfirmAction};
+use crate::app::models::popup::{AppHelpBuilder, AppPopup, ConfirmAction};
 
 impl AppPopup {
     /// Create an informational text popup.

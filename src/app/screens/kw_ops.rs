@@ -1,6 +1,6 @@
-use crate::{config::KernelTree, kw::readiness::KwReadiness};
+use crate::{config::KernelTree, kw::models::readiness::KwReadiness};
 
-pub use crate::app::models::kw_ops::{DeployStartKind, KwOpsFocus, KwOpsState};
+use crate::app::models::kw_ops::{KwOpsFocus, KwOpsState};
 
 impl KwOpsState {
     pub fn new(
@@ -110,11 +110,12 @@ impl KwOpsState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kw::readiness::{
+    use crate::app::models::kw_ops::DeployStartKind;
+    use crate::kw::models::readiness::{
         BootOnceState, DeployAloneRefusal, KwBinaryProbe, KwReadiness, KwVersionCheck,
         TreeReadiness,
     };
-    use crate::kw::remote::RemoteRefusal;
+    use crate::kw::models::remote::RemoteRefusal;
 
     fn sample_tree() -> KernelTree {
         serde_json::from_value(serde_json::json!({

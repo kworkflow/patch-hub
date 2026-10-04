@@ -1,6 +1,6 @@
 use color_eyre::Result;
 
-use crate::app::{popup::AppPopup, screens::CurrentScreen, App, B4Result};
+use crate::app::{models::popup::AppPopup, screens::CurrentScreen, App, B4Result};
 
 #[derive(Debug, PartialEq)]
 enum OpenPatchsetAction {

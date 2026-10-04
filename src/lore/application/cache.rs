@@ -8,9 +8,8 @@ use crate::lore::{
     domain::{mailing_list::MailingList, patch::Patch, patchset::PatchFeedIndex},
 };
 
-pub use crate::lore::application::models::cache::{
-    BootstrapLoreData, CacheMode, CacheTtl, FeedCacheEntry, LoreCache, MailingListsCacheEntry,
-    PatchsetCacheEntry, PatchsetCacheKey,
+use crate::lore::application::models::cache::{
+    FeedCacheEntry, LoreCache, MailingListsCacheEntry, PatchsetCacheEntry, PatchsetCacheKey,
 };
 
 // ── Mailing lists cache ───────────────────────────────────────────────────────

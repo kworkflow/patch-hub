@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::{app::view_model::EditConfigViewModel, ui::scene::EditConfigScene};
+use crate::{app::models::view_model::EditConfigViewModel, ui::scene::EditConfigScene};
 
 pub struct EditConfigPainter;
 
@@ -97,7 +97,7 @@ impl EditConfigPainter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::view_model::EditConfigViewModel;
+    use crate::app::models::view_model::EditConfigViewModel;
 
     fn vm(is_editing_mode: bool, editing_tree_selector: bool) -> EditConfigViewModel {
         EditConfigViewModel {

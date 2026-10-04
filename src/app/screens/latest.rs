@@ -1,7 +1,7 @@
 use color_eyre::{eyre::bail, Result};
 
 use crate::lore::{
-    application::{cache::CacheMode, errors::LoreError, handle::LoreApiHandle},
+    application::{errors::LoreError, handle::LoreApiHandle, models::cache::CacheMode},
     domain::patch::Patch,
 };
 
@@ -116,7 +116,7 @@ mod tests {
     use crate::{
         infrastructure::{file_system::MockFileSystemTrait, shell::MockShellTrait},
         lore::{
-            application::{actor::LoreApiActor, cache::CacheTtl, service::LoreService},
+            application::{actor::LoreApiActor, models::cache::CacheTtl, service::LoreService},
             infrastructure::{
                 http_lore_client::{
                     LoreHttpError, MockFeedGateway, MockListsGateway, MockPatchHtmlGateway,

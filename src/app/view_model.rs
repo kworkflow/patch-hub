@@ -10,18 +10,20 @@
 use ansi_to_tui::IntoText;
 
 use super::{
-    popup::AppPopup,
-    screens::{details_actions::PatchsetAction, kw_ops::KwOpsFocus, CurrentScreen},
+    models::{kw_ops::KwOpsFocus, popup::AppPopup},
+    screens::{details_actions::PatchsetAction, CurrentScreen},
     state::AppState,
 };
 use crate::kw::{
     argv,
-    readiness::{BootOnceState, DeployAloneRefusal, TreeReadiness},
-    remote::{KwRemote, RemoteRefusal},
+    models::{
+        readiness::{BootOnceState, DeployAloneRefusal, TreeReadiness},
+        remote::{KwRemote, RemoteRefusal},
+    },
     status::{KwJobStatus, KwPhase, KwStatusSnapshot},
 };
 
-pub use crate::app::models::view_model::{
+use crate::app::models::view_model::{
     AppViewModel, BookmarkedViewModel, ConfigEntryRow, EditConfigViewModel, KwOpsViewModel,
     LatestPatchsetsViewModel, MailingListEntry, MailingListSelectionViewModel, PatchSummaryRow,
     PatchsetDetailsViewModel, PopupViewBody, PopupViewModel, ScreenViewModel, TagTrailerCounts,
@@ -481,7 +483,7 @@ fn compact_deploy_alone_refusal(reason: &DeployAloneRefusal) -> &'static str {
     }
 }
 
-fn format_kw_binary(probe: &crate::kw::readiness::KwBinaryProbe) -> String {
+fn format_kw_binary(probe: &crate::kw::models::readiness::KwBinaryProbe) -> String {
     if !probe.available {
         return "not on PATH".to_string();
     }
@@ -739,7 +741,7 @@ mod tests {
     fn kw_ops_command_strips_reserved_extras() {
         let mut state = app_state_with_kw(None);
         state.navigation.current_screen = CurrentScreen::KwOps;
-        let mut ops = crate::app::screens::kw_ops::KwOpsState::new(
+        let mut ops = crate::app::models::kw_ops::KwOpsState::new(
             "[PATCH] test".to_string(),
             "http://lore.example/123".to_string(),
             "linux".to_string(),
@@ -748,20 +750,20 @@ mod tests {
                 "branch": "main"
             }))
             .unwrap(),
-            crate::kw::readiness::KwReadiness {
-                kw_binary: crate::kw::readiness::KwBinaryProbe {
+            crate::kw::models::readiness::KwReadiness {
+                kw_binary: crate::kw::models::readiness::KwBinaryProbe {
                     available: true,
                     version_line: Some("kw, version 0.10.0".to_string()),
-                    check: crate::kw::readiness::KwVersionCheck::Meets,
+                    check: crate::kw::models::readiness::KwVersionCheck::Meets,
                 },
-                tree: crate::kw::readiness::TreeReadiness::Ready {
+                tree: crate::kw::models::readiness::TreeReadiness::Ready {
                     arch: Some("x86_64".to_string()),
                 },
                 output_dir: None,
-                deploy_alone: Err(crate::kw::readiness::DeployAloneRefusal::NoBuildRecord),
+                deploy_alone: Err(crate::kw::models::readiness::DeployAloneRefusal::NoBuildRecord),
                 current_branch: Some("feature".to_string()),
-                deploy_remote: Err(crate::kw::remote::RemoteRefusal::NoRemotesConfigured),
-                boot_once: crate::kw::readiness::BootOnceState::Unknown,
+                deploy_remote: Err(crate::kw::models::remote::RemoteRefusal::NoRemotesConfigured),
+                boot_once: crate::kw::models::readiness::BootOnceState::Unknown,
             },
         );
         ops.extra_args = "--verbose --clean --from-sha abc --doc".to_string();
@@ -783,8 +785,8 @@ mod tests {
         assert_eq!("unavailable (no remotes configured)", vm.build_deploy_label);
     }
 
-    fn sample_kw_ops(branch: Option<&str>) -> crate::app::screens::kw_ops::KwOpsState {
-        crate::app::screens::kw_ops::KwOpsState::new(
+    fn sample_kw_ops(branch: Option<&str>) -> crate::app::models::kw_ops::KwOpsState {
+        crate::app::models::kw_ops::KwOpsState::new(
             "[PATCH] test".to_string(),
             "http://lore.example/123".to_string(),
             "linux".to_string(),
@@ -793,20 +795,20 @@ mod tests {
                 "branch": "main"
             }))
             .unwrap(),
-            crate::kw::readiness::KwReadiness {
-                kw_binary: crate::kw::readiness::KwBinaryProbe {
+            crate::kw::models::readiness::KwReadiness {
+                kw_binary: crate::kw::models::readiness::KwBinaryProbe {
                     available: true,
                     version_line: Some("kw, version 0.10.0".to_string()),
-                    check: crate::kw::readiness::KwVersionCheck::Meets,
+                    check: crate::kw::models::readiness::KwVersionCheck::Meets,
                 },
-                tree: crate::kw::readiness::TreeReadiness::Ready {
+                tree: crate::kw::models::readiness::TreeReadiness::Ready {
                     arch: Some("x86_64".to_string()),
                 },
                 output_dir: None,
-                deploy_alone: Err(crate::kw::readiness::DeployAloneRefusal::NoBuildRecord),
+                deploy_alone: Err(crate::kw::models::readiness::DeployAloneRefusal::NoBuildRecord),
                 current_branch: branch.map(str::to_string),
-                deploy_remote: Err(crate::kw::remote::RemoteRefusal::NoRemotesConfigured),
-                boot_once: crate::kw::readiness::BootOnceState::Unknown,
+                deploy_remote: Err(crate::kw::models::remote::RemoteRefusal::NoRemotesConfigured),
+                boot_once: crate::kw::models::readiness::BootOnceState::Unknown,
             },
         )
     }
@@ -884,8 +886,8 @@ mod tests {
         );
     }
 
-    fn sample_remote() -> crate::kw::remote::KwRemote {
-        crate::kw::remote::KwRemote {
+    fn sample_remote() -> crate::kw::models::remote::KwRemote {
+        crate::kw::models::remote::KwRemote {
             name: "dut".to_string(),
             hostname: "box".to_string(),
             port: 22,
@@ -899,8 +901,9 @@ mod tests {
         state.navigation.current_screen = CurrentScreen::KwOps;
         let mut ops = sample_kw_ops(Some("feature"));
         ops.readiness.deploy_remote = Ok(sample_remote());
-        ops.readiness.deploy_alone = Err(crate::kw::readiness::DeployAloneRefusal::NoBuildRecord);
-        ops.readiness.boot_once = crate::kw::readiness::BootOnceState::On;
+        ops.readiness.deploy_alone =
+            Err(crate::kw::models::readiness::DeployAloneRefusal::NoBuildRecord);
+        ops.readiness.boot_once = crate::kw::models::readiness::BootOnceState::On;
         state.kw.ops = Some(ops);
 
         let ScreenViewModel::KwOps(vm) = project_state(&state).screen else {
@@ -923,7 +926,7 @@ mod tests {
         let mut ops = sample_kw_ops(Some("feature"));
         ops.readiness.deploy_remote = Ok(sample_remote());
         ops.readiness.deploy_alone = Ok(());
-        ops.readiness.boot_once = crate::kw::readiness::BootOnceState::Off;
+        ops.readiness.boot_once = crate::kw::models::readiness::BootOnceState::Off;
         ops.extra_args = "--verbose --local --ccache".to_string();
         state.kw.ops = Some(ops);
 
@@ -946,7 +949,7 @@ mod tests {
         let mut ops = sample_kw_ops(Some("feature"));
         ops.readiness.deploy_remote = Ok(sample_remote());
         ops.readiness.deploy_alone = Ok(());
-        ops.readiness.boot_once = crate::kw::readiness::BootOnceState::Unknown;
+        ops.readiness.boot_once = crate::kw::models::readiness::BootOnceState::Unknown;
         ops.boot_once_acknowledged = true;
         state.kw.ops = Some(ops);
 

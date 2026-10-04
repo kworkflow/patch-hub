@@ -11,9 +11,9 @@ use std::{collections::HashMap, io, path::Path, sync::Arc};
 
 use crate::infrastructure::file_system::{FileSystemError, FileSystemTrait, JsonUtils};
 
-pub use crate::kw::models::history::KwApplyRecord;
+use crate::kw::models::history::KwApplyRecord;
 #[cfg(unix)]
-pub use crate::kw::models::history::KwBuildRecord;
+use crate::kw::models::history::KwBuildRecord;
 
 pub const APPLY_HISTORY_FILENAME: &str = "kw_apply_history.json";
 #[cfg(unix)]

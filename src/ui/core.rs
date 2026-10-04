@@ -4,7 +4,7 @@
 //! dispatching to per-screen builders and composing the navigation bar and
 //! optional popup.
 
-use crate::app::view_model::{AppViewModel, ScreenViewModel};
+use crate::app::models::view_model::{AppViewModel, ScreenViewModel};
 use crate::ui::{
     errors::UiError,
     scene::{NavigationBarScene, UiBody, UiScene},
@@ -113,7 +113,7 @@ impl Default for UiCore {
 
 #[cfg(test)]
 mod tests {
-    use crate::app::view_model::{
+    use crate::app::models::view_model::{
         AppViewModel, MailingListSelectionViewModel, ScreenViewModel, TargetListStatus,
     };
 

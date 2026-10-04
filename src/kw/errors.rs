@@ -4,7 +4,7 @@ use thiserror::Error;
 use crate::infrastructure::process::ProcessError;
 use crate::{
     infrastructure::{file_system::FileSystemError, shell::ShellError},
-    kw::{
+    kw::models::{
         readiness::{DeployAloneRefusal, KwReadinessError, TreeReadiness},
         remote::RemoteRefusal,
     },

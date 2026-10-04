@@ -1,4 +1,4 @@
-use crate::{config::KernelTree, kw::readiness::KwReadiness};
+use crate::{config::KernelTree, kw::models::readiness::KwReadiness};
 
 /// Which editable KwOps field is focused.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

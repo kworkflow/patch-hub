@@ -2,10 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     app::{
-        popup::AppPopup,
+        models::{kw_ops::KwOpsState, popup::AppPopup},
         screens::{
             bookmarked::BookmarkedPatchsetsState, details_actions::PatchsetDetailsState,
-            edit_config::EditConfigState, kw_ops::KwOpsState, latest::LatestPatchsetsState,
+            edit_config::EditConfigState, latest::LatestPatchsetsState,
             mail_list::MailingListSelectionState, CurrentScreen,
         },
     },
