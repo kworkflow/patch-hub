@@ -17,7 +17,7 @@ pub use fake::FakeProcess;
 mod tests;
 
 use std::{
-    fs::File,
+    fs::{self, File},
     io,
     path::Path,
     process::{ExitStatus, Stdio},
@@ -57,7 +57,7 @@ impl ProcessTrait for OsProcess {
             .spawn()
             .inspect_err(|_| {
                 // a job that never started must not leave a truncated log
-                let _ = std::fs::remove_file(log_path);
+                let _ = fs::remove_file(log_path);
             })?;
 
         let pid = child

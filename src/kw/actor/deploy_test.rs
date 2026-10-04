@@ -1,9 +1,12 @@
+use std::fs;
+
+use tokio::time;
+
+use super::{actor_test::*, *};
 use crate::kw::{
     history::MockKwHistoryStore,
     models::{readiness::DeployAloneRefusal, remote::RemoteRefusal},
 };
-
-use super::{actor_test::*, *};
 
 #[tokio::test]
 async fn start_deploy_replies_immediately_and_runs_in_background() {
@@ -13,7 +16,7 @@ async fn start_deploy_replies_immediately_and_runs_in_background() {
         deploy_ready_fs(),
     );
 
-    let result = tokio::time::timeout(
+    let result = time::timeout(
         Duration::from_secs(1),
         handle.start_deploy(deploy_request()),
     )
@@ -73,7 +76,7 @@ async fn start_deploy_replies_immediately_and_runs_in_background() {
     );
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -111,7 +114,7 @@ async fn deploy_exit_zero_with_initramfs_failure_succeeds_with_warnings() {
     }
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -145,7 +148,7 @@ async fn build_then_deploy_checks_grub_for_the_release_it_just_built() {
     }
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -183,7 +186,7 @@ async fn start_deploy_merges_extras_and_follows_reboot_force_options() {
 
     process.last_child().finish(0);
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -201,7 +204,7 @@ async fn start_deploy_refused_without_a_build_record() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -223,7 +226,7 @@ async fn start_deploy_refused_when_last_build_failed() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -245,7 +248,7 @@ async fn start_deploy_refused_on_tree_path_drift() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -267,7 +270,7 @@ async fn start_deploy_refused_on_output_dir_mismatch() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -287,7 +290,7 @@ async fn start_deploy_refused_when_image_is_missing() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -307,7 +310,7 @@ async fn start_deploy_refused_when_remote_is_unresolved() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -324,7 +327,7 @@ async fn start_deploy_refused_when_boot_once_is_on_and_unacked() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -348,7 +351,7 @@ async fn start_deploy_refused_when_latest_build_is_on_another_branch() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -366,7 +369,7 @@ async fn start_deploy_proceeds_when_boot_once_is_on_and_acked() {
 
     process.last_child().finish(0);
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -394,7 +397,7 @@ async fn start_deploy_post_switch_refusal_rolls_the_switch_back() {
     ));
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -409,7 +412,7 @@ async fn start_build_then_deploy_chains_deploy_after_a_successful_build() {
         .into_iter()
         .map(String::from)
         .collect();
-    tokio::time::timeout(
+    time::timeout(
         Duration::from_secs(1),
         handle.start_build_then_deploy(request),
     )
@@ -492,7 +495,7 @@ async fn start_build_then_deploy_chains_deploy_after_a_successful_build() {
     assert_eq!(1, builds.lock().unwrap().len());
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -530,7 +533,7 @@ async fn start_build_then_deploy_skips_deploy_when_the_build_fails() {
     }
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -559,7 +562,7 @@ async fn start_build_then_deploy_cancel_in_building_skips_deploy_and_record() {
     assert!(builds.lock().unwrap().is_empty());
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -589,7 +592,7 @@ async fn start_build_then_deploy_cancel_then_exit_zero_skips_deploy() {
     assert!(builds.lock().unwrap().is_empty());
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -625,7 +628,7 @@ async fn start_build_then_deploy_cancel_in_deploying_keeps_the_build_record() {
     }
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -665,7 +668,7 @@ async fn start_build_then_deploy_spawn_failure_at_boundary_keeps_the_build_recor
     }
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -688,5 +691,5 @@ async fn start_build_then_deploy_refused_when_remote_is_unresolved() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }

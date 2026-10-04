@@ -58,7 +58,9 @@ fn assert_info_popup(popup: Option<&AppPopup>, expected_title: &str, fragment: &
 
 mod unix {
     use std::{
-        path::PathBuf,
+        env, fs, io,
+        path::{Path, PathBuf},
+        process,
         sync::{
             atomic::{AtomicU64, Ordering},
             Arc, Mutex,
@@ -66,6 +68,9 @@ mod unix {
         time::Duration,
     };
 
+    use tokio::{sync::mpsc, time};
+
+    use crate::app::handle::AppHandle;
     use crate::{
         app::{actor::AppActor, screens::CurrentScreen, App},
         config::{ConfigSnapshot, ConfigState},
@@ -91,7 +96,7 @@ mod unix {
         },
         ui::{
             actor::UiActor,
-            scene::{UiBody, UiScene},
+            scene::{KwOpsScene, PopupScene, UiBody, UiScene},
         },
     };
 
@@ -122,7 +127,7 @@ mod unix {
         assert!(!ops.head_unreadable);
 
         shutdown_kw(&app).await;
-        std::fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).unwrap();
     }
 
     #[tokio::test]
@@ -147,7 +152,7 @@ mod unix {
         );
 
         shutdown_kw(&app).await;
-        std::fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).unwrap();
     }
 
     #[tokio::test]
@@ -188,7 +193,7 @@ mod unix {
 
         process.last_child().finish(0);
         shutdown_kw(&app).await;
-        std::fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).unwrap();
     }
 
     #[tokio::test]
@@ -224,7 +229,7 @@ mod unix {
 
         process.last_child().finish(0);
         shutdown_kw(&app).await;
-        std::fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).unwrap();
     }
 
     #[tokio::test]
@@ -251,7 +256,7 @@ mod unix {
 
         process.last_child().finish(0);
         shutdown_kw(&app).await;
-        std::fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).unwrap();
     }
 
     #[tokio::test]
@@ -290,7 +295,7 @@ mod unix {
             .is_some_and(|ops| ops.log_tail.contains("from mock")));
 
         shutdown_kw(&app).await;
-        std::fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).unwrap();
     }
 
     #[tokio::test]
@@ -311,7 +316,7 @@ mod unix {
         assert_eq!(CurrentScreen::KwOps, app.state.navigation.current_screen);
 
         shutdown_kw(&app).await;
-        std::fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).unwrap();
     }
 
     #[tokio::test]
@@ -329,7 +334,7 @@ mod unix {
         assert!(app.state.lore.details.is_some());
 
         shutdown_kw(&app).await;
-        std::fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).unwrap();
     }
 
     #[tokio::test]
@@ -355,7 +360,7 @@ mod unix {
         assert_eq!(BootOnceState::Off, ops.readiness.boot_once);
 
         shutdown_kw(&app).await;
-        std::fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).unwrap();
     }
 
     #[tokio::test]
@@ -387,7 +392,7 @@ mod unix {
         assert!(process.spawned().is_empty());
 
         shutdown_kw(&app).await;
-        std::fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).unwrap();
     }
 
     #[tokio::test]
@@ -415,7 +420,7 @@ mod unix {
         assert!(process.spawned().is_empty());
 
         shutdown_kw(&app).await;
-        std::fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).unwrap();
     }
 
     #[tokio::test]
@@ -460,7 +465,7 @@ mod unix {
 
         process.last_child().finish(0);
         shutdown_kw(&app).await;
-        std::fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).unwrap();
     }
 
     #[tokio::test]
@@ -486,12 +491,12 @@ mod unix {
         assert_eq!(vec!["build"], process.spawned()[0].args);
 
         process.last_child().finish(0);
-        tokio::time::timeout(Duration::from_secs(5), async {
+        time::timeout(Duration::from_secs(5), async {
             loop {
                 if process.spawned().len() >= 2 {
                     return;
                 }
-                tokio::time::sleep(Duration::from_millis(10)).await;
+                time::sleep(Duration::from_millis(10)).await;
             }
         })
         .await
@@ -503,7 +508,7 @@ mod unix {
 
         process.last_child().finish(0);
         shutdown_kw(&app).await;
-        std::fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).unwrap();
     }
 
     #[tokio::test]
@@ -550,7 +555,7 @@ mod unix {
         assert_eq!(Some("feature".to_string()), ops.readiness.current_branch);
 
         shutdown_kw(&app).await;
-        std::fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -583,7 +588,7 @@ mod unix {
         drop(event_tx);
         handle.run_until_done().await.unwrap();
         kw.shutdown().await;
-        std::fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -619,7 +624,7 @@ mod unix {
         drop(event_tx);
         handle.run_until_done().await.unwrap();
         kw.shutdown().await;
-        std::fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -653,9 +658,9 @@ mod unix {
         wait_for_nav(&scenes, |text| text.contains("kw: building feature")).await;
 
         let draws_on_details = scene_count(&scenes);
-        tokio::time::sleep(Duration::from_millis(800)).await;
+        time::sleep(Duration::from_millis(800)).await;
         process.last_child().write_log(b"ld: linking vmlinux\n");
-        tokio::time::sleep(Duration::from_millis(800)).await;
+        time::sleep(Duration::from_millis(800)).await;
         assert_eq!(
             draws_on_details,
             scene_count(&scenes),
@@ -663,12 +668,12 @@ mod unix {
         );
 
         event_tx.send(InputEvent::ToggleBookmark).await.unwrap();
-        tokio::time::timeout(Duration::from_secs(5), async {
+        time::timeout(Duration::from_secs(5), async {
             loop {
                 if scene_count(&scenes) > draws_on_details {
                     break;
                 }
-                tokio::time::sleep(Duration::from_millis(10)).await;
+                time::sleep(Duration::from_millis(10)).await;
             }
         })
         .await
@@ -690,7 +695,7 @@ mod unix {
         .await;
 
         let draws_after_success = scene_count(&scenes);
-        tokio::time::sleep(Duration::from_millis(800)).await;
+        time::sleep(Duration::from_millis(800)).await;
         assert_eq!(
             draws_after_success,
             scene_count(&scenes),
@@ -700,10 +705,10 @@ mod unix {
         drop(event_tx);
         handle.run_until_done().await.unwrap();
         kw.shutdown().await;
-        std::fs::remove_dir_all(&log_dir).unwrap();
+        fs::remove_dir_all(&log_dir).unwrap();
     }
 
-    fn app_with_details_and_kw(log_dir: &std::path::Path, kw_shell: MockShellTrait) -> App {
+    fn app_with_details_and_kw(log_dir: &Path, kw_shell: MockShellTrait) -> App {
         app_with_details_and_kw_process(
             log_dir,
             kw_shell,
@@ -713,7 +718,7 @@ mod unix {
     }
 
     fn app_with_details_and_kw_process(
-        log_dir: &std::path::Path,
+        log_dir: &Path,
         kw_shell: MockShellTrait,
         process: Arc<FakeProcess>,
         app_fs: Arc<dyn FileSystemTrait>,
@@ -729,7 +734,7 @@ mod unix {
     }
 
     fn app_with_kw(
-        log_dir: &std::path::Path,
+        log_dir: &Path,
         kw_shell: MockShellTrait,
         process: Arc<FakeProcess>,
         app_fs: Arc<dyn FileSystemTrait>,
@@ -837,8 +842,8 @@ mod unix {
             } else if path.ends_with("deploy.config") {
                 Ok(deploy_config.clone())
             } else {
-                Err(FileSystemError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
+                Err(FileSystemError::IoError(io::Error::new(
+                    io::ErrorKind::NotFound,
                     "missing",
                 )))
             }
@@ -847,17 +852,14 @@ mod unix {
             if path.ends_with("arch/x86/boot") {
                 Ok(vec![PathBuf::from("/kernel/arch/x86/boot/bzImage")])
             } else {
-                Err(FileSystemError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
+                Err(FileSystemError::IoError(io::Error::new(
+                    io::ErrorKind::NotFound,
                     "missing",
                 )))
             }
         });
-        fs.expect_metadata().returning(|_| {
-            Err(FileSystemError::IoError(std::io::Error::other(
-                "no metadata",
-            )))
-        });
+        fs.expect_metadata()
+            .returning(|_| Err(FileSystemError::IoError(io::Error::other("no metadata"))));
         fs.expect_create_dir_all().returning(|_| Ok(()));
         fs
     }
@@ -887,14 +889,14 @@ mod unix {
             .returning(|path| !path.ends_with(".kw/env.current"));
         fs.expect_exists().returning(|_| true);
         fs.expect_read_to_string().returning(|_| {
-            Err(FileSystemError::IoError(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
+            Err(FileSystemError::IoError(io::Error::new(
+                io::ErrorKind::NotFound,
                 "missing",
             )))
         });
         fs.expect_read_dir().returning(|_| {
-            Err(FileSystemError::IoError(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
+            Err(FileSystemError::IoError(io::Error::new(
+                io::ErrorKind::NotFound,
                 "missing",
             )))
         });
@@ -931,13 +933,13 @@ mod unix {
 
     fn kw_log_dir(test_name: &str) -> PathBuf {
         let n = LOG_DIR_SEQ.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!(
+        let dir = env::temp_dir().join(format!(
             "patch-hub-app-kw-ops-{}-{}-{n}",
             test_name,
-            std::process::id()
+            process::id()
         ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
         dir
     }
 
@@ -945,8 +947,8 @@ mod unix {
         app: App,
     ) -> (
         Arc<Mutex<Vec<UiScene>>>,
-        tokio::sync::mpsc::Sender<InputEvent>,
-        crate::app::handle::AppHandle,
+        mpsc::Sender<InputEvent>,
+        AppHandle,
     ) {
         let scenes = Arc::new(Mutex::new(Vec::new()));
         let scenes_for_draw = Arc::clone(&scenes);
@@ -964,15 +966,15 @@ mod unix {
 
         let terminal_handle = TerminalActor::spawn(Box::new(session));
         let ui_handle = UiActor::spawn();
-        let (event_tx, event_rx) = tokio::sync::mpsc::channel::<InputEvent>(8);
-        let (input_tx, _input_rx) = tokio::sync::mpsc::channel::<InputMessage>(1);
+        let (event_tx, event_rx) = mpsc::channel::<InputEvent>(8);
+        let (input_tx, _input_rx) = mpsc::channel::<InputMessage>(1);
         let input_handle = InputHandle::new(input_tx);
         let handle = AppActor::spawn(app, terminal_handle, ui_handle, input_handle, event_rx);
         (scenes, event_tx, handle)
     }
 
     async fn wait_for_nav(scenes: &Arc<Mutex<Vec<UiScene>>>, predicate: impl Fn(&str) -> bool) {
-        tokio::time::timeout(Duration::from_secs(5), async {
+        time::timeout(Duration::from_secs(5), async {
             loop {
                 if scenes
                     .lock()
@@ -982,7 +984,7 @@ mod unix {
                 {
                     return;
                 }
-                tokio::time::sleep(Duration::from_millis(10)).await;
+                time::sleep(Duration::from_millis(10)).await;
             }
         })
         .await
@@ -991,9 +993,9 @@ mod unix {
 
     async fn wait_for_kw_ops(
         scenes: &Arc<Mutex<Vec<UiScene>>>,
-        predicate: impl Fn(&crate::ui::scene::KwOpsScene) -> bool,
+        predicate: impl Fn(&KwOpsScene) -> bool,
     ) {
-        tokio::time::timeout(Duration::from_secs(5), async {
+        time::timeout(Duration::from_secs(5), async {
             loop {
                 let matches = scenes.lock().unwrap().last().is_some_and(
                     |scene| matches!(&scene.body, UiBody::KwOps(ops) if predicate(ops)),
@@ -1001,7 +1003,7 @@ mod unix {
                 if matches {
                     return;
                 }
-                tokio::time::sleep(Duration::from_millis(10)).await;
+                time::sleep(Duration::from_millis(10)).await;
             }
         })
         .await
@@ -1010,9 +1012,9 @@ mod unix {
 
     async fn wait_for_latest_popup(
         scenes: &Arc<Mutex<Vec<UiScene>>>,
-        predicate: impl Fn(Option<&crate::ui::scene::PopupScene>) -> bool,
+        predicate: impl Fn(Option<&PopupScene>) -> bool,
     ) {
-        tokio::time::timeout(Duration::from_secs(5), async {
+        time::timeout(Duration::from_secs(5), async {
             loop {
                 let matches = scenes
                     .lock()
@@ -1022,7 +1024,7 @@ mod unix {
                 if matches {
                     return;
                 }
-                tokio::time::sleep(Duration::from_millis(10)).await;
+                time::sleep(Duration::from_millis(10)).await;
             }
         })
         .await
@@ -1030,7 +1032,7 @@ mod unix {
     }
 
     async fn wait_for_details(scenes: &Arc<Mutex<Vec<UiScene>>>) {
-        tokio::time::timeout(Duration::from_secs(5), async {
+        time::timeout(Duration::from_secs(5), async {
             loop {
                 if scenes
                     .lock()
@@ -1040,7 +1042,7 @@ mod unix {
                 {
                     return;
                 }
-                tokio::time::sleep(Duration::from_millis(10)).await;
+                time::sleep(Duration::from_millis(10)).await;
             }
         })
         .await

@@ -1,12 +1,12 @@
 //! kw actor: owns kw build/deploy job state and the kw history store.
 //!
-//! All kw operations go through [`KwHandle`](crate::kw::handle::KwHandle) as
+//! All kw operations go through `KwHandle` as
 //! typed request/reply messages. `Start*` messages reply immediately with an
 //! accept/refuse verdict — a job accepted by the actor keeps running after
 //! the caller has been answered, so the AppActor loop never blocks on a
 //! kernel build. The actor composes the readiness probes from
-//! [`crate::kw::readiness`] and records applies through the shared
-//! [`KwHistoryStore`](crate::kw::history::KwHistoryStore).
+//! [`kw::readiness`] and records applies through the shared
+//! `KwHistoryStore`.
 //!
 //! Git checkout and readiness probes run on the blocking pool.
 //! `create_dir_all`, history writes, and completion probes run inline
@@ -20,9 +20,11 @@ use std::{
     time::Duration,
 };
 
+use chrono::Utc;
 use tokio::{
     spawn,
     sync::{mpsc, oneshot, watch},
+    task, time,
 };
 
 use crate::infrastructure::actor_reply::ActorReplyService;
@@ -301,7 +303,7 @@ impl KwActor {
         let env = Arc::clone(&self.env);
         let shell = Arc::clone(&self.shell);
         let tree_path_for_probe = tree_path.clone();
-        let (kw_binary, output_dir, tree_readiness) = tokio::task::spawn_blocking(move || {
+        let (kw_binary, output_dir, tree_readiness) = task::spawn_blocking(move || {
             let kw_binary = readiness::ReadinessService::probe_kw_binary(&*env, &*shell);
             if !kw_binary.available {
                 return Err(KwStartError::KwBinaryMissing);
@@ -450,7 +452,7 @@ impl KwActor {
         let tree_path = tree_path.to_path_buf();
         let output_dir = output_dir.map(Path::to_path_buf);
         let arch = arch.map(str::to_string);
-        tokio::task::spawn_blocking(move || {
+        task::spawn_blocking(move || {
             Self::prepare_deploy_blocking(
                 kind,
                 &request,
@@ -482,17 +484,16 @@ impl KwActor {
         let shell = Arc::clone(&self.shell);
         let tree_path = request.tree.path().to_string();
         let branch = request.branch.clone();
-        let pre_job_branch =
-            tokio::task::spawn_blocking(move || -> Result<String, TreeGitError> {
-                KwGitService::check_worktree_clean(&*shell, &tree_path)?;
-                let pre_job_branch = KwGitService::probe_head_branch(&*shell, &tree_path);
-                KwGitService::switch_to_branch(&*shell, &tree_path, &branch)?;
-                Ok(pre_job_branch)
-            })
-            .await
-            // A join error means the probe task panicked — a bug, surfaced as
-            // an unverifiable git state rather than wedging the actor.
-            .map_err(|error| KwStartError::GitStateProbe(error.to_string()))??;
+        let pre_job_branch = task::spawn_blocking(move || -> Result<String, TreeGitError> {
+            KwGitService::check_worktree_clean(&*shell, &tree_path)?;
+            let pre_job_branch = KwGitService::probe_head_branch(&*shell, &tree_path);
+            KwGitService::switch_to_branch(&*shell, &tree_path, &branch)?;
+            Ok(pre_job_branch)
+        })
+        .await
+        // A join error means the probe task panicked — a bug, surfaced as
+        // an unverifiable git state rather than wedging the actor.
+        .map_err(|error| KwStartError::GitStateProbe(error.to_string()))??;
         Ok(if pre_job_branch.is_empty() {
             None
         } else {
@@ -516,7 +517,7 @@ impl KwActor {
         let tree_path = tree_path.to_string();
         let branch = branch.to_string();
         let branch_for_task = branch.clone();
-        match tokio::task::spawn_blocking(move || {
+        match task::spawn_blocking(move || {
             KwGitService::switch_to_branch(&*shell, &tree_path, &branch_for_task)
         })
         .await
@@ -546,7 +547,7 @@ impl KwActor {
         // not share a log file — spawn truncates it.
         let log_path = self.kw_log_dir.join(format!(
             "build-{}.log",
-            chrono::Utc::now().format("%Y%m%d-%H%M%S-%3f")
+            Utc::now().format("%Y%m%d-%H%M%S-%3f")
         ));
         let cmd =
             ShellCommand::new("kw").args(argv::KwArgvService::build_argv(&request.extra_args));
@@ -565,7 +566,7 @@ impl KwActor {
         self.fs.create_dir_all(&self.kw_log_dir)?;
         let log_path = self.kw_log_dir.join(format!(
             "deploy-{}.log",
-            chrono::Utc::now().format("%Y%m%d-%H%M%S-%3f")
+            Utc::now().format("%Y%m%d-%H%M%S-%3f")
         ));
         let cmd = ShellCommand::new("kw").args(argv::KwArgvService::build_deploy_argv(
             &deploy.remote.endpoint(),
@@ -833,7 +834,7 @@ impl KwActor {
                 .map(|path| path.to_string_lossy().into_owned()),
             kernelrelease: kernelrelease.clone(),
             log_path: job.log_path.to_string_lossy().into_owned(),
-            built_at: chrono::Utc::now().to_rfc3339(),
+            built_at: Utc::now().to_rfc3339(),
             success,
         };
         if let Err(error) = self.history.record_build(record) {
@@ -891,7 +892,7 @@ impl KwActor {
         let history = Arc::clone(&self.history);
         let kernel_tree_id = kernel_tree_id.to_string();
         let tree = tree.clone();
-        tokio::task::spawn_blocking(move || {
+        task::spawn_blocking(move || {
             let head = KwGitService::probe_head_branch(&*shell, tree.path());
             readiness::ReadinessService::evaluate_readiness(
                 &*fs,
@@ -926,7 +927,7 @@ impl KwActor {
         let branch = restore.branch.clone();
         // Same spawn_blocking rationale as the start path's checkout: the
         // switch rewrites the worktree.
-        let result = tokio::task::spawn_blocking(move || -> Result<(), TreeGitError> {
+        let result = task::spawn_blocking(move || -> Result<(), TreeGitError> {
             KwGitService::check_worktree_clean(&*shell, &tree_path)?;
             KwGitService::switch_to_branch(&*shell, &tree_path, &branch)
         })
@@ -1039,14 +1040,14 @@ impl KwActor {
         if let Err(error) = process.kill() {
             tracing::warn!(%error, "failed to SIGTERM kw job process group");
         }
-        match tokio::time::timeout(TERM_GRACE, process.wait()).await {
+        match time::timeout(TERM_GRACE, process.wait()).await {
             Ok(outcome) => Self::map_outcome_after_cancel(outcome),
             Err(_) => {
                 tracing::warn!("kw job ignored SIGTERM; escalating to SIGKILL");
                 if let Err(error) = process.force_kill() {
                     tracing::warn!(%error, "failed to SIGKILL kw job process group");
                 }
-                match tokio::time::timeout(KILL_GRACE, process.wait()).await {
+                match time::timeout(KILL_GRACE, process.wait()).await {
                     Ok(outcome) => Self::map_outcome_after_cancel(outcome),
                     Err(_) => {
                         tracing::warn!(

@@ -2,7 +2,7 @@
 //! emergency restore hooks.
 //!
 //! Normal runtime startup uses [`init`] from `main`, session operations go
-//! through [`crate::terminal::session::CrosstermTerminalSession`], and the
+//! through [`session::CrosstermTerminalSession`], and the
 //! panic hook plus `main`'s fatal-error path call [`restore`] directly.
 
 use ratatui::{

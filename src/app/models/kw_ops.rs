@@ -15,7 +15,7 @@ pub enum DeployStartKind {
     BuildThenDeploy,
 }
 
-/// Form state on the KwOps screen. Job status lives in [`crate::app::state::KwUiState::status`].
+/// Form state on the KwOps screen. Job status lives in [`KwUiState::status`].
 #[derive(Clone, Debug)]
 pub struct KwOpsState {
     pub patchset_title: String,

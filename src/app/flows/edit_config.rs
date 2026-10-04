@@ -130,14 +130,16 @@ mod tests {
     };
 
     use super::*;
+    use std::env;
+    use std::process;
 
     static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
 
     fn unique_test_dir(prefix: &str) -> PathBuf {
         let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
-        let p = std::env::temp_dir().join(format!(
+        let p = env::temp_dir().join(format!(
             "patch-hub-edit-config-{prefix}-{}-{n}",
-            std::process::id()
+            process::id()
         ));
         fs::create_dir_all(&p).unwrap();
         p

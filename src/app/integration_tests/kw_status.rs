@@ -7,6 +7,10 @@ use std::{
     time::Duration,
 };
 
+use crate::app::handle::AppHandle;
+use crate::app::App;
+use crate::kw::handle::KwHandle;
+use crate::ui::scene::{PopupBody, PopupScene};
 use crate::{
     app::actor::AppActor,
     config::{ConfigSnapshot, ConfigState},
@@ -27,6 +31,13 @@ use super::helpers::{
     app_harness::{dummy_config_handle, dummy_render_handle},
     lore::{lore_handle_with_persistence, sample_mailing_list},
 };
+use std::env;
+use std::fs;
+use std::io;
+use std::path::Path;
+use std::process;
+use tokio::sync::mpsc;
+use tokio::time;
 
 const KERNEL_TREE_PATH: &str = "/kernel";
 const BUILD_BRANCH: &str = "patchset-2026-08-20-15-00-00";
@@ -46,7 +57,7 @@ async fn first_frame_shows_a_job_that_started_before_attach() {
     drop(event_tx);
     handle.run_until_done().await.unwrap();
     kw.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -74,7 +85,7 @@ async fn status_change_redraws_without_input() {
     drop(event_tx);
     handle.run_until_done().await.unwrap();
     kw.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -87,9 +98,9 @@ async fn closed_watch_does_not_busy_loop_and_input_still_works() {
     kw.shutdown().await;
 
     // Give the actor a moment to observe the closed watch and redraw once.
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    time::sleep(Duration::from_millis(50)).await;
     let draws_after_close = scene_count(&scenes);
-    tokio::time::sleep(Duration::from_millis(150)).await;
+    time::sleep(Duration::from_millis(150)).await;
     assert_eq!(
         draws_after_close,
         scene_count(&scenes),
@@ -97,12 +108,12 @@ async fn closed_watch_does_not_busy_loop_and_input_still_works() {
     );
 
     event_tx.send(InputEvent::NavigateDown).await.unwrap();
-    tokio::time::timeout(Duration::from_secs(5), async {
+    time::timeout(Duration::from_secs(5), async {
         loop {
             if scene_count(&scenes) > draws_after_close {
                 break;
             }
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
@@ -110,7 +121,7 @@ async fn closed_watch_does_not_busy_loop_and_input_still_works() {
 
     drop(event_tx);
     handle.run_until_done().await.unwrap();
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -121,13 +132,13 @@ async fn quit_with_no_job_exits_without_confirm() {
 
     wait_for_nav(&scenes, |_| true).await;
     event_tx.send(InputEvent::Quit).await.unwrap();
-    tokio::time::timeout(Duration::from_secs(5), handle.run_until_done())
+    time::timeout(Duration::from_secs(5), handle.run_until_done())
         .await
         .expect("quit with no running job must exit without a confirm popup")
         .unwrap();
 
     kw.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -147,7 +158,7 @@ async fn quit_while_job_running_opens_confirm_and_wait_keeps_app_alive() {
     let latest = scenes.lock().unwrap().last().cloned().unwrap();
     let popup = latest.popup.expect("confirm popup");
     match popup.body {
-        crate::ui::scene::PopupBody::Confirm {
+        PopupBody::Confirm {
             options, selected, ..
         } => {
             assert_eq!(
@@ -168,7 +179,7 @@ async fn quit_while_job_running_opens_confirm_and_wait_keeps_app_alive() {
     drop(event_tx);
     handle.run_until_done().await.unwrap();
     kw.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -190,7 +201,7 @@ async fn quit_confirm_esc_is_wait() {
     drop(event_tx);
     handle.run_until_done().await.unwrap();
     kw.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -208,27 +219,27 @@ async fn cancel_and_quit_requests_cancellation() {
     event_tx.send(InputEvent::ConfirmPopup).await.unwrap();
 
     handle.run_until_done().await.unwrap();
-    tokio::time::timeout(Duration::from_secs(5), async {
+    time::timeout(Duration::from_secs(5), async {
         loop {
             if process.last_child().was_killed() {
                 break;
             }
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
     .expect("cancel-and-quit must request kw cancellation");
     drop(event_tx);
     kw.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 fn spawn_app_actor(
-    app: crate::app::App,
+    app: App,
 ) -> (
     Arc<Mutex<Vec<UiScene>>>,
-    tokio::sync::mpsc::Sender<InputEvent>,
-    crate::app::handle::AppHandle,
+    mpsc::Sender<InputEvent>,
+    AppHandle,
 ) {
     let scenes = Arc::new(Mutex::new(Vec::new()));
     let scenes_for_draw = Arc::clone(&scenes);
@@ -246,20 +257,14 @@ fn spawn_app_actor(
 
     let terminal_handle = TerminalActor::spawn(Box::new(session));
     let ui_handle = UiActor::spawn();
-    let (event_tx, event_rx) = tokio::sync::mpsc::channel::<InputEvent>(8);
-    let (input_tx, _input_rx) = tokio::sync::mpsc::channel::<InputMessage>(1);
+    let (event_tx, event_rx) = mpsc::channel::<InputEvent>(8);
+    let (input_tx, _input_rx) = mpsc::channel::<InputMessage>(1);
     let input_handle = InputHandle::new(input_tx);
     let handle = AppActor::spawn(app, terminal_handle, ui_handle, input_handle, event_rx);
     (scenes, event_tx, handle)
 }
 
-fn app_with_kw(
-    log_dir: &std::path::Path,
-) -> (
-    crate::app::App,
-    crate::kw::handle::KwHandle,
-    Arc<FakeProcess>,
-) {
+fn app_with_kw(log_dir: &Path) -> (App, KwHandle, Arc<FakeProcess>) {
     let process = Arc::new(FakeProcess::new());
     let mut history = MockKwHistoryStore::new();
     history
@@ -274,7 +279,7 @@ fn app_with_kw(
         Arc::new(kw_actor_env()),
         log_dir.to_path_buf(),
     );
-    let app = crate::app::App::new(
+    let app = App::new(
         apply_config(),
         dummy_config_handle(),
         BootstrapLoreData {
@@ -294,7 +299,7 @@ fn app_with_kw(
 }
 
 async fn wait_for_nav(scenes: &Arc<Mutex<Vec<UiScene>>>, predicate: impl Fn(&str) -> bool) {
-    tokio::time::timeout(Duration::from_secs(5), async {
+    time::timeout(Duration::from_secs(5), async {
         loop {
             if scenes
                 .lock()
@@ -304,7 +309,7 @@ async fn wait_for_nav(scenes: &Arc<Mutex<Vec<UiScene>>>, predicate: impl Fn(&str
             {
                 return;
             }
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
@@ -313,9 +318,9 @@ async fn wait_for_nav(scenes: &Arc<Mutex<Vec<UiScene>>>, predicate: impl Fn(&str
 
 async fn wait_for_latest_popup(
     scenes: &Arc<Mutex<Vec<UiScene>>>,
-    predicate: impl Fn(Option<&crate::ui::scene::PopupScene>) -> bool,
+    predicate: impl Fn(Option<&PopupScene>) -> bool,
 ) {
-    tokio::time::timeout(Duration::from_secs(5), async {
+    time::timeout(Duration::from_secs(5), async {
         loop {
             let matches = scenes
                 .lock()
@@ -325,7 +330,7 @@ async fn wait_for_latest_popup(
             if matches {
                 return;
             }
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
@@ -347,13 +352,13 @@ fn nav_text(scene: &UiScene) -> String {
 
 fn kw_log_dir(test_name: &str) -> PathBuf {
     let n = LOG_DIR_SEQ.fetch_add(1, Ordering::SeqCst);
-    let dir = std::env::temp_dir().join(format!(
+    let dir = env::temp_dir().join(format!(
         "patch-hub-app-kw-status-{}-{}-{n}",
         test_name,
-        std::process::id()
+        process::id()
     ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
     dir
 }
 
@@ -410,14 +415,14 @@ fn kw_actor_fs() -> MockFileSystemTrait {
         .returning(|path| !path.ends_with(".kw/env.current"));
     fs.expect_exists().returning(|_| true);
     fs.expect_read_to_string().returning(|_| {
-        Err(FileSystemError::IoError(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
+        Err(FileSystemError::IoError(io::Error::new(
+            io::ErrorKind::NotFound,
             "missing",
         )))
     });
     fs.expect_read_dir().returning(|_| {
-        Err(FileSystemError::IoError(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
+        Err(FileSystemError::IoError(io::Error::new(
+            io::ErrorKind::NotFound,
             "missing",
         )))
     });

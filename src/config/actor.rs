@@ -1,8 +1,8 @@
 //! Configuration actor: serializes access to mutable config state.
 //!
-//! All config reads and edits go through [`ConfigHandle`](crate::config::ConfigHandle)
-//! as typed request/reply messages. The actor owns [`ConfigState`](crate::config::ConfigState)
-//! and persists successful updates through [`JsonConfigRepository`](crate::config::JsonConfigRepository).
+//! All config reads and edits go through `ConfigHandle`
+//! as typed request/reply messages. The actor owns `ConfigState`
+//! and persists successful updates through `JsonConfigRepository`.
 use std::ops::ControlFlow;
 
 use tokio::{spawn, sync::mpsc};
@@ -125,12 +125,14 @@ mod tests {
     };
 
     use super::*;
+    use std::env;
+    use std::process;
 
     static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
 
     fn unique_test_dir(prefix: &str) -> PathBuf {
         let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
-        let p = std::env::temp_dir().join(format!("patch-hub-{prefix}-{}-{n}", std::process::id()));
+        let p = env::temp_dir().join(format!("patch-hub-{prefix}-{}-{n}", process::id()));
         fs::create_dir_all(&p).unwrap();
         p
     }

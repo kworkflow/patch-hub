@@ -1,9 +1,9 @@
 //! Central orchestration actor: owns [`App`] and drives the main render/input loop.
 //!
 //! Each frame: process system updates → project state to [`AppViewModel`] via
-//! [`UiHandle`](crate::ui::handle::UiHandle) → draw through
-//! [`TerminalHandle`](crate::terminal::handle::TerminalHandle) → await the next
-//! [`InputEvent`](crate::input::event::InputEvent), a kw-status change, or a
+//! `UiHandle` → draw through
+//! `TerminalHandle` → await the next
+//! `InputEvent`, a kw-status change, or a
 //! KwOps log-tail tick while a job is running on that screen.
 //!
 //! The actor stops when the input event channel closes (user quit) or when I/O
@@ -30,6 +30,8 @@ use crate::{
     terminal::{handle::TerminalHandle, messages::TerminalFrame, TerminalError},
     ui::handle::UiHandle,
 };
+use std::future::pending;
+use tokio::time;
 
 /// Owns `App` state and drives the main application loop on a dedicated task.
 ///
@@ -82,10 +84,8 @@ impl AppActor {
 
         let mut kw_status_rx = self.subscribe_kw_status().await;
         let mut loading = TerminalLoadingIndicator::new(self.terminal_handle.clone());
-        let mut log_interval = tokio::time::interval_at(
-            tokio::time::Instant::now() + KW_OPS_LOG_TICK,
-            KW_OPS_LOG_TICK,
-        );
+        let mut log_interval =
+            time::interval_at(time::Instant::now() + KW_OPS_LOG_TICK, KW_OPS_LOG_TICK);
         log_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         let mut redraw = true;
@@ -213,7 +213,7 @@ impl AppActor {
                 Ok(()) => KwWatchEvent::Updated(rx.borrow_and_update().clone()),
                 Err(_) => KwWatchEvent::Closed,
             },
-            None => std::future::pending().await,
+            None => pending().await,
         }
     }
 
@@ -399,6 +399,14 @@ mod tests {
     };
 
     use super::*;
+    use crate::app::models::kw_ops::{DeployStartKind, KwOpsState};
+    use crate::kw::models::{
+        readiness::{
+            BootOnceState, DeployAloneRefusal, KwBinaryProbe, KwReadiness, KwVersionCheck,
+            TreeReadiness,
+        },
+        remote::RemoteRefusal,
+    };
 
     fn dummy_config_handle() -> ConfigHandle {
         let (config_tx, _config_rx) = mpsc::channel(1);
@@ -567,8 +575,8 @@ mod tests {
         render.shutdown().await;
     }
 
-    fn sample_kw_ops() -> crate::app::models::kw_ops::KwOpsState {
-        crate::app::models::kw_ops::KwOpsState::new(
+    fn sample_kw_ops() -> KwOpsState {
+        KwOpsState::new(
             "title".to_string(),
             "mid".to_string(),
             "linux".to_string(),
@@ -577,20 +585,20 @@ mod tests {
                 "branch": "main"
             }))
             .unwrap(),
-            crate::kw::models::readiness::KwReadiness {
-                kw_binary: crate::kw::models::readiness::KwBinaryProbe {
+            KwReadiness {
+                kw_binary: KwBinaryProbe {
                     available: true,
                     version_line: Some("kw, version 0.10.0".to_string()),
-                    check: crate::kw::models::readiness::KwVersionCheck::Meets,
+                    check: KwVersionCheck::Meets,
                 },
-                tree: crate::kw::models::readiness::TreeReadiness::Ready {
+                tree: TreeReadiness::Ready {
                     arch: Some("x86_64".to_string()),
                 },
                 output_dir: None,
-                deploy_alone: Err(crate::kw::models::readiness::DeployAloneRefusal::NoBuildRecord),
+                deploy_alone: Err(DeployAloneRefusal::NoBuildRecord),
                 current_branch: Some("main".to_string()),
-                deploy_remote: Err(crate::kw::models::remote::RemoteRefusal::NoRemotesConfigured),
-                boot_once: crate::kw::models::readiness::BootOnceState::Unknown,
+                deploy_remote: Err(RemoteRefusal::NoRemotesConfigured),
+                boot_once: BootOnceState::Unknown,
             },
         )
     }
@@ -599,7 +607,7 @@ mod tests {
     async fn proceed_with_boot_once_acks_and_clears_pending() {
         let mut app = minimal_app();
         let mut ops = sample_kw_ops();
-        ops.pending_deploy = Some(crate::app::models::kw_ops::DeployStartKind::Deploy);
+        ops.pending_deploy = Some(DeployStartKind::Deploy);
         app.state.kw.ops = Some(ops);
         app.state.popup = Some(AppPopup::boot_once_warning());
 
@@ -624,7 +632,7 @@ mod tests {
     async fn back_out_clears_pending_without_acknowledging() {
         let mut app = minimal_app();
         let mut ops = sample_kw_ops();
-        ops.pending_deploy = Some(crate::app::models::kw_ops::DeployStartKind::BuildThenDeploy);
+        ops.pending_deploy = Some(DeployStartKind::BuildThenDeploy);
         app.state.kw.ops = Some(ops);
         app.state.popup = Some(AppPopup::boot_once_warning());
 
@@ -642,7 +650,7 @@ mod tests {
     fn closing_the_boot_once_popup_clears_pending() {
         let mut app = minimal_app();
         let mut ops = sample_kw_ops();
-        ops.pending_deploy = Some(crate::app::models::kw_ops::DeployStartKind::Deploy);
+        ops.pending_deploy = Some(DeployStartKind::Deploy);
         app.state.kw.ops = Some(ops);
         app.state.popup = Some(AppPopup::boot_once_warning());
 
@@ -656,14 +664,14 @@ mod tests {
     fn closing_the_quit_popup_does_not_touch_pending_deploy() {
         let mut app = minimal_app();
         let mut ops = sample_kw_ops();
-        ops.pending_deploy = Some(crate::app::models::kw_ops::DeployStartKind::Deploy);
+        ops.pending_deploy = Some(DeployStartKind::Deploy);
         app.state.kw.ops = Some(ops);
         app.state.popup = Some(AppPopup::quit_while_job_running());
 
         AppActor::dismiss_open_popup(&mut app);
         assert!(app.state.popup.is_none());
         assert_eq!(
-            Some(crate::app::models::kw_ops::DeployStartKind::Deploy),
+            Some(DeployStartKind::Deploy),
             app.state.kw.ops.as_ref().unwrap().pending_deploy
         );
     }

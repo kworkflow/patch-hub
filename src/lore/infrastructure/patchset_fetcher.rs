@@ -107,8 +107,11 @@ mod tests {
     use super::*;
     use crate::infrastructure::{
         file_system::MockFileSystemTrait,
-        shell::{MockShellTrait, ShellOutput},
+        shell::{MockShellTrait, ShellError, ShellOutput},
     };
+    use crate::lore::infrastructure::parsers::LoreParserService;
+    use std::io;
+    use std::sync::atomic;
 
     // message_id → "linux-kernel.1234.567-1-john@johnson.com.mbx"
     // (trailing slash in href becomes the last dot, then "mbx")
@@ -129,10 +132,7 @@ mod tests {
                 </entry>
             </feed>"#,
         );
-        crate::lore::infrastructure::parsers::LoreParserService::parse_patch_feed(&xml)
-            .unwrap()
-            .patches()[0]
-            .clone()
+        LoreParserService::parse_patch_feed(&xml).unwrap().patches()[0].clone()
     }
 
     #[test]
@@ -170,7 +170,7 @@ mod tests {
         // Track how many times exists(CACHED_FILE) was called so we can
         // return false the first time (file missing) and true the second
         // time (after b4 fetched it).
-        let call_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let call_count = Arc::new(atomic::AtomicUsize::new(0));
         let call_count_clone = call_count.clone();
 
         let mut mock_fs = MockFileSystemTrait::new();
@@ -182,7 +182,7 @@ mod tests {
             .expect_exists()
             .withf(|p| p == Path::new(CACHED_FILE))
             .returning(move |_| {
-                let n = call_count_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let n = call_count_clone.fetch_add(1, atomic::Ordering::SeqCst);
                 n > 0 // false on first call (before b4), true on second (after b4)
             });
 
@@ -224,11 +224,10 @@ mod tests {
             .returning(|_| false);
 
         let mut mock_shell = MockShellTrait::new();
-        mock_shell.expect_execute().times(1).returning(|_| {
-            Err(crate::infrastructure::shell::ShellError::IoError(
-                std::io::Error::other("b4 not found"),
-            ))
-        });
+        mock_shell
+            .expect_execute()
+            .times(1)
+            .returning(|_| Err(ShellError::IoError(io::Error::other("b4 not found"))));
 
         let fetcher = B4PatchsetFetcher::new(
             Arc::new(mock_shell),

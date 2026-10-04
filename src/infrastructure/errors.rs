@@ -53,11 +53,11 @@ impl TerminalRestoreGuard {
 /// report construction, including errors the application handles and keeps
 /// running after, so it must not restore the terminal.
 ///
-/// `main` returns [`color_eyre::eyre::Result`], and the runtime prints a fatal
+/// `main` returns [`eyre::Result`], and the runtime prints a fatal
 /// report after `main` returns. [`TerminalRestoreGuard::restore_once`] runs on
 /// that path first.
 /// Normal shutdown restores through
-/// [`crate::terminal::handle::TerminalHandle::shutdown`].
+/// [`TerminalHandle::shutdown`].
 pub fn install_hooks() -> Result<()> {
     let (panic_hook, eyre_hook) = HookBuilder::default().into_hooks();
 
@@ -82,10 +82,12 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
 
     use super::*;
+    use color_eyre::eyre;
+    use std::panic::catch_unwind;
 
     #[test]
     fn test_error_hook_works() {
-        let result: color_eyre::Result<()> = Err(color_eyre::eyre::eyre!("Test error"));
+        let result: color_eyre::Result<()> = Err(eyre::eyre!("Test error"));
 
         // We can't directly test the hook's formatting, but we can verify
         // that handling an error doesn't cause unexpected panics
@@ -99,7 +101,7 @@ mod tests {
 
     #[test]
     fn test_panic_hook() {
-        let result = std::panic::catch_unwind(|| std::panic!("Test panic"));
+        let result = catch_unwind(|| std::panic!("Test panic"));
 
         assert!(result.is_err());
     }

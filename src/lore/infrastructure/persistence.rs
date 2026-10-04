@@ -112,18 +112,20 @@ mod tests {
     use crate::lore::domain::mailing_list::MailingList;
 
     use super::*;
+    use std::path::PathBuf;
+    use std::process;
 
-    fn tmp_dir(test_name: &str) -> std::path::PathBuf {
+    fn tmp_dir(test_name: &str) -> PathBuf {
         let dir = env::temp_dir().join(format!(
             "patch-hub-persistence-{}-{}",
             test_name,
-            std::process::id()
+            process::id()
         ));
         fs::create_dir_all(&dir).unwrap();
         dir
     }
 
-    fn make_persistence(dir: &std::path::Path) -> FileLorePersistence {
+    fn make_persistence(dir: &Path) -> FileLorePersistence {
         FileLorePersistence::new(
             Arc::new(OsFileSystem),
             dir.join("lists.json").to_str().unwrap().to_string(),

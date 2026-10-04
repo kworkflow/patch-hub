@@ -19,6 +19,8 @@ use crate::infrastructure::{
     env::{EnvTrait, MockEnvTrait},
     file_system::OsFileSystem,
 };
+use std::env;
+use std::process;
 
 static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -49,7 +51,7 @@ fn state_with_trees(env: &dyn EnvTrait) -> ConfigState {
 
 fn unique_test_dir(prefix: &str) -> PathBuf {
     let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
-    let p = std::env::temp_dir().join(format!("patch-hub-{prefix}-{}-{}", std::process::id(), n));
+    let p = env::temp_dir().join(format!("patch-hub-{prefix}-{}-{}", process::id(), n));
     fs::create_dir_all(&p).unwrap();
     p
 }

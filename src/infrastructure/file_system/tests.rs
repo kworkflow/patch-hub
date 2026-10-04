@@ -1,17 +1,17 @@
 use std::path::{Path, PathBuf};
 
 use super::{FileSystemTrait, OsFileSystem};
+use std::env;
+use std::fs;
+use std::process;
 
 struct TempDir(PathBuf);
 
 impl TempDir {
     fn new(test_name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "patch_hub_fs_test_{}_{test_name}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = env::temp_dir().join(format!("patch_hub_fs_test_{}_{test_name}", process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
         Self(dir)
     }
 
@@ -22,7 +22,7 @@ impl TempDir {
 
 impl Drop for TempDir {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+        let _ = fs::remove_dir_all(&self.0);
     }
 }
 
@@ -30,7 +30,7 @@ impl Drop for TempDir {
 fn read_to_string_returns_file_contents() {
     let dir = TempDir::new("read_to_string");
     let file_path = dir.path().join("test.txt");
-    std::fs::write(&file_path, "hello world").unwrap();
+    fs::write(&file_path, "hello world").unwrap();
 
     let fs = OsFileSystem;
     let contents = fs.read_to_string(&file_path).unwrap();
@@ -52,7 +52,7 @@ fn write_creates_file_with_contents() {
     let fs = OsFileSystem;
     fs.write(&file_path, b"test data").unwrap();
 
-    let contents = std::fs::read_to_string(&file_path).unwrap();
+    let contents = fs::read_to_string(&file_path).unwrap();
     assert_eq!(contents, "test data");
 }
 
@@ -71,7 +71,7 @@ fn create_dir_all_creates_nested_directories() {
 fn exists_returns_true_for_existing_path() {
     let dir = TempDir::new("exists");
     let file_path = dir.path().join("exists_test.txt");
-    std::fs::write(&file_path, "").unwrap();
+    fs::write(&file_path, "").unwrap();
 
     let fs = OsFileSystem;
     assert!(fs.exists(&file_path));
@@ -83,7 +83,7 @@ fn exists_returns_true_for_existing_path() {
 fn is_file_distinguishes_files_from_dirs() {
     let dir = TempDir::new("is_file");
     let file_path = dir.path().join("a_file.txt");
-    std::fs::write(&file_path, "").unwrap();
+    fs::write(&file_path, "").unwrap();
 
     let fs = OsFileSystem;
     assert!(fs.is_file(&file_path));
@@ -94,7 +94,7 @@ fn is_file_distinguishes_files_from_dirs() {
 fn is_dir_distinguishes_dirs_from_files() {
     let dir = TempDir::new("is_dir");
     let file_path = dir.path().join("a_file.txt");
-    std::fs::write(&file_path, "").unwrap();
+    fs::write(&file_path, "").unwrap();
 
     let fs = OsFileSystem;
     assert!(fs.is_dir(dir.path()));
@@ -104,10 +104,10 @@ fn is_dir_distinguishes_dirs_from_files() {
 #[test]
 fn read_dir_lists_immediate_children_sorted() {
     let dir = TempDir::new("read_dir");
-    std::fs::write(dir.path().join("b.txt"), "").unwrap();
-    std::fs::create_dir(dir.path().join("a_sub")).unwrap();
-    std::fs::create_dir(dir.path().join("a_sub/nested")).unwrap();
-    std::fs::write(dir.path().join("c.txt"), "").unwrap();
+    fs::write(dir.path().join("b.txt"), "").unwrap();
+    fs::create_dir(dir.path().join("a_sub")).unwrap();
+    fs::create_dir(dir.path().join("a_sub/nested")).unwrap();
+    fs::write(dir.path().join("c.txt"), "").unwrap();
 
     let fs = OsFileSystem;
     let entries = fs.read_dir(dir.path()).unwrap();
@@ -134,13 +134,13 @@ fn rename_moves_file() {
     let dir = TempDir::new("rename");
     let src = dir.path().join("src.txt");
     let dst = dir.path().join("dst.txt");
-    std::fs::write(&src, "rename me").unwrap();
+    fs::write(&src, "rename me").unwrap();
 
     let fs = OsFileSystem;
     fs.rename(&src, &dst).unwrap();
 
     assert!(!src.exists());
-    assert_eq!(std::fs::read_to_string(&dst).unwrap(), "rename me");
+    assert_eq!(fs::read_to_string(&dst).unwrap(), "rename me");
 }
 
 #[test]
@@ -155,7 +155,7 @@ fn create_writer_writes_to_file() {
     writer.write_all(b"via writer").unwrap();
     drop(writer);
 
-    let contents = std::fs::read_to_string(&file_path).unwrap();
+    let contents = fs::read_to_string(&file_path).unwrap();
     assert_eq!(contents, "via writer");
 }
 
@@ -165,7 +165,7 @@ fn open_bufreader_reads_file() {
 
     let dir = TempDir::new("open_bufreader");
     let file_path = dir.path().join("bufreader_test.txt");
-    std::fs::write(&file_path, "line1\nline2\n").unwrap();
+    fs::write(&file_path, "line1\nline2\n").unwrap();
 
     let fs = OsFileSystem;
     let reader = fs.open_bufreader(&file_path).unwrap();
@@ -178,7 +178,7 @@ fn open_bufreader_reads_file() {
 fn metadata_returns_file_metadata() {
     let dir = TempDir::new("metadata");
     let file_path = dir.path().join("meta_test.txt");
-    std::fs::write(&file_path, "some content").unwrap();
+    fs::write(&file_path, "some content").unwrap();
 
     let fs = OsFileSystem;
     let meta = fs.metadata(&file_path).unwrap();
@@ -197,7 +197,7 @@ fn metadata_returns_error_for_missing_path() {
 fn read_tail_returns_the_whole_file_when_it_fits() {
     let dir = TempDir::new("read_tail_fits");
     let file_path = dir.path().join("log.txt");
-    std::fs::write(&file_path, "line1\nline2\n").unwrap();
+    fs::write(&file_path, "line1\nline2\n").unwrap();
 
     let fs = OsFileSystem;
     assert_eq!(
@@ -211,7 +211,7 @@ fn read_tail_drops_a_partial_first_line_when_seeking() {
     let dir = TempDir::new("read_tail_partial");
     let file_path = dir.path().join("log.txt");
     // 14 bytes; an 8-byte window starts mid-"BBBB".
-    std::fs::write(&file_path, "AAAA\nBBBB\nCCCC").unwrap();
+    fs::write(&file_path, "AAAA\nBBBB\nCCCC").unwrap();
 
     let fs = OsFileSystem;
     assert_eq!("CCCC", fs.read_tail_to_string(&file_path, 8).unwrap());
@@ -221,7 +221,7 @@ fn read_tail_drops_a_partial_first_line_when_seeking() {
 fn read_tail_keeps_a_window_with_no_newline() {
     let dir = TempDir::new("read_tail_nonewline");
     let file_path = dir.path().join("log.txt");
-    std::fs::write(&file_path, "abcdefghijklmnopqrst").unwrap();
+    fs::write(&file_path, "abcdefghijklmnopqrst").unwrap();
 
     let fs = OsFileSystem;
     assert_eq!("mnopqrst", fs.read_tail_to_string(&file_path, 8).unwrap());
@@ -231,7 +231,7 @@ fn read_tail_keeps_a_window_with_no_newline() {
 fn read_tail_decodes_invalid_utf8_lossily() {
     let dir = TempDir::new("read_tail_utf8");
     let file_path = dir.path().join("log.txt");
-    std::fs::write(&file_path, b"ok\n\xff\xfeworld").unwrap();
+    fs::write(&file_path, b"ok\n\xff\xfeworld").unwrap();
 
     let fs = OsFileSystem;
     let text = fs.read_tail_to_string(&file_path, 64).unwrap();

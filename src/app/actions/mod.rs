@@ -9,8 +9,8 @@ use crate::{
     lore::application::handle::LoreApiHandle,
 };
 
-use apply::{AppliedPatchset, ApplyPatchsetRequest};
-use reviewed_reply::{ReviewedReplyRequest, ReviewedReplyResult};
+use apply::{AppliedPatchset, ApplyPatchsetRequest, ApplyPatchsetService};
+use reviewed_reply::{ReviewedReplyRequest, ReviewedReplyResult, ReviewedReplyService};
 
 pub(crate) struct PatchsetActionService<'a> {
     fs: &'a dyn FileSystemTrait,
@@ -36,18 +36,13 @@ impl<'a> PatchsetActionService<'a> {
         request: &ApplyPatchsetRequest,
         config: &ConfigSnapshot,
     ) -> Result<AppliedPatchset, String> {
-        apply::ApplyPatchsetService::apply_patchset(request, self.fs, self.shell, config)
+        ApplyPatchsetService::apply_patchset(request, self.fs, self.shell, config)
     }
 
     pub(crate) async fn execute_reviewed_reply(
         &self,
         request: ReviewedReplyRequest,
     ) -> Result<ReviewedReplyResult> {
-        reviewed_reply::ReviewedReplyService::execute_reviewed_reply(
-            request,
-            self.lore_api,
-            self.shell,
-        )
-        .await
+        ReviewedReplyService::execute_reviewed_reply(request, self.lore_api, self.shell).await
     }
 }

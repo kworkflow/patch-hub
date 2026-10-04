@@ -13,6 +13,8 @@ use crate::infrastructure::file_system::{FileSystemError, FileSystemTrait, JsonU
 
 use crate::kw::models::history::KwApplyRecord;
 use crate::kw::models::history::KwBuildRecord;
+use chrono::DateTime;
+use serde::de::DeserializeOwned;
 
 pub const APPLY_HISTORY_FILENAME: &str = "kw_apply_history.json";
 pub const BUILD_HISTORY_FILENAME: &str = "kw_build_history.json";
@@ -81,7 +83,7 @@ impl FileKwHistoryStore {
     /// must never be silently clobbered by the next write.
     fn load_records<T>(&self, path: &str) -> Result<T, FileSystemError>
     where
-        T: serde::de::DeserializeOwned + Default,
+        T: DeserializeOwned + Default,
     {
         let path_ref = Path::new(path);
         if !self.fs.is_file(path_ref) {
@@ -135,9 +137,7 @@ impl KwHistoryStore for FileKwHistoryStore {
                     .values()
                     .filter_map(|by_tree| by_tree.get(kernel_tree_id))
                     .filter(|record| record.applied_branch == branch)
-                    .max_by_key(|record| {
-                        chrono::DateTime::parse_from_rfc3339(&record.applied_at).ok()
-                    })
+                    .max_by_key(|record| DateTime::parse_from_rfc3339(&record.applied_at).ok())
                     .cloned()
             })
             .map_err(|e| self.error_with_path(&self.apply_history_path, e))
@@ -162,9 +162,7 @@ impl KwHistoryStore for FileKwHistoryStore {
                 let latest = by_branch.and_then(|by_branch| {
                     by_branch
                         .values()
-                        .max_by_key(|record| {
-                            chrono::DateTime::parse_from_rfc3339(&record.built_at).ok()
-                        })
+                        .max_by_key(|record| DateTime::parse_from_rfc3339(&record.built_at).ok())
                         .cloned()
                 });
                 (record, latest)
@@ -182,15 +180,17 @@ mod tests {
     use crate::infrastructure::file_system::OsFileSystem;
 
     use super::*;
+    use std::env;
+    use std::process;
 
     static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
 
     fn tmp_dir(test_name: &str) -> PathBuf {
         let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!(
+        let dir = env::temp_dir().join(format!(
             "patch-hub-kw-history-{}-{}-{}",
             test_name,
-            std::process::id(),
+            process::id(),
             n
         ));
         // A leftover from a failed previous run (pid reuse + counter reset)

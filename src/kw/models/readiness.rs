@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use std::path::PathBuf;
+use std::{fmt, path::PathBuf};
 
 use crate::{
     infrastructure::{env::EnvError, file_system::FileSystemError},
@@ -24,7 +24,7 @@ pub enum TreeReadiness {
     /// `arch=` value from `.kw/build.config`; `None` means the key is unset
     /// and image discovery will glob `arch/*/boot/` instead — a deliberate
     /// divergence from kw, whose own fallback is the merged kw-config
-    /// `arch` (see [`crate::kw::readiness::ReadinessService::find_newest_kernel_image`]).
+    /// `arch` (see [`ReadinessService::find_newest_kernel_image`]).
     Ready { arch: Option<String> },
     /// The configured path is not a directory.
     Missing,
@@ -65,8 +65,8 @@ pub struct KwBinaryProbe {
     pub check: KwVersionCheck,
 }
 
-impl std::fmt::Display for TreeReadiness {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for TreeReadiness {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TreeReadiness::Ready { .. } => write!(f, "ready"),
             TreeReadiness::Missing => write!(f, "the configured path is not a directory"),

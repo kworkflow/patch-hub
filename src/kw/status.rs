@@ -3,7 +3,7 @@
 //! `AppState` never owns job state; it polls (`GetStatus`) or watches
 //! (`WatchStatus`) these snapshots and projects them into the view model.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KwJobKind {
@@ -35,7 +35,7 @@ pub enum KwJobStatus {
         branch: String,
         log_path: PathBuf,
         /// Known deploy failures kw exited 0 through (see
-        /// [`crate::kw::log_scan::LogScanService::collect_deploy_warnings`]). Always empty for a
+        /// [`LogScanService::collect_deploy_warnings`]). Always empty for a
         /// build-only job.
         warnings: Vec<String>,
     },
@@ -92,7 +92,7 @@ impl KwStatusSnapshot {
 
 impl KwJobStatus {
     /// Log file for the current or last job, if the actor has opened one.
-    pub fn log_path(&self) -> Option<&std::path::Path> {
+    pub fn log_path(&self) -> Option<&Path> {
         match self {
             Self::Idle => None,
             Self::Running { log_path, .. }

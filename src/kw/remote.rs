@@ -135,7 +135,7 @@ impl RemoteConfigService {
         }
     }
 
-    /// Resolves the remote kw deploy will be pointed at. See the [`remote`](crate::kw::remote)
+    /// Resolves the remote kw deploy will be pointed at. See the `remote`
     /// module docs for the file lookup order.
     pub fn resolve_deploy_remote(
         fs: &dyn FileSystemTrait,
@@ -227,6 +227,8 @@ mod tests {
 
     use super::*;
     use crate::kw::models::remote::RemoteRefusal;
+    use std::env;
+    use std::io;
 
     /// Example remote.config: two hosts, default on the second, fields indented.
     const SAMPLE_REMOTE_CONFIG: &str = "\
@@ -490,10 +492,7 @@ Host dut extra
             .returning(move |path| is_file.contains_key(path));
         fs.expect_read_to_string().returning(move |path| {
             read.get(path).cloned().ok_or_else(|| {
-                FileSystemError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "missing",
-                ))
+                FileSystemError::IoError(io::Error::new(io::ErrorKind::NotFound, "missing"))
             })
         });
         fs
@@ -512,7 +511,7 @@ Host dut extra
     }
 
     fn missing_var() -> EnvError {
-        std::env::VarError::NotPresent.into()
+        env::VarError::NotPresent.into()
     }
 
     #[test]
@@ -589,8 +588,8 @@ Host dut extra
         fs.expect_is_file()
             .returning(|path| path == Path::new("/kernel/.kw/remote.config"));
         fs.expect_read_to_string().returning(|_| {
-            Err(FileSystemError::IoError(std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
+            Err(FileSystemError::IoError(io::Error::new(
+                io::ErrorKind::PermissionDenied,
                 "denied",
             )))
         });

@@ -1,4 +1,4 @@
-//! Scene types produced by [`super::core::UiCore`] and consumed by
+//! Scene types produced by [`core::UiCore`] and consumed by
 //! [`super::painter`].
 //!
 //! A `UiScene` is a fully projected, paint-ready snapshot of application

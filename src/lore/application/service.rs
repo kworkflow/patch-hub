@@ -467,6 +467,7 @@ mod tests {
         http_lore_client::{
             LoreHttpError, MockFeedGateway, MockListsGateway, MockPatchHtmlGateway,
         },
+        parsers::LoreParserService,
         patchset_fetcher::MockPatchsetFetcher,
         patchset_parser::MockPatchsetParser,
         persistence::{MockMailingListsCacheStore, MockUserLoreStateStore},
@@ -760,7 +761,6 @@ mod tests {
         );
 
         let feed = {
-            use crate::lore::infrastructure::parsers::LoreParserService;
             let xml = fs::read_to_string(src).unwrap();
             LoreParserService::parse_patch_feed(&xml).unwrap()
         };
@@ -801,7 +801,7 @@ mod tests {
         // Pre-populate the cache.
         let feed = {
             let xml = fs::read_to_string(src).unwrap();
-            crate::lore::infrastructure::parsers::LoreParserService::parse_patch_feed(&xml).unwrap()
+            LoreParserService::parse_patch_feed(&xml).unwrap()
         };
         let mut index = PatchFeedIndex::new();
         index.process_feed_page(feed);

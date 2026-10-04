@@ -1,9 +1,9 @@
 //! Render actor: serializes patch/cover preview rendering on a dedicated task.
 //!
-//! [`RenderHandle::render_patchset_preview`](crate::render::handle::RenderHandle::render_patchset_preview)
-//! sends a [`RenderMessage`](crate::render::messages::RenderMessage) to this
-//! actor, which delegates to a [`RenderServiceApi`](crate::render::RenderServiceApi)
-//! implementation (typically [`ShellRenderService`](crate::render::ShellRenderService))
+//! `RenderHandle::render_patchset_preview`
+//! sends a `RenderMessage` to this
+//! actor, which delegates to a `RenderServiceApi`
+//! implementation (typically `ShellRenderService`)
 //! on a blocking thread pool. Keeps shell subprocess work off the async runtime
 //! and the UI thread.
 use std::ops::ControlFlow;

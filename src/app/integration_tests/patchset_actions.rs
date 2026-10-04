@@ -37,6 +37,12 @@ use super::helpers::{
     },
     render::sample_rendered_preview,
 };
+use std::env;
+use std::fs;
+use std::io;
+use std::process;
+use std::time::Duration;
+use tokio::time;
 
 const KERNEL_TREE_PATH: &str = "/kernel";
 const BASE_BRANCH: &str = "main";
@@ -203,7 +209,7 @@ async fn apply_success_with_history_write_failure_keeps_success_popup() {
     kw_history
         .expect_record_apply()
         .times(1)
-        .returning(|_| Err(FileSystemError::IoError(std::io::Error::other("disk full"))));
+        .returning(|_| Err(FileSystemError::IoError(io::Error::other("disk full"))));
     let mut app = app_with_details(
         clean_fs(),
         shell,
@@ -292,7 +298,7 @@ async fn apply_is_blocked_while_a_kw_job_runs() {
     assert!(calls.lock().unwrap().is_empty());
 
     shutdown_kw(&app).await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -343,7 +349,7 @@ async fn apply_is_allowed_again_after_the_job_finishes() {
     // Once the job finishes, the same apply goes through.
     process.last_child().finish(0);
     let mut watch = kw.watch_status().await.unwrap();
-    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+    time::timeout(Duration::from_secs(10), async {
         loop {
             if matches!(watch.borrow().job, KwJobStatus::Succeeded { .. }) {
                 break;
@@ -372,7 +378,7 @@ async fn apply_is_allowed_again_after_the_job_finishes() {
     assert_eq!(6, calls.lock().unwrap().len());
 
     shutdown_kw(&app).await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -708,14 +714,14 @@ fn kw_actor_fs() -> MockFileSystemTrait {
         .returning(|path| !path.ends_with(".kw/env.current"));
     fs.expect_exists().returning(|_| true);
     fs.expect_read_to_string().returning(|_| {
-        Err(FileSystemError::IoError(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
+        Err(FileSystemError::IoError(io::Error::new(
+            io::ErrorKind::NotFound,
             "missing",
         )))
     });
     fs.expect_read_dir().returning(|_| {
-        Err(FileSystemError::IoError(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
+        Err(FileSystemError::IoError(io::Error::new(
+            io::ErrorKind::NotFound,
             "missing",
         )))
     });
@@ -732,13 +738,13 @@ fn kw_actor_env() -> MockEnvTrait {
 /// A real, unique directory: FakeProcess creates the job's log file on
 /// spawn, even though the fs trait is mocked.
 fn kw_log_dir(test_name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
+    let dir = env::temp_dir().join(format!(
         "patch-hub-app-kw-logs-{}-{}",
         test_name,
-        std::process::id()
+        process::id()
     ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
     dir
 }
 

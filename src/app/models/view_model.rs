@@ -184,7 +184,7 @@ pub enum ScreenViewModel {
 
 /// Owned, typed projection of [`AppState`] for one TUI frame.
 ///
-/// Built from [`AppState`](crate::app::state::AppState); consumed by `UiCore::build_scene`.
+/// Built from `AppState`; consumed by `UiCore::build_scene`.
 #[derive(Clone, Debug)]
 pub struct AppViewModel {
     pub screen: ScreenViewModel,

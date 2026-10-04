@@ -29,6 +29,11 @@ use crate::{
 };
 
 use super::*;
+use chrono::DateTime;
+use std::env;
+use std::fs;
+use std::process;
+use tokio::time;
 
 static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -36,12 +41,12 @@ static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
 /// parent must exist even though the fs trait is mocked.
 fn tmp_log_dir(test_name: &str) -> PathBuf {
     let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
-    let dir = std::env::temp_dir().join(format!(
+    let dir = env::temp_dir().join(format!(
         "patch-hub-kw-actor-{}-{test_name}-{n}",
-        std::process::id()
+        process::id()
     ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
     dir
 }
 
@@ -242,7 +247,7 @@ fn expect_ready_tree(fs: &mut MockFileSystemTrait) {
 /// disk.
 fn read_real_job_log(path: &Path) -> Option<Result<String, FileSystemError>> {
     (path.extension() == Some("log".as_ref()))
-        .then(|| std::fs::read_to_string(path).map_err(FileSystemError::from))
+        .then(|| fs::read_to_string(path).map_err(FileSystemError::from))
 }
 
 /// A ready kernel tree whose log dir can be created.
@@ -573,7 +578,7 @@ async fn get_readiness_composes_probes_and_head_branch() {
         .withf(|name| name == "kw")
         .returning(|_| false);
     env.expect_var()
-        .returning(|_| Err(std::env::VarError::NotPresent.into()));
+        .returning(|_| Err(env::VarError::NotPresent.into()));
     let mut fs = MockFileSystemTrait::new();
     fs.expect_is_file().returning(|_| false);
     fs.expect_is_dir().returning(|_| false);
@@ -632,7 +637,7 @@ async fn get_readiness_for_branch_looks_up_that_branch_not_head() {
         .withf(|name| name == "kw")
         .returning(|_| false);
     env.expect_var()
-        .returning(|_| Err(std::env::VarError::NotPresent.into()));
+        .returning(|_| Err(env::VarError::NotPresent.into()));
     let mut fs = MockFileSystemTrait::new();
     fs.expect_is_file().returning(|_| false);
     fs.expect_is_dir().returning(|_| false);
@@ -682,7 +687,7 @@ async fn get_readiness_for_branch_looks_up_that_branch_not_head() {
 pub(super) async fn wait_for_terminal_status(
     watch: &mut watch::Receiver<KwStatusSnapshot>,
 ) -> KwJobStatus {
-    tokio::time::timeout(Duration::from_secs(10), async {
+    time::timeout(Duration::from_secs(10), async {
         loop {
             let status = watch.borrow().job.clone();
             if !matches!(status, KwJobStatus::Idle | KwJobStatus::Running { .. }) {
@@ -699,7 +704,7 @@ pub(super) async fn wait_for_running_phase(
     watch: &mut watch::Receiver<KwStatusSnapshot>,
     phase: KwPhase,
 ) -> KwJobStatus {
-    tokio::time::timeout(Duration::from_secs(10), async {
+    time::timeout(Duration::from_secs(10), async {
         loop {
             let status = watch.borrow().job.clone();
             if matches!(
@@ -721,7 +726,7 @@ async fn start_build_replies_immediately_and_runs_in_background() {
 
     // start_build resolves while the spawned process is still running
     // (no finish() was ever signaled).
-    let result = tokio::time::timeout(Duration::from_secs(1), handle.start_build(start_request()))
+    let result = time::timeout(Duration::from_secs(1), handle.start_build(start_request()))
         .await
         .expect("start_build must reply immediately");
     result.unwrap();
@@ -762,7 +767,7 @@ async fn start_build_replies_immediately_and_runs_in_background() {
     );
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -792,7 +797,7 @@ async fn start_build_merges_extra_args_into_the_spawned_argv() {
 
     process.last_child().finish(0);
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -806,7 +811,7 @@ async fn second_start_while_running_is_refused() {
 
     process.last_child().finish(0);
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -845,7 +850,7 @@ async fn failed_build_reports_exit_code_and_log_path() {
     }
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -856,7 +861,7 @@ async fn cancel_kills_process_group_and_reports_cancelled() {
     handle.start_build(start_request()).await.unwrap();
     // The ack is immediate: process death is observed via the status,
     // not the reply.
-    tokio::time::timeout(Duration::from_secs(1), handle.cancel())
+    time::timeout(Duration::from_secs(1), handle.cancel())
         .await
         .expect("cancel must ack immediately")
         .unwrap();
@@ -877,7 +882,7 @@ async fn cancel_kills_process_group_and_reports_cancelled() {
     }
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -889,7 +894,7 @@ async fn shutdown_kills_running_job() {
     handle.shutdown().await;
 
     assert!(process.last_child().was_killed());
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -907,7 +912,7 @@ async fn spawn_failure_refuses_start_and_stays_idle() {
 
     process.last_child().finish(0);
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -934,7 +939,7 @@ async fn start_build_refused_when_kw_binary_missing() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -978,7 +983,7 @@ async fn start_build_refused_when_tree_not_ready() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -993,7 +998,7 @@ async fn start_build_allowed_when_kw_version_below_floor() {
 
     process.last_child().finish(0);
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1053,7 +1058,7 @@ async fn start_build_switches_to_requested_branch_before_spawning() {
 
     process.last_child().finish(0);
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1076,7 +1081,7 @@ async fn start_build_refused_when_worktree_is_dirty() {
         .any(|call| call.iter().any(|part| part == "switch")));
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1098,7 +1103,7 @@ async fn start_build_refused_when_git_state_is_unverifiable() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1121,7 +1126,7 @@ async fn start_build_refused_when_branch_switch_fails() {
     assert!(process.spawned().is_empty());
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1134,10 +1139,10 @@ async fn cancel_and_restore_without_job_are_immediate_errors() {
         MockEnvTrait::new(),
     );
 
-    let cancel = tokio::time::timeout(Duration::from_secs(1), handle.cancel())
+    let cancel = time::timeout(Duration::from_secs(1), handle.cancel())
         .await
         .expect("cancel must reply immediately");
-    let restore = tokio::time::timeout(Duration::from_secs(1), handle.restore_previous_branch())
+    let restore = time::timeout(Duration::from_secs(1), handle.restore_previous_branch())
         .await
         .expect("restore must reply immediately");
 
@@ -1177,7 +1182,7 @@ async fn restore_switches_back_to_pre_job_branch_and_is_consumed() {
     assert!(matches!(err, KwError::NoRecordedBranch));
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1199,7 +1204,7 @@ async fn restore_refused_while_job_is_running() {
     assert_eq!(git.head(), "master");
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1229,7 +1234,7 @@ async fn restore_refused_when_worktree_is_dirty() {
     assert_eq!(git.head(), "master");
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1253,7 +1258,7 @@ async fn restore_failure_keeps_the_context_for_a_retry() {
     assert_eq!(git.head(), "master");
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1282,7 +1287,7 @@ async fn refused_start_does_not_clobber_the_restore_context() {
     assert_eq!(git.head(), "master");
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1327,7 +1332,7 @@ async fn log_dir_creation_failure_refuses_start_and_stays_idle() {
     ));
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1352,7 +1357,7 @@ async fn rollback_failure_keeps_the_spawn_refusal() {
     ));
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1376,7 +1381,7 @@ async fn cancel_racing_a_successful_exit_reports_success() {
     assert!(!process.last_child().was_killed());
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1406,7 +1411,7 @@ async fn cancel_racing_a_failed_exit_reports_failure() {
     );
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 // Paused time: the runtime auto-advances through the grace-period
@@ -1430,7 +1435,7 @@ async fn cancel_escalates_to_sigkill_when_sigterm_is_ignored() {
     assert!(child.was_force_killed());
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1468,11 +1473,11 @@ async fn successful_build_writes_a_full_build_record() {
         assert!(record.log_path.starts_with(log_dir.to_str().unwrap()));
         assert!(record.success);
         // The readiness latest-lookup parses built_at as RFC3339.
-        assert!(chrono::DateTime::parse_from_rfc3339(&record.built_at).is_ok());
+        assert!(DateTime::parse_from_rfc3339(&record.built_at).is_ok());
     }
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1513,7 +1518,7 @@ async fn failed_build_writes_a_failure_record() {
     }
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1536,7 +1541,7 @@ async fn cancelled_build_writes_no_record() {
     assert!(builds.lock().unwrap().is_empty());
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1572,7 +1577,7 @@ async fn lost_exit_status_records_a_failed_build() {
     }
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1602,7 +1607,7 @@ async fn build_record_write_failure_keeps_the_terminal_status() {
     assert!(matches!(status, KwJobStatus::Succeeded { .. }));
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1641,7 +1646,7 @@ async fn build_record_keeps_no_patchset_link_when_apply_lookup_fails() {
     }
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }
 
 #[tokio::test]
@@ -1729,5 +1734,5 @@ async fn successful_build_with_active_env_records_the_output_dir() {
     assert_eq!(1, env_current_reads.load(Ordering::SeqCst));
 
     handle.shutdown().await;
-    std::fs::remove_dir_all(&log_dir).unwrap();
+    fs::remove_dir_all(&log_dir).unwrap();
 }

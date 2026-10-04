@@ -1,12 +1,12 @@
 //! Application orchestration: state, screen flows, view-model projection, and the
-//! central [`AppActor`](crate::app::actor::AppActor) run loop.
+//! central `AppActor` run loop.
 //!
 //! [`App`] holds [`AppState`] (navigation, lore UI state, user data, config
 //! snapshot) and [`AppServices`] (typed handles to
-//! [`LoreApiHandle`](crate::lore::application::handle::LoreApiHandle),
-//! [`RenderHandle`](crate::render::handle::RenderHandle), plus injected
+//! `LoreApiHandle`,
+//! `RenderHandle`, plus injected
 //! infrastructure traits). Screen-specific input is dispatched from
-//! [`AppActor`](crate::app::actor::AppActor) into [`crate::app::flows`];
+//! `AppActor` into [`app::flows`];
 //! presentation data crosses the UI boundary only through [`AppViewModel`] via
 //! [`App::present`].
 pub(crate) mod actions;
@@ -33,7 +33,7 @@ use color_eyre::{
 };
 use tracing::{debug, event, info, warn, Level};
 
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use chrono::{SecondsFormat, Utc};
 
@@ -62,7 +62,7 @@ use crate::{
     },
     render::{handle::RenderHandle, RenderPatchsetRequest},
 };
-use models::view_model::AppViewModel;
+use models::{popup::AppPopup, view_model::AppViewModel};
 use screens::{
     bookmarked::BookmarkedPatchsetsState,
     details_actions::{PatchsetAction, PatchsetDetailsState},
@@ -491,11 +491,11 @@ impl App {
     /// The popup blocking an apply while a kw job runs, if a job is in
     /// fact running. An unreachable actor cannot be running a job, so a
     /// status-query failure lets the apply proceed.
-    async fn kw_job_running_popup(&self) -> Option<models::popup::AppPopup> {
+    async fn kw_job_running_popup(&self) -> Option<AppPopup> {
         let kw = self.services.kw.as_ref()?;
         match kw.get_status().await {
             Ok(snapshot) => match snapshot.job {
-                KwJobStatus::Running { .. } => Some(models::popup::AppPopup::info(
+                KwJobStatus::Running { .. } => Some(AppPopup::info(
                     "Patchset Apply Blocked",
                     " A kw job is running on the kernel tree.\n\nApplying a patchset now would rewrite the branch the job is building under it.\n\nWait for the job to finish, then apply again.",
                 )),
@@ -510,10 +510,7 @@ impl App {
 
     /// Runs the git-am apply and maps the outcome to the result popup,
     /// recording the apply in the kw history on success.
-    async fn apply_patchset_popup(
-        &self,
-        details: &PatchsetDetailsState,
-    ) -> models::popup::AppPopup {
+    async fn apply_patchset_popup(&self, details: &PatchsetDetailsState) -> AppPopup {
         let request = Self::build_apply_patchset_request(details);
         let action_service = PatchsetActionService::new(
             &*self.services.fs,
@@ -565,9 +562,9 @@ impl App {
                         }
                     }
                 };
-                models::popup::AppPopup::info("Patchset Apply Success", popup_body)
+                AppPopup::info("Patchset Apply Success", popup_body)
             }
-            Err(msg) => models::popup::AppPopup::info("Patchset Apply Fail", msg),
+            Err(msg) => AppPopup::info("Patchset Apply Fail", msg),
         }
     }
 
@@ -580,7 +577,7 @@ impl App {
 
     fn build_reviewed_reply_request(
         details: &PatchsetDetailsState,
-        successful_indexes: std::collections::HashSet<usize>,
+        successful_indexes: HashSet<usize>,
         git_send_email_options: String,
     ) -> ReviewedReplyRequest {
         ReviewedReplyRequest {

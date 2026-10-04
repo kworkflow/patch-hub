@@ -1,5 +1,6 @@
 use mockall::automock;
 use thiserror::Error;
+use ureq::Error as UreqError;
 
 pub enum HttpMethod {
     Get,
@@ -20,11 +21,11 @@ pub enum NetError {
 impl From<ureq::Error> for NetError {
     fn from(e: ureq::Error) -> Self {
         match e {
-            ureq::Error::StatusCode(code) => NetError::HttpStatus {
+            UreqError::StatusCode(code) => NetError::HttpStatus {
                 code,
                 message: format!("HTTP {code}"),
             },
-            ureq::Error::Timeout(_) => NetError::Timeout(e.to_string()),
+            UreqError::Timeout(_) => NetError::Timeout(e.to_string()),
             _ => NetError::ConnectionError(e.to_string()),
         }
     }

@@ -13,17 +13,22 @@ use super::{
     RunningProcess,
 };
 use crate::infrastructure::shell::ShellCommand;
+use nix::sys::signal::Signal;
+use std::env;
+use std::fs;
+use std::process;
+use tokio::time;
 
 struct TempDir(PathBuf);
 
 impl TempDir {
     fn new(test_name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!(
+        let dir = env::temp_dir().join(format!(
             "patch_hub_process_test_{}_{test_name}",
-            std::process::id()
+            process::id()
         ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
         Self(dir)
     }
 
@@ -34,7 +39,7 @@ impl TempDir {
 
 impl Drop for TempDir {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+        let _ = fs::remove_dir_all(&self.0);
     }
 }
 
@@ -44,16 +49,13 @@ async fn wait_for(mut cond: impl FnMut() -> bool, timeout: Duration) -> bool {
         if start.elapsed() > timeout {
             return false;
         }
-        tokio::time::sleep(Duration::from_millis(25)).await;
+        time::sleep(Duration::from_millis(25)).await;
     }
     true
 }
 
 fn pid_is_gone(pid: i32) -> bool {
-    matches!(
-        kill(Pid::from_raw(pid), None::<nix::sys::signal::Signal>),
-        Err(Errno::ESRCH)
-    )
+    matches!(kill(Pid::from_raw(pid), None::<Signal>), Err(Errno::ESRCH))
 }
 
 // The shell redirection creates the sidecar file before `echo $!` writes into
@@ -63,7 +65,7 @@ async fn await_sidecar_pid(path: &Path) -> i32 {
     let mut pid = None;
     wait_for(
         || {
-            pid = std::fs::read_to_string(path)
+            pid = fs::read_to_string(path)
                 .ok()
                 .and_then(|contents| contents.trim().parse::<i32>().ok());
             pid.is_some()
@@ -83,12 +85,12 @@ async fn spawn_returns_while_process_still_running() {
     let mut process = OsProcess.spawn(&cmd, dir.path(), &log).unwrap();
 
     // spawn returned while the child was still inside its sleep
-    let early_log = std::fs::read_to_string(&log).unwrap();
+    let early_log = fs::read_to_string(&log).unwrap();
     assert!(!early_log.contains("done"));
 
     let status = process.wait().await.unwrap();
     assert!(status.success());
-    let final_log = std::fs::read_to_string(&log).unwrap();
+    let final_log = fs::read_to_string(&log).unwrap();
     assert!(final_log.contains("done"));
 }
 
@@ -117,7 +119,7 @@ async fn log_file_grows_incrementally_with_stdout_and_stderr() {
     // output reaches the file while the process is still running, not at exit
     let saw_partial_log = wait_for(
         || {
-            let contents = std::fs::read_to_string(&log).unwrap();
+            let contents = fs::read_to_string(&log).unwrap();
             contents.contains("first")
                 && contents.contains("errline")
                 && !contents.contains("second")
@@ -129,7 +131,7 @@ async fn log_file_grows_incrementally_with_stdout_and_stderr() {
 
     let status = process.wait().await.unwrap();
     assert!(status.success());
-    let contents = std::fs::read_to_string(&log).unwrap();
+    let contents = fs::read_to_string(&log).unwrap();
     assert!(contents.contains("first"));
     assert!(contents.contains("errline"));
     assert!(contents.contains("second"));
@@ -145,7 +147,7 @@ async fn spawn_runs_in_given_cwd() {
     let status = process.wait().await.unwrap();
 
     assert!(status.success());
-    let out = std::fs::read_to_string(&log).unwrap();
+    let out = fs::read_to_string(&log).unwrap();
     let expected = dir.path().canonicalize().unwrap();
     assert_eq!(out.trim(), expected.to_string_lossy());
 }
@@ -163,7 +165,7 @@ async fn kill_terminates_process_group() {
     let grandchild_pid = await_sidecar_pid(&sidecar).await;
 
     process.kill().unwrap();
-    let status = tokio::time::timeout(Duration::from_secs(2), process.wait())
+    let status = time::timeout(Duration::from_secs(2), process.wait())
         .await
         .expect("wait must complete shortly after kill")
         .unwrap();
@@ -251,10 +253,10 @@ async fn fake_process_records_spawn_and_simulates_run() {
     control.write_log(b"partial output\n");
 
     // still running: wait must not resolve before finish() is called
-    let early_wait = tokio::time::timeout(Duration::from_millis(50), process.wait()).await;
+    let early_wait = time::timeout(Duration::from_millis(50), process.wait()).await;
     assert!(early_wait.is_err());
 
-    let log_so_far = std::fs::read_to_string(&log).unwrap();
+    let log_so_far = fs::read_to_string(&log).unwrap();
     assert_eq!(log_so_far, "partial output\n");
 
     control.finish(0);

@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use std::{io, path::PathBuf, sync::Arc};
 
 use color_eyre::Result;
+use tokio::task;
 
 use crate::{
     app::{
@@ -77,14 +78,13 @@ impl App {
             .status
             .as_ref()
             .and_then(|status| status.job.log_path())
-            .map(std::path::PathBuf::from)
+            .map(PathBuf::from)
         else {
             return false;
         };
         let fs = Arc::clone(&self.services.fs);
         let result =
-            tokio::task::spawn_blocking(move || fs.read_tail_to_string(&path, LOG_TAIL_MAX_BYTES))
-                .await;
+            task::spawn_blocking(move || fs.read_tail_to_string(&path, LOG_TAIL_MAX_BYTES)).await;
         let text = match result {
             Ok(read) => Self::map_tail_read(read),
             Err(error) => format!("(could not read log: {error})"),
@@ -335,7 +335,7 @@ impl App {
         match result {
             Ok(text) => text,
             Err(FileSystemError::IoError(error)) => {
-                if error.kind() == std::io::ErrorKind::NotFound {
+                if error.kind() == io::ErrorKind::NotFound {
                     String::new()
                 } else {
                     format!("(could not read log: {error})")
@@ -620,17 +620,14 @@ mod tests {
 
     #[test]
     fn missing_log_is_an_empty_tail_not_a_diagnostic() {
-        let missing =
-            FileSystemError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "missing"));
+        let missing = FileSystemError::IoError(io::Error::new(io::ErrorKind::NotFound, "missing"));
         assert_eq!("", App::map_tail_read(Err(missing)));
     }
 
     #[test]
     fn other_read_errors_become_a_panel_diagnostic() {
-        let error = FileSystemError::IoError(std::io::Error::new(
-            std::io::ErrorKind::PermissionDenied,
-            "denied",
-        ));
+        let error =
+            FileSystemError::IoError(io::Error::new(io::ErrorKind::PermissionDenied, "denied"));
         let text = App::map_tail_read(Err(error));
         assert!(text.contains("could not read log"));
         assert!(text.contains("denied"));

@@ -579,6 +579,9 @@ mod tests {
 
     use super::*;
 
+    use std::env;
+    use std::io;
+    use std::process;
     use std::sync::Arc;
 
     static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -588,10 +591,10 @@ mod tests {
     impl TempDir {
         fn new(test_name: &str) -> Self {
             let n = TEST_SEQ.fetch_add(1, Ordering::SeqCst);
-            let dir = std::env::temp_dir().join(format!(
+            let dir = env::temp_dir().join(format!(
                 "patch-hub-kw-readiness-{}-{}-{}",
                 test_name,
-                std::process::id(),
+                process::id(),
                 n
             ));
             // A leftover from a failed previous run must not poison this one.
@@ -931,7 +934,7 @@ last_line_without_newline=yes";
         let mut env = MockEnvTrait::new();
         env.expect_var()
             .withf(|key| key == "XDG_CACHE_HOME")
-            .returning(|_| Err(std::env::VarError::NotPresent.into()));
+            .returning(|_| Err(env::VarError::NotPresent.into()));
         env.expect_var()
             .withf(|key| key == "HOME")
             .returning(|_| Ok("/home/user".to_string()));
@@ -1019,9 +1022,8 @@ last_line_without_newline=yes";
     fn resolve_output_dir_unreadable_env_file_errors() {
         let mut fs = MockFileSystemTrait::new();
         fs.expect_is_file().returning(|_| true);
-        fs.expect_read_to_string().returning(|_| {
-            Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied").into())
-        });
+        fs.expect_read_to_string()
+            .returning(|_| Err(io::Error::new(io::ErrorKind::PermissionDenied, "denied").into()));
         let env = MockEnvTrait::new();
 
         assert!(ReadinessService::resolve_output_dir(&fs, &env, Path::new("/kernel")).is_err());
@@ -1035,7 +1037,7 @@ last_line_without_newline=yes";
             .returning(|_| Ok("minix\n".to_string()));
         let mut env = MockEnvTrait::new();
         env.expect_var()
-            .returning(|_| Err(std::env::VarError::NotPresent.into()));
+            .returning(|_| Err(env::VarError::NotPresent.into()));
 
         assert!(ReadinessService::resolve_output_dir(&fs, &env, Path::new("/kernel")).is_err());
     }
@@ -1251,7 +1253,7 @@ last_line_without_newline=yes";
         let mut spawn_fails = MockShellTrait::new();
         spawn_fails
             .expect_execute()
-            .returning(|_| Err(std::io::Error::other("spawn failed").into()));
+            .returning(|_| Err(io::Error::other("spawn failed").into()));
 
         let mut empty_stdout = MockShellTrait::new();
         empty_stdout
@@ -1510,7 +1512,7 @@ last_line_without_newline=yes";
         let mut env = MockEnvTrait::new();
         env.expect_which().returning(|_| false);
         env.expect_var()
-            .returning(|_| Err(std::env::VarError::NotPresent.into()));
+            .returning(|_| Err(env::VarError::NotPresent.into()));
         let mut shell = MockShellTrait::new();
         shell.expect_execute().times(0);
 
@@ -1553,7 +1555,7 @@ last_line_without_newline=yes";
         let mut env = MockEnvTrait::new();
         env.expect_which().returning(|_| false);
         env.expect_var()
-            .returning(|_| Err(std::env::VarError::NotPresent.into()));
+            .returning(|_| Err(env::VarError::NotPresent.into()));
         let mut shell = MockShellTrait::new();
         shell.expect_execute().times(0);
 
@@ -1592,7 +1594,7 @@ last_line_without_newline=yes";
         let mut env = MockEnvTrait::new();
         env.expect_which().returning(|_| false);
         env.expect_var()
-            .returning(|_| Err(std::env::VarError::NotPresent.into()));
+            .returning(|_| Err(env::VarError::NotPresent.into()));
         let mut shell = MockShellTrait::new();
         shell.expect_execute().times(0);
         let tree = kernel_tree(dir.path());
@@ -1629,7 +1631,7 @@ last_line_without_newline=yes";
         let mut env = MockEnvTrait::new();
         env.expect_which().returning(|_| false);
         env.expect_var()
-            .returning(|_| Err(std::env::VarError::NotPresent.into()));
+            .returning(|_| Err(env::VarError::NotPresent.into()));
         let mut shell = MockShellTrait::new();
         shell.expect_execute().times(0);
         let tree = kernel_tree(dir.path());
@@ -1701,7 +1703,7 @@ last_line_without_newline=yes";
         let empty = make_ready_tree("boot-once-missing");
         let mut env = MockEnvTrait::new();
         env.expect_var()
-            .returning(|_| Err(std::env::VarError::NotPresent.into()));
+            .returning(|_| Err(env::VarError::NotPresent.into()));
         assert_eq!(
             BootOnceState::Unknown,
             ReadinessService::probe_boot_once(&OsFileSystem, &env, empty.path())
@@ -1749,8 +1751,8 @@ last_line_without_newline=yes";
         fs.expect_is_file()
             .returning(|path| path.ends_with(".kw/deploy.config"));
         fs.expect_read_to_string().returning(|_| {
-            Err(FileSystemError::IoError(std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
+            Err(FileSystemError::IoError(io::Error::new(
+                io::ErrorKind::PermissionDenied,
                 "denied",
             )))
         });

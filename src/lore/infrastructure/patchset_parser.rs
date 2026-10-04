@@ -204,6 +204,8 @@ mod tests {
     use crate::infrastructure::file_system::OsFileSystem;
 
     use super::*;
+    use std::env;
+    use std::process;
 
     fn parser() -> MboxPatchsetParser {
         MboxPatchsetParser::new(Arc::new(OsFileSystem))
@@ -230,10 +232,8 @@ mod tests {
 
     #[test]
     fn split_patchset_returns_error_on_invalid_utf8() {
-        let path = std::env::temp_dir().join(format!(
-            "patch-hub-mbox-invalid-utf8-{}.mbx",
-            std::process::id()
-        ));
+        let path =
+            env::temp_dir().join(format!("patch-hub-mbox-invalid-utf8-{}.mbx", process::id()));
         fs::write(&path, b"Subject: not utf-8\n\xff\n").expect("write invalid mbox");
         let path_str = path.to_str().expect("temp path is utf-8");
         let err = parser()

@@ -1,6 +1,8 @@
 //! kw argv construction: patch-hub's base command lines plus the user
 //! extra-args merge in which reserved options always win.
 
+use std::ptr;
+
 /// A CLI option patch-hub controls: user-supplied extra args that set it
 /// are stripped, so the occurrence on patch-hub's own base argv wins.
 pub struct ReservedOption {
@@ -229,7 +231,7 @@ impl KwArgvService {
             }
             match found {
                 None => found = Some(option),
-                Some(previous) if std::ptr::eq(previous, option) => {}
+                Some(previous) if ptr::eq(previous, option) => {}
                 Some(_) => return None,
             }
         }

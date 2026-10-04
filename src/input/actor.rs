@@ -1,14 +1,14 @@
 //! Input mediation actor: polls the terminal and maps raw events to semantic
-//! [`InputEvent`](crate::input::event::InputEvent) values for the application.
+//! `InputEvent` values for the application.
 //!
 //! A dedicated pump subtask calls
-//! [`TerminalHandle::poll_event`](crate::terminal::handle::TerminalHandle::poll_event)
+//! `TerminalHandle::poll_event`
 //! so an in-flight poll is never abandoned when a control message wins the
 //! select race. Mapped events are delivered to the subscriber channel
 //! registered via
-//! [`InputHandle::subscribe_app`](crate::input::handle::InputHandle::subscribe_app);
+//! `InputHandle::subscribe_app`;
 //! context updates from
-//! [`InputHandle::update_context`](crate::input::handle::InputHandle::update_context)
+//! `InputHandle::update_context`
 //! change key bindings without restarting the pump.
 use std::time::Duration;
 

@@ -18,6 +18,7 @@ use color_eyre::{eyre::eyre, Result};
 use config::{ConfigActor, ConfigService, ConfigSnapshot};
 use infrastructure::{
     env::OsEnv,
+    errors::{install_hooks, TerminalRestoreGuard},
     file_system::{FileSystemTrait, OsFileSystem},
     monitoring::{init_monitoring, InitMonitoringProduct},
     net::UreqNetClient,
@@ -55,7 +56,7 @@ async fn main() -> Result<()> {
 
     let args = Cli::parse();
 
-    infrastructure::errors::install_hooks()?;
+    install_hooks()?;
 
     let env = OsEnv;
     let (config_state, config_repo) =
@@ -198,7 +199,7 @@ async fn main() -> Result<()> {
     }
     .await;
     if let Err(error) = result {
-        infrastructure::errors::TerminalRestoreGuard::restore_once();
+        TerminalRestoreGuard::restore_once();
         return Err(error);
     }
 
