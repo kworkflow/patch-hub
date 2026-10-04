@@ -494,13 +494,17 @@ impl App {
     async fn kw_job_running_popup(&self) -> Option<models::popup::AppPopup> {
         let kw = self.services.kw.as_ref()?;
         match kw.get_status().await {
-            Ok(snapshot) if matches!(snapshot.job, KwJobStatus::Running { .. }) => {
-                Some(models::popup::AppPopup::info(
+            Ok(snapshot) => match snapshot.job {
+                KwJobStatus::Running { .. } => Some(models::popup::AppPopup::info(
                     "Patchset Apply Blocked",
                     " A kw job is running on the kernel tree.\n\nApplying a patchset now would rewrite the branch the job is building under it.\n\nWait for the job to finish, then apply again.",
-                ))
-            }
-            _ => None,
+                )),
+                KwJobStatus::Idle
+                | KwJobStatus::Succeeded { .. }
+                | KwJobStatus::Failed { .. }
+                | KwJobStatus::Cancelled { .. } => None,
+            },
+            Err(_) => None,
         }
     }
 

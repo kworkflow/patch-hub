@@ -218,11 +218,7 @@ impl AppActor {
     }
 
     fn should_tail_kw_ops(app: &App) -> bool {
-        app.state.navigation.current_screen == CurrentScreen::KwOps
-            && matches!(
-                app.state.kw.status.as_ref().map(|status| &status.job),
-                Some(KwJobStatus::Running { .. })
-            )
+        app.state.navigation.current_screen == CurrentScreen::KwOps && Self::is_kw_job_running(app)
     }
 
     /// When the status watch is missing, poll GetStatus while a start is
@@ -333,10 +329,16 @@ impl AppActor {
     }
 
     fn is_kw_job_running(app: &App) -> bool {
-        matches!(
-            app.state.kw.status.as_ref().map(|status| &status.job),
-            Some(KwJobStatus::Running { .. })
-        )
+        match app.state.kw.status.as_ref().map(|status| &status.job) {
+            Some(KwJobStatus::Running { .. }) => true,
+            Some(
+                KwJobStatus::Idle
+                | KwJobStatus::Succeeded { .. }
+                | KwJobStatus::Failed { .. }
+                | KwJobStatus::Cancelled { .. },
+            )
+            | None => false,
+        }
     }
 
     /// Cancel then leave. A job that finished while the confirm popup was

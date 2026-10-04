@@ -214,11 +214,16 @@ impl ReadinessService {
             return Ok(None);
         }
 
-        let cache_base = match env.var("XDG_CACHE_HOME") {
-            // bash's `:-` (and the XDG spec) treat a set-but-empty value as
-            // unset; env::var would happily return it as Ok("").
-            Ok(xdg) if !xdg.is_empty() => xdg,
-            _ => format!("{}/.cache", env.var("HOME")?),
+        // bash's `:-` (and the XDG spec) treat a set-but-empty value as
+        // unset; env::var would happily return it as Ok("").
+        let cache_base = if let Ok(xdg) = env.var("XDG_CACHE_HOME") {
+            if xdg.is_empty() {
+                format!("{}/.cache", env.var("HOME")?)
+            } else {
+                xdg
+            }
+        } else {
+            format!("{}/.cache", env.var("HOME")?)
         };
         let trimmed = tree_path.to_string_lossy();
         let normalized = match trimmed.trim_end_matches('/') {
@@ -470,8 +475,13 @@ impl ReadinessService {
 impl ReadinessService {
     fn check_kw_version(version_line: &str) -> KwVersionCheck {
         match Self::parse_kw_version(version_line) {
-            Some(version) if version >= KW_MIN_VERSION => KwVersionCheck::Meets,
-            Some(_) => KwVersionCheck::Below(version_line.to_string()),
+            Some(version) => {
+                if version >= KW_MIN_VERSION {
+                    KwVersionCheck::Meets
+                } else {
+                    KwVersionCheck::Below(version_line.to_string())
+                }
+            }
             None => KwVersionCheck::Unknown,
         }
     }
@@ -530,9 +540,14 @@ impl ReadinessService {
     /// `XDG_CONFIG_HOME` is treated as unset, matching bash `:-` and the XDG
     /// spec.
     fn resolve_xdg_kw_config_file(env: &dyn EnvTrait, filename: &str) -> Option<PathBuf> {
-        let config_home = match env.var("XDG_CONFIG_HOME") {
-            Ok(xdg) if !xdg.is_empty() => xdg,
-            _ => format!("{}/.config", env.var("HOME").ok()?),
+        let config_home = if let Ok(xdg) = env.var("XDG_CONFIG_HOME") {
+            if xdg.is_empty() {
+                format!("{}/.config", env.var("HOME").ok()?)
+            } else {
+                xdg
+            }
+        } else {
+            format!("{}/.config", env.var("HOME").ok()?)
         };
         Some(Path::new(&config_home).join("kw").join(filename))
     }

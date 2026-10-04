@@ -99,7 +99,14 @@ impl App {
     /// start lock once the actor has left Idle.
     pub(crate) fn apply_kw_snapshot(&mut self, snapshot: KwStatusSnapshot) {
         if let Some(ops) = self.state.kw.ops.as_mut() {
-            if !matches!(snapshot.job, KwJobStatus::Idle) {
+            let left_idle = match &snapshot.job {
+                KwJobStatus::Idle => false,
+                KwJobStatus::Running { .. }
+                | KwJobStatus::Succeeded { .. }
+                | KwJobStatus::Failed { .. }
+                | KwJobStatus::Cancelled { .. } => true,
+            };
+            if left_idle {
                 ops.start_requested = false;
             }
         }
@@ -327,12 +334,13 @@ impl App {
     fn map_tail_read(result: Result<String, FileSystemError>) -> String {
         match result {
             Ok(text) => text,
-            Err(FileSystemError::IoError(error))
-                if error.kind() == std::io::ErrorKind::NotFound =>
-            {
-                String::new()
+            Err(FileSystemError::IoError(error)) => {
+                if error.kind() == std::io::ErrorKind::NotFound {
+                    String::new()
+                } else {
+                    format!("(could not read log: {error})")
+                }
             }
-            Err(error) => format!("(could not read log: {error})"),
         }
     }
 
@@ -346,12 +354,12 @@ impl App {
     }
 
     fn is_snapshot_job_terminal(job: &KwJobStatus) -> bool {
-        matches!(
-            job,
+        match job {
             KwJobStatus::Succeeded { .. }
-                | KwJobStatus::Failed { .. }
-                | KwJobStatus::Cancelled { .. }
-        )
+            | KwJobStatus::Failed { .. }
+            | KwJobStatus::Cancelled { .. } => true,
+            KwJobStatus::Idle | KwJobStatus::Running { .. } => false,
+        }
     }
 
     async fn start_job(&mut self, kind: KwStartKind) -> Result<()> {
@@ -376,11 +384,14 @@ impl App {
         }
         // Record/tree refusals before the boot-once confirm so a deploy
         // without a build does not ask the user to proceed, then refuse.
-        if matches!(kind, KwStartKind::Deploy) {
-            if let Err(reason) = &ops.readiness.deploy_alone {
-                self.state.popup = Some(AppPopup::info(kind.title(), reason.to_string()));
-                return Ok(());
+        match kind {
+            KwStartKind::Deploy => {
+                if let Err(reason) = &ops.readiness.deploy_alone {
+                    self.state.popup = Some(AppPopup::info(kind.title(), reason.to_string()));
+                    return Ok(());
+                }
             }
+            KwStartKind::Build | KwStartKind::BuildThenDeploy => {}
         }
         if kind.pending_kind().is_some() && Self::needs_boot_once_confirm(ops) {
             if let Some(ops) = self.state.kw.ops.as_mut() {
@@ -445,10 +456,10 @@ impl App {
     }
 
     fn needs_boot_once_confirm(ops: &KwOpsState) -> bool {
-        matches!(
-            ops.readiness.boot_once,
-            BootOnceState::On | BootOnceState::Unknown
-        ) && !ops.boot_once_acknowledged
+        match ops.readiness.boot_once {
+            BootOnceState::Off => false,
+            BootOnceState::On | BootOnceState::Unknown => !ops.boot_once_acknowledged,
+        }
     }
 
     async fn refresh_kw_ops_readiness(&mut self) {
@@ -546,10 +557,16 @@ impl App {
     }
 
     fn is_job_running(&self) -> bool {
-        matches!(
-            self.state.kw.status.as_ref().map(|status| &status.job),
-            Some(KwJobStatus::Running { .. })
-        )
+        match self.state.kw.status.as_ref().map(|status| &status.job) {
+            Some(KwJobStatus::Running { .. }) => true,
+            Some(
+                KwJobStatus::Idle
+                | KwJobStatus::Succeeded { .. }
+                | KwJobStatus::Failed { .. }
+                | KwJobStatus::Cancelled { .. },
+            )
+            | None => false,
+        }
     }
 
     fn is_job_busy(&self) -> bool {

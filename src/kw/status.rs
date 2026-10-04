@@ -82,7 +82,10 @@ impl KwStatusSnapshot {
                 };
                 Some(format!("kw: {phase} {branch}"))
             }
-            _ => None,
+            KwJobStatus::Idle
+            | KwJobStatus::Succeeded { .. }
+            | KwJobStatus::Failed { .. }
+            | KwJobStatus::Cancelled { .. } => None,
         }
     }
 }

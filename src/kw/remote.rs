@@ -171,9 +171,14 @@ impl RemoteConfigService {
     /// `XDG_CONFIG_HOME` is treated as unset, matching bash `:-` and the XDG
     /// spec — otherwise the path would be relative to cwd.
     fn resolve_xdg_remote_config(env: &dyn EnvTrait) -> Option<PathBuf> {
-        let config_home = match env.var("XDG_CONFIG_HOME") {
-            Ok(xdg) if !xdg.is_empty() => xdg,
-            _ => format!("{}/.config", env.var("HOME").ok()?),
+        let config_home = if let Ok(xdg) = env.var("XDG_CONFIG_HOME") {
+            if xdg.is_empty() {
+                format!("{}/.config", env.var("HOME").ok()?)
+            } else {
+                xdg
+            }
+        } else {
+            format!("{}/.config", env.var("HOME").ok()?)
         };
         Some(Path::new(&config_home).join("kw").join("remote.config"))
     }

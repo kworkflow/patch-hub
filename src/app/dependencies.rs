@@ -66,12 +66,16 @@ impl DependencyService {
         }
 
         let kw = ReadinessService::probe_kw_binary(env, shell);
+        let kw_version_unconfirmed = match &kw.check {
+            KwVersionCheck::Meets => false,
+            KwVersionCheck::Below(_) | KwVersionCheck::Unknown => true,
+        };
         if !kw.available {
             event!(
                 Level::WARN,
                 "kw is not installed, kernel build/deploy won't work"
             );
-        } else if !matches!(kw.check, KwVersionCheck::Meets) {
+        } else if kw_version_unconfirmed {
             event!(
                 Level::WARN,
                 version = kw.version_line.as_deref().unwrap_or("unknown"),

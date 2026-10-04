@@ -302,10 +302,16 @@ impl From<&AppState> for KwOpsViewModel {
             .ops
             .as_ref()
             .expect("KwOps must be initialised before projecting");
-        let running = matches!(
-            state.kw.status.as_ref().map(|status| &status.job),
-            Some(KwJobStatus::Running { .. })
-        );
+        let running = match state.kw.status.as_ref().map(|status| &status.job) {
+            Some(KwJobStatus::Running { .. }) => true,
+            Some(
+                KwJobStatus::Idle
+                | KwJobStatus::Succeeded { .. }
+                | KwJobStatus::Failed { .. }
+                | KwJobStatus::Cancelled { .. },
+            )
+            | None => false,
+        };
         let start_requested = ops.start_requested;
         let restore_branch = state
             .kw
@@ -367,11 +373,18 @@ impl From<&AppState> for KwOpsViewModel {
         };
         let job = state.kw.status.as_ref().map(|status| &status.job);
         let (warnings, first_error) = match job {
-            Some(KwJobStatus::Succeeded { warnings, .. }) if !warnings.is_empty() => {
-                (Some(warnings.join(" | ")), None)
+            Some(KwJobStatus::Succeeded { warnings, .. }) => {
+                if warnings.is_empty() {
+                    (None, None)
+                } else {
+                    (Some(warnings.join(" | ")), None)
+                }
             }
             Some(KwJobStatus::Failed { first_error, .. }) => (None, first_error.clone()),
-            _ => (None, None),
+            Some(
+                KwJobStatus::Idle | KwJobStatus::Running { .. } | KwJobStatus::Cancelled { .. },
+            )
+            | None => (None, None),
         };
         let log_path = job
             .and_then(KwJobStatus::log_path)

@@ -45,8 +45,13 @@ impl CrosstermTerminalSession {
 
     pub fn terminal_event_from_crossterm_event(event: Event) -> Option<TerminalEvent> {
         match event {
-            Event::Key(key) if key.kind == KeyEventKind::Release => None,
-            Event::Key(key) => Some(TerminalEvent::Key(KeyInput::from(key))),
+            Event::Key(key) => {
+                if key.kind == KeyEventKind::Release {
+                    None
+                } else {
+                    Some(TerminalEvent::Key(KeyInput::from(key)))
+                }
+            }
             Event::Resize(width, height) => Some(TerminalEvent::Resize { width, height }),
             _ => None,
         }

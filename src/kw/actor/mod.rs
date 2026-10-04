@@ -607,54 +607,55 @@ impl KwActor {
                 // already durable.
                 self.record_build_outcome(&job, &outcome);
                 let status = match outcome {
-                    JobOutcome::Exited(exit) if exit.success() => {
-                        // kw deploy exits 0 through initramfs and GRUB
-                        // failures; only its log tells.
-                        let warnings = if job.phase == KwPhase::Deploying {
-                            let kernelrelease = job
-                                .deploy
-                                .as_ref()
-                                .and_then(|deploy| deploy.kernelrelease.as_deref());
-                            self.read_job_log(&job.log_path)
-                                .map(|log| {
-                                    log_scan::LogScanService::collect_deploy_warnings(
-                                        &log,
-                                        kernelrelease,
-                                    )
-                                })
-                                .unwrap_or_default()
-                        } else {
-                            Vec::new()
-                        };
-                        tracing::info!(
-                            kernel_tree_id = job.kernel_tree_id,
-                            branch = job.branch,
-                            warnings = warnings.len(),
-                            "kw job succeeded"
-                        );
-                        KwJobStatus::Succeeded {
-                            kind: job.kind,
-                            kernel_tree_id: job.kernel_tree_id,
-                            branch: job.branch,
-                            log_path: job.log_path,
-                            warnings,
-                        }
-                    }
                     JobOutcome::Exited(exit) => {
-                        tracing::warn!(
-                            kernel_tree_id = job.kernel_tree_id,
-                            branch = job.branch,
-                            exit_code = exit.code(),
-                            "kw job failed"
-                        );
-                        KwJobStatus::Failed {
-                            kind: job.kind,
-                            phase: job.phase,
-                            exit_code: exit.code(),
-                            first_error: self
-                                .read_job_log(&job.log_path)
-                                .and_then(|log| log_scan::LogScanService::find_first_error(&log)),
-                            log_path: job.log_path,
+                        if exit.success() {
+                            // kw deploy exits 0 through initramfs and GRUB
+                            // failures; only its log tells.
+                            let warnings = if job.phase == KwPhase::Deploying {
+                                let kernelrelease = job
+                                    .deploy
+                                    .as_ref()
+                                    .and_then(|deploy| deploy.kernelrelease.as_deref());
+                                self.read_job_log(&job.log_path)
+                                    .map(|log| {
+                                        log_scan::LogScanService::collect_deploy_warnings(
+                                            &log,
+                                            kernelrelease,
+                                        )
+                                    })
+                                    .unwrap_or_default()
+                            } else {
+                                Vec::new()
+                            };
+                            tracing::info!(
+                                kernel_tree_id = job.kernel_tree_id,
+                                branch = job.branch,
+                                warnings = warnings.len(),
+                                "kw job succeeded"
+                            );
+                            KwJobStatus::Succeeded {
+                                kind: job.kind,
+                                kernel_tree_id: job.kernel_tree_id,
+                                branch: job.branch,
+                                log_path: job.log_path,
+                                warnings,
+                            }
+                        } else {
+                            tracing::warn!(
+                                kernel_tree_id = job.kernel_tree_id,
+                                branch = job.branch,
+                                exit_code = exit.code(),
+                                "kw job failed"
+                            );
+                            KwJobStatus::Failed {
+                                kind: job.kind,
+                                phase: job.phase,
+                                exit_code: exit.code(),
+                                first_error: self.read_job_log(&job.log_path).and_then(|log| {
+                                    log_scan::LogScanService::find_first_error(&log)
+                                }),
+                                log_path: job.log_path,
+                            }
                         }
                     }
                     JobOutcome::WaitFailed(error) => {
@@ -993,9 +994,11 @@ impl KwActor {
             kernelrelease = record.and_then(|record| record.kernelrelease);
         }
         let boot_once = readiness::ReadinessService::probe_boot_once(fs, env, tree_path);
-        if matches!(boot_once, BootOnceState::On | BootOnceState::Unknown)
-            && !options.boot_once_acknowledged
-        {
+        let boot_once_open = match boot_once {
+            BootOnceState::Off => false,
+            BootOnceState::On | BootOnceState::Unknown => true,
+        };
+        if boot_once_open && !options.boot_once_acknowledged {
             return Err(KwStartError::BootOnceNotAcknowledged);
         }
         Ok(JobDeploy {
@@ -1061,10 +1064,14 @@ impl KwActor {
     /// outcome to [`JobOutcome::Cancelled`] also skips the build record, matching
     /// the "cancel in Building writes nothing" rule.
     fn rewrite_outcome_after_building_cancel(job: &JobState, outcome: JobOutcome) -> JobOutcome {
+        let build_exited_successfully = match &outcome {
+            JobOutcome::Exited(exit) => exit.success(),
+            JobOutcome::WaitFailed(_) | JobOutcome::Cancelled => false,
+        };
         if job.cancel_tx.is_none()
             && job.kind == KwJobKind::BuildThenDeploy
             && job.phase == KwPhase::Building
-            && matches!(&outcome, JobOutcome::Exited(exit) if exit.success())
+            && build_exited_successfully
         {
             JobOutcome::Cancelled
         } else {
@@ -1165,16 +1172,17 @@ impl KwGitService {
     fn probe_head_branch(shell: &dyn ShellTrait, tree_path: &str) -> String {
         let cmd = ShellCommand::new("git").args(["-C", tree_path, "branch", "--show-current"]);
         match shell.execute(&cmd) {
-            Ok(output) if output.success => {
-                String::from_utf8_lossy(&output.stdout).trim().to_string()
-            }
             Ok(output) => {
-                tracing::warn!(
-                    tree = tree_path,
-                    stderr = %String::from_utf8_lossy(&output.stderr),
-                    "failed to probe the kernel tree's HEAD branch"
-                );
-                String::new()
+                if output.success {
+                    String::from_utf8_lossy(&output.stdout).trim().to_string()
+                } else {
+                    tracing::warn!(
+                        tree = tree_path,
+                        stderr = %String::from_utf8_lossy(&output.stderr),
+                        "failed to probe the kernel tree's HEAD branch"
+                    );
+                    String::new()
+                }
             }
             Err(error) => {
                 tracing::warn!(tree = tree_path, %error, "failed to probe the kernel tree's HEAD branch");

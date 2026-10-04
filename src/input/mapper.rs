@@ -216,20 +216,16 @@ impl InputMapper {
     }
 
     fn map_details_go_to_first_line_chord(&mut self) -> Option<InputEvent> {
-        match self.pending {
-            Some(PendingInput::DetailsGoToFirstLine { started_at })
-                if started_at.elapsed() <= self.bindings.chord_timeout =>
-            {
+        if let Some(PendingInput::DetailsGoToFirstLine { started_at }) = self.pending {
+            if started_at.elapsed() <= self.bindings.chord_timeout {
                 self.pending = None;
-                Some(InputEvent::PreviewGoToFirstLine)
-            }
-            _ => {
-                self.pending = Some(PendingInput::DetailsGoToFirstLine {
-                    started_at: Instant::now(),
-                });
-                None
+                return Some(InputEvent::PreviewGoToFirstLine);
             }
         }
+        self.pending = Some(PendingInput::DetailsGoToFirstLine {
+            started_at: Instant::now(),
+        });
+        None
     }
 
     fn clear_expired_pending_input(&mut self) {
