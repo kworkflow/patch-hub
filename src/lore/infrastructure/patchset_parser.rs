@@ -214,11 +214,9 @@ mod tests {
         }
     }
     use helpers::*;
-    use std::fs;
+    use std::{env, fs, process};
 
     use super::*;
-    use std::env;
-    use std::process;
 
     #[test]
     fn split_patchset_returns_error_on_missing_path() {

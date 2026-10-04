@@ -1,4 +1,6 @@
-use std::{io, os::unix::process::ExitStatusExt, process::ExitStatus, time::Duration};
+use std::{fs, io, os::unix::process::ExitStatusExt, process::ExitStatus, time::Duration};
+
+use tokio::time;
 
 use super::{
     FakeProcess, MockProcessTrait, MockRunningProcess, OsProcess, ProcessError, ProcessTrait,
@@ -6,14 +8,16 @@ use super::{
 };
 use crate::infrastructure::shell::ShellCommand;
 use crate::test_support::TempDir;
-use std::fs;
-use tokio::time;
+
 mod helpers {
 
-    use nix::sys::signal::Signal;
-    use nix::{errno::Errno, sys::signal::kill, unistd::Pid};
-    use std::fs;
+    use nix::{
+        errno::Errno,
+        sys::signal::{kill, Signal},
+        unistd::Pid,
+    };
     use std::{
+        fs,
         path::Path,
         time::{Duration, Instant},
     };

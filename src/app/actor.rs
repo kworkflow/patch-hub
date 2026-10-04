@@ -3,10 +3,14 @@
 //! Each frame projects `AppViewModel`, draws through `TerminalHandle`, then
 //! awaits an `InputEvent`, a kw-status change, or a KwOps log tick. It stops
 //! when the input channel closes or I/O returns an unrecoverable error.
-use std::{ops::ControlFlow, time::Duration};
+use std::{future::pending, ops::ControlFlow, time::Duration};
 
 use color_eyre::{eyre::eyre, Report, Result};
-use tokio::{spawn, sync::mpsc, sync::watch, time::MissedTickBehavior};
+use tokio::{
+    spawn,
+    sync::{mpsc, watch},
+    time::{self, MissedTickBehavior},
+};
 
 use crate::{
     app::{
@@ -24,8 +28,6 @@ use crate::{
     terminal::{handle::TerminalHandle, messages::TerminalFrame, TerminalError},
     ui::handle::UiHandle,
 };
-use std::future::pending;
-use tokio::time;
 
 /// Owns `App` state and drives the main loop on a dedicated task.
 ///

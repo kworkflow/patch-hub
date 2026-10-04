@@ -1,18 +1,18 @@
 use std::{
     collections::HashSet,
+    fs, io,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
+use tokio::time;
+
+use super::helpers::lore::lore_handle_with_persistence;
 use crate::{
     infrastructure::{file_system::FileSystemError, process::FakeProcess, shell::MockShellTrait},
     kw::{history::MockKwHistoryStore, status::KwJobStatus},
 };
 
-use super::helpers::lore::lore_handle_with_persistence;
-use std::fs;
-use std::io;
-use std::time::Duration;
-use tokio::time;
 mod helpers {
     use super::super::helpers::{
         app_harness::{dummy_config_handle, dummy_render_handle},
@@ -43,14 +43,11 @@ mod helpers {
             handle::LoreApiHandle, messages::LoreApiMessage, models::cache::BootstrapLoreData,
         },
     };
-    use std::env;
-    use std::fs;
-    use std::io;
-    use std::process;
-
     use std::{
         collections::{HashMap, HashSet, VecDeque},
+        env, fs, io,
         path::PathBuf,
+        process,
         sync::{Arc, Mutex},
     };
 

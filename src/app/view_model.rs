@@ -668,11 +668,8 @@ mod tests {
     mod helpers {
         use super::super::*;
         use crate::{
-            app::models::kw_ops::KwOpsState,
-            kw::models::readiness::{KwReadiness, KwVersionCheck},
-        };
-        use crate::{
             app::{
+                models::kw_ops::KwOpsState,
                 screens::{
                     bookmarked::BookmarkedPatchsetsState, mail_list::MailingListSelectionState,
                 },
@@ -681,7 +678,10 @@ mod tests {
                 },
             },
             config::{ConfigSnapshot, ConfigState},
-            kw::status::{KwJobKind, KwJobStatus, KwStatusSnapshot},
+            kw::{
+                models::readiness::{KwReadiness, KwVersionCheck},
+                status::{KwJobKind, KwJobStatus, KwStatusSnapshot},
+            },
             lore::domain::mailing_list::MailingList,
         };
         use std::{collections::HashMap, path::PathBuf};

@@ -1,21 +1,18 @@
-use std::time::Duration;
+use std::{fs, time::Duration};
+
+use tokio::time;
 
 use crate::input::event::InputEvent;
 use crate::ui::scene::PopupBody;
 
-use std::fs;
-use tokio::time;
 mod helpers {
     use super::super::helpers::{
         app_harness::{dummy_config_handle, dummy_render_handle},
         lore::{lore_handle_with_persistence, sample_mailing_list},
     };
-    use crate::app::handle::AppHandle;
-    use crate::app::App;
     use crate::kw::handle::KwHandle;
-    use crate::ui::scene::PopupScene;
     use crate::{
-        app::actor::AppActor,
+        app::{actor::AppActor, handle::AppHandle, App},
         config::{ConfigSnapshot, ConfigState},
         infrastructure::{
             env::MockEnvTrait,
@@ -29,23 +26,22 @@ mod helpers {
         terminal::{
             actor::TerminalActor, messages::TerminalFrame, session::MockTerminalSessionApi,
         },
-        ui::{actor::UiActor, scene::UiScene},
+        ui::{
+            actor::UiActor,
+            scene::{PopupScene, UiScene},
+        },
     };
-    use std::env;
-    use std::fs;
-    use std::io;
-    use std::path::Path;
-    use std::process;
     use std::{
-        path::PathBuf,
+        env, fs, io,
+        path::{Path, PathBuf},
+        process,
         sync::{
             atomic::{AtomicU64, Ordering},
             Arc, Mutex,
         },
         time::Duration,
     };
-    use tokio::sync::mpsc;
-    use tokio::time;
+    use tokio::{sync::mpsc, time};
 
     pub const KERNEL_TREE_PATH: &str = "/kernel";
     pub const BUILD_BRANCH: &str = "patchset-2026-08-20-15-00-00";

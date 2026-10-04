@@ -117,18 +117,16 @@ mod tests {
         };
         use std::{
             collections::HashMap,
-            env::VarError,
+            env::{self, VarError},
             fs,
             path::PathBuf,
+            process,
             sync::{
                 atomic::{AtomicU64, Ordering},
                 Arc,
             },
         };
         use tokio::sync::mpsc;
-
-        use std::env;
-        use std::process;
 
         pub(super) static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
 

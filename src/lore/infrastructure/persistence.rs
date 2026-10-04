@@ -106,14 +106,10 @@ mod tests {
 
     mod helpers {
 
-        use crate::infrastructure::file_system::OsFileSystem;
-        use std::env;
-        use std::fs;
-        use std::sync::Arc;
+        use std::{env, fs, path::PathBuf, process, sync::Arc};
 
         use super::super::*;
-        use std::path::PathBuf;
-        use std::process;
+        use crate::infrastructure::file_system::OsFileSystem;
 
         pub(super) fn tmp_dir(test_name: &str) -> PathBuf {
             let dir = env::temp_dir().join(format!(
@@ -144,9 +140,10 @@ mod tests {
         }
     }
     use helpers::*;
-    use std::collections::{HashMap, HashSet};
-
-    use std::fs;
+    use std::{
+        collections::{HashMap, HashSet},
+        fs,
+    };
 
     use crate::lore::domain::mailing_list::MailingList;
 

@@ -213,9 +213,7 @@ mod tests {
             file_system::{FileSystemError, MockFileSystemTrait},
         };
         use crate::kw::models::remote::RemoteRefusal;
-        use std::env;
-        use std::io;
-        use std::{collections::HashMap, path::PathBuf, sync::Arc};
+        use std::{collections::HashMap, env, io, path::PathBuf, sync::Arc};
 
         /// Example remote.config: two hosts, default on the second, fields indented.
         pub(super) const SAMPLE_REMOTE_CONFIG: &str = "\
@@ -314,14 +312,12 @@ mod tests {
         }
     }
     use helpers::*;
-    use std::path::Path;
+    use std::{io, path::Path};
 
     use crate::infrastructure::file_system::{FileSystemError, MockFileSystemTrait};
 
     use super::*;
     use crate::kw::models::remote::RemoteRefusal;
-
-    use std::io;
 
     #[test]
     fn plan_fixture_picks_the_default_host() {

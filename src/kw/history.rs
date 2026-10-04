@@ -4,17 +4,15 @@
 //! Apply and build records are user state — not a cache — and are never
 //! refreshed from lore.
 
+use chrono::DateTime;
 use mockall::automock;
+use serde::de::DeserializeOwned;
 use serde_json::from_reader;
 
 use std::{collections::HashMap, io, path::Path, sync::Arc};
 
 use crate::infrastructure::file_system::{FileSystemError, FileSystemTrait, JsonUtils};
-
-use crate::kw::models::history::KwApplyRecord;
-use crate::kw::models::history::KwBuildRecord;
-use chrono::DateTime;
-use serde::de::DeserializeOwned;
+use crate::kw::models::history::{KwApplyRecord, KwBuildRecord};
 
 pub const APPLY_HISTORY_FILENAME: &str = "kw_apply_history.json";
 pub const BUILD_HISTORY_FILENAME: &str = "kw_build_history.json";
@@ -177,11 +175,12 @@ mod tests {
     mod helpers {
         use super::super::*;
         use crate::infrastructure::file_system::OsFileSystem;
-        use std::env;
-        use std::fs;
-        use std::path::PathBuf;
-        use std::process;
-        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::{
+            env, fs,
+            path::PathBuf,
+            process,
+            sync::atomic::{AtomicU64, Ordering},
+        };
 
         pub(super) static TEST_SEQ: AtomicU64 = AtomicU64::new(0);
 

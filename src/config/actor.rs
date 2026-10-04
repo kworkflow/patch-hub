@@ -117,12 +117,11 @@ mod tests {
             config::service::ConfigService,
             infrastructure::{env::MockEnvTrait, file_system::OsFileSystem},
         };
-        use std::env;
-        use std::process;
         use std::{
-            env::VarError,
+            env::{self, VarError},
             fs,
             path::PathBuf,
+            process,
             sync::atomic::{AtomicU64, Ordering},
         };
 

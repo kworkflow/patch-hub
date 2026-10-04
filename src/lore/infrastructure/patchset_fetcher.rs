@@ -143,8 +143,7 @@ mod tests {
     };
     use helpers::*;
 
-    use std::io;
-    use std::sync::atomic;
+    use std::{io, sync::atomic};
 
     #[test]
     fn download_skips_b4_when_file_already_exists() {

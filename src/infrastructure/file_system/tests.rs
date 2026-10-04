@@ -1,8 +1,7 @@
-use std::path::Path;
+use std::{fs, path::Path};
 
 use super::{FileSystemTrait, OsFileSystem};
 use crate::test_support::TempDir;
-use std::fs;
 
 #[test]
 fn read_to_string_returns_file_contents() {

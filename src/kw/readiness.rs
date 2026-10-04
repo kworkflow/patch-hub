@@ -601,8 +601,9 @@ mod tests {
     use crate::test_support::TempDir;
     use helpers::*;
     use std::{
-        fs,
+        env, fs, io,
         path::{Path, PathBuf},
+        sync::Arc,
     };
 
     use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -617,11 +618,6 @@ mod tests {
     use crate::kw::models::remote::RemoteRefusal;
 
     use super::*;
-
-    use std::env;
-    use std::io;
-
-    use std::sync::Arc;
 
     #[test]
     fn parse_kw_config_mirrors_kw_semantics() {
