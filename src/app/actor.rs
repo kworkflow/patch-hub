@@ -1,14 +1,8 @@
-//! Central orchestration actor: owns [`App`] and drives the main render/input loop.
+//! Central orchestration actor: owns `App` and drives the render/input loop.
 //!
-//! Each frame: process system updates → project state to [`AppViewModel`] via
-//! `UiHandle` → draw through
-//! `TerminalHandle` → await the next
-//! `InputEvent`, a kw-status change, or a
-//! KwOps log-tail tick while a job is running on that screen.
-//!
-//! The actor stops when the input event channel closes (user quit) or when I/O
-//! returns an unrecoverable error. Startup dependency checks run before this
-//! actor is spawned.
+//! Each frame projects `AppViewModel`, draws through `TerminalHandle`, then
+//! awaits an `InputEvent`, a kw-status change, or a KwOps log tick. It stops
+//! when the input channel closes or I/O returns an unrecoverable error.
 use std::{ops::ControlFlow, time::Duration};
 
 use color_eyre::{eyre::eyre, Report, Result};
@@ -33,13 +27,11 @@ use crate::{
 use std::future::pending;
 use tokio::time;
 
-/// Owns `App` state and drives the main application loop on a dedicated task.
+/// Owns `App` state and drives the main loop on a dedicated task.
 ///
-/// Constructed via [`AppActor::spawn`], which moves all owned resources into
-/// the actor and returns an [`AppHandle`] to the caller.
-///
-/// The actor runs until the input event channel closes (the user requested
-/// exit via the normal key binding) or an unrecoverable error occurs.
+/// [`AppActor::spawn`] moves owned resources in and returns an [`AppHandle`].
+/// The actor runs until the input channel closes or an unrecoverable error
+/// occurs.
 pub struct AppActor {
     app: App,
     terminal_handle: TerminalHandle,

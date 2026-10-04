@@ -39,20 +39,11 @@ impl ReservedOption {
     }
 }
 
-/// Reserved for `kw build`: patch-hub owns the job's log file
-/// (`ProcessTrait` captures kw's stdout/stderr to it) — a user-supplied
-/// `--save-log-to` would split stdout/stderr away from the job log — and
-/// never runs `--menu` from automation: the job's stdio is a log file, so
-/// menuconfig would hang until cancelled.
-///
-/// `--alert` is stripped from extras (and not injected on the base argv):
-/// kw beta-0.9 (still what many installs report, including this lab) treats
-/// unrecognized options as hard failures (`Invalid option`), and the
-/// unattended default is already `alert=n` in kw's own config.
-///
-/// `--clean` / `--full-cleanup` can wipe the tree, `--menu` / `--doc` /
-/// `--info` hang a redirected job, and `--from-sha` mutates git. They are
-/// stripped from extras and never injected.
+/// Reserved for `kw build`. Patch-hub owns the job log, so `--save-log-to`
+/// is stripped. `--menu` is stripped and never injected: stdio is a log, so
+/// menuconfig would hang. `--alert` is stripped, not injected: unknown
+/// options fail hard, and the unattended default is already `alert=n`.
+/// `--clean`, `--full-cleanup`, `--doc`, `--info`, and `--from-sha` too.
 const BUILD_RESERVED: &[ReservedOption] = &[
     ReservedOption::gnu_abbrev(&["--help", "-h"], false),
     ReservedOption::gnu_abbrev(&["--alert"], true),
@@ -65,15 +56,11 @@ const BUILD_RESERVED: &[ReservedOption] = &[
     ReservedOption::gnu_abbrev(&["--from-sha"], true),
 ];
 
-/// Reserved for `kw deploy`. Injected `--remote` / reboot / force win.
-/// User extras that override those, switch to local, list/uninstall,
-/// run `--setup`, or pass `-n` are stripped. Build-only extras are
-/// stripped too (one KwOps field; unknown flags are exit 22).
-/// GNU getopt forms (`-rf`, `-Fpkg`, unique `--boot`) are stripped as well.
-///
-/// `-l` is `--list`, not `--local`; `-r` is `--reboot`, not `--remote`.
-/// `--uninstall`/`-u` is reserved as a boolean so `-u` does not eat the
-/// next token. `--alert` is not a deploy option.
+/// Reserved for `kw deploy`. Injected `--remote`, reboot, and force win.
+/// Extras that override those, go local, list/uninstall, `--setup`, or `-n`
+/// are stripped, plus build-only extras (unknown flags exit 22) and GNU
+/// getopt (`-rf`, `-Fpkg`, unique `--boot`). `-l` is `--list` not `--local`;
+/// `-r` is `--reboot` not `--remote`; `-u` takes no value; `--alert` is not.
 const DEPLOY_RESERVED: &[ReservedOption] = &[
     ReservedOption::gnu_abbrev(&["--remote"], true),
     ReservedOption::gnu_abbrev(&["--local"], false),
@@ -115,12 +102,11 @@ impl KwArgvService {
         Self::merge_extra_args(&["build"], BUILD_RESERVED, extra_args)
     }
 
-    /// The argv for a deploy job: `kw deploy --remote <endpoint>
-    /// --no-reboot|--reboot [--force] <extras>`. Reserved extras are
-    /// stripped so the injected remote, reboot, and force flags win, and
-    /// so build-only extras (shared KwOps field) cannot fail kw deploy's
-    /// getopt. `--force` is omitted entirely when `force` is false rather
-    /// than passing a no-op, because kw has no `--no-force`.
+    /// Deploy argv: `kw deploy --remote <endpoint> --no-reboot|--reboot
+    /// [--force] <extras>`. Reserved extras are stripped so the injected
+    /// remote, reboot, and force flags win, and build-only extras cannot
+    /// fail deploy's getopt. `--force` is omitted when `force` is false:
+    /// kw has no `--no-force`.
     pub fn build_deploy_argv(
         endpoint: &str,
         reboot: bool,
@@ -139,13 +125,11 @@ impl KwArgvService {
         Self::merge_extra_args(&base, DEPLOY_RESERVED, extra_args)
     }
 
-    /// Appends user-supplied extra args to `base`, stripping every token that
-    /// would override a reserved option. GNU getopt forms are stripped too:
+    /// Appends extra args to `base` in order, stripping tokens that would
+    /// override a reserved option. GNU getopt forms are stripped too:
     /// `--name=value`, `--name value`, unique long abbreviations, bundled
-    /// shorts (`-rf`), and attached short values (`-Fpkg.kw.tar`). A mixed
-    /// short cluster that contains any reserved flag is dropped whole, so
-    /// `-uVALUE` cannot be rewritten into a leftover `-VALUE`. All other
-    /// extras pass through in order.
+    /// shorts (`-rf`), and attached values (`-Fpkg`). A mixed short cluster
+    /// containing any reserved flag is dropped whole, not rewritten.
     pub fn merge_extra_args(
         base: &[&str],
         reserved: &[ReservedOption],
@@ -172,12 +156,11 @@ impl KwArgvService {
 }
 
 impl KwArgvService {
-    /// Finds the reserved option a token sets, if any: an exact spelling,
-    /// `--name=value` for a long spelling, a unique GNU getopt abbreviation
-    /// of a `match_abbrev` long, a bundled reserved short, or an attached
-    /// short value. The `=` boundary keeps `--alertness` from matching
-    /// `--alert`; an abbreviation must be a prefix of the reserved spelling,
-    /// not the other way around.
+    /// The reserved option a token sets, if any: an exact spelling,
+    /// `--name=value`, a unique GNU getopt abbreviation of a `match_abbrev`
+    /// long, a bundled reserved short, or an attached short value. The `=`
+    /// boundary keeps `--alertness` from matching `--alert`. An abbreviation
+    /// must be a prefix of the reserved spelling, not the reverse.
     fn find_reserved_option<'a>(
         reserved: &'a [ReservedOption],
         token: &str,
@@ -204,12 +187,11 @@ impl KwArgvService {
             .or_else(|| Self::find_unique_long_abbrev(reserved, name))
     }
 
-    /// GNU getopt unique-prefix match among options that opted into
-    /// `match_abbrev`. Uniqueness is against this reserved table, not kw's
-    /// full option list — a prefix kw would reject as ambiguous can still
-    /// strip here when only one reserved long matches. Ambiguous prefixes
-    /// among reserved longs are left alone so a following value token is
-    /// not eaten.
+    /// GNU getopt unique-prefix match among options with `match_abbrev`.
+    /// Uniqueness is against this reserved table, not kw's full option list:
+    /// a prefix kw would call ambiguous can still strip here when only one
+    /// reserved long matches. Ambiguous prefixes among reserved longs are
+    /// left alone so a following value token is not eaten.
     fn find_unique_long_abbrev<'a>(
         reserved: &'a [ReservedOption],
         name: &str,

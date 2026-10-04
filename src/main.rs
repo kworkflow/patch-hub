@@ -157,17 +157,10 @@ async fn main() -> Result<()> {
             .map_err(|e| eyre!("{e}"))?;
         let input_shutdown_handle = input_handle.clone();
 
-        // Shutdown ordering:
-        //  1. AppActor — exits when the user quits (input channel closes)
-        //  2. InputActor — no further terminal input is needed once App is gone
-        //  3. KwActor — no further kw requests once App is gone; kills any
-        //     running job's process group before stopping
-        //  4. ConfigActor — no further configuration requests once App is gone
-        //  5. LoreApiActor — no further requests once App is gone
-        //  6. RenderActor  — no further requests once App is gone
-        //  7. UiActor      — no further scene builds once App is gone
-        //  8. TerminalActor — restores the terminal last so the screen stays usable
-        //                     while the actors above shut down
+        // Shutdown order: AppActor (quit closes input), InputActor, KwActor
+        // (kills the job's process group), ConfigActor, LoreApiActor,
+        // RenderActor, UiActor, then TerminalActor last so the screen stays
+        // usable until the others have stopped.
         AppActor::spawn(
             app,
             terminal_handle.clone(),

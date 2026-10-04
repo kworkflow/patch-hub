@@ -1,10 +1,8 @@
 //! Terminal session actor: owns raw TUI I/O on a dedicated task.
 //!
-//! `TerminalHandle` exposes draw,
-//! poll event, size, and user-I/O setup as typed messages. The session
-//! implementation (`TerminalSessionApi`,
-//! e.g. crossterm) is moved into the actor at spawn time so no other component
-//! holds the terminal directly.
+//! `TerminalHandle` exposes draw, poll, size, and user-I/O setup. The
+//! session (`TerminalSessionApi`, e.g. crossterm) moves into the actor at
+//! spawn so nothing else holds the terminal.
 use tokio::{spawn, sync::mpsc, task};
 
 use crate::infrastructure::actor_reply::ActorReplyService;

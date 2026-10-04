@@ -39,15 +39,8 @@ impl PatchRendererService {
         }
     }
 
-    /// Renders a patch using the `bat` command line tool.
-    ///
-    /// # Errors
-    ///
-    /// If bat isn't installed or if the command fails, an error will be returned.
-    ///
-    /// # Tests
-    ///
-    /// [tests::test_bat_patch_renderer]
+    /// Renders a patch with `bat`. Returns an error when bat is missing or
+    /// the command fails.
     fn render_patch_with_bat(shell: &dyn ShellTrait, patch: &str) -> Result<String> {
         let cleaned_patch = Self::clean_patch_for_preview(patch);
 
@@ -63,15 +56,8 @@ impl PatchRendererService {
         Ok(String::from_utf8(out.stdout)?)
     }
 
-    /// Renders a patch using the `delta` command line tool.
-    ///
-    /// # Errors
-    ///
-    /// If delta isn't installed or if the command fails, an error will be returned.
-    ///
-    /// # Tests
-    ///
-    /// [tests::test_delta_patch_renderer]
+    /// Renders a patch with `delta`. Returns an error when delta is missing
+    /// or the command fails.
     fn render_patch_with_delta(shell: &dyn ShellTrait, patch: &str) -> Result<String> {
         let cleaned_patch = Self::clean_patch_for_preview(patch);
 
@@ -99,15 +85,8 @@ impl PatchRendererService {
         Ok(String::from_utf8(out.stdout)?)
     }
 
-    /// Renders a patch using the `diff-so-fancy` command line tool.
-    ///
-    /// # Errors
-    ///
-    /// If diff-so-fancy isn't installed or if the command fails, an error will be returned.
-    ///
-    /// # Tests
-    ///
-    /// [tests::test_diff_so_fancy_renderer]
+    /// Renders a patch with `diff-so-fancy`. Returns an error when the tool
+    /// is missing or the command fails.
     fn render_patch_with_diff_so_fancy(shell: &dyn ShellTrait, patch: &str) -> Result<String> {
         let cleaned_patch = Self::clean_patch_for_preview(patch);
 

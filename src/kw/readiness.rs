@@ -1,15 +1,8 @@
-//! Readiness probes for running `kw build` / `kw deploy` on a configured
-//! kernel tree.
+//! Readiness probes for `kw build` / `kw deploy` on a configured kernel tree.
 //!
-//! Most probes mirror the corresponding discovery logic in kw itself
-//! (`src/lib/kwlib.sh`, `src/lib/kw_config_loader.sh`, `src/deploy.sh` at
-//! kw 0.10) so patch-hub's idea of "ready" matches what kw will actually
-//! do, instead of being a parallel interpretation that can silently drift
-//! from it. The deliberate divergences — the `arch`-unset glob fallback
-//! and the non-recursive boot-dir scan — are documented on
-//! [`ReadinessService::find_newest_kernel_image`]. The probes are pure functions over
-//! injected infrastructure traits; KwActor composes them into the
-//! `GetReadiness` snapshot.
+//! Probes follow kw's own discovery so "ready" matches what kw will do.
+//! Divergences — the `arch`-unset glob and the non-recursive boot-dir scan —
+//! are documented on `ReadinessService::find_newest_kernel_image`.
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 
@@ -74,12 +67,11 @@ impl ReadinessService {
         }
     }
 
-    /// Parses kw's `key=value` config format (`.kw/build.config`,
-    /// `.kw/deploy.config`, ...), mirroring kw's own `parse_configuration`:
-    /// blank lines and lines starting with `#` are skipped, everything from the
-    /// last `#` on is stripped as a trailing comment, the key has all
-    /// whitespace removed, and the value is trimmed. Lines without `=` are
-    /// ignored, and a final line without a trailing newline still counts.
+    /// Parses kw's `key=value` config, like kw's `parse_configuration`: blank
+    /// lines and lines starting with `#` are skipped, text from the last `#`
+    /// is a trailing comment, the key loses all whitespace, and the value is
+    /// trimmed. Lines without `=` are ignored. A final line without a
+    /// trailing newline still counts.
     pub fn parse_kw_config(content: &str) -> HashMap<String, String> {
         let mut entries = HashMap::new();
         for line in content.lines() {
@@ -156,13 +148,11 @@ impl ReadinessService {
         }
     }
 
-    /// Reads the literal `arch=` value from `<tree>/.kw/build.config`, the same
-    /// value kw's image discovery globs under `arch/<arch>/boot/`. Returns
-    /// `None` when the file or the key is absent or empty — kw's
-    /// `${build_config[arch]:-...}` expansion treats empty as unset — meaning
-    /// the caller falls back to globbing `arch/*/boot/`, a deliberate
-    /// divergence from kw's merged-config fallback (see
-    /// [`ReadinessService::find_newest_kernel_image`]).
+    /// The literal `arch=` value from `<tree>/.kw/build.config`, the same
+    /// value kw globs under `arch/<arch>/boot/`. `None` when the file or key
+    /// is absent or empty — kw treats empty as unset — so the caller globs
+    /// `arch/*/boot/` instead of kw's merged-config fallback (see
+    /// `ReadinessService::find_newest_kernel_image`).
     pub fn read_build_arch(fs: &dyn FileSystemTrait, tree_path: &Path) -> Option<String> {
         let content = fs
             .read_to_string(&tree_path.join(".kw").join("build.config"))
@@ -175,26 +165,11 @@ impl ReadinessService {
         }
     }
 
-    /// Resolves kw's active build output dir (`O=`) for `tree_path`, mirroring
-    /// kw's env handling: the env name is the content of
-    /// `<tree>/.kw/env.current` (trailing newlines stripped, like bash's
-    /// `$(< ...)`), and the output dir is
-    /// `{XDG_CACHE_HOME | ~/.cache}/kw/envs/<base64(tree path)>/<env name>`.
-    /// The tree path is encoded like kw 0.10's `get_encoded_pwd` — standard
-    /// base64 with padding, no wrapping — after trimming trailing slashes,
-    /// since kw encodes `$PWD` after changing into the tree. The encoded path
-    /// may contain `/` (standard alphabet), producing nested directories; kw
-    /// has the same behavior.
-    ///
-    /// kw's launcher recomputes the cache dir unconditionally, so a
-    /// user-exported `KW_CACHE_DIR` is intentionally ignored here too. The
-    /// `KWORKFLOW` rename knob is not honored: it exists for kw development.
-    ///
-    /// Returns `Ok(None)` when no env is active. The resolved dir is not
-    /// required to exist: kw/make create it on first build. An unreadable
-    /// `env.current` or an unresolvable cache base (neither `XDG_CACHE_HOME`
-    /// nor `HOME` set) is an error, since the env state is then unknown —
-    /// kw's "active but unresolvable" case.
+    /// Resolves kw's `O=` dir. Env: `<tree>/.kw/env.current`, trailing newlines stripped.
+    /// Dir: `{XDG_CACHE_HOME|~/.cache}/kw/envs/<base64(tree)>/<env>`, padded base64,
+    /// no wrap, trailing slashes trimmed (kw 0.10 `get_encoded_pwd`; `/` nests dirs).
+    /// Ignores `KW_CACHE_DIR` and `KWORKFLOW`. `Ok(None)` if no env is active.
+    /// Unreadable `env.current` or no cache base is an error. The dir need not exist.
     pub fn resolve_output_dir(
         fs: &dyn FileSystemTrait,
         env: &dyn EnvTrait,
@@ -240,29 +215,11 @@ impl ReadinessService {
         ))
     }
 
-    /// Finds the newest kernel image under `<build_root>/arch/`. Candidate
-    /// basenames must end with `Image` (the `-name '*Image'` in kw's
-    /// `get_kernel_binary_name` is case-sensitive, so `Image.gz` and `image`
-    /// are excluded) and the most recently modified one wins, with ties broken
-    /// by descending path (kw's `sort -r | head -1`).
-    ///
-    /// With `arch`, only `arch/<arch>/boot/` is probed — exactly kw's behavior.
-    /// Without `arch` this is a **deliberate divergence**, not a mirror: kw
-    /// falls back to the merged kw-config `arch` (packaged default `x86_64`, a
-    /// directory that does not exist in kernel trees, so `kw deploy` then fails
-    /// with exit 125), and patch-hub does not read kw's global config layers.
-    /// Globbing every `arch/*/boot/` gives a more useful readiness signal than
-    /// probing a directory that is never there — at the cost of possibly
-    /// reporting an image kw would not find. A green image probe with `arch=`
-    /// unset is therefore not a guarantee kw deploy will locate one; setting
-    /// `arch=` in `.kw/build.config` makes the two agree.
-    ///
-    /// Second deliberate deviation: kw's `find` recurses into boot/
-    /// subdirectories, while this scans only the top level. Kernel images for
-    /// every arch kw supports are produced directly in boot/ (subdirs like
-    /// compressed/ or dts/ never hold `*Image` files), and find does not
-    /// descend into symlinked dirs either, so the behaviors agree on real
-    /// trees.
+    /// Newest `*Image` (case-sensitive basename suffix) under
+    /// `<build_root>/arch/`; newest mtime wins, path-descending ties.
+    /// `arch` set: only `arch/<arch>/boot/`, as kw does. `arch` unset: glob
+    /// every `arch/*/boot/` top level — kw would use merged-config `x86_64`
+    /// (absent in trees) and fail — so a hit here is not a deploy guarantee.
     pub fn find_newest_kernel_image(
         fs: &dyn FileSystemTrait,
         build_root: &Path,
@@ -337,20 +294,11 @@ impl ReadinessService {
         }
     }
 
-    /// Deploy-alone readiness gate: a deploy without a preceding build is only
-    /// allowed when a successful build record exists for the tree and the
-    /// lookup branch, written against the same tree path and kw env, and a
-    /// kernel image is still discoverable.
-    ///
-    /// `record` is the lookup keyed by the deploy target branch. `latest` is
-    /// the newest record for the tree across branches. When the target has
-    /// no keyed record but another branch does, that is
-    /// [`DeployAloneRefusal::HeadMismatch`], not "no build recorded".
-    ///
-    /// This is only the record-matching half of the gate — it says nothing
-    /// about the tree's *current* state. [`ReadinessService::evaluate_readiness`] conjoins
-    /// [`TreeReadiness`] into its `deploy_alone` verdict; prefer it over
-    /// calling this directly.
+    /// Deploy-alone record gate: allowed only when a successful build record
+    /// exists for the tree and lookup branch, written against the same tree
+    /// path and kw env, and an image is still discoverable. A record on
+    /// another branch is `HeadMismatch`, not "no build recorded". Tree
+    /// readiness is conjoined later by `evaluate_readiness`.
     pub fn check_deploy_alone(
         record: Option<&KwBuildRecord>,
         latest: Option<&KwBuildRecord>,
@@ -400,13 +348,10 @@ impl ReadinessService {
         Ok(())
     }
 
-    /// Runs all readiness probes for `tree` and composes them into a
-    /// [`KwReadiness`] snapshot. `head_branch` is the tree's current branch —
-    /// resolving it (via git) is the caller's job, keeping these probes pure.
-    ///
-    /// `for_branch`, when set, is the branch deploy-alone should be judged
-    /// against (the branch typed on KwOps). `current_branch` still reports
-    /// the real HEAD so the UI can show both.
+    /// All readiness probes for `tree`, composed into a `KwReadiness`.
+    /// `head_branch` is the current branch; the caller resolves it via git.
+    /// `for_branch`, when set, is the branch deploy-alone is judged against.
+    /// `current_branch` still reports the real HEAD so the UI can show both.
     #[expect(clippy::too_many_arguments)]
     pub fn evaluate_readiness(
         fs: &dyn FileSystemTrait,

@@ -1,16 +1,8 @@
-//! Resolve the remote kw deploy target from kw's `remote.config`.
-//!
-//! The file is a small ssh-config-like text file written by `kw remote`
-//! (`src/kw_remote.sh` at kw 0.10): an optional `#kw-default=<name>`
-//! sentinel plus `Host` stanzas with `Hostname` / `Port` / `User`. This
-//! parser reads that file directly rather than scraping `kw remote --list`,
-//! whose output is colorized terminal prose with no machine-readable mode.
-//!
-//! Resolution prefers `<tree>/.kw/remote.config`, then
-//! `${XDG_CONFIG_HOME:-$HOME/.config}/kw/remote.config`. A present local
-//! file is authoritative even when empty or unreadable — falling through
-//! to the home copy would silently deploy to a different machine than the
-//! tree is configured for.
+//! Resolve the kw deploy remote by reading `remote.config`, not `kw remote
+//! --list` (colorized prose). Optional `#kw-default=<name>` plus `Host`
+//! stanzas with `Hostname` / `Port` / `User`. Prefer
+//! `<tree>/.kw/remote.config`, then `${XDG_CONFIG_HOME:-$HOME/.config}/kw`.
+//! A present local file wins even when empty or unreadable.
 
 use std::path::{Path, PathBuf};
 
@@ -54,12 +46,11 @@ impl HostBuilder {
 pub struct RemoteConfigService;
 
 impl RemoteConfigService {
-    /// Parses kw's ssh-config-like `remote.config`. Blank lines and comments
-    /// are skipped; `#kw-default=<name>` (anywhere) names the default Host,
-    /// last occurrence winning; `Host <name>` starts a stanza; `Hostname`,
-    /// `Port`, and `User` are read case-insensitively; `IdentityFile` and
-    /// other keys are tolerated and ignored. Port defaults to 22 when unset.
-    /// Duplicate Host names keep the last complete stanza.
+    /// Parses `remote.config`. Skips blanks and comments. `#kw-default=<name>`
+    /// (anywhere, last wins) names the default Host. `Host <name>` starts a
+    /// stanza; `Hostname`, `Port`, and `User` are case-insensitive; other keys
+    /// are ignored. Port defaults to 22. Duplicate Host names keep the last
+    /// complete stanza.
     pub fn parse_remote_config(content: &str) -> ParsedRemoteConfig {
         let mut parsed = ParsedRemoteConfig::default();
         let mut current: Option<HostBuilder> = None;

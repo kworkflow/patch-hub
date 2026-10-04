@@ -1,9 +1,8 @@
-//! Low-level Crossterm/Ratatui helpers for the terminal actor session and
-//! emergency restore hooks.
+//! Crossterm/Ratatui helpers for the terminal session and emergency restore.
 //!
-//! Normal runtime startup uses [`init`] from `main`, session operations go
-//! through [`session::CrosstermTerminalSession`], and the
-//! panic hook plus `main`'s fatal-error path call [`restore`] directly.
+//! `init` starts the session from `main`. Operations go through
+//! `CrosstermTerminalSession`. The panic hook and `main`'s fatal path call
+//! `restore` directly.
 
 use ratatui::{
     crossterm::{

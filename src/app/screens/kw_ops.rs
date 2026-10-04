@@ -32,13 +32,11 @@ impl KwOpsState {
         }
     }
 
-    /// Re-open KwOps for the same patchset/tree without dropping extras,
-    /// an in-flight cancel/start indication, or a boot-once acknowledgement.
+    /// Re-open KwOps for the same patchset and tree without dropping extras,
+    /// an in-flight cancel or start, or a boot-once acknowledgement.
     ///
-    /// Branch and `head_unreadable` stay as the user last edited them.
-    /// An external HEAD change while away is not applied, so a stale
-    /// detached-HEAD flag can survive a tree that has since become
-    /// readable.
+    /// Branch and `head_unreadable` stay as last edited. A HEAD change while
+    /// away is not applied, so a stale detached-HEAD flag can survive.
     pub fn reenter(&mut self, patchset_title: String, tree: KernelTree, readiness: KwReadiness) {
         self.patchset_title = patchset_title;
         self.tree = tree;

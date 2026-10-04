@@ -22,12 +22,11 @@ const DEPLOY_WARNING_MARKERS: [&str; 4] = [
 pub struct LogScanService;
 
 impl LogScanService {
-    /// The first line of a failed job's log that names what went wrong: a
-    /// compiler/linker `error:`, a modpost `ERROR:`, a kbuild `*** ...`
-    /// banner (e.g. "The source tree is not clean"), or a git/kw `error:`.
-    /// Falls back to the last `make: *** ... Error N` line, which only names
-    /// the failing target. Kbuild prints the real cause first and a cascade
-    /// of make errors after it, so the first match is the useful one.
+    /// The first line of a failed job's log that names the cause: a compiler
+    /// or linker `error:`, a modpost `ERROR:`, a kbuild `***` banner, or a
+    /// git/kw `error:`. Otherwise the last `make: *** Error N` line, which
+    /// only names the target. Kbuild prints the cause first and a cascade of
+    /// make errors after, so the first match is the useful one.
     pub fn find_first_error(log: &str) -> Option<String> {
         log.lines()
             .map(str::trim)

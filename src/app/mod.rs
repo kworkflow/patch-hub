@@ -1,14 +1,8 @@
-//! Application orchestration: state, screen flows, view-model projection, and the
-//! central `AppActor` run loop.
+//! Application orchestration: state, screen flows, and the `AppActor` loop.
 //!
-//! [`App`] holds [`AppState`] (navigation, lore UI state, user data, config
-//! snapshot) and [`AppServices`] (typed handles to
-//! `LoreApiHandle`,
-//! `RenderHandle`, plus injected
-//! infrastructure traits). Screen-specific input is dispatched from
-//! `AppActor` into [`app::flows`];
-//! presentation data crosses the UI boundary only through [`AppViewModel`] via
-//! [`App::present`].
+//! `App` holds `AppState` and `AppServices`. Screen input goes from
+//! `AppActor` into `flows`. Presentation crosses the UI boundary only as
+//! `AppViewModel` via `App::present`.
 pub(crate) mod actions;
 pub mod actor;
 pub(crate) mod dependencies;
@@ -100,14 +94,8 @@ pub struct App {
 }
 
 impl App {
-    /// Creates a new instance of `App`.
-    ///
-    /// Configuration starts from the already-bootstrapped snapshot owned by the
-    /// Config actor. Lore bootstrap uses already-warmed cache from `lore_service`.
-    ///
-    /// # Returns
-    ///
-    /// `App` instance with loading configurations and app data.
+    /// Creates an `App` from the Config actor's snapshot and the warmed lore
+    /// cache.
     #[expect(clippy::too_many_arguments)]
     pub fn new(
         config: ConfigSnapshot,

@@ -1,10 +1,8 @@
-//! Lore domain actor: serializes access to [`LoreService`] on a dedicated task.
+//! Lore actor: serializes `LoreService` on a dedicated task.
 //!
-//! All lore I/O (mailing lists, feed pages, patchset details, bookmarks,
-//! reviewed state, git reply preparation) goes through
-//! `LoreApiHandle` as typed
-//! request/reply messages. Heavy work runs on a blocking thread pool via
-//! [`LoreApiActor::with_core`]; callers never touch [`LoreService`] directly.
+//! Mailing lists, feeds, patchset details, bookmarks, reviewed state, and
+//! git reply preparation go through `LoreApiHandle`. Heavy work runs on a
+//! blocking pool via `LoreApiActor::with_core`.
 use std::ops::ControlFlow;
 
 use tokio::{spawn, sync::mpsc, task};

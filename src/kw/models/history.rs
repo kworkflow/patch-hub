@@ -13,14 +13,11 @@ pub struct KwApplyRecord {
     pub applied_at: String,
 }
 
-/// One recorded `kw build` attempt on a kernel tree branch, whether it
-/// succeeded or not. Failed attempts are stored so deploy-alone can refuse
-/// them instead of treating the tree as never built.
-///
-/// `message_id`, `arch`, `image_path`, and `kernelrelease` are optional: a
-/// build can target a branch no patchset was applied to, `arch` is unknown
-/// when image discovery had to glob, and a failed build may never have
-/// produced an image or a kernelrelease.
+/// One recorded `kw build` on a tree branch, success or failure. Failures
+/// are stored so deploy-alone can refuse them. `message_id`, `arch`,
+/// `image_path`, and `kernelrelease` are optional: the branch may have no
+/// patchset, `arch` is unknown when discovery globs, and a failed build may
+/// lack an image or kernelrelease.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct KwBuildRecord {
     pub kernel_tree_id: String,

@@ -1,15 +1,8 @@
-//! Input mediation actor: polls the terminal and maps raw events to semantic
-//! `InputEvent` values for the application.
+//! Input actor: polls the terminal and maps events to `InputEvent`.
 //!
-//! A dedicated pump subtask calls
-//! `TerminalHandle::poll_event`
-//! so an in-flight poll is never abandoned when a control message wins the
-//! select race. Mapped events are delivered to the subscriber channel
-//! registered via
-//! `InputHandle::subscribe_app`;
-//! context updates from
-//! `InputHandle::update_context`
-//! change key bindings without restarting the pump.
+//! A pump task calls `TerminalHandle::poll_event` so an in-flight poll is
+//! not dropped when a control message wins the select. Events go to the
+//! `subscribe_app` channel; `update_context` changes bindings without a restart.
 use std::time::Duration;
 
 use tokio::{select, spawn, sync::mpsc};

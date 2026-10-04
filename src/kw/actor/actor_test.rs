@@ -140,13 +140,11 @@ fn recording_shell(
     (shell, calls)
 }
 
-/// A stateful shell double for the checkout/restore tests: kw's
-/// version probe answers 0.10.0, `git status --porcelain` reflects the
-/// dirty flag, the HEAD probe reports `head` (with the trailing
-/// newline git prints), and a successful `git switch` updates `head`
-/// — mirroring a real worktree the actor switches between branches.
-/// Switches to `fail_switch_to` fail, so a test can model "going
-/// forward works, coming back fails".
+/// Shell double for checkout/restore tests: kw version probe answers
+/// 0.10.0, `git status --porcelain` reflects the dirty flag, the HEAD
+/// probe reports `head` (including git's trailing newline), and a
+/// successful `git switch` updates `head`. Switches to `fail_switch_to`
+/// fail, so going forward can succeed while coming back fails.
 pub(super) struct GitStub {
     head: Arc<Mutex<String>>,
     dirty: Arc<AtomicBool>,

@@ -11,13 +11,11 @@ use crate::{
 pub(crate) struct DependencyService;
 
 impl DependencyService {
-    /// Verifies required and optional external binaries before the terminal starts.
+    /// Verifies external binaries before the terminal starts.
     ///
-    /// A missing `b4` is a hard failure; all other missing binaries only emit
-    /// warnings — including `kw`, and including an unverifiable kw version,
-    /// since kw's own VERSION file is stale upstream (it reports `beta-0.9`
-    /// even at the 0.10 tag). This keeps fatal startup failures out of
-    /// terminal raw mode.
+    /// A missing `b4` is fatal. Other misses, including `kw` and an
+    /// unverifiable version, only warn: kw's VERSION file reports `beta-0.9`
+    /// even at the 0.10 tag, and fatal checks must stay out of raw mode.
     pub(crate) fn check_external_deps(
         env: &dyn EnvTrait,
         shell: &dyn ShellTrait,

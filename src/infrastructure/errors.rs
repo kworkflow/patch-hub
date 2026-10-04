@@ -46,18 +46,11 @@ impl TerminalRestoreGuard {
     }
 }
 
-/// Installs the process panic and eyre hooks.
-///
-/// The panic hook restores the terminal, then color_eyre prints the panic.
-/// The eyre hook only forwards to color_eyre. eyre runs that hook for every
-/// report construction, including errors the application handles and keeps
-/// running after, so it must not restore the terminal.
-///
-/// `main` returns [`eyre::Result`], and the runtime prints a fatal
-/// report after `main` returns. [`TerminalRestoreGuard::restore_once`] runs on
-/// that path first.
-/// Normal shutdown restores through
-/// [`TerminalHandle::shutdown`].
+/// Installs the panic and eyre hooks. The panic hook restores the terminal,
+/// then color_eyre prints. The eyre hook only forwards to color_eyre: it
+/// runs for every report, including handled errors, so it must not restore.
+/// Fatal `main` errors call `TerminalRestoreGuard::restore_once` before the
+/// report prints; normal shutdown uses `TerminalHandle::shutdown`.
 pub fn install_hooks() -> Result<()> {
     let (panic_hook, eyre_hook) = HookBuilder::default().into_hooks();
 

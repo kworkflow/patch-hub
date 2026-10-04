@@ -10,13 +10,9 @@ use crate::lore::{
 
 /// Caller intent for a cache-backed `LoreService` operation.
 ///
-/// * `UseCache`  — return in-memory data if present and not stale; fall back to
-///   disk; return an error/empty if neither is available. Never hits the network
-///   unless the data is genuinely missing.
-/// * `Refresh`   — discard any cached data and unconditionally fetch from the
-///   network, then persist the result.
-/// * `Bypass`    — fetch from the network and return the result without reading
-///   or writing the in-memory cache.
+/// `UseCache` returns fresh memory, else disk, else empty, and hits the
+/// network only when data is missing. `Refresh` discards the cache, fetches,
+/// and persists. `Bypass` fetches and does not touch the in-memory cache.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheMode {
     UseCache,
@@ -25,12 +21,9 @@ pub enum CacheMode {
     Bypass,
 }
 
-/// Per-data-type TTL configuration injected into `LoreService`.
-///
-/// Defaults are chosen conservatively:
-/// * mailing lists change rarely → 24 h
-/// * feed pages are refreshed by the user explicitly → 1 h
-/// * patchsets are immutable historical artefacts → never expire
+/// Per-data-type TTL injected into `LoreService`. Defaults: mailing lists
+/// 24 h (they change rarely), feed pages 1 h (the user refreshes them),
+/// patchsets never expire (they are immutable).
 pub struct CacheTtl {
     pub mailing_lists: Duration,
     pub feed: Duration,

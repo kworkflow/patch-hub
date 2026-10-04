@@ -42,12 +42,9 @@ pub enum TreeReadiness {
     InTreeBuildArtifacts,
 }
 
-/// Result of comparing the version kw reports against [`KW_MIN_VERSION`].
-///
-/// Advisory only: kw's shipped VERSION file is stale (it reads `beta-0.9`
-/// even at the 0.10 tag), so `Below` can fire on a genuinely recent kw and
-/// must never gate functionality — the raw line is carried verbatim so the
-/// UI can show exactly what kw reported.
+/// kw's reported version compared with `KW_MIN_VERSION`. Advisory only:
+/// kw's VERSION file reads `beta-0.9` even at the 0.10 tag, so `Below` must
+/// never gate. The raw line is kept so the UI can show what kw reported.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KwVersionCheck {
     Meets,
@@ -126,13 +123,11 @@ pub enum DeployAloneRefusal {
     ImageMissing,
 }
 
-/// Whether `.kw/deploy.config` (then the user-level copy) sets
-/// `boot_into_new_kernel_once=no`.
+/// Whether deploy config sets `boot_into_new_kernel_once=no`.
 ///
-/// kw only treats the literal value `no` as off (`src/deploy.sh`); any other
-/// value, including a missing key, leaves the option on. [`Unknown`] is
-/// therefore a confirm-to-proceed gate, same as [`On`]: patch-hub cannot
-/// pass a CLI off-switch.
+/// kw treats only the literal `no` as off. Any other value, including a
+/// missing key, leaves the option on, so `Unknown` gates like `On`:
+/// patch-hub cannot pass a CLI off-switch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BootOnceState {
     Off,

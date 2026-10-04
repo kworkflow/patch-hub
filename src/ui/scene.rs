@@ -1,9 +1,7 @@
-//! Scene types produced by [`core::UiCore`] and consumed by
-//! [`super::painter`].
+//! Scene types produced by `UiCore` and consumed by the painter.
 //!
-//! A `UiScene` is a fully projected, paint-ready snapshot of application
-//! state. Nothing inside this module reads from `App`, `AppState`, or any
-//! actor handle — it is pure presentation data.
+//! A `UiScene` is a fully projected, paint-ready snapshot. Nothing here
+//! reads `App`, `AppState`, or an actor handle.
 
 use ratatui::text::{Span, Text};
 

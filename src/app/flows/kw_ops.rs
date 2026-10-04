@@ -59,15 +59,11 @@ impl KwStartKind {
 }
 
 impl App {
-    /// Refresh the KwOps log panel from the current job's log file.
-    ///
-    /// A missing file is normal just after accept (`Waiting for kw output…`
-    /// is projected from an empty tail). Other read errors become a
-    /// non-fatal diagnostic in the panel and do not change job status.
-    /// Returns whether the displayed text changed.
-    ///
-    /// The read runs on the blocking pool: the log is a real file, and
-    /// AppActor's loop must not stall on disk I/O.
+    /// Refresh the KwOps log panel from the job log. A missing file is normal
+    /// just after accept. Other read errors become a non-fatal panel
+    /// diagnostic and do not change job status. Returns whether the text
+    /// changed. The read runs on the blocking pool so the actor loop does
+    /// not stall on disk I/O.
     pub(crate) async fn refresh_kw_ops_log_tail(&mut self) -> bool {
         if self.state.kw.ops.is_none() {
             return false;
@@ -142,10 +138,9 @@ impl App {
 
     /// Seed the projection from GetStatus after the watch is gone.
     ///
-    /// A successful query lets the poll arm engage if a job is already
-    /// running (the subscribe-failed-with-live-job corner). A failed query
-    /// clears status so a dead actor cannot leave a stale "building"
-    /// indicator.
+    /// A successful query lets polling engage if a job is already running.
+    /// A failed query clears status so a dead actor cannot leave a stale
+    /// "building" indicator.
     pub(crate) async fn fallback_kw_status(&mut self) {
         let Some(kw) = self.services.kw.clone() else {
             self.state.kw.status = None;

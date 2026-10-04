@@ -1,16 +1,8 @@
-//! kw actor: owns kw build/deploy job state and the kw history store.
+//! kw actor: owns build/deploy job state and the history store.
 //!
-//! All kw operations go through `KwHandle` as
-//! typed request/reply messages. `Start*` messages reply immediately with an
-//! accept/refuse verdict — a job accepted by the actor keeps running after
-//! the caller has been answered, so the AppActor loop never blocks on a
-//! kernel build. The actor composes the readiness probes from
-//! [`kw::readiness`] and records applies through the shared
-//! `KwHistoryStore`.
-//!
-//! Git checkout and readiness probes run on the blocking pool.
-//! `create_dir_all`, history writes, and completion probes run inline
-//! on the actor task.
+//! `Start*` replies immediately with accept or refuse; an accepted job
+//! keeps running so AppActor never blocks on a kernel build. Git checkout
+//! and readiness probes run on the blocking pool; history writes run inline.
 
 use std::{
     ops::ControlFlow,
@@ -254,11 +246,9 @@ impl KwActor {
             KwMessage::Shutdown { reply } => {
                 // Quit-prompt cooperation: the app asks whether a job is
                 // running before quitting; if it quits anyway, the job's
-                // process group is killed here. The log may capture partial
-                // output and the tree a partial build. The reply is held
-                // until the kill escalation has run its (bounded) course,
-                // so a caller tearing down the runtime afterwards cannot
-                // leave orphaned kw processes behind.
+                // process group is killed here. The reply is held until the
+                // kill escalation finishes, so teardown cannot leave orphaned
+                // kw processes behind.
                 if self.job.is_some() {
                     tracing::info!("killing kw job process group during shutdown");
                     self.request_cancel().ok();
@@ -293,12 +283,11 @@ impl KwActor {
         }
 
         let tree_path = PathBuf::from(request.tree.path());
-        // Hard fail on invoke: with no kw binary on PATH no job can run.
-        // The version check is advisory only — kw's shipped VERSION file
-        // is stale, so Below/Unknown are logged, never gated.
-        // Probes run on the blocking pool so a slow tree or cold
-        // `kw --version` cannot stall the Tokio worker (or delay Cancel
-        // past this Start's await).
+        // Hard fail when kw is not on PATH: no job can run. The version
+        // check is advisory only — kw's VERSION file is stale — so
+        // Below/Unknown are logged, never gated. Probes run on the
+        // blocking pool so a slow tree or cold `kw --version` cannot stall
+        // the worker or delay Cancel past this Start's await.
         let fs = Arc::clone(&self.fs);
         let env = Arc::clone(&self.env);
         let shell = Arc::clone(&self.shell);
@@ -430,13 +419,11 @@ impl KwActor {
         Ok(())
     }
 
-    /// Deploy-kind gates after the branch switch: resolved remote for
-    /// every deploy kind; the deploy-alone record match only for
-    /// StartDeploy, against the requested (now checked-out) branch;
-    /// boot-once confirm last so a missing record refuses before the
-    /// confirm popup. Any refusal is rolled back by the caller.
-    /// BuildThenDeploy skips the record gate because the build has not
-    /// run yet. Probes run on the blocking pool.
+    /// After the branch switch: a resolved remote for every deploy kind; the
+    /// deploy-alone record match only for StartDeploy, on the checked-out
+    /// branch; boot-once confirm last so a missing record refuses first.
+    /// BuildThenDeploy skips the record gate (the build has not run).
+    /// Refusals roll back. Probes run on the blocking pool.
     async fn prepare_deploy(
         &self,
         kind: KwJobKind,
@@ -468,15 +455,11 @@ impl KwActor {
         .map_err(|error| KwStartError::GitStateProbe(error.to_string()))?
     }
 
-    /// Refuse a dirty worktree, record HEAD, then `git switch` to the
-    /// requested branch. The git calls run on the blocking pool so the
-    /// accept reply stays immediate.
-    ///
-    /// The HEAD probe sits between the dirty check and the switch: it
-    /// must capture the branch the user was on, or RestorePreviousBranch
+    /// Refuse a dirty worktree, record HEAD, then `git switch`. Git runs on
+    /// the blocking pool so the accept reply stays immediate. HEAD is probed
+    /// between the dirty check and the switch, or RestorePreviousBranch
     /// would restore the branch the job switched to. An unprobed HEAD
-    /// (detached, or not a git repo) yields `None` rather than a wrong
-    /// branch.
+    /// (detached, or not a git repo) is `None`, not a wrong branch.
     async fn checkout_build_branch(
         &self,
         request: &StartRequest,
@@ -782,13 +765,10 @@ impl KwActor {
             JobOutcome::Cancelled => return None,
         };
 
-        // The record describes the accept-time snapshot: the build ran
-        // under this tree path, output dir, and arch. Re-resolving them
-        // here could describe a configuration the build never used — an
-        // env deactivated mid-build would key the record with a wrong
-        // `output_dir: None` and probe the tree for an image the build
-        // wrote under O=, a Frankenstein match for a later deploy-alone
-        // probe.
+        // The record is the accept-time snapshot: tree path, output dir, and
+        // arch the build actually used. Re-resolving them could describe a
+        // later configuration — an env deactivated mid-build would store
+        // `output_dir: None` and look for an image the build wrote under O=.
         let tree_path = Path::new(&job.tree_path);
         let build_root = job.output_dir.as_deref().unwrap_or(tree_path);
         // A failed build may have left a stale image from an earlier
@@ -1080,20 +1060,11 @@ impl KwActor {
         }
     }
 
-    /// Maps a reap result observed after a cancel request. A signal-terminated
-    /// process means our SIGTERM/SIGKILL landed — the job was really cancelled.
-    /// A plain exit means the process finished on its own before the signal:
-    /// report the real outcome, because a cancel must not mask a failure the
-    /// build history (and deploy-alone readiness) needs to see.
-    ///
-    /// Known, accepted edges: a process that *traps* our SIGTERM and exits 0
-    /// counts as success for a standalone build (kw is bash, so this is
-    /// possible in principle). BuildThenDeploy does not chain that exit into
-    /// deploy — see [`Self::rewrite_outcome_after_building_cancel`]. An external signal
-    /// racing a cancel (e.g. the OOM killer) reads as Cancelled. Those cases
-    /// are indistinguishable from the honest ones without comparing who
-    /// signaled first, and both favor showing the user real output over
-    /// inventing failures.
+    /// After cancel: signal death means we cancelled; a plain exit finished
+    /// on its own and is reported, so cancel cannot mask a failure that
+    /// history and deploy-alone must see. A trapped SIGTERM that exits 0
+    /// counts as success (BuildThenDeploy still does not chain into deploy).
+    /// An external signal racing the cancel reads as Cancelled.
     fn map_outcome_after_cancel(result: Result<ExitStatus, ProcessError>) -> JobOutcome {
         use std::os::unix::process::ExitStatusExt;
 

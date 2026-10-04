@@ -1,13 +1,8 @@
-//! UI presentation actor: builds `UiScene` values
-//! from `AppViewModel` on a dedicated task.
+//! UI presentation actor: builds `UiScene` values from `AppViewModel`.
 //!
-//! `AppActor` calls
-//! `UiHandle::build_scene` each frame;
-//! this actor runs `UiCore::build_scene`
-//! and returns an owned scene for the terminal draw path. Presentation logic stays
-//! out of `AppState`: the app layer projects domain
-//! state into `AppViewModel` before
-//! crossing this boundary.
+//! `AppActor` calls `UiHandle::build_scene` each frame; this actor runs
+//! `UiCore::build_scene`. Presentation stays out of `AppState`: the app
+//! projects domain state into `AppViewModel` before crossing this boundary.
 use std::{mem, ops::ControlFlow};
 
 use tokio::{spawn, sync::mpsc};

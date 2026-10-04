@@ -1,11 +1,7 @@
-//! Owned, typed presentation projections.
+//! Owned presentation projections built from `AppState` by `App::present`.
 //!
-//! [`AppViewModel`] is built from [`state::AppState`] and handed off
-//! through [`App::present`].
-//!
-//! These types sit at the *application* layer: they represent what `App` knows
-//! about the presentation before `UiCore` translates them into paint-ready
-//! `UiScene` nodes.
+//! They are what `App` knows about presentation before `UiCore` turns them
+//! into paint-ready `UiScene` nodes.
 
 use ansi_to_tui::IntoText;
 

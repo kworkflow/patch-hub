@@ -1,11 +1,8 @@
-//! Render actor: serializes patch/cover preview rendering on a dedicated task.
+//! Render actor: serializes patch and cover preview rendering.
 //!
-//! `RenderHandle::render_patchset_preview`
-//! sends a `RenderMessage` to this
-//! actor, which delegates to a `RenderServiceApi`
-//! implementation (typically `ShellRenderService`)
-//! on a blocking thread pool. Keeps shell subprocess work off the async runtime
-//! and the UI thread.
+//! `RenderHandle::render_patchset_preview` sends a `RenderMessage`. The
+//! actor runs a `RenderServiceApi` (typically `ShellRenderService`) on a
+//! blocking pool, off the async runtime and the UI thread.
 use std::ops::ControlFlow;
 
 use tokio::{spawn, sync::mpsc, task};

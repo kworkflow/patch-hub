@@ -55,10 +55,8 @@ impl KwOpsPainter {
 
     /// Scroll so the newest wrapped rows sit at the bottom of the pane.
     ///
-    /// Uses ratatui's wrap-aware [`Paragraph::line_count`] so the offset
-    /// matches what the painter actually renders (word wrap, tabs, wide
-    /// chars). Counted without a [`Block`] and with the inner width, so
-    /// border rows are not mixed into the text height.
+    /// Uses ratatui's wrap-aware `Paragraph::line_count` on the inner width
+    /// without a `Block`, so border rows are not mixed into the text height.
     pub(crate) fn compute_log_scroll_offset(
         text: &str,
         inner_width: u16,
